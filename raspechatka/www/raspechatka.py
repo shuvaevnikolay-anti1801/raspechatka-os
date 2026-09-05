@@ -15,8 +15,17 @@ def get_context():
 
 
 def get_boot():
+	from raspechatka.access import get_access_level, get_scope
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	roles = frappe.get_roles(frappe.session.user)
+
+	areas = ("dashboard", "references.network", "references.storage", "references.clients", "references.suppliers", "references.employees", "references.catalog", "references.finance", "settings.access")
+	try:
+		access = {area: get_access_level(area) for area in areas}
+		scope = get_scope()
+	except Exception:
+		access = {area: "Admin" if "System Manager" in roles else "None" for area in areas}
+		scope = {"global": "System Manager" in roles, "business_entity": None, "points": []}
 
 	return {
 		"user": user.name,
@@ -25,4 +34,6 @@ def get_boot():
 		"roles": roles,
 		"is_manager": "System Manager" in roles,
 		"csrf_token": frappe.sessions.get_csrf_token(),
+		"access": access,
+		"scope": scope,
 	}

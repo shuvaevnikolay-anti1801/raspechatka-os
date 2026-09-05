@@ -8,6 +8,11 @@ const boot = window.raspechatkaBoot || {
 
 export { boot };
 
+const accessLevels = { None: 0, View: 1, Edit: 2, Admin: 3 };
+export function canAccess(area, minimum = "View") {
+  return (accessLevels[boot.access?.[area] || "None"] || 0) >= accessLevels[minimum];
+}
+
 export async function call(method, params = {}, options = {}) {
   const requestMethod = options.method || "GET";
   const url = new URL(`/api/method/${method}`, window.location.origin);

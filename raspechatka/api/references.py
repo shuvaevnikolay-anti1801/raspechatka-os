@@ -3,9 +3,14 @@ import json
 import frappe
 from frappe import _
 from frappe.utils import cint
+from raspechatka.access import LEVELS, get_access_level, get_scope, require_access
 
 
 REFERENCE_CONFIG = {
+	"organizations": {
+		"doctype": "Organization", "fields": ["name", "organization_name", "organization_type", "phone", "email", "active"],
+		"search_fields": ("organization_name", "phone", "email"), "order_by": "organization_name asc",
+	},
 	"clients": {
 		"doctype": "Client", "fields": ["name", "client_name", "phone", "email", "registration_point", "personal_data_consent", "marketing_consent", "active"],
 		"search_fields": ("client_name", "phone", "email"), "order_by": "client_name asc",
@@ -70,21 +75,29 @@ REFERENCE_CONFIG = {
 	},
 }
 
+AREA_BY_REFERENCE = {
+	"organizations": "references.network", "entities": "references.network", "points": "references.network", "warehouses": "references.storage",
+	"clients": "references.clients", "suppliers": "references.suppliers", "employees": "references.employees", "positions": "references.employees",
+	"catalog-groups": "references.catalog", "catalog-units": "references.catalog", "price-types": "references.catalog",
+	"payment-methods": "references.finance", "pos-workplaces": "references.finance", "cash-registers": "references.finance", "financial-articles": "references.finance",
+}
+
 
 @frappe.whitelist()
 def get_reference_list(reference, search=None, active=None):
 	config = _get_config(reference)
-	frappe.has_permission(config["doctype"], "read", throw=True)
+	require_access(AREA_BY_REFERENCE[reference], "read")
 	filters = {}
 	if active not in (None, ""):
 		filters["active"] = cint(active)
+	filters.update(_scope_filters(reference))
 
 	or_filters = None
 	if search:
 		value = f"%{search.strip()}%"
 		or_filters = {fieldname: ["like", value] for fieldname in config["search_fields"]}
 
-	rows = frappe.get_list(
+	rows = frappe.get_all(
 		config["doctype"],
 		fields=config["fields"],
 		filters=filters,
@@ -116,12 +129,14 @@ def get_reference_list(reference, search=None, active=None):
 @frappe.whitelist()
 def get_reference_detail(reference, name):
 	config = _get_config(reference)
-	frappe.has_permission(config["doctype"], "read", name, throw=True)
+	require_access(AREA_BY_REFERENCE[reference], "read")
+	if not frappe.db.exists(config["doctype"], {"name": name, **_scope_filters(reference)}):
+		frappe.throw(_("Запись недоступна"), frappe.PermissionError)
 	doc = frappe.get_doc(config["doctype"], name)
 	result = doc.as_dict(no_nulls=False)
 
 	if reference == "entities":
-		result["bank_accounts"] = frappe.get_list(
+		result["bank_accounts"] = frappe.get_all(
 			"Business Bank Account",
 			filters={"business_entity": name},
 			fields=["name", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "bank_address", "active"],
@@ -129,7 +144,7 @@ def get_reference_detail(reference, name):
 			limit_page_length=100,
 		)
 	elif reference == "warehouses":
-		cabinets = frappe.get_list(
+		cabinets = frappe.get_all(
 			"Storage Cabinet",
 			filters={"warehouse": name},
 			fields=["name", "cabinet_name", "cabinet_number", "active", "sort_order"],
@@ -137,7 +152,7 @@ def get_reference_detail(reference, name):
 			limit_page_length=500,
 		)
 		for cabinet in cabinets:
-			cabinet["locations"] = frappe.get_list(
+			cabinet["locations"] = frappe.get_all(
 				"Storage Location",
 				filters={"cabinet": cabinet.name},
 				fields=["name", "location_name", "full_address", "active", "sort_order"],
@@ -145,7 +160,7 @@ def get_reference_detail(reference, name):
 				limit_page_length=500,
 			)
 		result["cabinets"] = cabinets
-		result["item_storage"] = frappe.get_list(
+		result["item_storage"] = frappe.get_all(
 			"Catalog Item Storage",
 			filters={"warehouse": name},
 			fields=["name", "item", "storage_location", "full_address", "active"],
@@ -153,8 +168,8 @@ def get_reference_detail(reference, name):
 			limit_page_length=1000,
 		)
 	elif reference == "suppliers":
-		result["bank_accounts"] = frappe.get_list("Supplier Bank Account", filters={"supplier": name}, fields=["name", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "active"], order_by="bank_name asc", limit_page_length=100)
-		result["items"] = frappe.get_list("Catalog Item Supplier", filters={"supplier": name}, fields=["name", "item", "is_primary", "active"], order_by="is_primary desc, item asc", limit_page_length=1000)
+		result["bank_accounts"] = frappe.get_all("Supplier Bank Account", filters={"supplier": name}, fields=["name", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "active"], order_by="bank_name asc", limit_page_length=100)
+		result["items"] = frappe.get_all("Catalog Item Supplier", filters={"supplier": name}, fields=["name", "item", "is_primary", "active"], order_by="is_primary desc, item asc", limit_page_length=1000)
 
 	return result
 
@@ -165,13 +180,18 @@ def save_reference(reference, data):
 	config = _get_config(reference)
 	name = data.get("name")
 	ptype = "write" if name else "create"
-	frappe.has_permission(config["doctype"], ptype, name if name else None, throw=True)
+	require_access(AREA_BY_REFERENCE[reference], ptype)
+	if name and not frappe.db.exists(config["doctype"], {"name": name, **_scope_filters(reference)}):
+		frappe.throw(_("Запись недоступна"), frappe.PermissionError)
+	_validate_payload_scope(reference, data, name)
 
 	if reference == "entities":
 		allowed = (
 			"short_name", "organization", "active", "phone", "email", "last_name", "first_name",
 			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "tax_system", "vat_payer",
 		)
+	elif reference == "organizations":
+		allowed = ("organization_name", "organization_type", "active", "phone", "email", "address")
 	elif reference == "points":
 		allowed = (
 			"point_name", "business_entity", "active", "city", "address", "phone", "email", "timezone",
@@ -200,6 +220,8 @@ def save_reference(reference, data):
 		allowed = ()
 
 	doc = frappe.get_doc(config["doctype"], name) if name else frappe.new_doc(config["doctype"])
+	if reference == "organizations" and not name:
+		doc.organization_code = frappe.generate_hash(length=10).upper()
 	for fieldname in allowed:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
@@ -222,7 +244,7 @@ def save_reference(reference, data):
 		for row in data.get("assigned_points") or []:
 			doc.append("assigned_points", {"business_point": row.get("business_point"), "is_default": cint(row.get("is_default"))})
 
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
@@ -230,12 +252,14 @@ def save_reference(reference, data):
 def save_bank_account(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	frappe.has_permission("Business Bank Account", "write" if name else "create", name if name else None, throw=True)
+	require_access("references.network", "write" if name else "create")
+	entity = data.get("business_entity") or (frappe.db.get_value("Business Bank Account", name, "business_entity") if name else None)
+	_ensure_scoped_name("entities", entity)
 	doc = frappe.get_doc("Business Bank Account", name) if name else frappe.new_doc("Business Bank Account")
 	for fieldname in ("business_entity", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "bank_address", "active"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
@@ -243,12 +267,16 @@ def save_bank_account(data):
 def save_supplier_bank_account(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	frappe.has_permission("Supplier Bank Account", "write" if name else "create", name if name else None, throw=True)
+	require_access("references.suppliers", "write" if name else "create")
+	if name:
+		_ensure_scoped_name("suppliers", frappe.db.get_value("Supplier Bank Account", name, "supplier"))
+	supplier = data.get("supplier") or (frappe.db.get_value("Supplier Bank Account", name, "supplier") if name else None)
+	_ensure_scoped_name("suppliers", supplier)
 	doc = frappe.get_doc("Supplier Bank Account", name) if name else frappe.new_doc("Supplier Bank Account")
 	for fieldname in ("supplier", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "active"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
@@ -256,12 +284,16 @@ def save_supplier_bank_account(data):
 def save_item_supplier(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	frappe.has_permission("Catalog Item Supplier", "write" if name else "create", name if name else None, throw=True)
+	require_access("references.suppliers", "write" if name else "create")
+	if name:
+		_ensure_scoped_name("suppliers", frappe.db.get_value("Catalog Item Supplier", name, "supplier"))
+	supplier = data.get("supplier") or (frappe.db.get_value("Catalog Item Supplier", name, "supplier") if name else None)
+	_ensure_scoped_name("suppliers", supplier)
 	doc = frappe.get_doc("Catalog Item Supplier", name) if name else frappe.new_doc("Catalog Item Supplier")
 	for fieldname in ("item", "supplier", "is_primary", "active"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
@@ -269,12 +301,16 @@ def save_item_supplier(data):
 def save_cabinet(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	frappe.has_permission("Storage Cabinet", "write" if name else "create", name if name else None, throw=True)
+	require_access("references.storage", "write" if name else "create")
+	if name:
+		_ensure_scoped_name("warehouses", frappe.db.get_value("Storage Cabinet", name, "warehouse"))
+	warehouse = data.get("warehouse") or (frappe.db.get_value("Storage Cabinet", name, "warehouse") if name else None)
+	_ensure_scoped_name("warehouses", warehouse)
 	doc = frappe.get_doc("Storage Cabinet", name) if name else frappe.new_doc("Storage Cabinet")
 	for fieldname in ("warehouse", "cabinet_number", "active", "sort_order"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
@@ -282,12 +318,18 @@ def save_cabinet(data):
 def save_storage_location(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	frappe.has_permission("Storage Location", "write" if name else "create", name if name else None, throw=True)
+	require_access("references.storage", "write" if name else "create")
+	if name:
+		old_cabinet = frappe.db.get_value("Storage Location", name, "cabinet")
+		_ensure_scoped_name("warehouses", frappe.db.get_value("Storage Cabinet", old_cabinet, "warehouse"))
+	cabinet = data.get("cabinet") or (frappe.db.get_value("Storage Location", name, "cabinet") if name else None)
+	warehouse = frappe.db.get_value("Storage Cabinet", cabinet, "warehouse") if cabinet else None
+	_ensure_scoped_name("warehouses", warehouse)
 	doc = frappe.get_doc("Storage Location", name) if name else frappe.new_doc("Storage Location")
 	for fieldname in ("cabinet", "location_name", "active", "sort_order"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
@@ -295,19 +337,24 @@ def save_storage_location(data):
 def save_item_storage(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	frappe.has_permission("Catalog Item Storage", "write" if name else "create", name if name else None, throw=True)
+	require_access("references.storage", "write" if name else "create")
+	if name:
+		_ensure_scoped_name("warehouses", frappe.db.get_value("Catalog Item Storage", name, "warehouse"))
+	warehouse = data.get("warehouse") or (frappe.db.get_value("Catalog Item Storage", name, "warehouse") if name else None)
+	_ensure_scoped_name("warehouses", warehouse)
 	doc = frappe.get_doc("Catalog Item Storage", name) if name else frappe.new_doc("Catalog Item Storage")
 	for fieldname in ("item", "warehouse", "storage_location", "active"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	doc.save()
+	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
 @frappe.whitelist(methods=["POST"])
 def archive_reference(reference, name, active=0):
 	config = _get_config(reference)
-	frappe.has_permission(config["doctype"], "write", name, throw=True)
+	require_access(AREA_BY_REFERENCE[reference], "write")
+	_ensure_scoped_name(reference, name)
 	frappe.db.set_value(config["doctype"], name, "active", cint(active), update_modified=True)
 	if reference == "points":
 		frappe.db.set_value("Catalog Warehouse", {"business_point": name}, "active", cint(active), update_modified=True)
@@ -317,7 +364,8 @@ def archive_reference(reference, name, active=0):
 @frappe.whitelist(methods=["POST"])
 def delete_reference(reference, name):
 	config = _get_config(reference)
-	frappe.has_permission(config["doctype"], "delete", name, throw=True)
+	require_access(AREA_BY_REFERENCE[reference], "delete")
+	_ensure_scoped_name(reference, name)
 	if reference == "warehouses":
 		frappe.throw(_("Склад создаётся и удаляется вместе с точкой продаж"))
 	if reference == "points":
@@ -328,22 +376,30 @@ def delete_reference(reference, name):
 			):
 				frappe.throw(_("Сначала удалите адреса хранения и привязки товаров на складе точки"))
 			frappe.delete_doc("Catalog Warehouse", warehouse, ignore_permissions=True)
-	frappe.delete_doc(config["doctype"], name)
+	frappe.delete_doc(config["doctype"], name, ignore_permissions=True)
 	return {"deleted": name}
 
 
 @frappe.whitelist()
 def get_reference_options():
-	for doctype in ("Organization", "Business Entity", "Business Bank Account", "Business Point", "Catalog Item", "Position", "Catalog Supplier"):
-		frappe.has_permission(doctype, "read", throw=True)
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Требуется вход в систему"), frappe.PermissionError)
+	scope = get_scope()
+	point_filters = {} if scope["global"] else {"name": ["in", scope["points"] or ["__none__"]]}
+	entity_filters = {"active": 1} if scope["global"] else {"active": 1, "name": scope["business_entity"] or "__none__"}
+	organization_filters = {"active": 1}
+	if not scope["global"]:
+		organization = frappe.db.get_value("Business Entity", scope["business_entity"], "organization") if scope["business_entity"] else None
+		organization_filters["name"] = organization or "__none__"
+	supplier_filters = {"active": 1, **_scope_filters("suppliers")}
 	return {
-		"organizations": frappe.get_list("Organization", filters={"active": 1}, fields=["name", "organization_name"], order_by="organization_name asc", limit_page_length=500),
-		"entities": frappe.get_list("Business Entity", filters={"active": 1}, fields=["name", "short_name"], order_by="short_name asc", limit_page_length=500),
-		"bank_accounts": frappe.get_list("Business Bank Account", filters={"active": 1}, fields=["name", "business_entity", "bank_name", "settlement_account"], order_by="bank_name asc", limit_page_length=500),
-		"products": frappe.get_list("Catalog Item", filters={"active": 1, "item_type": "Product"}, fields=["name", "item_name", "item_code"], order_by="item_name asc", limit_page_length=1000),
-		"points": frappe.get_list("Business Point", filters={"active": 1}, fields=["name", "point_name", "business_entity"], order_by="point_name asc", limit_page_length=500),
-		"positions": frappe.get_list("Position", filters={"active": 1}, fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500),
-		"suppliers": frappe.get_list("Catalog Supplier", filters={"active": 1}, fields=["name", "supplier_name"], order_by="supplier_name asc", limit_page_length=500),
+		"organizations": frappe.get_all("Organization", filters=organization_filters, fields=["name", "organization_name"], order_by="organization_name asc", limit_page_length=500) if LEVELS.get(get_access_level("references.network"), 0) else [],
+		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc", limit_page_length=500),
+		"bank_accounts": frappe.get_all("Business Bank Account", filters={"active": 1, **({} if scope["global"] else {"business_entity": scope["business_entity"] or "__none__"})}, fields=["name", "business_entity", "bank_name", "settlement_account"], order_by="bank_name asc", limit_page_length=500),
+		"products": frappe.get_all("Catalog Item", filters={"active": 1, "item_type": "Product"}, fields=["name", "item_name", "item_code"], order_by="item_name asc", limit_page_length=1000) if LEVELS.get(get_access_level("references.catalog"), 0) else [],
+		"points": frappe.get_all("Business Point", filters={"active": 1, **point_filters}, fields=["name", "point_name", "business_entity"], order_by="point_name asc", limit_page_length=500),
+		"positions": frappe.get_all("Position", filters={"active": 1}, fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500),
+		"suppliers": frappe.get_all("Catalog Supplier", filters=supplier_filters, fields=["name", "supplier_name"], order_by="supplier_name asc", limit_page_length=500) if LEVELS.get(get_access_level("references.suppliers"), 0) else [],
 	}
 
 
@@ -376,3 +432,62 @@ def _get_config(reference):
 	if not config:
 		frappe.throw(_("Неизвестный справочник"))
 	return config
+
+
+def _ensure_scoped_name(reference, name):
+	if not name:
+		frappe.throw(_("Не указана связанная запись"))
+	config = _get_config(reference)
+	if not frappe.db.exists(config["doctype"], {"name": name, **_scope_filters(reference)}):
+		frappe.throw(_("Запись недоступна"), frappe.PermissionError)
+
+
+def _validate_payload_scope(reference, data, name=None):
+	scope = get_scope()
+	if scope["global"]:
+		return
+	entity = scope["business_entity"]
+	points = set(scope["points"] or [])
+	if reference == "organizations" and not name:
+		frappe.throw(_("Создавать участников сети может только администратор сети"), frappe.PermissionError)
+	if reference == "entities":
+		organization = frappe.db.get_value("Business Entity", entity, "organization") if entity else None
+		if data.get("organization") != organization:
+			frappe.throw(_("Можно использовать только свою организацию"), frappe.PermissionError)
+	if reference == "points" and data.get("business_entity") != entity:
+		frappe.throw(_("Можно использовать только своё юридическое лицо"), frappe.PermissionError)
+	if reference == "clients" and data.get("registration_point") not in points:
+		frappe.throw(_("Можно выбрать только назначенную точку"), frappe.PermissionError)
+	if reference == "suppliers":
+		old_scope = frappe.db.get_value("Catalog Supplier", name, "scope") if name else None
+		if old_scope == "Network" or data.get("scope") == "Network":
+			frappe.throw(_("Общесетевых поставщиков изменяет только администратор сети"), frappe.PermissionError)
+		if data.get("business_entity") != entity:
+			frappe.throw(_("Можно использовать только своё юридическое лицо"), frappe.PermissionError)
+	if reference == "employees":
+		if data.get("business_entity") != entity or data.get("access_profile") == "Network Admin":
+			frappe.throw(_("Недопустимое назначение сотрудника"), frappe.PermissionError)
+		assigned = {row.get("business_point") for row in data.get("assigned_points") or []}
+		if not assigned.issubset(points):
+			frappe.throw(_("Сотруднику можно назначить только доступные вам точки"), frappe.PermissionError)
+
+
+def _scope_filters(reference):
+	scope = get_scope()
+	if scope["global"]:
+		return {}
+	if reference == "organizations":
+		organization = frappe.db.get_value("Business Entity", scope["business_entity"], "organization") if scope["business_entity"] else None
+		return {"name": organization or "__none__"}
+	if reference == "entities":
+		return {"name": scope["business_entity"] or "__none__"}
+	if reference == "points":
+		return {"name": ["in", scope["points"] or ["__none__"]]}
+	if reference in ("warehouses", "pos-workplaces", "cash-registers"):
+		return {"business_point": ["in", scope["points"] or ["__none__"]]}
+	if reference == "suppliers":
+		allowed = frappe.get_all("Catalog Supplier", or_filters={"scope": "Network", "business_entity": scope["business_entity"] or "__none__"}, pluck="name")
+		return {"name": ["in", allowed or ["__none__"]]}
+	if reference == "employees":
+		return {"business_entity": scope["business_entity"] or "__none__"}
+	return {}

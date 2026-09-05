@@ -1,17 +1,18 @@
 <script setup>
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
-import { boot } from "./api";
+import { boot, canAccess } from "./api";
 
 const route = useRoute();
 const mobileOpen = ref(false);
+const can = canAccess;
 
 const modules = [
-  { key: "dashboard", label: "Главная", to: "/" },
+  { key: "dashboard", label: "Главная", to: "/", area: "dashboard" },
   { key: "orders", label: "Заказы", to: "/orders" },
   { key: "clients", label: "Клиенты", to: "/clients" },
-  { key: "references", label: "Справочники", to: "/references/entities" },
-  { key: "catalog", label: "Каталог", to: "/catalog" },
+  { key: "references", label: "Справочники", to: "/references/entities", area: "references" },
+  { key: "catalog", label: "Каталог", to: "/catalog", area: "references.catalog" },
   { key: "warehouse", label: "Склад", to: "/warehouse" },
   { key: "team", label: "Команда", to: "/team" },
   { key: "finance", label: "Финансы", to: "/finance" },
@@ -28,25 +29,28 @@ const submenus = {
   finance: ["Обзор", "Кассы", "Платежи", "Зарплата"],
   analytics: ["Показатели", "Отчёты", "Конструктор"],
   references: [
-    { label: "Юридические лица", to: "/references/entities" },
-    { label: "Точки продаж", to: "/references/points" },
-    { label: "Склады", to: "/references/warehouses" },
-    { label: "Клиенты", to: "/references/clients" },
-    { label: "Поставщики", to: "/references/suppliers" },
-    { label: "Сотрудники", to: "/references/employees" },
-    { label: "Должности", to: "/references/positions" },
-    { label: "Группы каталога", to: "/references/catalog-groups" },
-    { label: "Единицы", to: "/references/catalog-units" },
-    { label: "Типы цен", to: "/references/price-types" },
-    { label: "Способы оплаты", to: "/references/payment-methods" },
-    { label: "Рабочие места", to: "/references/pos-workplaces" },
-    { label: "Кассы", to: "/references/cash-registers" },
-    { label: "Финансовые статьи", to: "/references/financial-articles" },
+    { label: "Участники сети", to: "/references/organizations", area: "references.network" },
+    { label: "Юридические лица", to: "/references/entities", area: "references.network" },
+    { label: "Точки продаж", to: "/references/points", area: "references.network" },
+    { label: "Склады", to: "/references/warehouses", area: "references.storage" },
+    { label: "Клиенты", to: "/references/clients", area: "references.clients" },
+    { label: "Поставщики", to: "/references/suppliers", area: "references.suppliers" },
+    { label: "Сотрудники", to: "/references/employees", area: "references.employees" },
+    { label: "Должности", to: "/references/positions", area: "references.employees" },
+    { label: "Группы каталога", to: "/references/catalog-groups", area: "references.catalog" },
+    { label: "Единицы", to: "/references/catalog-units", area: "references.catalog" },
+    { label: "Типы цен", to: "/references/price-types", area: "references.catalog" },
+    { label: "Способы оплаты", to: "/references/payment-methods", area: "references.finance" },
+    { label: "Рабочие места", to: "/references/pos-workplaces", area: "references.finance" },
+    { label: "Кассы", to: "/references/cash-registers", area: "references.finance" },
+    { label: "Финансовые статьи", to: "/references/financial-articles", area: "references.finance" },
+    { label: "Права доступа", to: "/settings/access", area: "settings.access", minimum: "Admin" },
   ],
 };
 
 const currentModule = computed(() => route.meta.module || route.params.module || "dashboard");
-const currentSubmenu = computed(() => submenus[currentModule.value] || []);
+const visibleModules = computed(() => modules.filter((item) => item.area !== "references" ? (!item.area || can(item.area)) : Object.keys(boot.access || {}).some((area) => area.startsWith("references.") && can(area))));
+const currentSubmenu = computed(() => (submenus[currentModule.value] || []).filter((item) => typeof item === "string" || !item.area || can(item.area, item.minimum)));
 const submenuItems = computed(() => currentSubmenu.value.map((item) => typeof item === "string" ? { label: item, to: null } : item));
 const initials = computed(() => (boot.full_name || boot.user || "Р").trim().slice(0, 1).toUpperCase());
 </script>
@@ -61,7 +65,7 @@ const initials = computed(() => (boot.full_name || boot.user || "Р").trim().sli
 
       <nav class="main-nav" aria-label="Основные разделы">
         <router-link
-          v-for="item in modules"
+          v-for="item in visibleModules"
           :key="item.key"
           :to="item.to"
           :class="{ active: currentModule === item.key }"
@@ -88,7 +92,7 @@ const initials = computed(() => (boot.full_name || boot.user || "Р").trim().sli
     </nav>
 
     <div v-if="mobileOpen" class="mobile-nav">
-      <router-link v-for="item in modules" :key="item.key" :to="item.to" @click="mobileOpen = false">
+      <router-link v-for="item in visibleModules" :key="item.key" :to="item.to" @click="mobileOpen = false">
         {{ item.label }}
       </router-link>
     </div>
