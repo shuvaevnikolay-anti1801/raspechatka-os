@@ -1,0 +1,21 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["item", "item_code", "uom", "storage_location", "quantity", "rate", "amount"],
+ "fields": [
+  {"fieldname":"item","fieldtype":"Link","label":"Товар","options":"Catalog Item","reqd":1,"in_list_view":1},
+  {"fieldname":"item_code","fieldtype":"Data","label":"Код","read_only":1,"in_list_view":1},
+  {"fieldname":"uom","fieldtype":"Link","label":"Ед. изм.","options":"Catalog Unit","reqd":1,"in_list_view":1},
+  {"fieldname":"storage_location","fieldtype":"Link","label":"Место хранения","options":"Storage Location","in_list_view":1},
+  {"fieldname":"quantity","fieldtype":"Float","label":"Количество","reqd":1,"non_negative":1,"in_list_view":1},
+  {"fieldname":"rate","fieldtype":"Currency","label":"Закупочная цена","reqd":1,"non_negative":1,"in_list_view":1},
+  {"fieldname":"amount","fieldtype":"Currency","label":"Сумма","read_only":1,"in_list_view":1}
+ ],
+ "module": "Raspechatka OS",
+ "name": "Stock Receipt Item",
+ "permissions": [],
+ "states": []
+}

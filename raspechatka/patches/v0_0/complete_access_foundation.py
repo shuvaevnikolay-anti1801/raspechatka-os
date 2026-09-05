@@ -10,6 +10,7 @@ AREAS = (
 	("references.employees", "Сотрудники и должности", "/references/employees", 60),
 	("references.catalog", "Каталог и его настройки", "/catalog", 70),
 	("references.finance", "Финансовые настройки", "/references/financial-articles", 80),
+	("warehouse.operations", "Складские документы", "/warehouse/receipts", 85),
 	("settings.access", "Настройка прав доступа", "/settings/access", 90),
 )
 
@@ -18,17 +19,17 @@ DEFAULTS = {
 	"Raspechatka Franchise Owner": {
 		"dashboard": "View", "references.network": "Edit", "references.storage": "Edit",
 		"references.clients": "Edit", "references.suppliers": "Edit", "references.employees": "Edit",
-		"references.catalog": "View", "references.finance": "Edit", "settings.access": "None",
+		"references.catalog": "View", "references.finance": "Edit", "warehouse.operations": "Edit", "settings.access": "None",
 	},
 	"Raspechatka Point Manager": {
 		"dashboard": "View", "references.network": "View", "references.storage": "Edit",
 		"references.clients": "Edit", "references.suppliers": "View", "references.employees": "View",
-		"references.catalog": "View", "references.finance": "Edit", "settings.access": "None",
+		"references.catalog": "View", "references.finance": "Edit", "warehouse.operations": "Edit", "settings.access": "None",
 	},
 	"Raspechatka Cashier": {
 		"dashboard": "View", "references.network": "None", "references.storage": "View",
 		"references.clients": "Edit", "references.suppliers": "None", "references.employees": "None",
-		"references.catalog": "View", "references.finance": "View", "settings.access": "None",
+		"references.catalog": "View", "references.finance": "View", "warehouse.operations": "View", "settings.access": "None",
 	},
 }
 

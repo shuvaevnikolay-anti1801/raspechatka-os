@@ -1,0 +1,32 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["posting_datetime", "item", "warehouse", "storage_location", "actual_qty", "incoming_rate", "stock_value_difference", "voucher_type", "voucher_no", "voucher_detail_no", "is_reversal"],
+ "fields": [
+  {"fieldname":"posting_datetime","fieldtype":"Datetime","label":"Дата и время","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"item","fieldtype":"Link","label":"Товар","options":"Catalog Item","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"storage_location","fieldtype":"Link","label":"Место хранения","options":"Storage Location","in_list_view":1},
+  {"fieldname":"actual_qty","fieldtype":"Float","label":"Изменение количества","reqd":1,"in_list_view":1},
+  {"fieldname":"incoming_rate","fieldtype":"Currency","label":"Себестоимость единицы","reqd":1},
+  {"fieldname":"stock_value_difference","fieldtype":"Currency","label":"Изменение стоимости","reqd":1,"in_list_view":1},
+  {"fieldname":"voucher_type","fieldtype":"Data","label":"Тип документа","reqd":1,"in_standard_filter":1},
+  {"fieldname":"voucher_no","fieldtype":"Data","label":"Документ","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"voucher_detail_no","fieldtype":"Data","label":"Строка документа","reqd":1},
+  {"fieldname":"is_reversal","fieldtype":"Check","label":"Сторно","default":"0","in_standard_filter":1}
+ ],
+ "modified": "2026-09-05 22:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Raspechatka OS",
+ "name": "Stock Ledger Entry",
+ "owner": "Administrator",
+ "permissions": [
+  {"role":"System Manager","read":1,"report":1,"export":1}
+ ],
+ "sort_field": "posting_datetime",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
