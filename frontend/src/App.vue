@@ -31,6 +31,17 @@ const submenus = {
     { label: "Юридические лица", to: "/references/entities" },
     { label: "Точки продаж", to: "/references/points" },
     { label: "Склады", to: "/references/warehouses" },
+    { label: "Клиенты", to: "/references/clients" },
+    { label: "Поставщики", to: "/references/suppliers" },
+    { label: "Сотрудники", to: "/references/employees" },
+    { label: "Должности", to: "/references/positions" },
+    { label: "Группы каталога", to: "/references/catalog-groups" },
+    { label: "Единицы", to: "/references/catalog-units" },
+    { label: "Типы цен", to: "/references/price-types" },
+    { label: "Способы оплаты", to: "/references/payment-methods" },
+    { label: "Рабочие места", to: "/references/pos-workplaces" },
+    { label: "Кассы", to: "/references/cash-registers" },
+    { label: "Финансовые статьи", to: "/references/financial-articles" },
   ],
 };
 

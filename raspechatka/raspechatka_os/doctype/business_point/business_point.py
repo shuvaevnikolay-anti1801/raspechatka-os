@@ -49,6 +49,7 @@ class BusinessPoint(Document):
 				"business_point": self.name,
 				"active": self.active,
 			}).insert(ignore_permissions=True)
+		self._ensure_cash_infrastructure()
 
 	def on_update(self):
 		warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": self.name}, "name")
@@ -57,3 +58,23 @@ class BusinessPoint(Document):
 				"warehouse_name": f"Склад — {self.point_name}",
 				"active": self.active,
 			}, update_modified=False)
+		self._ensure_cash_infrastructure()
+
+	def _ensure_cash_infrastructure(self):
+		workplace = frappe.db.get_value("POS Workplace", {"business_point": self.name}, "name")
+		if not workplace:
+			workplace = frappe.get_doc({
+				"doctype": "POS Workplace",
+				"workplace_name": f"Касса — {self.point_name}",
+				"business_point": self.name,
+				"active": self.active,
+			}).insert(ignore_permissions=True).name
+		if not frappe.db.exists("Cash Register", {"business_point": self.name}):
+			frappe.get_doc({
+				"doctype": "Cash Register",
+				"register_name": f"Наличные — {self.point_name}",
+				"business_point": self.name,
+				"pos_workplace": workplace,
+				"currency": "RUB",
+				"active": self.active,
+			}).insert(ignore_permissions=True)
