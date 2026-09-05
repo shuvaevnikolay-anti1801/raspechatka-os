@@ -1,7 +1,7 @@
 """One-time local import from the legacy Club Google Sheets XLSX export.
 
 Run only inside bench, after copying the XLSX file into the container:
-bench --site <site> execute raspechatka.importers.club_workbook.execute --kwargs '{"path":"/path/file.xlsx","default_business_point":"POINT-CODE"}'
+bench --site <site> execute raspechatka.importers.club_workbook.execute --kwargs '{"path":"/path/file.xlsx","default_business_point":"POINT-CODE","limit":3}'
 """
 
 import frappe
@@ -11,13 +11,15 @@ from openpyxl import load_workbook
 from raspechatka.raspechatka_os.doctype.client.client import normalize_phone
 
 
-def execute(path, default_business_point, dry_run=False):
+def execute(path, default_business_point, dry_run=False, limit=None):
 	point = default_business_point if frappe.db.exists("Business Point", default_business_point) else frappe.db.get_value("Business Point", {"point_code": default_business_point}, "name")
 	if not point:
 		raise ValueError("Не найдена точка продаж для старых клиентов")
 	with open(path, "rb") as source:
 		workbook = load_workbook(source, data_only=True, read_only=False)
 	clients = _rows(workbook["Клиенты"])
+	if cint(limit) > 0:
+		clients = clients[:cint(limit)]
 	channels = _rows(workbook["Каналы"])
 	consents = _rows(workbook["Согласия"])
 	channels_by_client = _latest_channels(channels)
