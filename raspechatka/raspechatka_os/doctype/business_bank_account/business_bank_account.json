@@ -1,0 +1,28 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "autoname": "field:settlement_account",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["business_entity", "settlement_account", "currency", "bank_section", "bic", "bank_name", "correspondent_account", "bank_address", "active"],
+ "fields": [
+  {"fieldname":"business_entity","fieldtype":"Link","label":"ИП","options":"Business Entity","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"settlement_account","fieldtype":"Data","label":"Расчётный счёт","reqd":1,"unique":1,"in_list_view":1,"in_global_search":1},
+  {"fieldname":"currency","fieldtype":"Link","label":"Валюта","options":"Currency","default":"RUB","reqd":1},
+  {"fieldname":"bank_section","fieldtype":"Section Break","label":"Банк"},
+  {"fieldname":"bic","fieldtype":"Data","label":"БИК","reqd":1,"in_list_view":1},
+  {"fieldname":"bank_name","fieldtype":"Data","label":"Банк","reqd":1,"in_list_view":1},
+  {"fieldname":"correspondent_account","fieldtype":"Data","label":"Корреспондентский счёт"},
+  {"fieldname":"bank_address","fieldtype":"Small Text","label":"Адрес банка"},
+  {"fieldname":"active","fieldtype":"Check","label":"Активен","default":"1","in_list_view":1}
+ ],
+ "module":"Raspechatka OS",
+ "name":"Business Bank Account",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1}],
+ "search_fields":"settlement_account,bank_name,bic",
+ "sort_field":"bank_name",
+ "sort_order":"ASC",
+ "states":[],
+ "title_field":"bank_name",
+ "track_changes":1
+}

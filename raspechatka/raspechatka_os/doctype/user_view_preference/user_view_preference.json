@@ -1,0 +1,12 @@
+{
+ "actions":[],"autoname":"hash","doctype":"DocType","engine":"InnoDB",
+ "field_order":["user","view_key","settings_json"],
+ "fields":[
+  {"fieldname":"user","fieldtype":"Link","label":"Пользователь","options":"User","reqd":1,"in_list_view":1},
+  {"fieldname":"view_key","fieldtype":"Data","label":"Представление","reqd":1,"in_list_view":1},
+  {"fieldname":"settings_json","fieldtype":"Code","label":"Настройки","options":"JSON","reqd":1}
+ ],
+ "module":"Raspechatka OS","name":"User View Preference",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1}],
+ "sort_field":"modified","sort_order":"DESC","states":[],"track_changes":0
+}

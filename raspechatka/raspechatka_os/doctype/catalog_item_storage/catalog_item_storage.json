@@ -1,0 +1,14 @@
+{
+ "actions":[],"allow_import":1,"autoname":"hash","doctype":"DocType","engine":"InnoDB",
+ "field_order":["item","warehouse","storage_location","full_address","active"],
+ "fields":[
+  {"fieldname":"item","fieldtype":"Link","label":"Товар","options":"Catalog Item","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"storage_location","fieldtype":"Link","label":"Место хранения","options":"Storage Location","reqd":1,"in_list_view":1},
+  {"fieldname":"full_address","fieldtype":"Data","label":"Адрес","read_only":1,"in_list_view":1},
+  {"fieldname":"active","fieldtype":"Check","label":"Активно","default":"1","in_list_view":1}
+ ],
+ "module":"Raspechatka OS","name":"Catalog Item Storage",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1}],
+ "search_fields":"item,full_address","sort_field":"item","sort_order":"ASC","states":[],"track_changes":1
+}

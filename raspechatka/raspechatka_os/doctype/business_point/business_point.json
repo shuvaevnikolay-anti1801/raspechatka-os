@@ -1,1 +1,54 @@
-{"actions":[],"allow_import":1,"allow_rename":1,"autoname":"field:point_code","creation":"2026-09-05 15:00:00.000000","doctype":"DocType","engine":"InnoDB","field_order":["point_code","point_name","organization","point_type","active","location_section","city","address","timezone","contact_section","phone","email"],"fields":[{"fieldname":"point_code","fieldtype":"Data","label":"Код точки","reqd":1,"unique":1,"in_list_view":1},{"fieldname":"point_name","fieldtype":"Data","label":"Название точки","reqd":1,"in_list_view":1,"in_global_search":1},{"fieldname":"organization","fieldtype":"Link","label":"Организация / франчайзи","options":"Organization","reqd":1,"in_list_view":1,"in_standard_filter":1},{"fieldname":"point_type","fieldtype":"Select","label":"Тип точки","options":"Copy Center\nSales Point\nProduction Hub\nWarehouse","default":"Copy Center","reqd":1,"in_list_view":1},{"fieldname":"active","fieldtype":"Check","label":"Активна","default":"1","in_list_view":1},{"fieldname":"location_section","fieldtype":"Section Break","label":"Расположение"},{"fieldname":"city","fieldtype":"Data","label":"Город","reqd":1,"in_list_view":1,"in_standard_filter":1},{"fieldname":"address","fieldtype":"Small Text","label":"Адрес"},{"fieldname":"timezone","fieldtype":"Data","label":"Часовой пояс","default":"Europe/Moscow"},{"fieldname":"contact_section","fieldtype":"Section Break","label":"Контакты"},{"fieldname":"phone","fieldtype":"Data","label":"Телефон","options":"Phone"},{"fieldname":"email","fieldtype":"Data","label":"Email","options":"Email"}],"links":[{"link_doctype":"Catalog Warehouse","link_fieldname":"business_point","group":"Склад"},{"link_doctype":"Catalog Assortment","link_fieldname":"business_point","group":"Каталог"}],"modified":"2026-09-05 15:00:00.000000","modified_by":"Administrator","module":"Raspechatka OS","name":"Business Point","owner":"Administrator","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"email":1,"share":1}],"search_fields":"point_name,city,address","sort_field":"point_name","sort_order":"ASC","states":[],"title_field":"point_name","track_changes":1}
+{
+ "actions":[],
+ "allow_import":1,
+ "allow_rename":1,
+ "autoname":"field:point_code",
+ "doctype":"DocType",
+ "engine":"InnoDB",
+ "field_order":[
+  "main_tab","point_name","business_entity","organization","active","point_code","point_type",
+  "contact_tab","city","address","phone","email","timezone","working_hours",
+  "sales_tab","allow_free_price","allow_discounts","max_discount_percent","allow_remove_cart_item",
+  "payments_tab","accepts_cash","accepts_card","card_bank_account","accepts_qr","qr_bank_account"
+ ],
+ "fields":[
+  {"fieldname":"main_tab","fieldtype":"Tab Break","label":"Основное"},
+  {"fieldname":"point_name","fieldtype":"Data","label":"Название точки","reqd":1,"in_list_view":1,"in_global_search":1,"bold":1},
+  {"fieldname":"business_entity","fieldtype":"Link","label":"ИП","options":"Business Entity","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"organization","fieldtype":"Link","label":"Участник сети","options":"Organization","read_only":1,"hidden":1},
+  {"fieldname":"active","fieldtype":"Check","label":"Активна","default":"1","in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"point_code","fieldtype":"Data","label":"Системный код","unique":1,"read_only":1,"hidden":1},
+  {"fieldname":"point_type","fieldtype":"Select","label":"Тип точки","options":"Copy Center","default":"Copy Center","read_only":1,"hidden":1},
+  {"fieldname":"contact_tab","fieldtype":"Tab Break","label":"Контакты и режим работы"},
+  {"fieldname":"city","fieldtype":"Data","label":"Город","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"address","fieldtype":"Small Text","label":"Адрес","reqd":1},
+  {"fieldname":"phone","fieldtype":"Data","label":"Телефон","options":"Phone","in_list_view":1},
+  {"fieldname":"email","fieldtype":"Data","label":"Email","options":"Email"},
+  {"fieldname":"timezone","fieldtype":"Data","label":"Часовой пояс","default":"Europe/Moscow"},
+  {"fieldname":"working_hours","fieldtype":"Table","label":"Режим работы","options":"Point Working Hours"},
+  {"fieldname":"sales_tab","fieldtype":"Tab Break","label":"Правила продаж"},
+  {"fieldname":"allow_free_price","fieldtype":"Check","label":"Разрешить продажу по свободной цене","default":"0"},
+  {"fieldname":"allow_discounts","fieldtype":"Check","label":"Разрешить скидки","default":"1"},
+  {"fieldname":"max_discount_percent","fieldtype":"Percent","label":"Максимальная скидка, %","default":"100","depends_on":"allow_discounts"},
+  {"fieldname":"allow_remove_cart_item","fieldtype":"Check","label":"Разрешить удаление позиции из текущего чека","default":"1"},
+  {"fieldname":"payments_tab","fieldtype":"Tab Break","label":"Способы оплаты"},
+  {"fieldname":"accepts_cash","fieldtype":"Check","label":"Наличные","default":"1"},
+  {"fieldname":"accepts_card","fieldtype":"Check","label":"Банковская карта","default":"1"},
+  {"fieldname":"card_bank_account","fieldtype":"Link","label":"Счёт для оплаты картой","options":"Business Bank Account","depends_on":"accepts_card"},
+  {"fieldname":"accepts_qr","fieldtype":"Check","label":"QR-код","default":"0"},
+  {"fieldname":"qr_bank_account","fieldtype":"Link","label":"Счёт для оплаты по QR","options":"Business Bank Account","depends_on":"accepts_qr"}
+ ],
+ "links":[
+  {"link_doctype":"Catalog Warehouse","link_fieldname":"business_point","group":"Склад"},
+  {"link_doctype":"Catalog Assortment","link_fieldname":"business_point","group":"Каталог"}
+ ],
+ "module":"Raspechatka OS",
+ "name":"Business Point",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"email":1,"share":1}],
+ "search_fields":"point_name,city,address,phone",
+ "sort_field":"point_name",
+ "sort_order":"ASC",
+ "states":[],
+ "title_field":"point_name",
+ "track_changes":1
+}

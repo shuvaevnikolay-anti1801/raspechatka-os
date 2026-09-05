@@ -1,0 +1,15 @@
+{
+ "actions":[],"allow_rename":0,"autoname":"hash","doctype":"DocType","engine":"InnoDB",
+ "field_order":["cabinet_name","warehouse","cabinet_number","active","sort_order"],
+ "fields":[
+  {"fieldname":"cabinet_name","fieldtype":"Data","label":"Название","read_only":1,"in_list_view":1,"bold":1},
+  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"cabinet_number","fieldtype":"Int","label":"Номер шкафа","reqd":1,"in_list_view":1},
+  {"fieldname":"active","fieldtype":"Check","label":"Активен","default":"1","in_list_view":1},
+  {"fieldname":"sort_order","fieldtype":"Int","label":"Порядок","default":"0"}
+ ],
+ "links":[{"link_doctype":"Storage Location","link_fieldname":"cabinet","group":"Места хранения"}],
+ "module":"Raspechatka OS","name":"Storage Cabinet",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1}],
+ "search_fields":"cabinet_name","sort_field":"sort_order","sort_order":"ASC","states":[],"title_field":"cabinet_name","track_changes":1
+}

@@ -10,6 +10,7 @@ const modules = [
   { key: "dashboard", label: "Главная", to: "/" },
   { key: "orders", label: "Заказы", to: "/orders" },
   { key: "clients", label: "Клиенты", to: "/clients" },
+  { key: "references", label: "Справочники", to: "/references/entities" },
   { key: "catalog", label: "Каталог", to: "/catalog" },
   { key: "warehouse", label: "Склад", to: "/warehouse" },
   { key: "team", label: "Команда", to: "/team" },
@@ -26,10 +27,16 @@ const submenus = {
   team: ["Сотрудники", "Обучение", "График"],
   finance: ["Обзор", "Кассы", "Платежи", "Зарплата"],
   analytics: ["Показатели", "Отчёты", "Конструктор"],
+  references: [
+    { label: "Юридические лица", to: "/references/entities" },
+    { label: "Точки продаж", to: "/references/points" },
+    { label: "Склады", to: "/references/warehouses" },
+  ],
 };
 
 const currentModule = computed(() => route.meta.module || route.params.module || "dashboard");
 const currentSubmenu = computed(() => submenus[currentModule.value] || []);
+const submenuItems = computed(() => currentSubmenu.value.map((item) => typeof item === "string" ? { label: item, to: null } : item));
 const initials = computed(() => (boot.full_name || boot.user || "Р").trim().slice(0, 1).toUpperCase());
 </script>
 
@@ -63,12 +70,10 @@ const initials = computed(() => (boot.full_name || boot.user || "Р").trim().sli
     </header>
 
     <nav class="subnav" aria-label="Подразделы">
-      <button
-        v-for="(item, index) in currentSubmenu"
-        :key="item"
-        type="button"
-        :class="{ active: index === 0 }"
-      >{{ item }}</button>
+      <template v-for="(item, index) in submenuItems" :key="item.label">
+        <router-link v-if="item.to" :to="item.to" :class="{ active: route.path === item.to }">{{ item.label }}</router-link>
+        <button v-else type="button" :class="{ active: index === 0 }">{{ item.label }}</button>
+      </template>
     </nav>
 
     <div v-if="mobileOpen" class="mobile-nav">

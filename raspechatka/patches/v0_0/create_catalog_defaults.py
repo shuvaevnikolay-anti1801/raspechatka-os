@@ -5,8 +5,8 @@ def execute():
 	_create_units()
 	_create_price_types()
 	_create_groups()
-	_create_demo_network()
-	_create_demo_catalog()
+	warehouse = _create_demo_network()
+	_create_demo_catalog(warehouse)
 
 
 def _insert_if_missing(doctype, name, values):
@@ -75,6 +75,20 @@ def _create_demo_network():
 			"active": 1,
 		},
 	)
+	entity = _insert_if_missing(
+		"Business Entity",
+		"Тестовое ИП",
+		{
+			"short_name": "Тестовое ИП",
+			"organization": "CENTRAL",
+			"last_name": "Тестовый",
+			"first_name": "Предприниматель",
+			"inn": "000000000000",
+			"registration_address": "Адрес не указан",
+			"tax_system": "Патент",
+			"active": 1,
+		},
+	)
 	_insert_if_missing(
 		"Business Point",
 		"DEMO-POINT",
@@ -82,25 +96,30 @@ def _create_demo_network():
 			"point_code": "DEMO-POINT",
 			"point_name": "Тестовая точка",
 			"organization": "CENTRAL",
+			"business_entity": entity,
 			"point_type": "Copy Center",
 			"city": "Ярославль",
+			"address": "Адрес не указан",
 			"active": 1,
 		},
 	)
-	_insert_if_missing(
-		"Catalog Warehouse",
-		"DEMO-WH",
-		{
-			"warehouse_code": "DEMO-WH",
-			"warehouse_name": "Склад тестовой точки",
-			"business_point": "DEMO-POINT",
-			"warehouse_type": "Sales",
-			"active": 1,
-		},
-	)
+	warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": "DEMO-POINT"}, "name")
+	if not warehouse:
+		warehouse = _insert_if_missing(
+			"Catalog Warehouse",
+			"DEMO-WH",
+			{
+				"warehouse_code": "DEMO-WH",
+				"warehouse_name": "Склад тестовой точки",
+				"business_point": "DEMO-POINT",
+				"warehouse_type": "Sales",
+				"active": 1,
+			},
+		)
+	return warehouse
 
 
-def _create_demo_catalog():
+def _create_demo_catalog(warehouse):
 	_insert_if_missing(
 		"Catalog Item",
 		"MAT-PAPER-A4",
@@ -117,7 +136,7 @@ def _create_demo_catalog():
 				{"price_type": "Розничная", "rate": 2.0},
 			],
 			"reorder_rules": [
-				{"warehouse": "DEMO-WH", "minimum_stock": 500, "reorder_quantity": 2500}
+				{"warehouse": warehouse, "minimum_stock": 500, "reorder_quantity": 2500}
 			],
 		},
 	)
@@ -163,7 +182,7 @@ def _create_demo_catalog():
 			{
 				"item": item,
 				"business_point": "DEMO-POINT",
-				"default_warehouse": "DEMO-WH",
+				"default_warehouse": warehouse,
 				"enabled": 1,
 				"visible_in_pos": 1,
 			},
