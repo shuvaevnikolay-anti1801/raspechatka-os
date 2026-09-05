@@ -1,17 +1,15 @@
-frappe.pages.catalog = {
-	on_page_load(wrapper) {
-		const page = frappe.ui.make_app_page({
-			parent: wrapper,
-			title: __("Распечатка OS"),
-			single_column: true,
-		});
+frappe.pages["catalog"].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: __("Распечатка OS"),
+		single_column: true,
+	});
 
-		wrapper.catalog_page = new RaspechatkaCatalogPage(page);
-	},
+	wrapper.catalog_page = new RaspechatkaCatalogPage(page);
+};
 
-	on_page_show(wrapper) {
-		wrapper.catalog_page?.refresh();
-	},
+frappe.pages["catalog"].on_page_show = function (wrapper) {
+	wrapper.catalog_page?.refresh();
 };
 
 class RaspechatkaCatalogPage {
