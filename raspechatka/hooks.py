@@ -1,11 +1,11 @@
 app_name = "raspechatka"
-app_title = "Распечатка OS"
+app_title = "Распечатка ОС"
 app_publisher = "Raspechatka"
 app_description = "Business management system for Raspechatka copy centers"
 app_email = "anti1801@ya.ru"
 app_license = "mit"
-app_logo_url = "/assets/raspechatka/images/raspechatka.svg"
-app_home = "/app/catalog"
+app_logo_url = "/assets/raspechatka/images/raspechatka-brand.svg"
+app_home = "/raspechatka"
 
 # Apps
 # ------------------
@@ -17,9 +17,15 @@ add_to_apps_screen = [
 	{
 		"name": "raspechatka",
 		"logo": app_logo_url,
-		"title": "Распечатка OS",
+		"title": "Распечатка ОС",
 		"route": app_home,
 	}
+]
+
+# Standalone product interface. Frappe Desk remains available at /app for
+# administrators, while all product routes are rendered by the Vue frontend.
+website_route_rules = [
+	{"from_route": "/raspechatka/<path:app_path>", "to_route": "raspechatka"}
 ]
 
 # Includes in <head>
@@ -262,4 +268,3 @@ app_include_js = "/assets/raspechatka/js/raspechatka.js"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

@@ -1,7 +1,7 @@
 frappe.pages["catalog"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({
 		parent: wrapper,
-		title: __("Распечатка OS"),
+		title: __("Распечатка ОС"),
 		single_column: true,
 	});
 
@@ -31,7 +31,7 @@ class RaspechatkaCatalogPage {
 					<div class="catalog-brand">
 						<img src="/assets/raspechatka/images/raspechatka.svg" alt="">
 						<div>
-							<p class="catalog-eyebrow">${__("Распечатка OS")}</p>
+							<p class="catalog-eyebrow">${__("Распечатка ОС")}</p>
 							<h1 class="catalog-title">${__("Товары и услуги")}</h1>
 						</div>
 					</div>
