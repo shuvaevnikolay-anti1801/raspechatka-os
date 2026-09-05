@@ -14,7 +14,7 @@ const modules = [
   { key: "references", label: "Справочники", to: "/references/entities", area: "references" },
   { key: "catalog", label: "Каталог", to: "/catalog", area: "references.catalog" },
   { key: "warehouse", label: "Склад", to: "/warehouse/receipts", area: "warehouse.operations" },
-  { key: "team", label: "Команда", to: "/team" },
+  { key: "team", label: "Сотрудники", to: "/team", area: "team.employees" },
   { key: "finance", label: "Финансы", to: "/finance", area: "finance.reporting" },
   { key: "analytics", label: "Аналитика", to: "/analytics" },
 ];
@@ -44,7 +44,13 @@ const submenus = {
     { label: "Остатки", to: "/warehouse/balances", area: "warehouse.operations" },
     { label: "Обороты", to: "/warehouse/turnover", area: "warehouse.operations" },
   ],
-  team: ["Сотрудники", "Обучение", "График"],
+  team: [
+    { label: "Сотрудники", to: "/team", area: "team.employees" },
+    { label: "График", to: "/team/schedule", area: "team.schedule" },
+    { label: "Зарплата", to: "/team/payroll", area: "team.payroll" },
+    { label: "Премии и игра", to: "/team/bonuses", area: "team.motivation" },
+    { label: "Кадры и документы", to: "/team/hr", area: "team.hr" },
+  ],
   finance: [
     { label: "Обзор", to: "/finance", area: "finance.reporting" },
     { label: "Платежи", to: "/finance/payments", area: "finance.operations" },

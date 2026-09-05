@@ -16,6 +16,7 @@ import FinanceCalendarPage from "./pages/FinanceCalendarPage.vue";
 import FinanceReportPage from "./pages/FinanceReportPage.vue";
 import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
 import FinanceBankPage from "./pages/FinanceBankPage.vue";
+import TeamPage from "./pages/TeamPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -48,7 +49,12 @@ const routes = [
   { path: "/finance/settlements", name: "finance-settlements", component: FinanceReportPage, meta: { module: "finance", kind: "settlements" } },
   { path: "/finance/profitability", name: "finance-profitability", component: FinanceReportPage, meta: { module: "finance", kind: "profitability" } },
   { path: "/finance/tochka", name: "finance-tochka", component: FinanceBankPage, meta: { module: "finance" } },
-  { path: "/:module(orders|team|analytics)", name: "module", component: ModulePlaceholder },
+  { path: "/team", name: "team-employees", component: TeamPage, meta: { module: "team", section: "employees" } },
+  { path: "/team/schedule", name: "team-schedule", component: TeamPage, meta: { module: "team", section: "schedule" } },
+  { path: "/team/payroll", name: "team-payroll", component: TeamPage, meta: { module: "team", section: "payroll" } },
+  { path: "/team/bonuses", name: "team-bonuses", component: TeamPage, meta: { module: "team", section: "bonuses" } },
+  { path: "/team/hr", name: "team-hr", component: TeamPage, meta: { module: "team", section: "hr" } },
+  { path: "/:module(orders|analytics)", name: "module", component: ModulePlaceholder },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 

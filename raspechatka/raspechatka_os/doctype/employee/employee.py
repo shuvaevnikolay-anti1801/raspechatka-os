@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import getdate
 
 
 ROLE_BY_PROFILE = {"Network Admin": "Raspechatka Network Admin", "Franchise Owner": "Raspechatka Franchise Owner", "Point Manager": "Raspechatka Point Manager", "Cashier": "Raspechatka Cashier"}
@@ -9,6 +10,8 @@ ROLE_BY_PROFILE = {"Network Admin": "Raspechatka Network Admin", "Franchise Owne
 class Employee(Document):
 	def validate(self):
 		self.employee_name = " ".join(filter(None, (self.last_name, self.first_name, self.middle_name))).strip()
+		if self.hire_date and self.dismissal_date and getdate(self.dismissal_date) < getdate(self.hire_date):
+			frappe.throw(_("Дата увольнения не может быть раньше даты приёма"))
 		points = [row.business_point for row in self.assigned_points]
 		if len(points) != len(set(points)):
 			frappe.throw(_("Точку можно назначить сотруднику только один раз"))
