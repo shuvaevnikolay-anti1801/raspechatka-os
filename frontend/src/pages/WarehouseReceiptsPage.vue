@@ -1,8 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
 
+const route = useRoute();
 const rows = ref([]), loading = ref(true), error = ref("");
 const editorOpen = ref(false), saving = ref(false), formError = ref("");
 const search = ref(""), typeFilter = ref(""), statusFilter = ref(""), pointFilter = ref("");
@@ -37,15 +39,16 @@ async function loadOptions() {
   catch (e) { error.value = e.message; }
 }
 
-async function openReceipt(name = null, receiptType = "Приёмка") {
+async function openReceipt(name = null, receiptType = "Приёмка", purchaseOrder = null) {
   formError.value = "";
   try {
-    const result = await call("raspechatka.api.warehouse.get_receipt", { name, receipt_type: receiptType });
+    const result = await call("raspechatka.api.warehouse.get_receipt", { name, receipt_type: receiptType, purchase_order: purchaseOrder });
     Object.assign(options, result.options);
     Object.keys(form).forEach((key) => delete form[key]);
     Object.assign(form, clone(result.doc));
     if (form.posting_datetime) form.posting_datetime = String(form.posting_datetime).replace(" ", "T").slice(0, 16);
     form.items ||= [];
+    for (const row of form.items) if (!row.storage_location) onItemChange(row);
     editorOpen.value = true;
   } catch (e) { error.value = e.message; }
 }
@@ -97,7 +100,7 @@ async function cancel() {
 
 watch(search, () => { clearTimeout(timer); timer = setTimeout(load, 250); });
 watch([typeFilter, statusFilter, pointFilter], load);
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(async () => { await Promise.all([load(), loadOptions()]); if (route.query.receipt) await openReceipt(route.query.receipt); else if (route.query.purchase_order) await openReceipt(null, "Приёмка", route.query.purchase_order); });
 </script>
 
 <template>
@@ -129,9 +132,9 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 
     <AppModal v-if="editorOpen" :title="title" wide @close="editorOpen=false">
       <form class="receipt-form" @submit.prevent="save(false)">
-        <div class="document-strip"><span class="document-state" :class="`state-${form.docstatus}`">{{ statusLabel(form.docstatus) }}</span><span v-if="form.name">{{ form.name }}</span><span v-else>Новый документ</span></div>
+        <div class="document-strip"><span class="document-state" :class="`state-${form.docstatus}`">{{ statusLabel(form.docstatus) }}</span><span v-if="form.name">{{ form.name }}</span><span v-else>Новый документ</span><span v-if="form.purchase_order">По заказу {{form.purchase_order}}</span></div>
         <div class="form-section"><h3>Основное</h3><div class="form-grid">
-          <label>Тип документа<select v-model="form.receipt_type" :disabled="form.docstatus!==0"><option>Приёмка</option><option>Оприходование</option></select></label>
+          <label>Тип документа<select v-model="form.receipt_type" :disabled="form.docstatus!==0||!!form.purchase_order"><option>Приёмка</option><option>Оприходование</option></select></label>
           <label>Дата и время<input v-model="form.posting_datetime" type="datetime-local" :disabled="form.docstatus!==0" required /></label>
           <label>Юридическое лицо<select v-model="form.business_entity" :disabled="form.docstatus!==0" required @change="onEntityChange"><option value="">Не выбрано</option><option v-for="entity in options.entities" :key="entity.name" :value="entity.name">{{ entity.short_name }}</option></select></label>
           <label>Точка продаж<select v-model="form.business_point" :disabled="form.docstatus!==0" required @change="onPointChange"><option value="">Не выбрано</option><option v-for="point in visiblePoints" :key="point.name" :value="point.name">{{ point.point_name }}</option></select></label>
@@ -148,7 +151,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
           <div v-else class="receipt-lines">
             <div class="receipt-line receipt-line-head"><span>Товар</span><span>Ед.</span><span>Место хранения</span><span>Кол-во</span><span>Цена</span><span>Сумма</span><span></span></div>
             <div v-for="(row,index) in form.items" :key="row.name||index" class="receipt-line">
-              <select v-model="row.item" :disabled="form.docstatus!==0" required @change="onItemChange(row)"><option value="">Выберите товар</option><option v-for="item in options.items" :key="item.name" :value="item.name">{{ item.item_code }} · {{ item.item_name }}</option></select>
+              <select v-model="row.item" :disabled="form.docstatus!==0||!!row.purchase_order_item" required @change="onItemChange(row)"><option value="">Выберите товар</option><option v-for="item in options.items" :key="item.name" :value="item.name">{{ item.item_code }} · {{ item.item_name }}</option></select>
               <span class="line-uom">{{ row.uom || '—' }}</span>
               <select v-model="row.storage_location" :disabled="form.docstatus!==0"><option value="">Без адреса</option><option v-for="location in visibleLocations(row)" :key="location.name" :value="location.name">{{ location.full_address || location.location_name }}</option></select>
               <input v-model.number="row.quantity" :disabled="form.docstatus!==0" type="number" min="0.001" step="0.001" required />

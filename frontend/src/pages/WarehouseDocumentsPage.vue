@@ -1,0 +1,102 @@
+<script setup>
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { call, canAccess } from "../api";
+import AppModal from "../components/AppModal.vue";
+
+const route = useRoute(), router = useRouter();
+const kind = computed(() => route.meta.kind);
+const configs = {
+  "write-offs": { title: "Списания", description: "Уменьшение фактических остатков", create: "Создать списание", singular: "Списание", date: "posting_datetime" },
+  inventories: { title: "Инвентаризации", description: "Сверка учётных и фактических остатков", create: "Создать инвентаризацию", singular: "Инвентаризация", date: "posting_datetime" },
+  "purchase-orders": { title: "Заказы поставщикам", description: "Планирование поставок и контроль приёмки", create: "Создать заказ", singular: "Заказ поставщику", date: "order_date" },
+};
+const config = computed(() => configs[kind.value]);
+const rows = ref([]), loading = ref(true), error = ref(""), editorOpen = ref(false), saving = ref(false), formError = ref("");
+const search = ref(""), statusFilter = ref(""), pointFilter = ref("");
+const options = reactive({ entities: [], points: [], warehouses: [], suppliers: [], items: [], locations: [], storage_defaults: [] });
+const form = reactive({});
+let timer;
+
+const canEdit = computed(() => canAccess("warehouse.operations", "Edit"));
+const visiblePoints = computed(() => options.points.filter((row) => !form.business_entity || row.business_entity === form.business_entity));
+const visibleWarehouses = computed(() => options.warehouses.filter((row) => !form.business_point || row.business_point === form.business_point));
+const visibleLocations = computed(() => options.locations.filter((row) => row.warehouse === form.warehouse));
+const totalQty = computed(() => (form.items || []).reduce((sum, row) => sum + Number(row.quantity ?? row.counted_quantity ?? 0), 0));
+const totalAmount = computed(() => (form.items || []).reduce((sum, row) => sum + Number(row.amount ?? (Number(row.quantity || 0) * Number(row.rate || 0))), 0));
+const inventorySurplus = computed(() => (form.items || []).reduce((sum, row) => sum + Math.max(Number(row.difference_amount ?? ((Number(row.counted_quantity||0)-Number(row.book_quantity||0))*Number(row.valuation_rate||0))), 0), 0));
+const inventoryShortage = computed(() => Math.abs((form.items || []).reduce((sum, row) => sum + Math.min(Number(row.difference_amount ?? ((Number(row.counted_quantity||0)-Number(row.book_quantity||0))*Number(row.valuation_rate||0))), 0), 0)));
+
+function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function money(value) { return new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0)); }
+function dateText(value) { return value ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", ...(String(value).includes(":") ? { timeStyle: "short" } : {}) }).format(new Date(String(value).replace(" ", "T"))) : "—"; }
+function statusLabel(value) { return value === 1 ? "Проведён" : value === 2 ? "Отменён" : "Черновик"; }
+function pointLabel(name) { return options.points.find((row) => row.name === name)?.point_name || name; }
+function supplierLabel(name) { return options.suppliers.find((row) => row.name === name)?.supplier_name || name || "—"; }
+
+async function load() {
+  loading.value = true; error.value = "";
+  try { rows.value = await call("raspechatka.api.warehouse_documents.get_documents", { kind: kind.value, search: search.value, status: statusFilter.value, business_point: pointFilter.value }); }
+  catch (e) { error.value = e.message; }
+  finally { loading.value = false; }
+}
+async function loadOptions() { try { const result = await call("raspechatka.api.warehouse_documents.get_document", { kind: kind.value }); Object.assign(options, result.options); } catch (e) { error.value = e.message; } }
+async function openDocument(name = null) {
+  formError.value = "";
+  try {
+    const result = await call("raspechatka.api.warehouse_documents.get_document", { kind: kind.value, name });
+    Object.assign(options, result.options); Object.keys(form).forEach((key) => delete form[key]); Object.assign(form, clone(result.doc));
+    if (form.posting_datetime) form.posting_datetime = String(form.posting_datetime).replace(" ", "T").slice(0, 16);
+    form.items ||= []; editorOpen.value = true;
+  } catch (e) { error.value = e.message; }
+}
+function onEntityChange() { if (!visiblePoints.value.some((row) => row.name === form.business_point)) form.business_point = ""; onPointChange(); }
+function onPointChange() { form.warehouse = visibleWarehouses.value[0]?.name || ""; refreshAddresses(); }
+function refreshAddresses() { for (const row of form.items || []) setItemDefaults(row, true); }
+function setItemDefaults(row, keepItem = false) {
+  const item = options.items.find((value) => value.name === row.item); row.uom = item?.stock_uom || "";
+  if (kind.value !== "purchase-orders") row.storage_location = options.storage_defaults.find((value) => value.item === row.item && value.warehouse === form.warehouse)?.storage_location || (keepItem ? row.storage_location : "");
+}
+function addLine() { form.items.push(kind.value === "inventories" ? { item: "", uom: "", storage_location: "", book_quantity: 0, counted_quantity: 0, valuation_rate: 0 } : { item: "", uom: "", storage_location: "", quantity: 1, rate: "" }); }
+function removeLine(index) { form.items.splice(index, 1); }
+async function fillInventory() {
+  if (!form.warehouse) { formError.value = "Сначала выберите склад."; return; }
+  try { form.items = await call("raspechatka.api.warehouse_documents.fill_inventory", { warehouse: form.warehouse, posting_datetime: form.posting_datetime }); if (!form.items.length) formError.value = "На складе пока нет учётных остатков."; }
+  catch (e) { formError.value = e.message; }
+}
+async function save(rethrow = false) {
+  saving.value = true; formError.value = "";
+  try { const result = await call("raspechatka.api.warehouse_documents.save_document", { kind: kind.value, data: JSON.stringify(clone(form)) }, { method: "POST" }); await load(); await openDocument(result.name); return result.name; }
+  catch (e) { formError.value = e.message; if (rethrow) throw e; }
+  finally { saving.value = false; }
+}
+async function submit() {
+  if (!confirm("Провести документ? После проведения его строки нельзя будет изменить.")) return;
+  saving.value = true; formError.value = "";
+  try { const name = await save(true); await call("raspechatka.api.warehouse_documents.submit_document", { kind: kind.value, name }, { method: "POST" }); await Promise.all([load(), openDocument(name)]); }
+  catch (e) { formError.value = e.message; }
+  finally { saving.value = false; }
+}
+async function cancel() {
+  if (!confirm(kind.value === "purchase-orders" ? "Отменить заказ?" : "Отменить документ и сторнировать складские движения?")) return;
+  saving.value = true; formError.value = "";
+  try { await call("raspechatka.api.warehouse_documents.cancel_document", { kind: kind.value, name: form.name }, { method: "POST" }); await Promise.all([load(), openDocument(form.name)]); }
+  catch (e) { formError.value = e.message; }
+  finally { saving.value = false; }
+}
+function createReceipt() { editorOpen.value = false; router.push({ path: "/warehouse/receipts", query: { purchase_order: form.name } }); }
+function openRelatedReceipt(name) { editorOpen.value = false; router.push({ path: "/warehouse/receipts", query: { receipt: name } }); }
+function resetPage() { editorOpen.value = false; search.value = ""; statusFilter.value = ""; pointFilter.value = ""; Promise.all([load(), loadOptions()]); }
+watch(kind, resetPage); watch(search, () => { clearTimeout(timer); timer = setTimeout(load, 250); }); watch([statusFilter, pointFilter], load); onMounted(() => Promise.all([load(), loadOptions()]));
+</script>
+
+<template><section class="page warehouse-page"><div class="page-heading"><div><div class="eyebrow">СКЛАД / ДОКУМЕНТЫ</div><h1>{{ config.title }}</h1><p>{{ config.description }}</p></div><button v-if="canEdit" class="button button-primary" @click="openDocument()">＋ {{ config.create }}</button></div>
+<div class="warehouse-toolbar compact"><label class="search-field"><span>⌕</span><input v-model="search" placeholder="Поиск по номеру или основанию" /></label><select v-model="statusFilter"><option value="">Все статусы</option><option value="0">Черновики</option><option value="1">Проведённые</option><option value="2">Отменённые</option></select><select v-model="pointFilter"><option value="">Все точки</option><option v-for="point in options.points" :key="point.name" :value="point.name">{{point.point_name}}</option></select><button class="filter-reset" @click="search='';statusFilter='';pointFilter=''">↺</button></div>
+<div class="table-meta"><strong>{{rows.length}} документов</strong><span v-if="kind==='purchase-orders'">Заказ не изменяет физический остаток</span><span v-else>Остатки меняются только после проведения</span></div><div class="table-shell"><div v-if="loading" class="table-message"><span class="loader"></span></div><div v-else-if="error" class="table-message error-message"><strong>Не удалось загрузить данные</strong><span>{{error}}</span><button @click="load">Повторить</button></div><div v-else-if="!rows.length" class="table-message"><strong>Документов пока нет</strong><span>{{config.create}}</span></div><table v-else><thead><tr><th>Номер</th><th>Дата</th><th>Точка</th><th v-if="kind==='purchase-orders'">Поставщик</th><th v-else>Основание</th><th v-if="kind==='inventories'">Излишки</th><th v-if="kind==='inventories'">Недостача</th><template v-else><th>Количество</th><th>Сумма</th></template><th v-if="kind==='purchase-orders'">Поставка</th><th>Статус</th><th></th></tr></thead><tbody><tr v-for="row in rows" :key="row.name" @click="openDocument(row.name)"><td class="item-name">{{row.name}}</td><td>{{dateText(row[config.date])}}</td><td>{{pointLabel(row.business_point)}}</td><td v-if="kind==='purchase-orders'">{{supplierLabel(row.supplier)}}</td><td v-else>{{row.reason}}</td><template v-if="kind==='inventories'"><td>{{money(row.surplus_amount)}} ₽</td><td>{{money(row.shortage_amount)}} ₽</td></template><template v-else><td>{{row.total_quantity}}</td><td>{{money(row.total_amount)}} ₽</td></template><td v-if="kind==='purchase-orders'">{{row.order_status}}</td><td><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></td><td class="row-arrow">→</td></tr></tbody></table></div>
+<AppModal v-if="editorOpen" :title="`${config.singular}${form.name?' № '+form.name:''}`" wide @close="editorOpen=false"><form class="receipt-form" @submit.prevent="save()"><div class="document-strip"><span class="document-state" :class="`state-${form.docstatus}`">{{statusLabel(form.docstatus)}}</span><span>{{form.name||'Новый документ'}}</span><span v-if="kind==='purchase-orders'&&form.order_status">{{form.order_status}}</span></div><div class="form-section"><h3>Основное</h3><div class="form-grid">
+<label v-if="kind==='purchase-orders'">Дата заказа<input v-model="form.order_date" type="date" :disabled="form.docstatus!==0" required /></label><label v-else>Дата и время<input v-model="form.posting_datetime" type="datetime-local" :disabled="form.docstatus!==0" required /></label><label v-if="kind==='purchase-orders'">Ожидаемая дата<input v-model="form.expected_date" type="date" :disabled="form.docstatus!==0" /></label>
+<label>Юридическое лицо<select v-model="form.business_entity" :disabled="form.docstatus!==0" required @change="onEntityChange"><option value="">Не выбрано</option><option v-for="entity in options.entities" :key="entity.name" :value="entity.name">{{entity.short_name}}</option></select></label><label>Точка продаж<select v-model="form.business_point" :disabled="form.docstatus!==0" required @change="onPointChange"><option value="">Не выбрано</option><option v-for="point in visiblePoints" :key="point.name" :value="point.name">{{point.point_name}}</option></select></label><label>Склад<select v-model="form.warehouse" :disabled="form.docstatus!==0" required @change="refreshAddresses"><option value="">Не выбрано</option><option v-for="warehouse in visibleWarehouses" :key="warehouse.name" :value="warehouse.name">{{warehouse.warehouse_name}}</option></select></label>
+<template v-if="kind==='purchase-orders'"><label>Поставщик<select v-model="form.supplier" :disabled="form.docstatus!==0" required><option value="">Не выбрано</option><option v-for="supplier in options.suppliers" :key="supplier.name" :value="supplier.name">{{supplier.supplier_name}}</option></select></label><label>Оплата<select v-model="form.payment_status" :disabled="form.docstatus!==0"><option>Не оплачено</option><option>Частично оплачено</option><option>Оплачено</option></select></label></template><label v-else class="span-2">Основание<input v-model="form.reason" :disabled="form.docstatus!==0" required /></label></div></div>
+<div class="form-section receipt-items"><div class="section-heading"><div><h3>Товары</h3><small v-if="kind==='write-offs'">Себестоимость рассчитывается по текущему среднему значению</small><small v-else-if="kind==='inventories'">Введите фактическое количество после пересчёта</small><small v-else>Заказанное количество и закупочная цена</small></div><div v-if="form.docstatus===0" class="heading-actions"><button v-if="kind==='inventories'" type="button" class="button button-secondary" @click="fillInventory">Заполнить по остаткам</button><button type="button" class="button button-secondary" @click="addLine">＋ Добавить товар</button></div></div><div v-if="!form.items.length" class="line-empty">Добавьте товары</div><div v-else class="receipt-lines"><div class="receipt-line operation-line receipt-line-head" :class="kind"><span>Товар</span><span>Ед.</span><span v-if="kind!=='purchase-orders'">Место хранения</span><template v-if="kind==='inventories'"><span>По учёту</span><span>Фактически</span><span>Разница</span><span>Себестоимость</span></template><template v-else><span>Количество</span><span v-if="kind==='purchase-orders'">Принято</span><span>{{kind==='purchase-orders'?'Цена':'Себестоимость'}}</span></template><span>Сумма</span><span></span></div><div v-for="(row,index) in form.items" :key="row.name||index" class="receipt-line operation-line" :class="kind"><select v-model="row.item" :disabled="form.docstatus!==0" required @change="setItemDefaults(row)"><option value="">Выберите товар</option><option v-for="item in options.items" :key="item.name" :value="item.name">{{item.item_code}} · {{item.item_name}}</option></select><span class="line-uom">{{row.uom||'—'}}</span><select v-if="kind!=='purchase-orders'" v-model="row.storage_location" :disabled="form.docstatus!==0"><option value="">Без адреса</option><option v-for="location in visibleLocations" :key="location.name" :value="location.name">{{location.full_address||location.location_name}}</option></select><template v-if="kind==='inventories'"><span>{{row.book_quantity||0}}</span><input v-model.number="row.counted_quantity" type="number" min="0" step="0.001" :disabled="form.docstatus!==0" required /><strong>{{Number(row.counted_quantity||0)-Number(row.book_quantity||0)}}</strong><input v-model.number="row.valuation_rate" type="number" min="0" step="0.01" :disabled="form.docstatus!==0" /></template><template v-else><input v-model.number="row.quantity" type="number" min="0.001" step="0.001" :disabled="form.docstatus!==0" required /><span v-if="kind==='purchase-orders'">{{row.received_quantity||0}}</span><input v-if="kind==='purchase-orders'" v-model.number="row.rate" type="number" min="0.01" step="0.01" :disabled="form.docstatus!==0" required /><span v-else>{{money(row.valuation_rate)}} ₽</span></template><strong v-if="kind==='inventories'">{{money((Number(row.counted_quantity||0)-Number(row.book_quantity||0))*Number(row.valuation_rate||0))}} ₽</strong><strong v-else>{{money(row.amount??Number(row.quantity||0)*Number(row.rate||row.valuation_rate||0))}} ₽</strong><button v-if="form.docstatus===0" type="button" @click="removeLine(index)">×</button></div></div></div>
+<div class="receipt-bottom"><label>Комментарий<textarea v-model="form.remarks" rows="3" :disabled="form.docstatus!==0"></textarea></label><div class="receipt-totals"><template v-if="kind==='inventories'"><span>Позиций <b>{{form.items.length}}</b></span><span>Излишки <b>{{money(inventorySurplus)}} ₽</b></span><strong>Недостача <b>{{money(inventoryShortage)}} ₽</b></strong></template><template v-else><span>Позиций <b>{{form.items.length}}</b></span><span>Количество <b>{{totalQty}}</b></span><strong>Итого <b>{{money(totalAmount)}} ₽</b></strong></template></div></div>
+<div v-if="kind==='purchase-orders'&&form.related_receipts?.length" class="form-section"><h3>Связанные приёмки</h3><div class="compact-list related-list"><div v-for="receipt in form.related_receipts" :key="receipt.name" @click="openRelatedReceipt(receipt.name)"><b>{{receipt.name}}</b><span>{{dateText(receipt.posting_datetime)}}</span><span>{{receipt.total_quantity}} · {{money(receipt.total_amount)}} ₽ →</span></div></div></div><p v-if="formError" class="form-error">{{formError}}</p></form><template #footer><div><button v-if="form.docstatus===1&&canEdit" class="button button-secondary danger" :disabled="saving" @click="cancel">Отменить документ</button></div><div class="footer-actions"><button class="button button-secondary" @click="editorOpen=false">Закрыть</button><button v-if="kind==='purchase-orders'&&form.docstatus===1&&form.order_status!=='Принято'&&canEdit" class="button button-secondary" @click="createReceipt">Создать приёмку</button><button v-if="form.docstatus===0&&canEdit" class="button button-secondary" :disabled="saving" @click="save">{{saving?'Сохраняем…':'Сохранить'}}</button><button v-if="form.docstatus===0&&form.name&&canEdit" class="button button-primary" :disabled="saving" @click="submit">Провести</button></div></template></AppModal></section></template>

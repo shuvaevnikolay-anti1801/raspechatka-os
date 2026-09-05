@@ -36,7 +36,6 @@ const submenus = {
     { label: "Заказы поставщикам", to: "/warehouse/purchase-orders", area: "warehouse.operations" },
     { label: "Остатки", to: "/warehouse/balances", area: "warehouse.operations" },
     { label: "Обороты", to: "/warehouse/turnover", area: "warehouse.operations" },
-    { label: "Склады", to: "/references/warehouses", area: "references.storage" },
   ],
   team: ["Сотрудники", "Обучение", "График"],
   finance: ["Обзор", "Кассы", "Платежи", "Зарплата"],

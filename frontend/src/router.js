@@ -6,6 +6,8 @@ import ReferencesPage from "./pages/ReferencesPage.vue";
 import MasterDataPage from "./pages/MasterDataPage.vue";
 import AccessSettingsPage from "./pages/AccessSettingsPage.vue";
 import WarehouseReceiptsPage from "./pages/WarehouseReceiptsPage.vue";
+import WarehouseDocumentsPage from "./pages/WarehouseDocumentsPage.vue";
+import WarehouseReportPage from "./pages/WarehouseReportPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -18,7 +20,11 @@ const routes = [
   { path: "/settings/access", name: "access-settings", component: AccessSettingsPage, meta: { module: "references" } },
   { path: "/warehouse", redirect: "/warehouse/receipts" },
   { path: "/warehouse/receipts", name: "warehouse-receipts", component: WarehouseReceiptsPage, meta: { module: "warehouse" } },
-  { path: "/warehouse/:section(write-offs|inventories|purchase-orders|balances|turnover)", name: "warehouse-module", component: ModulePlaceholder, meta: { module: "warehouse" } },
+  { path: "/warehouse/write-offs", name: "warehouse-write-offs", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "write-offs" } },
+  { path: "/warehouse/inventories", name: "warehouse-inventories", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "inventories" } },
+  { path: "/warehouse/purchase-orders", name: "warehouse-purchase-orders", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "purchase-orders" } },
+  { path: "/warehouse/balances", name: "warehouse-balances", component: WarehouseReportPage, meta: { module: "warehouse", report: "balances" } },
+  { path: "/warehouse/turnover", name: "warehouse-turnover", component: WarehouseReportPage, meta: { module: "warehouse", report: "turnover" } },
   { path: "/:module(orders|clients|team|finance|analytics)", name: "module", component: ModulePlaceholder },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];

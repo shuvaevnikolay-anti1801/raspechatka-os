@@ -31,7 +31,7 @@ def get_receipts(search=None, receipt_type=None, status=None, business_point=Non
 
 
 @frappe.whitelist()
-def get_receipt(name=None, receipt_type="Приёмка"):
+def get_receipt(name=None, receipt_type="Приёмка", purchase_order=None):
 	require_access("warehouse.operations", "read")
 	options = _options()
 	if name:
@@ -40,7 +40,17 @@ def get_receipt(name=None, receipt_type="Приёмка"):
 		doc = frappe.get_doc("Stock Receipt", name).as_dict(no_nulls=False)
 	else:
 		doc = {"receipt_type": receipt_type, "posting_datetime": now_datetime().strftime("%Y-%m-%dT%H:%M"), "items": [], "docstatus": 0}
-		if options["points"]:
+		if purchase_order:
+			order = frappe.get_doc("Purchase Order", purchase_order)
+			_ensure_point(order.business_point)
+			if order.docstatus != 1:
+				frappe.throw(_("Сначала проведите заказ поставщику."))
+			doc.update({"receipt_type": "Приёмка", "purchase_order": order.name, "business_entity": order.business_entity, "business_point": order.business_point, "warehouse": order.warehouse, "supplier": order.supplier})
+			for row in order.items:
+				remaining = max(0, row.quantity - row.received_quantity)
+				if remaining:
+					doc["items"].append({"item": row.item, "uom": row.uom, "quantity": remaining, "rate": row.rate, "purchase_order_item": row.name})
+		elif options["points"]:
 			point = options["points"][0]
 			doc["business_point"] = point.name
 			doc["business_entity"] = point.business_entity
@@ -59,7 +69,7 @@ def save_receipt(data):
 		doc = frappe.get_doc("Stock Receipt", name)
 	else:
 		doc = frappe.new_doc("Stock Receipt")
-	for fieldname in ("receipt_type", "posting_datetime", "business_entity", "business_point", "warehouse", "supplier", "supplier_document_number", "supplier_document_date", "reason", "remarks"):
+	for fieldname in ("receipt_type", "posting_datetime", "business_entity", "business_point", "warehouse", "purchase_order", "supplier", "supplier_document_number", "supplier_document_date", "reason", "remarks"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	_ensure_point(doc.business_point)
@@ -67,7 +77,7 @@ def save_receipt(data):
 		_ensure_supplier(doc.supplier)
 	doc.set("items", [])
 	for row in data.get("items") or []:
-		doc.append("items", {key: row.get(key) for key in ("item", "uom", "storage_location", "quantity", "rate")})
+		doc.append("items", {key: row.get(key) for key in ("item", "uom", "storage_location", "quantity", "rate", "purchase_order_item")})
 	doc.flags.ignore_permissions = True
 	doc.save()
 	return {"name": doc.name}
