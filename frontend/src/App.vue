@@ -76,7 +76,11 @@ const submenus = {
 };
 
 const currentModule = computed(() => route.meta.module || route.params.module || "dashboard");
-const visibleModules = computed(() => modules.filter((item) => item.area !== "references" ? (!item.area || can(item.area)) : Object.keys(boot.access || {}).some((area) => area.startsWith("references.") && can(area))));
+const visibleModules = computed(() => modules.filter((item) => {
+  if (item.key === "references") return Object.keys(boot.access || {}).some((area) => area.startsWith("references.") && can(area));
+  if (item.key === "team") return Object.keys(boot.access || {}).some((area) => area.startsWith("team.") && can(area));
+  return !item.area || can(item.area);
+}));
 const currentSubmenu = computed(() => (submenus[currentModule.value] || []).filter((item) => typeof item === "string" || !item.area || can(item.area, item.minimum)));
 const submenuItems = computed(() => currentSubmenu.value.map((item) => typeof item === "string" ? { label: item, to: null } : item));
 const initials = computed(() => (boot.full_name || boot.user || "Р").trim().slice(0, 1).toUpperCase());

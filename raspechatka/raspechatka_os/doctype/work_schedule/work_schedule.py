@@ -22,9 +22,9 @@ class WorkSchedule(Document):
 			work_date = getdate(row.work_date)
 			if work_date.year != month.year or work_date.month != month.month:
 				frappe.throw(_("Все строки графика должны относиться к выбранному месяцу"))
-			key = (str(work_date), row.shift_template)
+			key = (str(work_date), row.shift_template, row.employee)
 			if key in seen:
-				frappe.throw(_("На одну дату нельзя дважды назначить один шаблон смены"))
+				frappe.throw(_("Нельзя дважды назначить сотруднику одну и ту же смену на одну дату"))
 			seen.add(key)
 			if not frappe.db.exists(
 				"Employee Point Assignment",

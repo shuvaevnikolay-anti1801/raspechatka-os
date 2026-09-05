@@ -2,7 +2,7 @@
  "doctype": "DocType",
  "name": "Payroll Accrual Type",
  "module": "Raspechatka OS",
- "autoname": "format:{business_entity}-{component_code}-{business_point}",
+ "autoname": "hash",
  "title_field": "component_name",
  "track_changes": 1,
  "field_order": [
