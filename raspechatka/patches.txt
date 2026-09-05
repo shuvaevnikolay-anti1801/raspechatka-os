@@ -7,3 +7,4 @@ raspechatka.patches.v0_0.create_catalog_defaults
 raspechatka.patches.v0_0.setup_reference_foundation
 raspechatka.patches.v0_0.complete_reference_directories
 raspechatka.patches.v0_0.complete_access_foundation
+raspechatka.patches.v0_0.refine_reference_navigation

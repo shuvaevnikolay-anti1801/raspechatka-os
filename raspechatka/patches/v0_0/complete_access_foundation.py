@@ -3,13 +3,13 @@ import frappe
 
 AREAS = (
 	("dashboard", "Главная и показатели", "/", 10),
-	("references.network", "Участники сети, ИП и точки", "/references/organizations", 20),
+	("references.network", "Партнёры, ИП и точки", "/references/organizations", 20),
 	("references.storage", "Склады и адресное хранение", "/references/warehouses", 30),
 	("references.clients", "Клиенты", "/references/clients", 40),
 	("references.suppliers", "Поставщики", "/references/suppliers", 50),
 	("references.employees", "Сотрудники и должности", "/references/employees", 60),
 	("references.catalog", "Каталог и его настройки", "/catalog", 70),
-	("references.finance", "Кассы и финансовые статьи", "/references/cash-registers", 80),
+	("references.finance", "Финансовые настройки", "/references/financial-articles", 80),
 	("settings.access", "Настройка прав доступа", "/settings/access", 90),
 )
 

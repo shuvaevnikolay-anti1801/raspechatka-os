@@ -21,7 +21,12 @@ const modules = [
 
 const submenus = {
   dashboard: ["Обзор", "Продажи", "Точки"],
-  catalog: ["Товары и услуги", "Группы", "Цены", "Ассортимент", "Поставщики"],
+  catalog: [
+    { label: "Товары и услуги", to: "/catalog", area: "references.catalog" },
+    { label: "Группы", to: "/catalog/groups", area: "references.catalog" },
+    { label: "Единицы измерения", to: "/catalog/units", area: "references.catalog" },
+    { label: "Типы цен", to: "/catalog/price-types", area: "references.catalog" },
+  ],
   orders: ["Все заказы", "В работе", "Готовы", "История"],
   clients: ["Клиенты", "Сегменты", "Лояльность"],
   warehouse: ["Остатки", "Приходы", "Перемещения", "Списания", "Инвентаризации"],
@@ -29,7 +34,7 @@ const submenus = {
   finance: ["Обзор", "Кассы", "Платежи", "Зарплата"],
   analytics: ["Показатели", "Отчёты", "Конструктор"],
   references: [
-    { label: "Участники сети", to: "/references/organizations", area: "references.network" },
+    { label: "Партнёры", to: "/references/organizations", area: "references.network" },
     { label: "Юридические лица", to: "/references/entities", area: "references.network" },
     { label: "Точки продаж", to: "/references/points", area: "references.network" },
     { label: "Склады", to: "/references/warehouses", area: "references.storage" },
@@ -37,12 +42,6 @@ const submenus = {
     { label: "Поставщики", to: "/references/suppliers", area: "references.suppliers" },
     { label: "Сотрудники", to: "/references/employees", area: "references.employees" },
     { label: "Должности", to: "/references/positions", area: "references.employees" },
-    { label: "Группы каталога", to: "/references/catalog-groups", area: "references.catalog" },
-    { label: "Единицы", to: "/references/catalog-units", area: "references.catalog" },
-    { label: "Типы цен", to: "/references/price-types", area: "references.catalog" },
-    { label: "Способы оплаты", to: "/references/payment-methods", area: "references.finance" },
-    { label: "Рабочие места", to: "/references/pos-workplaces", area: "references.finance" },
-    { label: "Кассы", to: "/references/cash-registers", area: "references.finance" },
     { label: "Финансовые статьи", to: "/references/financial-articles", area: "references.finance" },
     { label: "Права доступа", to: "/settings/access", area: "settings.access", minimum: "Admin" },
   ],

@@ -9,6 +9,9 @@ import AccessSettingsPage from "./pages/AccessSettingsPage.vue";
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
   { path: "/catalog", name: "catalog", component: CatalogPage, meta: { module: "catalog" } },
+  { path: "/catalog/groups", name: "catalog-groups", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-groups" } },
+  { path: "/catalog/units", name: "catalog-units", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-units" } },
+  { path: "/catalog/price-types", name: "catalog-price-types", component: MasterDataPage, meta: { module: "catalog", reference: "price-types" } },
   { path: "/references/:reference(entities|points|warehouses)", name: "references", component: ReferencesPage, meta: { module: "references" } },
   { path: "/references/:reference(organizations|clients|suppliers|employees|positions|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
   { path: "/settings/access", name: "access-settings", component: AccessSettingsPage, meta: { module: "references" } },

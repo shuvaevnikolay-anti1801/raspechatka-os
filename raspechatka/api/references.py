@@ -114,12 +114,9 @@ def get_reference_list(reference, search=None, active=None):
 		for row in rows:
 			row["warehouse"] = warehouses.get(row.name)
 	elif reference == "warehouses":
-		counts = frappe.get_all(
-			"Storage Cabinet",
-			fields=["warehouse", "count(name) as cabinet_count"],
-			group_by="warehouse",
-		)
-		count_by_warehouse = {row.warehouse: row.cabinet_count for row in counts}
+		count_by_warehouse = {}
+		for cabinet in frappe.get_all("Storage Cabinet", fields=["warehouse"]):
+			count_by_warehouse[cabinet.warehouse] = count_by_warehouse.get(cabinet.warehouse, 0) + 1
 		for row in rows:
 			row["cabinet_count"] = count_by_warehouse.get(row.name, 0)
 
@@ -191,7 +188,7 @@ def save_reference(reference, data):
 			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "tax_system", "vat_payer",
 		)
 	elif reference == "organizations":
-		allowed = ("organization_name", "organization_type", "active", "phone", "email", "address")
+		allowed = ("organization_name", "active", "phone", "email", "address")
 	elif reference == "points":
 		allowed = (
 			"point_name", "business_entity", "active", "city", "address", "phone", "email", "timezone",
@@ -222,6 +219,7 @@ def save_reference(reference, data):
 	doc = frappe.get_doc(config["doctype"], name) if name else frappe.new_doc(config["doctype"])
 	if reference == "organizations" and not name:
 		doc.organization_code = frappe.generate_hash(length=10).upper()
+		doc.organization_type = "Franchisee"
 	for fieldname in allowed:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
@@ -474,11 +472,14 @@ def _validate_payload_scope(reference, data, name=None):
 
 def _scope_filters(reference):
 	scope = get_scope()
+	if reference == "organizations":
+		filters = {"organization_type": "Franchisee"}
+		if not scope["global"]:
+			organization = frappe.db.get_value("Business Entity", scope["business_entity"], "organization") if scope["business_entity"] else None
+			filters["name"] = organization or "__none__"
+		return filters
 	if scope["global"]:
 		return {}
-	if reference == "organizations":
-		organization = frappe.db.get_value("Business Entity", scope["business_entity"], "organization") if scope["business_entity"] else None
-		return {"name": organization or "__none__"}
 	if reference == "entities":
 		return {"name": scope["business_entity"] or "__none__"}
 	if reference == "points":
