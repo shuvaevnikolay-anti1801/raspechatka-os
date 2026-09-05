@@ -1,9 +1,11 @@
 app_name = "raspechatka"
-app_title = "Raspechatka OS"
+app_title = "Распечатка OS"
 app_publisher = "Raspechatka"
 app_description = "Business management system for Raspechatka copy centers"
 app_email = "anti1801@ya.ru"
 app_license = "mit"
+app_logo_url = "/assets/raspechatka/images/raspechatka.svg"
+app_home = "/app/catalog"
 
 # Apps
 # ------------------
@@ -11,22 +13,21 @@ app_license = "mit"
 # required_apps = []
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "raspechatka",
-# 		"logo": "/assets/raspechatka/logo.png",
-# 		"title": "Raspechatka OS",
-# 		"route": "/raspechatka",
-# 		"has_permission": "raspechatka.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "raspechatka",
+		"logo": app_logo_url,
+		"title": "Распечатка OS",
+		"route": app_home,
+	}
+]
 
 # Includes in <head>
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/raspechatka/css/raspechatka.css"
-# app_include_js = "/assets/raspechatka/js/raspechatka.js"
+app_include_css = "/assets/raspechatka/css/catalog.css"
+app_include_js = "/assets/raspechatka/js/raspechatka.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/raspechatka/css/raspechatka.css"
