@@ -11,6 +11,11 @@ import WarehouseReportPage from "./pages/WarehouseReportPage.vue";
 import ClientsPage from "./pages/ClientsPage.vue";
 import ClientClubPage from "./pages/ClientClubPage.vue";
 import ClientMarketingPage from "./pages/ClientMarketingPage.vue";
+import FinancePaymentsPage from "./pages/FinancePaymentsPage.vue";
+import FinanceCalendarPage from "./pages/FinanceCalendarPage.vue";
+import FinanceReportPage from "./pages/FinanceReportPage.vue";
+import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
+import FinanceBankPage from "./pages/FinanceBankPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -35,7 +40,15 @@ const routes = [
   { path: "/clients/campaigns", name: "client-campaigns", component: ClientMarketingPage, meta: { module: "clients", kind: "campaigns" } },
   { path: "/clients/promo-codes", name: "client-promo-codes", component: ClientMarketingPage, meta: { module: "clients", kind: "promo-codes" } },
   { path: "/clients/calendar", name: "client-calendar", component: ClientMarketingPage, meta: { module: "clients", kind: "calendar" } },
-  { path: "/:module(orders|team|finance|analytics)", name: "module", component: ModulePlaceholder },
+  { path: "/finance", name: "finance-overview", component: FinanceReportPage, meta: { module: "finance", kind: "overview" } },
+  { path: "/finance/payments", name: "finance-payments", component: FinancePaymentsPage, meta: { module: "finance" } },
+  { path: "/finance/calendar", name: "finance-calendar", component: FinanceCalendarPage, meta: { module: "finance" } },
+  { path: "/finance/report", name: "finance-report", component: FinanceReportPage, meta: { module: "finance", kind: "report" } },
+  { path: "/finance/planning", name: "finance-planning", component: FinancePlanningPage, meta: { module: "finance" } },
+  { path: "/finance/settlements", name: "finance-settlements", component: FinanceReportPage, meta: { module: "finance", kind: "settlements" } },
+  { path: "/finance/profitability", name: "finance-profitability", component: FinanceReportPage, meta: { module: "finance", kind: "profitability" } },
+  { path: "/finance/tochka", name: "finance-tochka", component: FinanceBankPage, meta: { module: "finance" } },
+  { path: "/:module(orders|team|analytics)", name: "module", component: ModulePlaceholder },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 

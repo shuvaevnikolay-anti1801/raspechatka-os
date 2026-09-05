@@ -162,6 +162,11 @@ app_include_js = "/assets/raspechatka/js/raspechatka.js"
 # Scheduled Tasks
 # ---------------
 
+scheduler_events = {
+	"cron": {
+		"*/15 * * * *": ["raspechatka.api.tochka.sync_enabled_connections"]
+	}
+}
 # scheduler_events = {
 # 	"all": [
 # 		"raspechatka.tasks.all"

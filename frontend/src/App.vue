@@ -15,7 +15,7 @@ const modules = [
   { key: "catalog", label: "Каталог", to: "/catalog", area: "references.catalog" },
   { key: "warehouse", label: "Склад", to: "/warehouse/receipts", area: "warehouse.operations" },
   { key: "team", label: "Команда", to: "/team" },
-  { key: "finance", label: "Финансы", to: "/finance" },
+  { key: "finance", label: "Финансы", to: "/finance", area: "finance.reporting" },
   { key: "analytics", label: "Аналитика", to: "/analytics" },
 ];
 
@@ -45,7 +45,16 @@ const submenus = {
     { label: "Обороты", to: "/warehouse/turnover", area: "warehouse.operations" },
   ],
   team: ["Сотрудники", "Обучение", "График"],
-  finance: ["Обзор", "Кассы", "Платежи", "Зарплата"],
+  finance: [
+    { label: "Обзор", to: "/finance", area: "finance.reporting" },
+    { label: "Платежи", to: "/finance/payments", area: "finance.operations" },
+    { label: "Платёжный календарь", to: "/finance/calendar", area: "finance.planning" },
+    { label: "Финансовый отчёт", to: "/finance/report", area: "finance.reporting" },
+    { label: "План и модель", to: "/finance/planning", area: "finance.planning" },
+    { label: "Взаиморасчёты", to: "/finance/settlements", area: "finance.reporting" },
+    { label: "Прибыльность", to: "/finance/profitability", area: "finance.reporting" },
+    { label: "Точка Банк", to: "/finance/tochka", area: "finance.bank" },
+  ],
   analytics: ["Показатели", "Отчёты", "Конструктор"],
   references: [
     { label: "Партнёры", to: "/references/organizations", area: "references.network" },

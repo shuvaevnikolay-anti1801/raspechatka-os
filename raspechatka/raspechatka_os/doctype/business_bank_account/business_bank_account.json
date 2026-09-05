@@ -4,7 +4,7 @@
  "autoname": "field:settlement_account",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": ["business_entity", "settlement_account", "currency", "bank_section", "bic", "bank_name", "correspondent_account", "bank_address", "active"],
+ "field_order": ["business_entity", "settlement_account", "currency", "bank_section", "bic", "bank_name", "correspondent_account", "bank_address", "external_account_id", "active"],
  "fields": [
   {"fieldname":"business_entity","fieldtype":"Link","label":"ИП","options":"Business Entity","reqd":1,"in_list_view":1,"in_standard_filter":1},
   {"fieldname":"settlement_account","fieldtype":"Data","label":"Расчётный счёт","reqd":1,"unique":1,"in_list_view":1,"in_global_search":1},
@@ -14,6 +14,7 @@
   {"fieldname":"bank_name","fieldtype":"Data","label":"Банк","reqd":1,"in_list_view":1},
   {"fieldname":"correspondent_account","fieldtype":"Data","label":"Корреспондентский счёт"},
   {"fieldname":"bank_address","fieldtype":"Small Text","label":"Адрес банка"},
+  {"fieldname":"external_account_id","fieldtype":"Data","label":"ID счёта в банке","read_only":1,"unique":1},
   {"fieldname":"active","fieldtype":"Check","label":"Активен","default":"1","in_list_view":1}
  ],
  "module":"Raspechatka OS",
