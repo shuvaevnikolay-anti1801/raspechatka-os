@@ -10,7 +10,7 @@ const can = canAccess;
 const modules = [
   { key: "dashboard", label: "Главная", to: "/", area: "dashboard" },
   { key: "orders", label: "Заказы", to: "/orders" },
-  { key: "clients", label: "Клиенты", to: "/clients" },
+  { key: "clients", label: "Клиенты", to: "/clients", area: "clients.base" },
   { key: "references", label: "Справочники", to: "/references/entities", area: "references" },
   { key: "catalog", label: "Каталог", to: "/catalog", area: "references.catalog" },
   { key: "warehouse", label: "Склад", to: "/warehouse/receipts", area: "warehouse.operations" },
@@ -28,7 +28,14 @@ const submenus = {
     { label: "Типы цен", to: "/catalog/price-types", area: "references.catalog" },
   ],
   orders: ["Все заказы", "В работе", "Готовы", "История"],
-  clients: ["Клиенты", "Сегменты", "Лояльность"],
+  clients: [
+    { label: "Клиенты", to: "/clients", area: "clients.base" },
+    { label: "Клуб Распечатка", to: "/clients/club", area: "clients.loyalty" },
+    { label: "Сегменты", to: "/clients/segments", area: "clients.marketing" },
+    { label: "Рассылки", to: "/clients/campaigns", area: "clients.marketing" },
+    { label: "Промокоды", to: "/clients/promo-codes", area: "clients.loyalty" },
+    { label: "Календарь", to: "/clients/calendar", area: "clients.marketing" },
+  ],
   warehouse: [
     { label: "Приёмки и оприходования", to: "/warehouse/receipts", area: "warehouse.operations" },
     { label: "Списания", to: "/warehouse/write-offs", area: "warehouse.operations" },
@@ -45,7 +52,6 @@ const submenus = {
     { label: "Юридические лица", to: "/references/entities", area: "references.network" },
     { label: "Точки продаж", to: "/references/points", area: "references.network" },
     { label: "Склады", to: "/references/warehouses", area: "references.storage" },
-    { label: "Клиенты", to: "/references/clients", area: "references.clients" },
     { label: "Поставщики", to: "/references/suppliers", area: "references.suppliers" },
     { label: "Сотрудники", to: "/references/employees", area: "references.employees" },
     { label: "Должности", to: "/references/positions", area: "references.employees" },

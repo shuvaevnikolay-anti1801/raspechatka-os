@@ -8,6 +8,9 @@ import AccessSettingsPage from "./pages/AccessSettingsPage.vue";
 import WarehouseReceiptsPage from "./pages/WarehouseReceiptsPage.vue";
 import WarehouseDocumentsPage from "./pages/WarehouseDocumentsPage.vue";
 import WarehouseReportPage from "./pages/WarehouseReportPage.vue";
+import ClientsPage from "./pages/ClientsPage.vue";
+import ClientClubPage from "./pages/ClientClubPage.vue";
+import ClientMarketingPage from "./pages/ClientMarketingPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -16,7 +19,8 @@ const routes = [
   { path: "/catalog/units", name: "catalog-units", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-units" } },
   { path: "/catalog/price-types", name: "catalog-price-types", component: MasterDataPage, meta: { module: "catalog", reference: "price-types" } },
   { path: "/references/:reference(entities|points|warehouses)", name: "references", component: ReferencesPage, meta: { module: "references" } },
-  { path: "/references/:reference(organizations|clients|suppliers|employees|positions|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
+  { path: "/references/clients", redirect: "/clients" },
+  { path: "/references/:reference(organizations|suppliers|employees|positions|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
   { path: "/settings/access", name: "access-settings", component: AccessSettingsPage, meta: { module: "references" } },
   { path: "/warehouse", redirect: "/warehouse/receipts" },
   { path: "/warehouse/receipts", name: "warehouse-receipts", component: WarehouseReceiptsPage, meta: { module: "warehouse" } },
@@ -25,7 +29,13 @@ const routes = [
   { path: "/warehouse/purchase-orders", name: "warehouse-purchase-orders", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "purchase-orders" } },
   { path: "/warehouse/balances", name: "warehouse-balances", component: WarehouseReportPage, meta: { module: "warehouse", report: "balances" } },
   { path: "/warehouse/turnover", name: "warehouse-turnover", component: WarehouseReportPage, meta: { module: "warehouse", report: "turnover" } },
-  { path: "/:module(orders|clients|team|finance|analytics)", name: "module", component: ModulePlaceholder },
+  { path: "/clients", name: "clients", component: ClientsPage, meta: { module: "clients" } },
+  { path: "/clients/club", name: "client-club", component: ClientClubPage, meta: { module: "clients" } },
+  { path: "/clients/segments", name: "client-segments", component: ClientMarketingPage, meta: { module: "clients", kind: "segments" } },
+  { path: "/clients/campaigns", name: "client-campaigns", component: ClientMarketingPage, meta: { module: "clients", kind: "campaigns" } },
+  { path: "/clients/promo-codes", name: "client-promo-codes", component: ClientMarketingPage, meta: { module: "clients", kind: "promo-codes" } },
+  { path: "/clients/calendar", name: "client-calendar", component: ClientMarketingPage, meta: { module: "clients", kind: "calendar" } },
+  { path: "/:module(orders|team|finance|analytics)", name: "module", component: ModulePlaceholder },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 
