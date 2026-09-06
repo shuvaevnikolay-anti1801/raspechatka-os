@@ -133,6 +133,13 @@ def get_financial_report(month=None, business_entity=None, business_point=None):
 	filters = _transaction_filters(start, end, business_entity, business_point, status="Posted")
 	transactions = frappe.get_all("Finance Transaction", filters=filters, fields=["direction", "amount", "financial_article", "cash_flow_type", "posting_date"], limit_page_length=100000)
 	articles = {row.name: row for row in frappe.get_all("Financial Article", fields=["name", "article_name", "article_type", "include_in_pnl", "include_in_cash_flow", "cash_flow_type"], limit_page_length=10000)}
+	profitability_filters = {"posting_date": ["between", [start, end]], **_scope_entity_filter(business_entity)}
+	if business_point:
+		profitability_filters["business_point"] = business_point
+	profitability = frappe.get_all("Profitability Entry", filters=profitability_filters, fields=["revenue", "return_amount", "discount_amount", "cost_amount"], limit_page_length=100000)
+	has_pos_sales = bool(profitability)
+	pos_revenue = sum(flt(row.revenue) - flt(row.return_amount) - flt(row.discount_amount) for row in profitability)
+	pos_cost = sum(flt(row.cost_amount) for row in profitability)
 	budget = _get_budget(month, business_entity, business_point)
 	plan_by_article = {row.financial_article: flt(row.amount) for row in (budget.lines if budget else [])}
 	actual_by_article = defaultdict(float)
@@ -145,8 +152,13 @@ def get_financial_report(month=None, business_entity=None, business_point=None):
 			continue
 		plan, actual = plan_by_article.get(name, 0), actual_by_article.get(name, 0)
 		article_rows.append({"article": name, "article_name": article.article_name, "article_type": article.article_type, "plan": plan, "actual": actual, "variance": actual - plan})
-	income = sum(flt(row.amount) for row in transactions if row.direction == "Income" and (not row.financial_article or cint(articles.get(row.financial_article).include_in_pnl if articles.get(row.financial_article) else 1)))
+	income = sum(flt(row.amount) for row in transactions if row.direction == "Income" and (not row.financial_article or cint(articles.get(row.financial_article).include_in_pnl if articles.get(row.financial_article) else 1)) and not (has_pos_sales and articles.get(row.financial_article) and articles[row.financial_article].article_name == "Выручка"))
 	expense = sum(flt(row.amount) for row in transactions if row.direction == "Expense" and (not row.financial_article or cint(articles.get(row.financial_article).include_in_pnl if articles.get(row.financial_article) else 1)))
+	if has_pos_sales:
+		income += pos_revenue
+		expense += pos_cost
+		article_rows.insert(0, {"article": "__pos_sales__", "article_name": "Продажи по кассе", "article_type": "Income", "plan": 0, "actual": pos_revenue, "variance": pos_revenue})
+		article_rows.insert(1, {"article": "__pos_cost__", "article_name": "Себестоимость продаж", "article_type": "Expense", "plan": 0, "actual": pos_cost, "variance": pos_cost})
 	flow = {kind: {"income": 0.0, "expense": 0.0, "net": 0.0} for kind in ("Operating", "Investing", "Financing")}
 	for row in transactions:
 		article = articles.get(row.financial_article)

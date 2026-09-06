@@ -9,7 +9,7 @@ const can = canAccess;
 
 const modules = [
   { key: "dashboard", label: "Главная", to: "/", area: "dashboard" },
-  { key: "orders", label: "Заказы", to: "/orders" },
+  { key: "sales", label: "Продажи", to: "/sales", area: "sales.analytics" },
   { key: "clients", label: "Клиенты", to: "/clients", area: "clients.base" },
   { key: "references", label: "Справочники", to: "/references/entities", area: "references" },
   { key: "catalog", label: "Каталог", to: "/catalog", area: "references.catalog" },
@@ -27,7 +27,15 @@ const submenus = {
     { label: "Единицы измерения", to: "/catalog/units", area: "references.catalog" },
     { label: "Типы цен", to: "/catalog/price-types", area: "references.catalog" },
   ],
-  orders: ["Все заказы", "В работе", "Готовы", "История"],
+  sales: [
+    { label: "Точки продаж", to: "/sales", area: "sales.analytics" },
+    { label: "Смены", to: "/sales/shifts", area: "sales.shifts" },
+    { label: "Продажи", to: "/sales/receipts", area: "sales.receipts" },
+    { label: "Возвраты", to: "/sales/returns", area: "sales.receipts" },
+    { label: "Внесения и выплаты", to: "/sales/cash", area: "sales.cash" },
+    { label: "Действия кассира", to: "/sales/actions", area: "sales.audit" },
+    { label: "Подключение кассы", to: "/sales/integration", area: "sales.integration" },
+  ],
   clients: [
     { label: "Клиенты", to: "/clients", area: "clients.base" },
     { label: "Клуб Распечатка", to: "/clients/club", area: "clients.loyalty" },

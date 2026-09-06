@@ -250,6 +250,26 @@ td.item-name { color: var(--ink); font-size: 12px; font-weight: 650; }
 @media (max-width: 1050px) { .finance-toolbar { grid-template-columns:repeat(3,minmax(0,1fr)); }.finance-toolbar .search-field { grid-column:1/-1; }.finance-kpis,.model-driver-grid { grid-template-columns:repeat(2,1fr); }.finance-report-grid { grid-template-columns:1fr; } }
 @media (max-width: 650px) { .finance-summary,.finance-kpis,.model-driver-grid,.bank-connections { grid-template-columns:1fr; }.finance-toolbar,.calendar-toolbar,.report-filter { grid-template-columns:1fr; }.finance-toolbar .search-field { grid-column:auto; }.planning-grid { grid-template-columns:1fr; } }
 
+/* Sales */
+.sales-toolbar { display:grid; grid-template-columns:minmax(210px,1fr) 145px 145px repeat(4,minmax(130px,auto)); gap:7px; margin-bottom:10px; padding:11px; border:1px solid var(--line); background:#e9ece6; }
+.sales-toolbar>input,.sales-toolbar>select,.sales-toolbar>button { min-width:0; height:40px; padding:0 10px; border:1px solid var(--line-dark); border-radius:0; background:#fff; font-size:11px; }
+.sales-toolbar>button { background:var(--ink); color:#fff; font-weight:700; }
+.sales-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:10px; }
+.sales-kpis article { display:flex; min-height:112px; flex-direction:column; justify-content:space-between; padding:18px 19px; border:1px solid var(--line); background:#fff; }
+.sales-kpis article.accent { border-top:4px solid var(--green); padding-top:15px; background:var(--green-soft); }
+.sales-kpis small { color:#777d74; font-size:9px; font-weight:700; letter-spacing:.12em; }
+.sales-kpis b { font-size:25px; letter-spacing:-.045em; }.sales-kpis span { color:var(--muted); font-size:10px; }
+.point-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.point-grid>article { border:1px solid var(--line); background:#fff; }
+.point-grid header { display:flex; align-items:start; justify-content:space-between; padding:19px; border-bottom:1px solid var(--line); }
+.point-grid header small { color:var(--muted); font-size:9px; text-transform:uppercase; }.point-grid h2 { margin:6px 0 0; font-size:20px; }
+.point-stats { display:grid; grid-template-columns:1fr 1fr; }.point-stats span { display:flex; min-height:58px; align-items:center; justify-content:space-between; padding:0 18px; border-right:1px solid #eceeea; border-bottom:1px solid #eceeea; color:var(--muted); font-size:10px; }.point-stats b { color:var(--ink); font-size:13px; }
+.point-grid footer { display:flex; justify-content:space-between; gap:14px; padding:14px 18px; color:var(--muted); font-size:9px; }
+.document-summary,.shift-detail-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:20px; }.document-summary span,.shift-detail-kpis span { display:flex; min-height:70px; flex-direction:column; justify-content:center; gap:7px; padding:12px; background:#f3f5f1; color:var(--muted); font-size:9px; }.document-summary b,.shift-detail-kpis b { color:var(--ink); font-size:14px; }
+.token-panel { position:fixed; z-index:130; right:24px; bottom:24px; display:grid; width:min(560px,calc(100vw - 48px)); gap:12px; padding:20px; border:2px solid var(--green); background:#fff; box-shadow:0 18px 50px rgba(20,22,19,.2); }.token-panel code { overflow:auto; padding:13px; background:#1e211d; color:#d8ff69; font-size:11px; line-height:1.7; }.token-panel button { justify-self:end; padding:8px 13px; border:0; background:var(--ink); color:#fff; }
+@media (max-width:1050px){.sales-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}.sales-toolbar .search-field{grid-column:1/-1}}
+@media (max-width:650px){.sales-toolbar,.sales-kpis,.point-grid,.document-summary,.shift-detail-kpis{grid-template-columns:1fr}.sales-toolbar .search-field{grid-column:auto}.point-grid footer{flex-direction:column}}
+
 .reference-toolbar { display: grid; grid-template-columns: minmax(300px, 1fr) 190px 40px; gap: 7px; padding: 12px; border: 1px solid var(--line); background: #e9ece6; }
 .reference-toolbar select { height: 40px; padding: 0 30px 0 11px; border: 1px solid var(--line-dark); border-radius: 0; background: #fff; font-size: 11px; }
 .column-settings { position: relative; }

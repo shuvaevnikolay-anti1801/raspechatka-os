@@ -11,3 +11,4 @@ raspechatka.patches.v0_0.refine_reference_navigation
 raspechatka.patches.v0_0.add_warehouse_operations
 raspechatka.patches.v0_0.add_client_club
 raspechatka.patches.v0_0.add_finance_module
+raspechatka.patches.v0_0.add_sales_module

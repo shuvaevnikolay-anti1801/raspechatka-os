@@ -16,6 +16,7 @@ import FinanceCalendarPage from "./pages/FinanceCalendarPage.vue";
 import FinanceReportPage from "./pages/FinanceReportPage.vue";
 import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
 import FinanceBankPage from "./pages/FinanceBankPage.vue";
+import SalesPage from "./pages/SalesPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -48,7 +49,14 @@ const routes = [
   { path: "/finance/settlements", name: "finance-settlements", component: FinanceReportPage, meta: { module: "finance", kind: "settlements" } },
   { path: "/finance/profitability", name: "finance-profitability", component: FinanceReportPage, meta: { module: "finance", kind: "profitability" } },
   { path: "/finance/tochka", name: "finance-tochka", component: FinanceBankPage, meta: { module: "finance" } },
-  { path: "/:module(orders|team|analytics)", name: "module", component: ModulePlaceholder },
+  { path: "/sales", name: "sales-overview", component: SalesPage, meta: { module: "sales", kind: "overview" } },
+  { path: "/sales/shifts", name: "sales-shifts", component: SalesPage, meta: { module: "sales", kind: "shifts" } },
+  { path: "/sales/receipts", name: "sales-receipts", component: SalesPage, meta: { module: "sales", kind: "receipts" } },
+  { path: "/sales/returns", name: "sales-returns", component: SalesPage, meta: { module: "sales", kind: "returns" } },
+  { path: "/sales/cash", name: "sales-cash", component: SalesPage, meta: { module: "sales", kind: "cash" } },
+  { path: "/sales/actions", name: "sales-actions", component: SalesPage, meta: { module: "sales", kind: "actions" } },
+  { path: "/sales/integration", name: "sales-integration", component: SalesPage, meta: { module: "sales", kind: "integration" } },
+  { path: "/:module(team|analytics)", name: "module", component: ModulePlaceholder },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 
