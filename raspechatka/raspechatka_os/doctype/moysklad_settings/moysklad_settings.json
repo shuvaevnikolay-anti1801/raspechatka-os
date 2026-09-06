@@ -93,7 +93,7 @@
    "fieldname": "catalog_sync_status",
    "fieldtype": "Select",
    "label": "Статус переноса",
-   "options": "Idle\\nQueued\\nRunning\\nCompleted\\nError",
+   "options": "Idle\nQueued\nRunning\nCompleted\nError",
    "default": "Idle",
    "read_only": 1
   },
