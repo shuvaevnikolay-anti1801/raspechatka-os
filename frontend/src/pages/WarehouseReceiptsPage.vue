@@ -1,16 +1,18 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
+import SmartDataTable from "../components/SmartDataTable.vue";
 
 const route = useRoute();
 const rows = ref([]), loading = ref(true), error = ref("");
 const editorOpen = ref(false), saving = ref(false), formError = ref("");
-const search = ref(""), typeFilter = ref(""), statusFilter = ref(""), pointFilter = ref("");
+const filters = ref({ search:"", receipt_type:"", status:"", business_point:"" });
 const options = reactive({ entities: [], points: [], warehouses: [], suppliers: [], items: [], locations: [], storage_defaults: [] });
 const form = reactive({});
-let timer;
 
 const canEdit = computed(() => canAccess("warehouse.operations", "Edit"));
 const visiblePoints = computed(() => options.points.filter((row) => !form.business_entity || row.business_entity === form.business_entity));
@@ -19,6 +21,14 @@ const visibleLocations = (row) => options.locations.filter((location) => locatio
 const totalQty = computed(() => (form.items || []).reduce((sum, row) => sum + Number(row.quantity || 0), 0));
 const totalAmount = computed(() => (form.items || []).reduce((sum, row) => sum + Number(row.quantity || 0) * Number(row.rate || 0), 0));
 const title = computed(() => `${form.receipt_type || "Приёмка"}${form.name ? ` № ${form.name}` : ""}`);
+const filterFields = computed(()=>[
+  {key:"search",label:"Поиск",placeholder:"Номер, поставщик или входящий документ",wide:true},
+  {key:"receipt_type",label:"Тип",type:"select",allLabel:"Все типы",options:["Приёмка","Оприходование"].map(value=>({value,label:value}))},
+  {key:"status",label:"Статус",type:"select",allLabel:"Все статусы",options:[{value:"0",label:"Черновики"},{value:"1",label:"Проведённые"},{value:"2",label:"Отменённые"}]},
+  {key:"business_point",label:"Точка",type:"select",allLabel:"Все точки",options:options.points.map(point=>({value:point.name,label:point.point_name}))},
+]);
+const listColumns=[{key:"name",label:"Номер",primary:true,width:150},{key:"receipt_type",label:"Тип",width:140},{key:"posting_datetime",label:"Дата",format:dateTime,width:150},{key:"business_point",label:"Точка",format:pointLabel,width:180},{key:"supplier",label:"Поставщик",format:supplierLabel,width:190},{key:"total_quantity",label:"Количество",number:true},{key:"total_amount",label:"Сумма",format:value=>`${money(value)} ₽`,number:true},{key:"docstatus",label:"Статус",format:statusLabel,width:130}];
+const listTotals=computed(()=>({total_quantity:rows.value.reduce((sum,row)=>sum+Number(row.total_quantity||0),0),total_amount:rows.value.reduce((sum,row)=>sum+Number(row.total_amount||0),0)}));
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function money(value) { return new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0)); }
@@ -29,7 +39,7 @@ function supplierLabel(name) { return options.suppliers.find((row) => row.name =
 
 async function load() {
   loading.value = true; error.value = "";
-  try { rows.value = await call("raspechatka.api.warehouse.get_receipts", { search: search.value, receipt_type: typeFilter.value, status: statusFilter.value, business_point: pointFilter.value }); }
+  try { rows.value = await call("raspechatka.api.warehouse.get_receipts", filters.value); }
   catch (e) { error.value = e.message; }
   finally { loading.value = false; }
 }
@@ -98,37 +108,19 @@ async function cancel() {
   finally { saving.value = false; }
 }
 
-watch(search, () => { clearTimeout(timer); timer = setTimeout(load, 250); });
-watch([typeFilter, statusFilter, pointFilter], load);
 onMounted(async () => { await Promise.all([load(), loadOptions()]); if (route.query.receipt) await openReceipt(route.query.receipt); else if (route.query.purchase_order) await openReceipt(null, "Приёмка", route.query.purchase_order); });
 </script>
 
 <template>
   <section class="page warehouse-page">
-    <div class="page-heading">
-      <div><div class="eyebrow">СКЛАД / ДОКУМЕНТЫ</div><h1>Приёмки и оприходования</h1><p>Поступления товаров на склады точек</p></div>
+    <ListPageHeader title="Приёмки и оприходования"><template #actions>
       <div v-if="canEdit" class="heading-actions">
         <button class="button button-secondary" @click="openReceipt(null, 'Оприходование')">＋ Оприходование</button>
         <button class="button button-primary" @click="openReceipt(null, 'Приёмка')">＋ Приёмка</button>
       </div>
-    </div>
-    <div class="warehouse-toolbar">
-      <label class="search-field"><span>⌕</span><input v-model="search" placeholder="Номер, поставщик или входящий документ" /></label>
-      <select v-model="typeFilter"><option value="">Все типы</option><option>Приёмка</option><option>Оприходование</option></select>
-      <select v-model="statusFilter"><option value="">Все статусы</option><option value="0">Черновики</option><option value="1">Проведённые</option><option value="2">Отменённые</option></select>
-      <select v-model="pointFilter"><option value="">Все точки</option><option v-for="point in options.points" :key="point.name" :value="point.name">{{ point.point_name }}</option></select>
-      <button class="filter-reset" @click="search='';typeFilter='';statusFilter='';pointFilter=''">↺</button>
-    </div>
-    <div class="table-meta"><strong>{{ rows.length }} документов</strong><span>Остатки меняются только после проведения</span></div>
-    <div class="table-shell">
-      <div v-if="loading" class="table-message"><span class="loader"></span><span>Загружаем документы…</span></div>
-      <div v-else-if="error" class="table-message error-message"><strong>Не удалось загрузить данные</strong><span>{{ error }}</span><button @click="load">Повторить</button></div>
-      <div v-else-if="!rows.length" class="table-message"><strong>Документов пока нет</strong><span>Создайте первую приёмку или оприходование</span></div>
-      <table v-else>
-        <thead><tr><th>Номер</th><th>Тип</th><th>Дата</th><th>Точка</th><th>Поставщик</th><th>Количество</th><th>Сумма</th><th>Статус</th><th></th></tr></thead>
-        <tbody><tr v-for="row in rows" :key="row.name" tabindex="0" @click="openReceipt(row.name)" @keydown.enter="openReceipt(row.name)"><td class="item-name">{{ row.name }}</td><td><span class="type-chip" :class="{ service: row.receipt_type==='Оприходование' }">{{ row.receipt_type }}</span></td><td>{{ dateTime(row.posting_datetime) }}</td><td>{{ pointLabel(row.business_point) }}</td><td>{{ supplierLabel(row.supplier) }}</td><td>{{ row.total_quantity }}</td><td>{{ money(row.total_amount) }} ₽</td><td><span class="document-state" :class="`state-${row.docstatus}`">{{ statusLabel(row.docstatus) }}</span></td><td class="row-arrow">→</td></tr></tbody>
-      </table>
-    </div>
+    </template></ListPageHeader>
+    <SmartFilterBar v-model="filters" :fields="filterFields" view-key="warehouse.receipts" @apply="load" @reset="load" />
+    <SmartDataTable :rows="rows" :columns="listColumns" :totals="listTotals" view-key="warehouse.receipts" :loading="loading" :error="error" empty-title="Документов пока нет" empty-text="Создайте первую приёмку или оприходование" @open="openReceipt($event.name)" @retry="load"><template #cell-receipt_type="{row}"><span class="type-chip" :class="{service:row.receipt_type==='Оприходование'}">{{row.receipt_type}}</span></template><template #cell-docstatus="{row}"><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></template></SmartDataTable>
 
     <AppModal v-if="editorOpen" :title="title" wide @close="editorOpen=false">
       <form class="receipt-form" @submit.prevent="save(false)">

@@ -4,6 +4,8 @@ import { useRoute } from "vue-router";
 import { call } from "../api";
 import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
 
 const route = useRoute();
 const reference = computed(() => route.params.reference || "entities");
@@ -12,8 +14,7 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
 const formError = ref("");
-const search = ref("");
-const active = ref("");
+const filters = ref({ search: "", active: "" });
 const detail = ref(null);
 const form = reactive({});
 const options = reactive({ organizations: [], entities: [], bank_accounts: [], products: [] });
@@ -21,7 +22,6 @@ const bankForm = reactive({ settlement_account: "", currency: "RUB", bic: "", ba
 const cabinetForm = reactive({ cabinet_number: "", active: 1 });
 const locationForm = reactive({ cabinet: "", location_name: "", active: 1 });
 const storageForm = reactive({ item: "", storage_location: "", active: 1 });
-let debounceTimer;
 
 const configs = {
   entities: {
@@ -69,6 +69,10 @@ const configs = {
 };
 
 const config = computed(() => configs[reference.value]);
+const filterFields = computed(() => [
+  { key: "search", label: "Поиск", placeholder: "Поиск по справочнику", wide: true },
+  { key: "active", label: "Статус", type: "select", allLabel: "Любой статус", options: [{ value: "1", label: "Активные" }, { value: "0", label: "Неактивные" }] },
+]);
 const title = computed(() => detail.value ? (form.short_name || form.point_name || form.warehouse_name) : config.value?.create);
 const entityAccounts = computed(() => options.bank_accounts.filter((account) => account.business_entity === form.business_entity));
 const warehouseLocations = computed(() => (detail.value?.cabinets || []).flatMap((cabinet) => cabinet.locations || []));
@@ -87,7 +91,7 @@ async function loadRows() {
   loading.value = true;
   error.value = "";
   try {
-    rows.value = await call("raspechatka.api.references.get_reference_list", { reference: reference.value, search: search.value, active: active.value });
+    rows.value = await call("raspechatka.api.references.get_reference_list", { reference: reference.value, ...filters.value });
   } catch (exception) {
     error.value = exception.message;
   } finally {
@@ -189,24 +193,14 @@ async function saveStorage() {
   } catch (exception) { formError.value = exception.message; }
 }
 
-watch(reference, () => { search.value = ""; active.value = ""; detail.value = null; loadRows(); });
-watch(active, loadRows);
-watch(search, () => { window.clearTimeout(debounceTimer); debounceTimer = window.setTimeout(loadRows, 250); });
+watch(reference, () => { filters.value = { search: "", active: "" }; detail.value = null; loadRows(); });
 onMounted(() => Promise.all([loadRows(), loadOptions()]));
 </script>
 
 <template>
   <section class="page reference-page">
-    <div class="page-heading">
-      <div><div class="eyebrow">{{ config.eyebrow }}</div><h1>{{ config.title }}</h1><p>{{ config.description }}</p></div>
-      <button v-if="config.create" class="button button-primary" type="button" @click="newReference">＋ {{ config.create }}</button>
-    </div>
-
-    <div class="reference-toolbar">
-      <label class="search-field"><span>⌕</span><input v-model="search" type="search" placeholder="Поиск по справочнику" /></label>
-      <select v-model="active"><option value="">Любой статус</option><option value="1">Активные</option><option value="0">Неактивные</option></select>
-      <button class="filter-reset" type="button" title="Сбросить" @click="search = ''; active = ''">↺</button>
-    </div>
+    <ListPageHeader :title="config.title"><template #actions><button v-if="config.create" class="button button-primary" type="button" @click="newReference">＋ {{ config.create }}</button></template></ListPageHeader>
+    <SmartFilterBar v-model="filters" :fields="filterFields" :view-key="`references.${reference}`" @apply="loadRows" @reset="loadRows" />
 
     <ReferenceTable :key="reference" :rows="rows" :columns="config.columns" :view-key="`references.${reference}`" :loading="loading" :error="error" @open="openReference" @retry="loadRows" />
 

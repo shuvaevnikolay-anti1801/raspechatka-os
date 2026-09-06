@@ -3,6 +3,9 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
+import SmartDataTable from "../components/SmartDataTable.vue";
 
 const route = useRoute(), router = useRouter();
 const kind = computed(() => route.meta.kind);
@@ -13,10 +16,9 @@ const configs = {
 };
 const config = computed(() => configs[kind.value]);
 const rows = ref([]), loading = ref(true), error = ref(""), editorOpen = ref(false), saving = ref(false), formError = ref("");
-const search = ref(""), statusFilter = ref(""), pointFilter = ref("");
+const filters = ref({ search: "", status: "", business_point: "" });
 const options = reactive({ entities: [], points: [], warehouses: [], suppliers: [], items: [], locations: [], storage_defaults: [] });
 const form = reactive({});
-let timer;
 
 const canEdit = computed(() => canAccess("warehouse.operations", "Edit"));
 const visiblePoints = computed(() => options.points.filter((row) => !form.business_entity || row.business_entity === form.business_entity));
@@ -26,6 +28,25 @@ const totalQty = computed(() => (form.items || []).reduce((sum, row) => sum + Nu
 const totalAmount = computed(() => (form.items || []).reduce((sum, row) => sum + Number(row.amount ?? (Number(row.quantity || 0) * Number(row.rate || 0))), 0));
 const inventorySurplus = computed(() => (form.items || []).reduce((sum, row) => sum + Math.max(Number(row.difference_amount ?? ((Number(row.counted_quantity||0)-Number(row.book_quantity||0))*Number(row.valuation_rate||0))), 0), 0));
 const inventoryShortage = computed(() => Math.abs((form.items || []).reduce((sum, row) => sum + Math.min(Number(row.difference_amount ?? ((Number(row.counted_quantity||0)-Number(row.book_quantity||0))*Number(row.valuation_rate||0))), 0), 0)));
+const filterFields = computed(() => [
+  { key:"search", label:"Поиск", placeholder:"Номер или основание", wide:true },
+  { key:"status", label:"Статус", type:"select", allLabel:"Все статусы", options:[{value:"0",label:"Черновики"},{value:"1",label:"Проведённые"},{value:"2",label:"Отменённые"}] },
+  { key:"business_point", label:"Точка продаж", type:"select", allLabel:"Все точки", options:options.points.map(point=>({value:point.name,label:point.point_name})) },
+]);
+const listColumns = computed(() => {
+  const columns = [
+    {key:"name",label:"Номер",primary:true,width:150}, {key:config.value.date,label:"Дата",format:dateText,width:150},
+    {key:"business_point",label:"Точка",format:pointLabel,width:190},
+    kind.value==="purchase-orders" ? {key:"supplier",label:"Поставщик",format:supplierLabel,width:190} : {key:"reason",label:"Основание",width:240},
+  ];
+  if (kind.value==="inventories") columns.push({key:"surplus_amount",label:"Излишки",format:v=>`${money(v)} ₽`,number:true},{key:"shortage_amount",label:"Недостача",format:v=>`${money(v)} ₽`,number:true});
+  else columns.push({key:"total_quantity",label:"Количество",number:true},{key:"total_amount",label:"Сумма",format:v=>`${money(v)} ₽`,number:true});
+  if (kind.value==="purchase-orders") columns.push({key:"order_status",label:"Поставка"});
+  columns.push({key:"docstatus",label:"Статус",format:statusLabel,width:130}); return columns;
+});
+const listTotals = computed(() => kind.value==="inventories" ? {
+  surplus_amount:rows.value.reduce((sum,row)=>sum+Number(row.surplus_amount||0),0), shortage_amount:rows.value.reduce((sum,row)=>sum+Number(row.shortage_amount||0),0),
+} : { total_quantity:rows.value.reduce((sum,row)=>sum+Number(row.total_quantity||0),0), total_amount:rows.value.reduce((sum,row)=>sum+Number(row.total_amount||0),0) });
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function money(value) { return new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0)); }
@@ -36,7 +57,7 @@ function supplierLabel(name) { return options.suppliers.find((row) => row.name =
 
 async function load() {
   loading.value = true; error.value = "";
-  try { rows.value = await call("raspechatka.api.warehouse_documents.get_documents", { kind: kind.value, search: search.value, status: statusFilter.value, business_point: pointFilter.value }); }
+  try { rows.value = await call("raspechatka.api.warehouse_documents.get_documents", { kind: kind.value, ...filters.value }); }
   catch (e) { error.value = e.message; }
   finally { loading.value = false; }
 }
@@ -86,13 +107,13 @@ async function cancel() {
 }
 function createReceipt() { editorOpen.value = false; router.push({ path: "/warehouse/receipts", query: { purchase_order: form.name } }); }
 function openRelatedReceipt(name) { editorOpen.value = false; router.push({ path: "/warehouse/receipts", query: { receipt: name } }); }
-function resetPage() { editorOpen.value = false; search.value = ""; statusFilter.value = ""; pointFilter.value = ""; Promise.all([load(), loadOptions()]); }
-watch(kind, resetPage); watch(search, () => { clearTimeout(timer); timer = setTimeout(load, 250); }); watch([statusFilter, pointFilter], load); onMounted(() => Promise.all([load(), loadOptions()]));
+function resetPage() { editorOpen.value = false; filters.value = {search:"",status:"",business_point:""}; Promise.all([load(), loadOptions()]); }
+watch(kind, resetPage); onMounted(() => Promise.all([load(), loadOptions()]));
 </script>
 
-<template><section class="page warehouse-page"><div class="page-heading"><div><div class="eyebrow">СКЛАД / ДОКУМЕНТЫ</div><h1>{{ config.title }}</h1><p>{{ config.description }}</p></div><button v-if="canEdit" class="button button-primary" @click="openDocument()">＋ {{ config.create }}</button></div>
-<div class="warehouse-toolbar compact"><label class="search-field"><span>⌕</span><input v-model="search" placeholder="Поиск по номеру или основанию" /></label><select v-model="statusFilter"><option value="">Все статусы</option><option value="0">Черновики</option><option value="1">Проведённые</option><option value="2">Отменённые</option></select><select v-model="pointFilter"><option value="">Все точки</option><option v-for="point in options.points" :key="point.name" :value="point.name">{{point.point_name}}</option></select><button class="filter-reset" @click="search='';statusFilter='';pointFilter=''">↺</button></div>
-<div class="table-meta"><strong>{{rows.length}} документов</strong><span v-if="kind==='purchase-orders'">Заказ не изменяет физический остаток</span><span v-else>Остатки меняются только после проведения</span></div><div class="table-shell"><div v-if="loading" class="table-message"><span class="loader"></span></div><div v-else-if="error" class="table-message error-message"><strong>Не удалось загрузить данные</strong><span>{{error}}</span><button @click="load">Повторить</button></div><div v-else-if="!rows.length" class="table-message"><strong>Документов пока нет</strong><span>{{config.create}}</span></div><table v-else><thead><tr><th>Номер</th><th>Дата</th><th>Точка</th><th v-if="kind==='purchase-orders'">Поставщик</th><th v-else>Основание</th><th v-if="kind==='inventories'">Излишки</th><th v-if="kind==='inventories'">Недостача</th><template v-else><th>Количество</th><th>Сумма</th></template><th v-if="kind==='purchase-orders'">Поставка</th><th>Статус</th><th></th></tr></thead><tbody><tr v-for="row in rows" :key="row.name" @click="openDocument(row.name)"><td class="item-name">{{row.name}}</td><td>{{dateText(row[config.date])}}</td><td>{{pointLabel(row.business_point)}}</td><td v-if="kind==='purchase-orders'">{{supplierLabel(row.supplier)}}</td><td v-else>{{row.reason}}</td><template v-if="kind==='inventories'"><td>{{money(row.surplus_amount)}} ₽</td><td>{{money(row.shortage_amount)}} ₽</td></template><template v-else><td>{{row.total_quantity}}</td><td>{{money(row.total_amount)}} ₽</td></template><td v-if="kind==='purchase-orders'">{{row.order_status}}</td><td><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></td><td class="row-arrow">→</td></tr></tbody></table></div>
+<template><section class="page warehouse-page"><ListPageHeader :title="config.title"><template #actions><button v-if="canEdit" class="button button-primary" @click="openDocument()">＋ {{ config.create }}</button></template></ListPageHeader>
+<SmartFilterBar v-model="filters" :key="kind" :fields="filterFields" :view-key="`warehouse.${kind}`" @apply="load" @reset="load" />
+<SmartDataTable :rows="rows" :columns="listColumns" :totals="listTotals" :view-key="`warehouse.${kind}`" :loading="loading" :error="error" empty-title="Документов пока нет" :empty-text="config.create" @open="openDocument($event.name)" @retry="load"><template #cell-docstatus="{row}"><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></template></SmartDataTable>
 <AppModal v-if="editorOpen" :title="`${config.singular}${form.name?' № '+form.name:''}`" wide @close="editorOpen=false"><form class="receipt-form" @submit.prevent="save()"><div class="document-strip"><span class="document-state" :class="`state-${form.docstatus}`">{{statusLabel(form.docstatus)}}</span><span>{{form.name||'Новый документ'}}</span><span v-if="kind==='purchase-orders'&&form.order_status">{{form.order_status}}</span></div><div class="form-section"><h3>Основное</h3><div class="form-grid">
 <label v-if="kind==='purchase-orders'">Дата заказа<input v-model="form.order_date" type="date" :disabled="form.docstatus!==0" required /></label><label v-else>Дата и время<input v-model="form.posting_datetime" type="datetime-local" :disabled="form.docstatus!==0" required /></label><label v-if="kind==='purchase-orders'">Ожидаемая дата<input v-model="form.expected_date" type="date" :disabled="form.docstatus!==0" /></label>
 <label>Юридическое лицо<select v-model="form.business_entity" :disabled="form.docstatus!==0" required @change="onEntityChange"><option value="">Не выбрано</option><option v-for="entity in options.entities" :key="entity.name" :value="entity.name">{{entity.short_name}}</option></select></label><label>Точка продаж<select v-model="form.business_point" :disabled="form.docstatus!==0" required @change="onPointChange"><option value="">Не выбрано</option><option v-for="point in visiblePoints" :key="point.name" :value="point.name">{{point.point_name}}</option></select></label><label>Склад<select v-model="form.warehouse" :disabled="form.docstatus!==0" required @change="refreshAddresses"><option value="">Не выбрано</option><option v-for="warehouse in visibleWarehouses" :key="warehouse.name" :value="warehouse.name">{{warehouse.warehouse_name}}</option></select></label>
