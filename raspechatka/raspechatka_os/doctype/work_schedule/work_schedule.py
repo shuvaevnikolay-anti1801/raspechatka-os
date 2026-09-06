@@ -40,3 +40,4 @@ class WorkSchedule(Document):
 
 		if self.status == "Published" and not self.published_at:
 			self.published_at = now_datetime()
+

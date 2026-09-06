@@ -1,6 +1,6 @@
 from frappe.model.document import Document
 
 
-class WorkScheduleEntry(Document):
+class EmployeeDocument(Document):
 	pass
 

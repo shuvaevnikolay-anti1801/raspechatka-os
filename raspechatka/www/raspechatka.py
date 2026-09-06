@@ -19,7 +19,7 @@ def get_boot():
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	roles = frappe.get_roles(frappe.session.user)
 
-	areas = ("dashboard", "references.network", "references.storage", "references.clients", "references.suppliers", "references.employees", "references.catalog", "references.finance", "clients.base", "clients.loyalty", "clients.marketing", "warehouse.operations", "finance.operations", "finance.planning", "finance.reporting", "finance.bank", "settings.access")
+	areas = ("dashboard", "references.network", "references.storage", "references.clients", "references.suppliers", "references.employees", "references.catalog", "references.finance", "clients.base", "clients.loyalty", "clients.marketing", "warehouse.operations", "finance.operations", "finance.planning", "finance.reporting", "finance.bank", "sales.analytics", "sales.shifts", "sales.receipts", "sales.cash", "sales.audit", "sales.integration", "team.employees", "team.schedule", "team.payroll", "team.motivation", "team.hr", "settings.access")
 	try:
 		access = {area: get_access_level(area) for area in areas}
 		scope = get_scope()
