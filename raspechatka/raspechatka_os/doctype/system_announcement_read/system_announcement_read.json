@@ -1,0 +1,19 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["announcement", "user", "read_at"],
+ "fields": [
+  {"fieldname": "announcement", "fieldtype": "Link", "label": "Уведомление", "options": "System Announcement", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "user", "fieldtype": "Link", "label": "Пользователь", "options": "User", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "read_at", "fieldtype": "Datetime", "label": "Прочитано", "reqd": 1, "in_list_view": 1}
+ ],
+ "module": "Raspechatka OS",
+ "name": "System Announcement Read",
+ "permissions": [{"role": "System Manager", "read": 1}],
+ "sort_field": "read_at",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
