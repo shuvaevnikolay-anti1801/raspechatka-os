@@ -4,6 +4,7 @@ import CatalogPage from "./pages/CatalogPage.vue";
 import ReferencesPage from "./pages/ReferencesPage.vue";
 import MasterDataPage from "./pages/MasterDataPage.vue";
 import AccessSettingsPage from "./pages/AccessSettingsPage.vue";
+import MoySkladIntegrationPage from "./pages/MoySkladIntegrationPage.vue";
 import WarehouseReceiptsPage from "./pages/WarehouseReceiptsPage.vue";
 import WarehouseDocumentsPage from "./pages/WarehouseDocumentsPage.vue";
 import WarehouseReportPage from "./pages/WarehouseReportPage.vue";
@@ -28,6 +29,7 @@ const routes = [
   { path: "/references/clients", redirect: "/clients" },
   { path: "/references/:reference(organizations|suppliers|employees|positions|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
   { path: "/settings/access", name: "access-settings", component: AccessSettingsPage, meta: { module: "references" } },
+  { path: "/settings/moysklad", name: "moysklad-settings", component: MoySkladIntegrationPage, meta: { module: "references" } },
   { path: "/warehouse", redirect: "/warehouse/receipts" },
   { path: "/warehouse/receipts", name: "warehouse-receipts", component: WarehouseReceiptsPage, meta: { module: "warehouse" } },
   { path: "/warehouse/write-offs", name: "warehouse-write-offs", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "write-offs" } },
@@ -69,3 +71,4 @@ export default createRouter({
   routes,
   scrollBehavior: () => ({ top: 0 }),
 });
+

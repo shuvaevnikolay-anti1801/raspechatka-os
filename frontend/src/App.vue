@@ -66,6 +66,7 @@ const submenus = {
 		{ label: "Сотрудники", to: "/references/employees", area: "references.employees" },
 		{ label: "Должности", to: "/references/positions", area: "references.employees" },
 		{ label: "Финансовые статьи", to: "/references/financial-articles", area: "references.finance" },
+		{ label: "МойСклад", to: "/settings/moysklad", area: "settings.access", minimum: "Admin" },
 		{ label: "Права доступа", to: "/settings/access", area: "settings.access", minimum: "Admin" },
 	],
 };
@@ -131,3 +132,4 @@ const submenuItems = computed(() =>
 	}
 }
 </style>
+

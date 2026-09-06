@@ -164,7 +164,10 @@ app_include_js = "/assets/raspechatka/js/raspechatka.js"
 
 scheduler_events = {
 	"cron": {
-		"*/15 * * * *": ["raspechatka.api.tochka.sync_enabled_connections"]
+		"*/15 * * * *": [
+			"raspechatka.api.tochka.sync_enabled_connections",
+			"raspechatka.api.moysklad.sync_enabled_connection",
+		]
 	}
 }
 # scheduler_events = {
@@ -273,3 +276,4 @@ scheduler_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
