@@ -103,6 +103,7 @@ const submenuItems = computed(() =>
 <style scoped>
 .subnav {
 	top: 72px;
+	overflow-y: hidden;
 }
 @media (max-width: 760px) {
 	.subnav {

@@ -4,7 +4,7 @@ app_publisher = "Raspechatka"
 app_description = "Business management system for Raspechatka copy centers"
 app_email = "anti1801@ya.ru"
 app_license = "mit"
-app_logo_url = "/assets/raspechatka/images/raspechatka-brand.svg"
+app_logo_url = "/assets/raspechatka/images/raspechatka-brand.png"
 app_home = "/raspechatka"
 
 # Apps
