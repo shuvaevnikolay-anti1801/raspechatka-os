@@ -363,9 +363,12 @@ def _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_m
 			doc.append("prices", {"price_type": linked_type, "rate": _money(price), "minimum_quantity": 1})
 
 	doc.set("barcodes", [])
+	seen_barcodes = set()
 	for barcode in row.get("barcodes") or []:
 		value, barcode_type = _barcode(barcode)
-		if value:
+		owner = frappe.db.get_value("Catalog Item Barcode", {"barcode": value}, "parent") if value else None
+		if value and value not in seen_barcodes and owner in (None, doc.name):
+			seen_barcodes.add(value)
 			doc.append("barcodes", {"barcode": value, "barcode_type": barcode_type, "uom": doc.stock_uom, "quantity": 1})
 
 	doc.set("attributes", [])
