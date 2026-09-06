@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import Database from 'better-sqlite3'
+import { DatabaseSync } from 'node:sqlite'
 import type { CartLine, Product, Shift } from '../shared/contracts'
 
 export class PosDatabase {
-  private readonly db: Database.Database
+  private readonly db: DatabaseSync
 
   constructor(filePath: string) {
-    this.db = new Database(filePath)
-    this.db.pragma('journal_mode = WAL')
+    this.db = new DatabaseSync(filePath)
+    this.db.exec('PRAGMA journal_mode = WAL')
     this.migrate()
     this.seedDemoProducts()
   }
@@ -65,7 +65,7 @@ export class PosDatabase {
   private seedDemoProducts(): void {
     const insert = this.db.prepare(`
       INSERT OR IGNORE INTO products (id, name, sku, category, price_minor)
-      VALUES (@id, @name, @sku, @category, @priceMinor)
+      VALUES (?, ?, ?, ?, ?)
     `)
     const products: Product[] = [
       { id: 'print-bw-a4', name: 'Печать ч/б A4', sku: 'SVC-001', category: 'Печать', priceMinor: 2000 },
@@ -75,8 +75,16 @@ export class PosDatabase {
       { id: 'lamination-a4', name: 'Ламинирование A4', sku: 'SVC-005', category: 'Документы', priceMinor: 8000 },
       { id: 'envelope-c5', name: 'Конверт C5', sku: 'PRD-001', category: 'Товары', priceMinor: 2500 }
     ]
-    const transaction = this.db.transaction(() => products.forEach((product) => insert.run(product)))
-    transaction()
+    this.db.exec('BEGIN')
+    try {
+      products.forEach((product) => insert.run(
+        product.id, product.name, product.sku, product.category, product.priceMinor
+      ))
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   listProducts(): Product[] {
@@ -119,14 +127,17 @@ export class PosDatabase {
     createdAt: string
     lines: CartLine[]
   }): void {
-    const transaction = this.db.transaction(() => {
+    this.db.exec('BEGIN')
+    try {
       this.db.prepare(`
         INSERT INTO sales (
           id, client_request_id, shift_id, total_minor, payment_method,
           payment_transaction_id, fiscal_number, created_at
-        ) VALUES (@id, @clientRequestId, @shiftId, @totalMinor, @paymentMethod,
-          @paymentTransactionId, @fiscalNumber, @createdAt)
-      `).run(input)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        input.id, input.clientRequestId, input.shiftId, input.totalMinor,
+        input.paymentMethod, input.paymentTransactionId, input.fiscalNumber, input.createdAt
+      )
 
       const insertLine = this.db.prepare(`
         INSERT INTO sale_items (sale_id, product_id, name, quantity, unit_price_minor)
@@ -140,8 +151,11 @@ export class PosDatabase {
         INSERT INTO outbox (id, event_type, payload_json, created_at)
         VALUES (?, 'sale.completed', ?, ?)
       `).run(randomUUID(), JSON.stringify(input), input.createdAt)
-    })
-    transaction()
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   pendingSyncCount(): number {

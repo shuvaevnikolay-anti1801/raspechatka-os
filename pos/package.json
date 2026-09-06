@@ -10,16 +10,13 @@
     "typecheck": "tsc --noEmit",
     "preview": "electron-vite preview",
     "test": "vitest run",
-    "package:win": "npm run build && electron-builder --win nsis",
-    "postinstall": "electron-builder install-app-deps"
+    "package:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
