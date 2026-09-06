@@ -117,7 +117,7 @@ onBeforeUnmount(() => {
 <template>
   <header class="topbar topbar-v2">
     <router-link class="brand brand-v2" to="/" aria-label="Распечатка ОС — главная" @click="navigate">
-      <img src="/assets/raspechatka/images/raspechatka-brand.svg" alt="" />
+      <img :src="'/assets/raspechatka/images/raspechatka-brand.svg'" alt="" />
       <span><strong>РАСПЕЧАТКА</strong><small>ОПЕРАЦИОННАЯ СИСТЕМА</small></span>
     </router-link>
 
