@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { PosDatabase } from './database'
+import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 
@@ -12,7 +13,7 @@ function createWindow(): void {
     minHeight: 720,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#f4f6f8',
+    backgroundColor: '#f3f5f1',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -39,6 +40,7 @@ app.whenReady().then(() => {
   const database = new PosDatabase(join(app.getPath('userData'), 'raspechatka-pos.sqlite'))
   registerIpcHandlers({
     database,
+    connectionStore: new ConnectionStore(join(app.getPath('userData'), 'connection.bin')),
     paymentProvider: new MockPaymentProvider(),
     fiscalProvider: new MockFiscalProvider()
   })
