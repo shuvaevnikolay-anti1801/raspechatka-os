@@ -1,0 +1,10 @@
+# Default owner and explicit review visibility
+* @shuvaevnikolay-anti1801
+
+# Shared integration hotspots
+/frontend/src/App.vue @shuvaevnikolay-anti1801
+/frontend/src/router.js @shuvaevnikolay-anti1801
+/raspechatka/www/raspechatka.py @shuvaevnikolay-anti1801
+/raspechatka/patches.txt @shuvaevnikolay-anti1801
+/raspechatka/access.py @shuvaevnikolay-anti1801
+/raspechatka/public/frontend/assets/ @shuvaevnikolay-anti1801

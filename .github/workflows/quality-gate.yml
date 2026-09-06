@@ -1,0 +1,100 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - version-16
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check branch and generated assets
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          branch="${{ github.head_ref }}"
+          if [[ ! "$branch" =~ ^codex/[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::Branch must be named codex/<task-slug>"
+            exit 1
+          fi
+
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed-files.txt
+          if grep -Eq '^(raspechatka/public/frontend/assets/|raspechatka/www/raspechatka.html$)' changed-files.txt; then
+            if [[ ! "$branch" =~ ^codex/integration- ]]; then
+              echo "::error::Generated frontend assets may only be committed by codex/integration-* branches"
+              exit 1
+            fi
+          fi
+
+      - name: Check patch registry
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          lines = [
+              line.strip()
+              for line in Path("raspechatka/patches.txt").read_text().splitlines()
+              if line.strip() and not line.lstrip().startswith(("#", "["))
+          ]
+          duplicates = sorted({line for line in lines if lines.count(line) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate patch entries: " + ", ".join(duplicates))
+          print(f"Patch registry OK: {len(lines)} entries")
+          PY
+
+  static-validation:
+    name: Python and JSON
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Parse application files
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          py_files = list(Path("raspechatka").rglob("*.py"))
+          json_files = list(Path("raspechatka").rglob("*.json"))
+          for path in py_files:
+              ast.parse(path.read_text(), filename=str(path))
+          for path in json_files:
+              json.loads(path.read_text())
+          print(f"Python OK: {len(py_files)}; JSON OK: {len(json_files)}")
+          PY
+          python -m tabnanny raspechatka
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
