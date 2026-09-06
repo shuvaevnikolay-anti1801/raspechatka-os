@@ -27,7 +27,6 @@ const icons = {
 };
 
 const modules = [
-	{ key: "references", label: "Справочники", to: "/references/entities", area: "references" },
 	{ key: "dashboard", label: "Главная", to: "/", area: "dashboard" },
 	{ key: "sales", label: "Продажи", to: "/sales", area: "sales.analytics" },
 	{ key: "clients", label: "Клиенты", to: "/clients", area: "clients.base" },
@@ -35,6 +34,7 @@ const modules = [
 	{ key: "warehouse", label: "Склад", to: "/warehouse/receipts", area: "warehouse.operations" },
 	{ key: "finance", label: "Финансы", to: "/finance", area: "finance.reporting" },
 	{ key: "team", label: "Сотрудники", to: "/team", area: "team.employees" },
+	{ key: "references", label: "Справочники", to: "/references/entities", area: "references" },
 ];
 
 const visibleModules = computed(() =>
@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
 <template>
 	<header class="topbar topbar-v2">
 		<router-link class="brand brand-v2" to="/" aria-label="Распечатка ОС — главная" @click="navigate">
-			<img :src="'/assets/raspechatka/images/raspechatka-brand.svg'" alt="" />
+			<img :src="'/assets/raspechatka/images/raspechatka-brand.png'" alt="" />
 			<span class="brand-name">Распечатка <b>ОС</b></span>
 		</router-link>
 
