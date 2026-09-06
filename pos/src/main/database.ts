@@ -23,6 +23,10 @@ export class PosDatabase {
     this.seedDemoData()
   }
 
+  close(): void {
+    this.db.close()
+  }
+
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS products (

@@ -5,13 +5,22 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { PosDatabase } from './database'
 
 const folders:string[]=[]
-afterEach(()=>{folders.splice(0).forEach((folder)=>rmSync(folder,{recursive:true,force:true}))})
+const databases:PosDatabase[]=[]
+const createDatabase=()=>{
+  const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
+  folders.push(folder)
+  const database=new PosDatabase(join(folder,'test.sqlite'))
+  databases.push(database)
+  return database
+}
+afterEach(()=>{
+  databases.splice(0).forEach((database)=>database.close())
+  folders.splice(0).forEach((folder)=>rmSync(folder,{recursive:true,force:true}))
+})
 
 describe('PosDatabase',()=>{
   it('creates the local catalog and holds a receipt',()=>{
-    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
-    folders.push(folder)
-    const database=new PosDatabase(join(folder,'test.sqlite'))
+    const database=createDatabase()
     expect(database.listProducts().length).toBeGreaterThan(0)
     const held=database.holdReceipt({label:'Тест',lines:[],discountPercent:0})
     expect(database.listHeldReceipts()[0].id).toBe(held.id)
@@ -20,9 +29,7 @@ describe('PosDatabase',()=>{
   })
 
   it('stores split payments, partial returns and cash operations',()=>{
-    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
-    folders.push(folder)
-    const database=new PosDatabase(join(folder,'test.sqlite'))
+    const database=createDatabase()
     const shift=database.openShift({id:'shift-1',openedAt:'2026-09-06T10:00:00.000Z',cashierName:'Тест'})
     database.saveSale({
       id:'sale-1',clientRequestId:'request-1',shiftId:shift.id,totalMinor:10000,
@@ -49,9 +56,7 @@ describe('PosDatabase',()=>{
   })
 
   it('caches OS customer history and updates stock after sale and return',()=>{
-    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
-    folders.push(folder)
-    const database=new PosDatabase(join(folder,'test.sqlite'))
+    const database=createDatabase()
     database.replaceCustomers([{id:'client-1',name:'Иван',phone:'+7 900 111-22-33',discountPercent:7,purchaseCount:3,totalSpentMinor:125000}])
     expect(database.listCustomers('111')[0]).toMatchObject({id:'client-1',purchaseCount:3,totalSpentMinor:125000})
     database.replaceProducts([{id:'paper',name:'Бумага',sku:'PAPER',category:'Товары',type:'product',uom:'шт',priceMinor:1000,stock:5,trackInventory:true}])
@@ -71,9 +76,7 @@ describe('PosDatabase',()=>{
   })
 
   it('removes products and customers that are no longer returned by OS',()=>{
-    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
-    folders.push(folder)
-    const database=new PosDatabase(join(folder,'test.sqlite'))
+    const database=createDatabase()
     database.replaceProducts([
       {id:'active',name:'Активный',sku:'ACTIVE',category:'Товары',type:'product',uom:'шт',priceMinor:1000},
       {id:'removed',name:'Удалённый',sku:'REMOVED',category:'Товары',type:'product',uom:'шт',priceMinor:2000}
@@ -91,9 +94,7 @@ describe('PosDatabase',()=>{
   })
 
   it('records the employee workplace actions offline',()=>{
-    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
-    folders.push(folder)
-    const database=new PosDatabase(join(folder,'test.sqlite'))
+    const database=createDatabase()
     database.replaceProducts([{id:'paper',name:'Бумага',sku:'PAPER',category:'Товары',type:'product',uom:'пачка',priceMinor:50000,stock:5,trackInventory:true,storageAddress:'Шкаф 3 · верхняя полка'}])
     database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierName:'Николай'})
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
