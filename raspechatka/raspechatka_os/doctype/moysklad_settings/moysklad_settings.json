@@ -1,0 +1,92 @@
+{
+  "doctype": "DocType",
+  "name": "MoySklad Settings",
+  "module": "Raspechatka OS",
+  "issingle": 1,
+  "track_changes": 1,
+  "field_order": [
+    "connection_section",
+    "access_token",
+    "enabled",
+    "sync_interval_minutes",
+    "state_section",
+    "status",
+    "account_name",
+    "last_checked_at",
+    "last_error",
+    "last_preview_json"
+  ],
+  "fields": [
+    {
+      "fieldname": "connection_section",
+      "fieldtype": "Section Break",
+      "label": "Подключение к МоемуСкладу"
+    },
+    {
+      "fieldname": "access_token",
+      "fieldtype": "Password",
+      "label": "Токен доступа"
+    },
+    {
+      "fieldname": "enabled",
+      "fieldtype": "Check",
+      "label": "Фоновое чтение включено",
+      "default": "0"
+    },
+    {
+      "fieldname": "sync_interval_minutes",
+      "fieldtype": "Select",
+      "label": "Интервал чтения, минут",
+      "options": "15\n30\n60\n180\n360\n720\n1440",
+      "default": "60",
+      "reqd": 1
+    },
+    {
+      "fieldname": "state_section",
+      "fieldtype": "Section Break",
+      "label": "Состояние"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "label": "Статус",
+      "options": "Not configured\nConnected\nError",
+      "default": "Not configured",
+      "read_only": 1
+    },
+    {
+      "fieldname": "account_name",
+      "fieldtype": "Data",
+      "label": "Учётная запись",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_checked_at",
+      "fieldtype": "Datetime",
+      "label": "Последнее чтение",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_error",
+      "fieldtype": "Small Text",
+      "label": "Последняя ошибка",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_preview_json",
+      "fieldtype": "Long Text",
+      "label": "Последний обзор данных",
+      "read_only": 1,
+      "hidden": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "report": 1
+    }
+  ]
+}
