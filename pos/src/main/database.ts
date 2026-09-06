@@ -160,15 +160,16 @@ export class PosDatabase {
       COALESCE(SUM(CASE WHEN method='card' THEN amount_minor ELSE 0 END),0) cardMinor,
       COALESCE(SUM(CASE WHEN method='qr' THEN amount_minor ELSE 0 END),0) qrMinor
       FROM sale_payments WHERE sale_id IN (SELECT id FROM sales WHERE shift_id=?)`).get(shift.id) as Pick<ShiftSummary,'cashMinor'|'cardMinor'|'qrMinor'>
-    const refunds=this.db.prepare(`SELECT COALESCE(SUM(total_minor),0) returnsMinor,
-      COALESCE(SUM(CASE WHEN method='cash' THEN amount_minor ELSE 0 END),0) cashReturns
-      FROM returns LEFT JOIN return_payments ON return_payments.return_id=returns.id WHERE shift_id=?`).get(shift.id) as {returnsMinor:number;cashReturns:number}
+    const refunds=this.db.prepare('SELECT COALESCE(SUM(total_minor),0) returnsMinor FROM returns WHERE shift_id=?')
+      .get(shift.id) as {returnsMinor:number}
+    const cashReturns=this.db.prepare(`SELECT COALESCE(SUM(amount_minor),0) value FROM return_payments
+      WHERE method='cash' AND return_id IN (SELECT id FROM returns WHERE shift_id=?)`).get(shift.id) as {value:number}
     const cash=this.db.prepare(`SELECT
       COALESCE(SUM(CASE WHEN operation_type='deposit' THEN amount_minor ELSE 0 END),0) depositsMinor,
       COALESCE(SUM(CASE WHEN operation_type='withdrawal' THEN amount_minor ELSE 0 END),0) withdrawalsMinor
       FROM cash_operations WHERE shift_id=?`).get(shift.id) as Pick<ShiftSummary,'depositsMinor'|'withdrawalsMinor'>
     return {...sales,...payments,returnsMinor:refunds.returnsMinor,...cash,
-      expectedCashMinor:payments.cashMinor-refunds.cashReturns+cash.depositsMinor-cash.withdrawalsMinor}
+      expectedCashMinor:payments.cashMinor-cashReturns.value+cash.depositsMinor-cash.withdrawalsMinor}
   }
 
   findSaleByClientRequestId(id:string):{saleId:string;receiptNumber:string;totalMinor:number}|null {
