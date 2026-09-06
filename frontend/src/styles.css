@@ -176,10 +176,18 @@ a { color: inherit; text-decoration: none; }
 .icon-action { display:grid; width:31px; height:31px; place-items:center; border:1px solid var(--line-dark); background:#fff; font-size:15px; }
 .filter-field-popover { position:absolute; z-index:12; top:37px; right:48px; display:grid; min-width:230px; max-height:320px; overflow:auto; padding:10px; border:1px solid var(--line-dark); background:#fff; box-shadow:0 12px 30px #2727271c; }
 .filter-field-popover label { display:flex; min-height:34px; align-items:center; gap:8px; padding:0 7px; font-size:11px; }
+.filter-field-popover label>span { display:flex; flex:1; align-items:center; justify-content:space-between; gap:12px; }
+.filter-field-popover label small { color:#92978f; font-size:8px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
 .smart-filter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(175px,1fr)); gap:8px; padding:12px; }
 .smart-filter-field { display:flex; min-width:0; flex-direction:column; gap:5px; color:#62675f; font-size:9px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
 .smart-filter-field.wide { grid-column:span 2; }
 .smart-filter-field input,.smart-filter-field select { width:100%; height:39px; padding:0 10px; border:1px solid var(--line-dark); border-radius:0; outline:none; background:#fff; font-size:11px; font-weight:400; letter-spacing:0; text-transform:none; }
+.filter-value { display:flex; min-width:0; }
+.filter-value>.filter-operator { width:112px; flex:0 0 112px; border-right:0; background:#f7f8f5; color:#61665e; font-size:9px; }
+.filter-value>input,.filter-value>select:not(.filter-operator) { min-width:0; flex:1; }
+.filter-no-value { display:flex; min-width:0; height:39px; flex:1; align-items:center; padding:0 10px; border:1px solid var(--line-dark); background:#f7f8f5; color:#8a8f87; font-size:10px; font-weight:400; letter-spacing:0; text-transform:none; }
+.filter-schema-state { align-self:center; color:#7b8078; font-size:9px; }
+.filter-schema-error { margin:0; padding:8px 12px; border-top:1px solid #e2bdb6; background:#fff4f1; color:#a34d3d; font-size:10px; }
 .smart-filter-field input:focus,.smart-filter-field select:focus { border-color:#718f0b; box-shadow:0 0 0 2px #a1ce0f2d; }
 .smart-filter-submit { display:flex; align-items:flex-end; gap:7px; }
 .smart-filter-submit .button { height:39px; }
