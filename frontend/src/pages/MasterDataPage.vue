@@ -4,15 +4,16 @@ import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
 
 const route = useRoute();
 const reference = computed(() => route.meta.reference || route.params.reference);
 const rows = ref([]), loading = ref(true), error = ref(""), detail = ref(null), saving = ref(false), formError = ref("");
-const search = ref(""), active = ref("");
+const filters = ref({ search: "", active: "" });
 const form = reactive({}), options = reactive({ entities: [], points: [], positions: [], products: [] });
 const supplierBank = reactive({ bank_name: "", bic: "", settlement_account: "", currency: "RUB", active: 1 });
 const supplierItem = reactive({ item: "", is_primary: 0, active: 1 });
-let timer;
 
 const yesNo = [{ value: 1, label: "Да" }, { value: 0, label: "Нет" }];
 const configs = {
@@ -32,13 +33,17 @@ const configs = {
 function cols(...items){ return items.map(([key,label,primary])=>({key,label,primary:!!primary})); }
 function f(key,label,type="text",required=0,values=null,labelKey=null,depends=null,equals=null){ return {key,label,type,required:!!required,values,labelKey,depends,equals}; }
 const config = computed(()=>configs[reference.value]);
+const filterFields = computed(()=>[
+  {key:"search",label:"Поиск",placeholder:"Поиск по справочнику",wide:true},
+  {key:"active",label:"Статус",type:"select",allLabel:"Любой статус",options:[{value:"1",label:"Активные"},{value:"0",label:"Неактивные"}]},
+]);
 const areas = {organizations:"references.network",clients:"references.clients",suppliers:"references.suppliers",employees:"references.employees",positions:"references.employees","catalog-groups":"references.catalog","catalog-units":"references.catalog","price-types":"references.catalog","financial-articles":"references.finance","payment-methods":"references.finance","pos-workplaces":"references.finance","cash-registers":"references.finance"};
 const canEdit = computed(()=>canAccess(areas[reference.value],"Edit"));
 const canAdmin = computed(()=>canAccess(areas[reference.value],"Admin"));
 const visibleFields = computed(()=> (config.value.fields||[]).filter(field=>!field.depends || form[field.depends]===field.equals));
 function reset(values={}){ Object.keys(form).forEach(k=>delete form[k]); Object.assign(form,{active:1,...values}); }
 function fieldOptions(field){ return Array.isArray(field.values) ? field.values : (options[field.values]||[]).map(v=>({value:v.name,label:v[field.labelKey]})); }
-async function load(){ loading.value=true; error.value=""; try{ rows.value=await call("raspechatka.api.references.get_reference_list",{reference:reference.value,search:search.value,active:active.value}); }catch(e){error.value=e.message;}finally{loading.value=false;} }
+async function load(){ loading.value=true; error.value=""; try{ rows.value=await call("raspechatka.api.references.get_reference_list",{reference:reference.value,...filters.value}); }catch(e){error.value=e.message;}finally{loading.value=false;} }
 async function loadOptions(){ try{Object.assign(options,await call("raspechatka.api.references.get_reference_options"));}catch(e){error.value=e.message;} }
 function create(){ reset(defaults()); detail.value={}; formError.value=""; }
 function defaults(){ if(reference.value==="clients") return {personal_data_consent:0,marketing_consent:0,messengers:[]}; if(reference.value==="suppliers") return {supplier_type:"Company",scope:"Network"}; if(reference.value==="employees") return {access_profile:"Cashier",assigned_points:[]}; if(reference.value==="price-types") return {purpose:"Selling",currency:"RUB"}; return {}; }
@@ -50,11 +55,11 @@ async function addBank(){try{await call("raspechatka.api.references.save_supplie
 async function addItem(){try{await call("raspechatka.api.references.save_item_supplier",{data:JSON.stringify({...supplierItem,supplier:form.name})},{method:"POST"});Object.assign(supplierItem,{item:"",is_primary:0,active:1});await open({name:form.name});}catch(e){formError.value=e.message;}}
 async function setActive(value){try{await call("raspechatka.api.references.archive_reference",{reference:reference.value,name:form.name,active:value},{method:"POST"});detail.value=null;await load();}catch(e){formError.value=e.message;}}
 async function remove(){if(!confirm("Удалить запись без возможности восстановления?"))return;try{await call("raspechatka.api.references.delete_reference",{reference:reference.value,name:form.name},{method:"POST"});detail.value=null;await load();}catch(e){formError.value=e.message;}}
-watch(reference,()=>{detail.value=null;search.value="";active.value="";load();});watch(active,load);watch(search,()=>{clearTimeout(timer);timer=setTimeout(load,250);});onMounted(()=>Promise.all([load(),loadOptions()]));
+watch(reference,()=>{detail.value=null;filters.value={search:"",active:""};load();});onMounted(()=>Promise.all([load(),loadOptions()]));
 </script>
 
-<template><section class="page reference-page"><div class="page-heading"><div><div class="eyebrow">СПРАВОЧНИКИ</div><h1>{{ config.title }}</h1><p>{{ config.description }}</p></div><button v-if="config.create&&canEdit" class="button button-primary" @click="create">＋ {{ config.create }}</button></div>
-<div class="reference-toolbar"><label class="search-field"><span>⌕</span><input v-model="search" placeholder="Поиск по справочнику" /></label><select v-model="active"><option value="">Любой статус</option><option value="1">Активные</option><option value="0">Неактивные</option></select><button class="filter-reset" @click="search='';active=''">↺</button></div>
+<template><section class="page reference-page"><ListPageHeader :title="config.title"><template #actions><button v-if="config.create&&canEdit" class="button button-primary" @click="create">＋ {{ config.create }}</button></template></ListPageHeader>
+<SmartFilterBar v-model="filters" :key="reference" :fields="filterFields" :view-key="`references.${reference}`" @apply="load" @reset="load" />
 <ReferenceTable :key="reference" :rows="rows" :columns="config.columns" :view-key="`references.${reference}`" :loading="loading" :error="error" @open="open" @retry="load" />
 <AppModal v-if="detail!==null" :title="config.title" wide @close="detail=null"><form class="editor-form" @submit.prevent="save"><div class="form-section"><h3>Основное</h3><div class="form-grid"><label v-for="field in visibleFields" :key="field.key" :class="{'span-3':field.type==='textarea'}">{{ field.label }}<textarea v-if="field.type==='textarea'" v-model="form[field.key]" rows="2"></textarea><select v-else-if="field.type==='select'||field.type==='link'" v-model="form[field.key]" :required="field.required"><option value="">Не выбрано</option><option v-for="o in fieldOptions(field)" :key="o.value" :value="o.value">{{ o.label }}</option></select><input v-else-if="field.type==='check'" v-model="form[field.key]" type="checkbox" :true-value="1" :false-value="0" /><input v-else v-model="form[field.key]" :type="field.type" :required="field.required" /></label><label class="check-field"><input v-model="form.active" type="checkbox" :true-value="1" :false-value="0" /> Активно</label></div></div>
 <div v-if="reference==='clients'" class="form-section"><h3>Мессенджеры</h3><div class="form-grid"><label v-for="m in ['Telegram','WhatsApp','MAX']" :key="m">{{m}}<input v-model="form[`messenger_${m}`]" /></label></div></div>

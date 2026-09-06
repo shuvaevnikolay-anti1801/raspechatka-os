@@ -1,16 +1,24 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
 
-const rows=ref([]),loading=ref(true),error=ref(""),search=ref(""),status=ref(""),point=ref(""),channel=ref("");
+const rows=ref([]),loading=ref(true),error=ref(""),filters=ref({search:"",status:"",point:"",channel:""});
 const detail=ref(null),tab=ref("profile"),saving=ref(false),formError=ref("");
-const options=reactive({points:[]}),form=reactive({}); let timer;
+const options=reactive({points:[]}),form=reactive({});
 const canEdit=canAccess("clients.base","Edit");
 const columns=[{key:"client_name",label:"Клиент",primary:true},{key:"phone",label:"Телефон"},{key:"registration_point",label:"Точка регистрации"},{key:"club_status",label:"Статус клуба"},{key:"discount_percent",label:"Скидка, %"},{key:"active_channels",label:"Каналов"},{key:"registered_at",label:"Регистрация"}];
+const filterFields=computed(()=>[
+  {key:"search",label:"Поиск",placeholder:"ФИО, телефон, email или ID",wide:true},
+  {key:"status",label:"Статус клуба",type:"select",allLabel:"Все статусы",options:["Регистрация","Ожидает мессенджер","Активен","Заблокирован"].map(value=>({value,label:value}))},
+  {key:"point",label:"Точка регистрации",type:"select",allLabel:"Все точки",options:options.points.map(p=>({value:p.name,label:p.point_name}))},
+  {key:"channel",label:"Канал",type:"select",allLabel:"Любой канал",options:["Telegram","MAX","VK"].map(value=>({value,label:value}))},
+]);
 function reset(values={}){Object.keys(form).forEach(k=>delete form[k]);Object.assign(form,{active:1,personal_data_consent:0,marketing_consent:0,club_rules_consent:0,messengers:[],...values});}
-async function load(){loading.value=true;error.value="";try{rows.value=await call("raspechatka.api.clients.get_clients",{search:search.value,club_status:status.value,business_point:point.value,channel:channel.value});}catch(e){error.value=e.message;}finally{loading.value=false;}}
+async function load(){loading.value=true;error.value="";try{rows.value=await call("raspechatka.api.clients.get_clients",{search:filters.value.search,club_status:filters.value.status,business_point:filters.value.point,channel:filters.value.channel});}catch(e){error.value=e.message;}finally{loading.value=false;}}
 async function loadOptions(){try{Object.assign(options,await call("raspechatka.api.clients.get_client_options"));}catch(e){error.value=e.message;}}
 function create(){reset();detail.value={};tab.value="profile";formError.value="";}
 async function open(row){try{const data=await call("raspechatka.api.clients.get_client",{name:row.name});detail.value=data;reset(JSON.parse(JSON.stringify(data)));tab.value="profile";}catch(e){error.value=e.message;}}
@@ -19,11 +27,11 @@ function toggleMessenger(type,enabled){let list=form.messengers||(form.messenger
 async function save(){saving.value=true;formError.value="";try{const r=await call("raspechatka.api.clients.save_client",{data:JSON.stringify(form)},{method:"POST"});await load();await open({name:r.name});}catch(e){formError.value=e.message;}finally{saving.value=false;}}
 function formatDate(value){return value?new Intl.DateTimeFormat("ru-RU",{dateStyle:"short",timeStyle:value.includes?.(":")?"short":undefined}).format(new Date(value)):"—";}
 function money(value){return new Intl.NumberFormat("ru-RU",{minimumFractionDigits:2}).format(Number(value||0))+" ₽";}
-watch([status,point,channel],load);watch(search,()=>{clearTimeout(timer);timer=setTimeout(load,250);});onMounted(()=>Promise.all([load(),loadOptions()]));
+onMounted(()=>Promise.all([load(),loadOptions()]));
 </script>
 
-<template><section class="page clients-page"><div class="page-heading"><div><div class="eyebrow">КЛИЕНТЫ / КЛУБ РАСПЕЧАТКА</div><h1>Клиенты</h1><p>Единая клиентская база всей сети: от регистрации по QR до повторных покупок</p></div><button v-if="canEdit" class="button button-primary" @click="create">＋ Добавить клиента</button></div>
-<div class="reference-toolbar clients-toolbar"><label class="search-field"><span>⌕</span><input v-model="search" placeholder="ФИО, телефон, email или ID" /></label><select v-model="status"><option value="">Все статусы</option><option>Регистрация</option><option>Ожидает мессенджер</option><option>Активен</option><option>Заблокирован</option></select><select v-model="point"><option value="">Все точки регистрации</option><option v-for="p in options.points" :key="p.name" :value="p.name">{{p.point_name}}</option></select><select v-model="channel"><option value="">Любой канал</option><option>Telegram</option><option>MAX</option><option>VK</option></select><button class="filter-reset" @click="search='';status='';point='';channel=''">↺</button></div>
+<template><section class="page clients-page"><ListPageHeader title="Клиенты"><template #actions><button v-if="canEdit" class="button button-primary" @click="create">＋ Добавить клиента</button></template></ListPageHeader>
+<SmartFilterBar v-model="filters" :fields="filterFields" view-key="clients.base" @apply="load" @reset="load" />
 <ReferenceTable :rows="rows" :columns="columns" view-key="clients.base" :loading="loading" :error="error" @open="open" @retry="load" />
 <AppModal v-if="detail!==null" :title="form.client_name||'Новый клиент'" wide @close="detail=null"><div class="client-card-head"><div><span class="client-code">{{form.client_id||'Новый клиент'}}</span><strong>{{form.club_status||'Регистрация'}}</strong></div><div class="client-discount"><small>СКИДКА КЛУБА</small><b>{{Number(form.discount_percent||0)}}%</b></div></div>
 <div class="editor-tabs"><button v-for="item in [{k:'profile',l:'Карточка'},{k:'club',l:'Клуб и согласия'},{k:'purchases',l:'История покупок'},{k:'events',l:'События'}]" :key="item.k" :class="{active:tab===item.k}" @click="tab=item.k">{{item.l}}</button></div>
