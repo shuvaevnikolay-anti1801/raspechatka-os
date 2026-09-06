@@ -156,7 +156,7 @@ def save_catalog_group(data):
 	doc = frappe.get_doc("Catalog Group", data["name"]) if data.get("name") else frappe.new_doc("Catalog Group")
 	parent = data.get("parent_catalog_group") or None
 	if parent:
-		if parent == doc.name or (doc.name and doc.name in _catalog_group_branch(parent)):
+		if parent == doc.name or (doc.name and parent in _catalog_group_branch(doc.name)):
 			frappe.throw("Группу нельзя вложить саму в себя")
 		if not frappe.db.exists("Catalog Group", parent):
 			frappe.throw("Родительская группа не найдена")
