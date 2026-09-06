@@ -8,78 +8,450 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "main_tab", "item_code", "item_name", "item_type", "catalog_group", "stock_uom", "column_main", "active", "image", "description",
-  "identifiers_section", "article", "external_code", "brand", "country_of_origin", "column_identifiers", "default_supplier", "variant_of", "has_variants",
-  "dimensions_section", "weight", "volume", "color", "size",
-  "pricing_tab", "minimum_sale_price", "prevent_discounts", "prices",
-  "inventory_tab", "track_inventory", "valuation_method", "allow_negative_stock", "column_inventory", "tracking_method", "shelf_life_days", "lead_time_days", "minimum_order_qty", "reorder_section", "reorder_rules",
-  "barcodes_tab", "barcodes",
-  "bundle_tab", "bundle_components",
-  "packaging_tab", "packaging",
-  "relations_tab", "analogues", "attributes",
-  "tax_tab", "vat_rate", "tax_system", "receipt_subject",
-  "integration_tab", "moysklad_id", "sync_status", "last_synced_at"
+  "main_tab",
+  "item_code",
+  "item_name",
+  "item_type",
+  "catalog_group",
+  "stock_uom",
+  "column_main",
+  "active",
+  "image",
+  "description",
+  "identifiers_section",
+  "article",
+  "external_code",
+  "brand",
+  "country_of_origin",
+  "column_identifiers",
+  "default_supplier",
+  "variant_of",
+  "has_variants",
+  "dimensions_section",
+  "weight",
+  "volume",
+  "color",
+  "size",
+  "pricing_tab",
+  "minimum_sale_price",
+  "prevent_discounts",
+  "prices",
+  "inventory_tab",
+  "track_inventory",
+  "valuation_method",
+  "allow_negative_stock",
+  "column_inventory",
+  "tracking_method",
+  "shelf_life_days",
+  "lead_time_days",
+  "minimum_order_qty",
+  "reorder_section",
+  "reorder_rules",
+  "barcodes_tab",
+  "barcodes",
+  "bundle_tab",
+  "bundle_components",
+  "packaging_tab",
+  "packaging",
+  "relations_tab",
+  "analogues",
+  "attributes",
+  "tax_tab",
+  "vat_rate",
+  "tax_system",
+  "receipt_subject",
+  "integration_tab",
+  "moysklad_id",
+  "sync_status",
+  "last_synced_at",
+  "moysklad_updated_at",
+  "moysklad_image_url",
+  "moysklad_payload_json"
  ],
  "fields": [
-  {"fieldname":"main_tab","fieldtype":"Tab Break","label":"Основное"},
-  {"fieldname":"item_code","fieldtype":"Data","label":"Код","reqd":1,"unique":1,"bold":1,"in_list_view":1,"in_global_search":1,"search_index":1,"description":"Стабильный внутренний код, например TOV-00050 или USL-00120."},
-  {"fieldname":"item_name","fieldtype":"Data","label":"Наименование","reqd":1,"bold":1,"in_list_view":1,"in_global_search":1,"search_index":1},
-  {"fieldname":"item_type","fieldtype":"Select","label":"Тип","options":"Product\nService\nBundle","default":"Product","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"catalog_group","fieldtype":"Link","label":"Группа","options":"Catalog Group","in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"stock_uom","fieldtype":"Link","label":"Единица измерения","options":"Catalog Unit","reqd":1,"in_list_view":1},
-  {"fieldname":"column_main","fieldtype":"Column Break"},
-  {"fieldname":"active","fieldtype":"Check","label":"Активен","default":"1","in_list_view":1,"in_standard_filter":1,"description":"Отключённый товар нельзя выбирать в новых операциях."},
-  {"fieldname":"image","fieldtype":"Attach Image","label":"Изображение"},
-  {"fieldname":"description","fieldtype":"Text Editor","label":"Описание"},
-  {"fieldname":"identifiers_section","fieldtype":"Section Break","label":"Идентификаторы и классификация","collapsible":1},
-  {"fieldname":"article","fieldtype":"Data","label":"Артикул","in_global_search":1,"search_index":1},
-  {"fieldname":"external_code","fieldtype":"Data","label":"Внешний код","unique":1,"in_global_search":1},
-  {"fieldname":"brand","fieldtype":"Data","label":"Бренд"},
-  {"fieldname":"country_of_origin","fieldtype":"Link","label":"Страна происхождения","options":"Country"},
-  {"fieldname":"column_identifiers","fieldtype":"Column Break"},
-  {"fieldname":"default_supplier","fieldtype":"Link","label":"Основной поставщик","options":"Catalog Supplier"},
-  {"fieldname":"variant_of","fieldtype":"Link","label":"Модификация товара","options":"Catalog Item","description":"Шаблон, от которого создан цветовой, размерный или иной вариант."},
-  {"fieldname":"has_variants","fieldtype":"Check","label":"Есть модификации","default":"0"},
-  {"fieldname":"dimensions_section","fieldtype":"Section Break","label":"Физические параметры","collapsible":1},
-  {"fieldname":"weight","fieldtype":"Float","label":"Вес, кг","non_negative":1},
-  {"fieldname":"volume","fieldtype":"Float","label":"Объём, м³","non_negative":1},
-  {"fieldname":"color","fieldtype":"Data","label":"Цвет"},
-  {"fieldname":"size","fieldtype":"Data","label":"Размер"},
-  {"fieldname":"pricing_tab","fieldtype":"Tab Break","label":"Цены"},
-  {"fieldname":"minimum_sale_price","fieldtype":"Currency","label":"Минимальная цена продажи","non_negative":1},
-  {"fieldname":"prevent_discounts","fieldtype":"Check","label":"Запретить скидки","default":"0"},
-  {"fieldname":"prices","fieldtype":"Table","label":"Цены","options":"Catalog Item Price"},
-  {"fieldname":"inventory_tab","fieldtype":"Tab Break","label":"Складской учёт","depends_on":"eval:doc.item_type=='Product'"},
-  {"fieldname":"track_inventory","fieldtype":"Check","label":"Учитывать остатки","default":"1","description":"Остаток будет рассчитываться из складских документов, а не вводиться вручную."},
-  {"fieldname":"valuation_method","fieldtype":"Select","label":"Метод оценки","options":"Moving Average\nFIFO","default":"Moving Average","depends_on":"track_inventory"},
-  {"fieldname":"allow_negative_stock","fieldtype":"Check","label":"Разрешить отрицательный остаток","default":"0","depends_on":"track_inventory"},
-  {"fieldname":"column_inventory","fieldtype":"Column Break"},
-  {"fieldname":"tracking_method","fieldtype":"Select","label":"Способ прослеживаемости","options":"None\nBatch\nSerial","default":"None","depends_on":"track_inventory"},
-  {"fieldname":"shelf_life_days","fieldtype":"Int","label":"Срок годности, дней","non_negative":1,"depends_on":"eval:doc.tracking_method=='Batch'"},
-  {"fieldname":"lead_time_days","fieldtype":"Int","label":"Срок поставки, дней","non_negative":1},
-  {"fieldname":"minimum_order_qty","fieldtype":"Float","label":"Минимальная партия закупки","non_negative":1},
-  {"fieldname":"reorder_section","fieldtype":"Section Break","label":"Неснижаемый остаток по складам","depends_on":"track_inventory"},
-  {"fieldname":"reorder_rules","fieldtype":"Table","label":"Правила пополнения","options":"Catalog Reorder Rule","depends_on":"track_inventory"},
-  {"fieldname":"barcodes_tab","fieldtype":"Tab Break","label":"Штрихкоды"},
-  {"fieldname":"barcodes","fieldtype":"Table","label":"Штрихкоды","options":"Catalog Item Barcode"},
-  {"fieldname":"bundle_tab","fieldtype":"Tab Break","label":"Состав комплекта","depends_on":"eval:doc.item_type=='Bundle'"},
-  {"fieldname":"bundle_components","fieldtype":"Table","label":"Компоненты","options":"Catalog Bundle Component"},
-  {"fieldname":"packaging_tab","fieldtype":"Tab Break","label":"Упаковка"},
-  {"fieldname":"packaging","fieldtype":"Table","label":"Варианты упаковки","options":"Catalog Packaging"},
-  {"fieldname":"relations_tab","fieldtype":"Tab Break","label":"Связи и свойства"},
-  {"fieldname":"analogues","fieldtype":"Table","label":"Аналоги","options":"Catalog Analogue"},
-  {"fieldname":"attributes","fieldtype":"Table","label":"Характеристики","options":"Catalog Item Attribute"},
-  {"fieldname":"tax_tab","fieldtype":"Tab Break","label":"Налоги и касса"},
-  {"fieldname":"vat_rate","fieldtype":"Select","label":"Ставка НДС","options":"Без НДС\n0%\n5%\n7%\n10%\n20%\n22%","default":"Без НДС"},
-  {"fieldname":"tax_system","fieldtype":"Select","label":"Система налогообложения","options":"По настройке точки\nОСН\nУСН Доход\nУСН Доход минус расход\nПатент","default":"По настройке точки"},
-  {"fieldname":"receipt_subject","fieldtype":"Select","label":"Признак предмета расчёта","options":"Товар\nПодакцизный товар\nРабота\nУслуга\nПлатёж\nИное","default":"Товар"},
-  {"fieldname":"integration_tab","fieldtype":"Tab Break","label":"Интеграции"},
-  {"fieldname":"moysklad_id","fieldtype":"Data","label":"ID в МоемСкладе","read_only":1,"unique":1},
-  {"fieldname":"sync_status","fieldtype":"Select","label":"Статус синхронизации","options":"Not linked\nPending\nSynced\nError","default":"Not linked","read_only":1},
-  {"fieldname":"last_synced_at","fieldtype":"Datetime","label":"Последняя синхронизация","read_only":1}
+  {
+   "fieldname": "main_tab",
+   "fieldtype": "Tab Break",
+   "label": "Основное"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Data",
+   "label": "Код",
+   "reqd": 1,
+   "unique": 1,
+   "bold": 1,
+   "in_list_view": 1,
+   "in_global_search": 1,
+   "search_index": 1,
+   "description": "Стабильный внутренний код, например TOV-00050 или USL-00120."
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Наименование",
+   "reqd": 1,
+   "bold": 1,
+   "in_list_view": 1,
+   "in_global_search": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "item_type",
+   "fieldtype": "Select",
+   "label": "Тип",
+   "options": "Product\nService\nBundle",
+   "default": "Product",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "catalog_group",
+   "fieldtype": "Link",
+   "label": "Группа",
+   "options": "Catalog Group",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "stock_uom",
+   "fieldtype": "Link",
+   "label": "Единица измерения",
+   "options": "Catalog Unit",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "column_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Активен",
+   "default": "1",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Отключённый товар нельзя выбирать в новых операциях."
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Изображение"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text Editor",
+   "label": "Описание"
+  },
+  {
+   "fieldname": "identifiers_section",
+   "fieldtype": "Section Break",
+   "label": "Идентификаторы и классификация",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "article",
+   "fieldtype": "Data",
+   "label": "Артикул",
+   "in_global_search": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "external_code",
+   "fieldtype": "Data",
+   "label": "Внешний код",
+   "unique": 1,
+   "in_global_search": 1
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Data",
+   "label": "Бренд"
+  },
+  {
+   "fieldname": "country_of_origin",
+   "fieldtype": "Link",
+   "label": "Страна происхождения",
+   "options": "Country"
+  },
+  {
+   "fieldname": "column_identifiers",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_supplier",
+   "fieldtype": "Link",
+   "label": "Основной поставщик",
+   "options": "Catalog Supplier"
+  },
+  {
+   "fieldname": "variant_of",
+   "fieldtype": "Link",
+   "label": "Модификация товара",
+   "options": "Catalog Item",
+   "description": "Шаблон, от которого создан цветовой, размерный или иной вариант."
+  },
+  {
+   "fieldname": "has_variants",
+   "fieldtype": "Check",
+   "label": "Есть модификации",
+   "default": "0"
+  },
+  {
+   "fieldname": "dimensions_section",
+   "fieldtype": "Section Break",
+   "label": "Физические параметры",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "weight",
+   "fieldtype": "Float",
+   "label": "Вес, кг",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "volume",
+   "fieldtype": "Float",
+   "label": "Объём, м³",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Data",
+   "label": "Цвет"
+  },
+  {
+   "fieldname": "size",
+   "fieldtype": "Data",
+   "label": "Размер"
+  },
+  {
+   "fieldname": "pricing_tab",
+   "fieldtype": "Tab Break",
+   "label": "Цены"
+  },
+  {
+   "fieldname": "minimum_sale_price",
+   "fieldtype": "Currency",
+   "label": "Минимальная цена продажи",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "prevent_discounts",
+   "fieldtype": "Check",
+   "label": "Запретить скидки",
+   "default": "0"
+  },
+  {
+   "fieldname": "prices",
+   "fieldtype": "Table",
+   "label": "Цены",
+   "options": "Catalog Item Price"
+  },
+  {
+   "fieldname": "inventory_tab",
+   "fieldtype": "Tab Break",
+   "label": "Складской учёт",
+   "depends_on": "eval:doc.item_type=='Product'"
+  },
+  {
+   "fieldname": "track_inventory",
+   "fieldtype": "Check",
+   "label": "Учитывать остатки",
+   "default": "1",
+   "description": "Остаток будет рассчитываться из складских документов, а не вводиться вручную."
+  },
+  {
+   "fieldname": "valuation_method",
+   "fieldtype": "Select",
+   "label": "Метод оценки",
+   "options": "Moving Average\nFIFO",
+   "default": "Moving Average",
+   "depends_on": "track_inventory"
+  },
+  {
+   "fieldname": "allow_negative_stock",
+   "fieldtype": "Check",
+   "label": "Разрешить отрицательный остаток",
+   "default": "0",
+   "depends_on": "track_inventory"
+  },
+  {
+   "fieldname": "column_inventory",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tracking_method",
+   "fieldtype": "Select",
+   "label": "Способ прослеживаемости",
+   "options": "None\nBatch\nSerial",
+   "default": "None",
+   "depends_on": "track_inventory"
+  },
+  {
+   "fieldname": "shelf_life_days",
+   "fieldtype": "Int",
+   "label": "Срок годности, дней",
+   "non_negative": 1,
+   "depends_on": "eval:doc.tracking_method=='Batch'"
+  },
+  {
+   "fieldname": "lead_time_days",
+   "fieldtype": "Int",
+   "label": "Срок поставки, дней",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "minimum_order_qty",
+   "fieldtype": "Float",
+   "label": "Минимальная партия закупки",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "reorder_section",
+   "fieldtype": "Section Break",
+   "label": "Неснижаемый остаток по складам",
+   "depends_on": "track_inventory"
+  },
+  {
+   "fieldname": "reorder_rules",
+   "fieldtype": "Table",
+   "label": "Правила пополнения",
+   "options": "Catalog Reorder Rule",
+   "depends_on": "track_inventory"
+  },
+  {
+   "fieldname": "barcodes_tab",
+   "fieldtype": "Tab Break",
+   "label": "Штрихкоды"
+  },
+  {
+   "fieldname": "barcodes",
+   "fieldtype": "Table",
+   "label": "Штрихкоды",
+   "options": "Catalog Item Barcode"
+  },
+  {
+   "fieldname": "bundle_tab",
+   "fieldtype": "Tab Break",
+   "label": "Состав комплекта",
+   "depends_on": "eval:doc.item_type=='Bundle'"
+  },
+  {
+   "fieldname": "bundle_components",
+   "fieldtype": "Table",
+   "label": "Компоненты",
+   "options": "Catalog Bundle Component"
+  },
+  {
+   "fieldname": "packaging_tab",
+   "fieldtype": "Tab Break",
+   "label": "Упаковка"
+  },
+  {
+   "fieldname": "packaging",
+   "fieldtype": "Table",
+   "label": "Варианты упаковки",
+   "options": "Catalog Packaging"
+  },
+  {
+   "fieldname": "relations_tab",
+   "fieldtype": "Tab Break",
+   "label": "Связи и свойства"
+  },
+  {
+   "fieldname": "analogues",
+   "fieldtype": "Table",
+   "label": "Аналоги",
+   "options": "Catalog Analogue"
+  },
+  {
+   "fieldname": "attributes",
+   "fieldtype": "Table",
+   "label": "Характеристики",
+   "options": "Catalog Item Attribute"
+  },
+  {
+   "fieldname": "tax_tab",
+   "fieldtype": "Tab Break",
+   "label": "Налоги и касса"
+  },
+  {
+   "fieldname": "vat_rate",
+   "fieldtype": "Select",
+   "label": "Ставка НДС",
+   "options": "Без НДС\n0%\n5%\n7%\n10%\\n18%\n20%\n22%",
+   "default": "Без НДС"
+  },
+  {
+   "fieldname": "tax_system",
+   "fieldtype": "Select",
+   "label": "Система налогообложения",
+   "options": "По настройке точки\nОСН\nУСН Доход\nУСН Доход минус расход\nПатент",
+   "default": "По настройке точки"
+  },
+  {
+   "fieldname": "receipt_subject",
+   "fieldtype": "Select",
+   "label": "Признак предмета расчёта",
+   "options": "Товар\nПодакцизный товар\nРабота\nУслуга\nПлатёж\nИное",
+   "default": "Товар"
+  },
+  {
+   "fieldname": "integration_tab",
+   "fieldtype": "Tab Break",
+   "label": "Интеграции"
+  },
+  {
+   "fieldname": "moysklad_id",
+   "fieldtype": "Data",
+   "label": "ID в МоемСкладе",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "sync_status",
+   "fieldtype": "Select",
+   "label": "Статус синхронизации",
+   "options": "Not linked\nPending\nSynced\nError",
+   "default": "Not linked",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_synced_at",
+   "fieldtype": "Datetime",
+   "label": "Последняя синхронизация",
+   "read_only": 1
+  },
+  {
+   "fieldname": "moysklad_updated_at",
+   "fieldtype": "Datetime",
+   "label": "Изменено в МоемСкладе",
+   "read_only": 1
+  },
+  {
+   "fieldname": "moysklad_image_url",
+   "fieldtype": "Data",
+   "label": "Изображение в МоемСкладе",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "moysklad_payload_json",
+   "fieldtype": "Long Text",
+   "label": "Исходные данные МоегоСклада",
+   "read_only": 1,
+   "hidden": 1
+  }
  ],
  "links": [
-  {"link_doctype":"Catalog Assortment","link_fieldname":"item","group":"Сеть"}
+  {
+   "link_doctype": "Catalog Assortment",
+   "link_fieldname": "item",
+   "group": "Сеть"
+  }
  ],
  "modified": "2026-09-05 15:00:00.000000",
  "modified_by": "Administrator",
@@ -87,7 +459,22 @@
  "name": "Catalog Item",
  "owner": "Administrator",
  "permissions": [
-  {"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"submit":0,"cancel":0,"amend":0,"report":1,"export":1,"import":1,"print":1,"email":1,"share":1}
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 0,
+   "cancel": 0,
+   "amend": 0,
+   "report": 1,
+   "export": 1,
+   "import": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  }
  ],
  "search_fields": "item_name,article,external_code",
  "show_name_in_global_search": 1,

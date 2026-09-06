@@ -23,7 +23,7 @@ def get_catalog_items(
 	if item_type:
 		filters["item_type"] = item_type
 	if catalog_group:
-		filters["catalog_group"] = catalog_group
+		filters["catalog_group"] = ["in", _catalog_group_branch(catalog_group)]
 	if active not in (None, ""):
 		filters["active"] = cint(active)
 
@@ -60,6 +60,7 @@ def get_catalog_items(
 			"stock_uom",
 			"active",
 			"article",
+			"minimum_sale_price",
 		],
 		filters=filters,
 		or_filters=or_filters,
@@ -80,14 +81,37 @@ def get_catalog_filters():
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
-	return {
-		"groups": frappe.get_all(
-			"Catalog Group",
+	groups = frappe.get_all(
+		"Catalog Group",
+		filters={"active": 1},
+		fields=["name", "group_name", "parent_catalog_group", "is_group"],
+		order_by="group_name asc",
+		limit_page_length=2000,
+	)
+	counts = {
+		row.catalog_group: cint(row.item_count)
+		for row in frappe.get_all(
+			"Catalog Item",
 			filters={"active": 1},
-			fields=["name", "group_name"],
-			order_by="group_name asc",
-			limit_page_length=500,
-		),
+			fields=["catalog_group", "count(name) as item_count"],
+			group_by="catalog_group",
+			limit_page_length=2000,
+		)
+		if row.catalog_group
+	}
+	children = {}
+	for group in groups:
+		children.setdefault(group.parent_catalog_group or "", []).append(group.name)
+
+	def branch_count(name):
+		return counts.get(name, 0) + sum(branch_count(child) for child in children.get(name, []))
+
+	for group in groups:
+		group["direct_item_count"] = counts.get(group.name, 0)
+		group["item_count"] = branch_count(group.name)
+
+	return {
+		"groups": groups,
 		"business_points": frappe.get_all(
 			"Business Point",
 			filters=point_filters,
@@ -96,6 +120,56 @@ def get_catalog_filters():
 			limit_page_length=500,
 		),
 	}
+
+
+def _catalog_group_branch(root):
+	groups = frappe.get_all(
+		"Catalog Group",
+		filters={"active": 1},
+		fields=["name", "parent_catalog_group"],
+		limit_page_length=2000,
+	)
+	children = {}
+	for group in groups:
+		children.setdefault(group.parent_catalog_group or "", []).append(group.name)
+	result = []
+	pending = [root]
+	seen = set()
+	while pending:
+		name = pending.pop()
+		if name in seen:
+			continue
+		seen.add(name)
+		result.append(name)
+		pending.extend(children.get(name, []))
+	return result
+
+
+@frappe.whitelist(methods=["POST"])
+def save_catalog_group(data):
+	data = frappe.parse_json(data)
+	require_access("references.catalog", "write" if data.get("name") else "create")
+	group_name = (data.get("group_name") or "").strip()
+	if not group_name:
+		frappe.throw("Укажите название группы")
+
+	doc = frappe.get_doc("Catalog Group", data["name"]) if data.get("name") else frappe.new_doc("Catalog Group")
+	parent = data.get("parent_catalog_group") or None
+	if parent:
+		if parent == doc.name or (doc.name and parent in _catalog_group_branch(doc.name)):
+			frappe.throw("Группу нельзя вложить саму в себя")
+		if not frappe.db.exists("Catalog Group", parent):
+			frappe.throw("Родительская группа не найдена")
+
+	doc.group_name = group_name
+	doc.parent_catalog_group = parent
+	doc.description = data.get("description") or ""
+	doc.active = cint(data.get("active", 1))
+	doc.is_group = cint(data.get("is_group", 0))
+	doc.save(ignore_permissions=True)
+	if parent:
+		frappe.db.set_value("Catalog Group", parent, "is_group", 1, update_modified=False)
+	return {"name": doc.name}
 
 
 @frappe.whitelist()

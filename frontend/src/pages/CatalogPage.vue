@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
@@ -18,12 +19,15 @@ const editorError = ref("");
 const itemForm = reactive({});
 const itemOptions = reactive({ groups: [], units: [], suppliers: [], price_types: [], items: [], points: [], warehouses: [] });
 const canEdit = canAccess("references.catalog", "Edit");
+const groupEditorOpen = ref(false);
+const groupSaving = ref(false);
+const groupError = ref("");
+const groupForm = reactive({ name: "", group_name: "", parent_catalog_group: "", description: "", active: 1, is_group: 0 });
 
 const typeLabels = { Product: "Товар", Service: "Услуга", Bundle: "Комплект" };
 const filterFields = computed(() => [
   { key: "search", label: "Название, код или артикул", placeholder: "Введите текст", wide: true },
   { key: "item_type", label: "Тип", type: "select", options: [{ value: "Product", label: "Товар" }, { value: "Service", label: "Услуга" }, { value: "Bundle", label: "Комплект" }] },
-  { key: "catalog_group", label: "Группа", type: "select", options: groups.value.map((group) => ({ value: group.name, label: group.group_name })) },
   { key: "active", label: "Статус", type: "select", options: [{ value: "1", label: "Активные" }, { value: "0", label: "Неактивные" }] },
   { key: "business_point", label: "Точка продаж", type: "select", options: points.value.map((point) => ({ value: point.name, label: point.point_name })) },
 ]);
@@ -34,6 +38,7 @@ const tableColumns = computed(() => [
   { key: "article", label: "Артикул", width: 140 },
   { key: "catalog_group", label: "Группа", width: 180 },
   { key: "stock_uom", label: "Ед. изм.", width: 110 },
+  { key: "minimum_sale_price", label: "Мин. цена", width: 120, format: (value) => value ? Number(value).toLocaleString("ru-RU", { minimumFractionDigits: 2 }) : "—" },
   { key: "active", label: "Статус", width: 120, format: (value) => value ? "Активен" : "Выключен" },
 ]);
 
@@ -91,6 +96,35 @@ async function saveItem() {
   finally { saving.value = false; }
 }
 
+async function selectGroup(name) {
+  filters.catalog_group = name;
+  await loadItems();
+}
+
+function openGroupEditor(group = null) {
+  groupError.value = "";
+  Object.assign(groupForm, group
+    ? { name: group.name, group_name: group.group_name, parent_catalog_group: group.parent_catalog_group || "", description: group.description || "", active: group.active ?? 1, is_group: group.is_group || 0 }
+    : { name: "", group_name: "", parent_catalog_group: filters.catalog_group || "", description: "", active: 1, is_group: 0 });
+  groupEditorOpen.value = true;
+}
+
+async function saveGroup() {
+  groupSaving.value = true;
+  groupError.value = "";
+  try {
+    const result = await call("raspechatka.api.frontend.save_catalog_group", { data: JSON.stringify(groupForm) }, { method: "POST" });
+    await loadFilters();
+    filters.catalog_group = result.name;
+    groupEditorOpen.value = false;
+    await loadItems();
+  } catch (exception) {
+    groupError.value = exception.message;
+  } finally {
+    groupSaving.value = false;
+  }
+}
+
 function addPrice() { (itemForm.prices ||= []).push({ price_type: itemOptions.price_types[0]?.name || "", rate: 0, minimum_quantity: 1 }); }
 function addBarcode() { (itemForm.barcodes ||= []).push({ barcode: "", barcode_type: "EAN-13", uom: itemForm.stock_uom, quantity: 1 }); }
 function addRow(table, row) { (itemForm[table] ||= []).push(row); }
@@ -110,11 +144,28 @@ onMounted(async () => {
         <button class="button button-primary" type="button" @click="createItem('Product')">＋ Создать товар</button>
       </div></template>
     </ListPageHeader>
+    <div class="catalog-workspace">
+      <CatalogGroupSidebar :groups="groups" :selected="filters.catalog_group" :can-edit="canEdit" @select="selectGroup" @create="openGroupEditor" @edit="openGroupEditor" />
+      <div class="catalog-main">
     <SmartFilterBar :model-value="filters" :fields="filterFields" view-key="catalog.items" @update:model-value="Object.assign(filters,$event)" @apply="loadItems" @reset="loadItems" />
     <SmartDataTable :rows="items" :columns="tableColumns" view-key="catalog.items" :loading="loading" :error="error" empty-title="Ничего не найдено" empty-text="Измените фильтры или создайте новую позицию." @open="openItem" @retry="loadItems">
       <template #cell-item_type="{ row }"><span class="type-chip" :class="row.item_type.toLowerCase()">{{ typeLabels[row.item_type] || row.item_type }}</span></template>
       <template #cell-active="{ row }"><span class="state" :class="{ inactive: !row.active }"><i></i>{{ row.active ? 'Активен' : 'Выключен' }}</span></template>
     </SmartDataTable>
+      </div>
+    </div>
+    <AppModal v-if="groupEditorOpen" :title="groupForm.name ? 'Группа каталога' : 'Новая группа'" @close="groupEditorOpen = false">
+      <form class="editor-form" @submit.prevent="saveGroup">
+        <div class="form-section"><div class="form-grid">
+          <label class="span-2">Название<input v-model="groupForm.group_name" required autofocus /></label>
+          <label>Родительская группа<select v-model="groupForm.parent_catalog_group"><option value="">Верхний уровень</option><option v-for="g in groups.filter(g => g.name !== groupForm.name)" :key="g.name" :value="g.name">{{ g.group_name }}</option></select></label>
+          <label class="check-field"><input v-model="groupForm.active" type="checkbox" :true-value="1" :false-value="0" /> Активна</label>
+          <label class="span-3">Описание<textarea v-model="groupForm.description" rows="3"></textarea></label>
+        </div></div>
+        <p v-if="groupError" class="form-error">{{ groupError }}</p>
+      </form>
+      <template #footer><span></span><div class="footer-actions"><button class="button button-secondary" @click="groupEditorOpen=false">Отмена</button><button class="button button-primary" :disabled="groupSaving" @click="saveGroup">{{groupSaving?'Сохраняем…':'Сохранить группу'}}</button></div></template>
+    </AppModal>
     <AppModal v-if="editorOpen" :title="itemForm.item_name || 'Новая позиция'" wide @close="editorOpen = false">
       <form class="editor-form catalog-editor" @submit.prevent="saveItem">
         <div class="form-section"><h3>Основное</h3><div class="form-grid">
@@ -136,10 +187,16 @@ onMounted(async () => {
         <div class="form-section"><div class="section-heading"><h3>Характеристики</h3><button v-if="canEdit" class="text-button" type="button" @click="addRow('attributes',{attribute_name:'',attribute_value:''})">＋ Добавить</button></div><div class="editable-rows"><div v-for="(row,index) in itemForm.attributes" :key="index"><input v-model="row.attribute_name" placeholder="Характеристика" /><input v-model="row.attribute_value" placeholder="Значение" /><span></span><button type="button" @click="removeRow('attributes',index)">×</button></div></div></div>
         <div class="form-section"><div class="section-heading"><h3>Аналоги</h3><button v-if="canEdit" class="text-button" type="button" @click="addRow('analogues',{item:'',priority:1,notes:''})">＋ Добавить</button></div><div class="editable-rows"><div v-for="(row,index) in itemForm.analogues" :key="index"><select v-model="row.item"><option value="">Аналог</option><option v-for="i in itemOptions.items" :key="i.name" :value="i.name">{{i.item_name}}</option></select><input v-model.number="row.priority" type="number" min="0" placeholder="Приоритет" /><input v-model="row.notes" placeholder="Комментарий" /><button type="button" @click="removeRow('analogues',index)">×</button></div></div></div>
         <div class="form-section"><div class="section-heading"><h3>Ассортимент по точкам</h3><button v-if="canEdit" class="text-button" type="button" @click="addRow('assortments',{business_point:'',enabled:1,visible_in_pos:1,local_sale_price:null,default_warehouse:''})">＋ Точка</button></div><div class="editable-rows wide-rows"><div v-for="(row,index) in itemForm.assortments" :key="index"><select v-model="row.business_point"><option value="">Точка продаж</option><option v-for="p in itemOptions.points" :key="p.name" :value="p.name">{{p.point_name}}</option></select><label class="check-field"><input v-model="row.enabled" type="checkbox" :true-value="1" :false-value="0" /> Доступен</label><label class="check-field"><input v-model="row.visible_in_pos" type="checkbox" :true-value="1" :false-value="0" /> На кассе</label><input v-model.number="row.local_sale_price" type="number" min="0" step="0.01" placeholder="Своя цена" /><select v-model="row.default_warehouse"><option value="">Склад</option><option v-for="w in itemOptions.warehouses.filter(w=>!row.business_point||w.business_point===row.business_point)" :key="w.name" :value="w.name">{{w.warehouse_name}}</option></select><button type="button" @click="removeRow('assortments',index)">×</button></div></div></div>
-        <div class="form-section"><h3>Налоги и касса</h3><div class="form-grid"><label>НДС<select v-model="itemForm.vat_rate"><option>Без НДС</option><option>0%</option><option>5%</option><option>7%</option><option>10%</option><option>20%</option><option>22%</option></select></label><label>Система налогообложения<select v-model="itemForm.tax_system"><option>По настройке точки</option><option>ОСН</option><option>УСН Доход</option><option>УСН Доход минус расход</option><option>Патент</option></select></label><label>Предмет расчёта<select v-model="itemForm.receipt_subject"><option>Товар</option><option>Подакцизный товар</option><option>Работа</option><option>Услуга</option><option>Платёж</option><option>Иное</option></select></label></div></div>
+        <div class="form-section"><h3>Налоги и касса</h3><div class="form-grid"><label>НДС<select v-model="itemForm.vat_rate"><option>Без НДС</option><option>0%</option><option>5%</option><option>7%</option><option>10%</option><option>18%</option><option>20%</option><option>22%</option></select></label><label>Система налогообложения<select v-model="itemForm.tax_system"><option>По настройке точки</option><option>ОСН</option><option>УСН Доход</option><option>УСН Доход минус расход</option><option>Патент</option></select></label><label>Предмет расчёта<select v-model="itemForm.receipt_subject"><option>Товар</option><option>Подакцизный товар</option><option>Работа</option><option>Услуга</option><option>Платёж</option><option>Иное</option></select></label></div></div>
         <p v-if="editorError" class="form-error">{{editorError}}</p>
       </form>
       <template #footer><span></span><div class="footer-actions"><button class="button button-secondary" @click="editorOpen=false">Закрыть</button><button v-if="canEdit" class="button button-primary" :disabled="saving" @click="saveItem">{{saving?'Сохраняем…':'Сохранить'}}</button></div></template>
     </AppModal>
   </section>
 </template>
+
+<style scoped>
+.catalog-workspace { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
+.catalog-main { flex: 1; min-width: 0; display: grid; gap: 12px; }
+@media (max-width: 900px) { .catalog-workspace { flex-direction: column; } }
+</style>

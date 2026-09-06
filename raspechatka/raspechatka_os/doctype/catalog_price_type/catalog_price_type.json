@@ -1,1 +1,94 @@
-{"actions":[],"allow_rename":1,"autoname":"field:price_type_name","creation":"2026-09-05 15:00:00.000000","doctype":"DocType","engine":"InnoDB","field_order":["price_type_name","purpose","currency","active"],"fields":[{"fieldname":"price_type_name","fieldtype":"Data","label":"Тип цены","reqd":1,"unique":1,"in_list_view":1},{"fieldname":"purpose","fieldtype":"Select","label":"Назначение","options":"Selling\nBuying","default":"Selling","reqd":1,"in_list_view":1},{"fieldname":"currency","fieldtype":"Link","label":"Валюта","options":"Currency","default":"RUB","reqd":1,"in_list_view":1},{"fieldname":"active","fieldtype":"Check","label":"Активен","default":"1"}],"modified":"2026-09-05 15:00:00.000000","modified_by":"Administrator","module":"Raspechatka OS","name":"Catalog Price Type","owner":"Administrator","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1}],"sort_field":"price_type_name","sort_order":"ASC","states":[],"title_field":"price_type_name","track_changes":1}
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:price_type_name",
+ "creation": "2026-09-05 15:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "price_type_name",
+  "purpose",
+  "currency",
+  "active",
+  "integration_section",
+  "moysklad_id",
+  "moysklad_external_code"
+ ],
+ "fields": [
+  {
+   "fieldname": "price_type_name",
+   "fieldtype": "Data",
+   "label": "Тип цены",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Select",
+   "label": "Назначение",
+   "options": "Selling\nBuying",
+   "default": "Selling",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Валюта",
+   "options": "Currency",
+   "default": "RUB",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Активен",
+   "default": "1"
+  },
+  {
+   "fieldname": "integration_section",
+   "fieldtype": "Section Break",
+   "label": "МойСклад",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "moysklad_id",
+   "fieldtype": "Data",
+   "label": "ID в МоемСкладе",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "moysklad_external_code",
+   "fieldtype": "Data",
+   "label": "Внешний код МоегоСклада",
+   "read_only": 1
+  }
+ ],
+ "modified": "2026-09-05 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Raspechatka OS",
+ "name": "Catalog Price Type",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "import": 1,
+   "print": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "price_type_name",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "price_type_name",
+ "track_changes": 1
+}
