@@ -91,3 +91,8 @@ const submenuItems = computed(() => currentSubmenu.value.map((item) => typeof it
     </main>
   </div>
 </template>
+
+<style scoped>
+.subnav { top: 78px; }
+@media (max-width: 760px) { .subnav { top: 64px; } }
+</style>
