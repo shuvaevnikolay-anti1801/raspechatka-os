@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import DashboardPage from "./pages/DashboardPage.vue";
 import CatalogPage from "./pages/CatalogPage.vue";
-import ModulePlaceholder from "./pages/ModulePlaceholder.vue";
 import ReferencesPage from "./pages/ReferencesPage.vue";
 import MasterDataPage from "./pages/MasterDataPage.vue";
 import AccessSettingsPage from "./pages/AccessSettingsPage.vue";
@@ -17,6 +16,7 @@ import FinanceReportPage from "./pages/FinanceReportPage.vue";
 import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
 import FinanceBankPage from "./pages/FinanceBankPage.vue";
 import SalesPage from "./pages/SalesPage.vue";
+import TeamPage from "./pages/TeamPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -56,7 +56,11 @@ const routes = [
   { path: "/sales/cash", name: "sales-cash", component: SalesPage, meta: { module: "sales", kind: "cash" } },
   { path: "/sales/actions", name: "sales-actions", component: SalesPage, meta: { module: "sales", kind: "actions" } },
   { path: "/sales/integration", name: "sales-integration", component: SalesPage, meta: { module: "sales", kind: "integration" } },
-  { path: "/:module(team|analytics)", name: "module", component: ModulePlaceholder },
+  { path: "/team", name: "team-employees", component: TeamPage, meta: { module: "team", section: "employees" } },
+  { path: "/team/schedule", name: "team-schedule", component: TeamPage, meta: { module: "team", section: "schedule" } },
+  { path: "/team/payroll", name: "team-payroll", component: TeamPage, meta: { module: "team", section: "payroll" } },
+  { path: "/team/bonuses", name: "team-bonuses", component: TeamPage, meta: { module: "team", section: "bonuses" } },
+  { path: "/team/hr", name: "team-hr", component: TeamPage, meta: { module: "team", section: "hr" } },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 

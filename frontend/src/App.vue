@@ -14,13 +14,12 @@ const modules = [
   { key: "references", label: "Справочники", to: "/references/entities", area: "references" },
   { key: "catalog", label: "Каталог", to: "/catalog", area: "references.catalog" },
   { key: "warehouse", label: "Склад", to: "/warehouse/receipts", area: "warehouse.operations" },
-  { key: "team", label: "Команда", to: "/team" },
+  { key: "team", label: "Сотрудники", to: "/team", area: "team.employees" },
   { key: "finance", label: "Финансы", to: "/finance", area: "finance.reporting" },
-  { key: "analytics", label: "Аналитика", to: "/analytics" },
 ];
 
 const submenus = {
-  dashboard: ["Обзор", "Продажи", "Точки"],
+  dashboard: [{ label: "Обзор", to: "/", area: "dashboard" }],
   catalog: [
     { label: "Товары и услуги", to: "/catalog", area: "references.catalog" },
     { label: "Группы", to: "/catalog/groups", area: "references.catalog" },
@@ -52,7 +51,13 @@ const submenus = {
     { label: "Остатки", to: "/warehouse/balances", area: "warehouse.operations" },
     { label: "Обороты", to: "/warehouse/turnover", area: "warehouse.operations" },
   ],
-  team: ["Сотрудники", "Обучение", "График"],
+  team: [
+    { label: "Сотрудники", to: "/team", area: "team.employees" },
+    { label: "График", to: "/team/schedule", area: "team.schedule" },
+    { label: "Зарплата", to: "/team/payroll", area: "team.payroll" },
+    { label: "Премии и игра", to: "/team/bonuses", area: "team.motivation" },
+    { label: "Кадры и документы", to: "/team/hr", area: "team.hr" },
+  ],
   finance: [
     { label: "Обзор", to: "/finance", area: "finance.reporting" },
     { label: "Платежи", to: "/finance/payments", area: "finance.operations" },
@@ -63,7 +68,6 @@ const submenus = {
     { label: "Прибыльность", to: "/finance/profitability", area: "finance.reporting" },
     { label: "Точка Банк", to: "/finance/tochka", area: "finance.bank" },
   ],
-  analytics: ["Показатели", "Отчёты", "Конструктор"],
   references: [
     { label: "Партнёры", to: "/references/organizations", area: "references.network" },
     { label: "Юридические лица", to: "/references/entities", area: "references.network" },
@@ -78,7 +82,11 @@ const submenus = {
 };
 
 const currentModule = computed(() => route.meta.module || route.params.module || "dashboard");
-const visibleModules = computed(() => modules.filter((item) => item.area !== "references" ? (!item.area || can(item.area)) : Object.keys(boot.access || {}).some((area) => area.startsWith("references.") && can(area))));
+const visibleModules = computed(() => modules.filter((item) => {
+  if (item.key === "references") return Object.keys(boot.access || {}).some((area) => area.startsWith("references.") && can(area));
+  if (item.key === "team") return Object.keys(boot.access || {}).some((area) => area.startsWith("team.") && can(area));
+  return !item.area || can(item.area);
+}));
 const currentSubmenu = computed(() => (submenus[currentModule.value] || []).filter((item) => typeof item === "string" || !item.area || can(item.area, item.minimum)));
 const submenuItems = computed(() => currentSubmenu.value.map((item) => typeof item === "string" ? { label: item, to: null } : item));
 const initials = computed(() => (boot.full_name || boot.user || "Р").trim().slice(0, 1).toUpperCase());
