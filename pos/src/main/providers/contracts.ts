@@ -1,4 +1,4 @@
-import type { CartLine, PaymentMethod, PaymentPart } from '../../shared/contracts'
+import type { BootState, CartLine, PaymentMethod, PaymentPart, PrintResult, SaleDetails } from '../../shared/contracts'
 
 export type PaymentRequest = {
   saleId: string
@@ -37,4 +37,9 @@ export interface PaymentProvider {
 export interface FiscalProvider {
   fiscalizeSale(request: FiscalRequest): Promise<FiscalResult>
   fiscalizeReturn(request: FiscalReturnRequest): Promise<FiscalResult>
+  reprintReceipt(request: {saleId:string;receiptNumber:string}): Promise<PrintResult>
+}
+
+export interface PrintProvider {
+  printCommodityReceipt(sale:SaleDetails,boot:BootState):Promise<PrintResult>
 }

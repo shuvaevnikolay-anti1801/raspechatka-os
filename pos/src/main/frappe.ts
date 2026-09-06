@@ -1,4 +1,4 @@
-import type { BootState, ConnectionConfig, OutboxEvent, Product } from '../shared/contracts'
+import type { BootState, ConnectionConfig, Customer, OutboxEvent, Product } from '../shared/contracts'
 
 type BootstrapResponse = {
   point: { id:string; name:string }
@@ -6,6 +6,7 @@ type BootstrapResponse = {
   employee: { name:string }
   rules: BootState['rules']
   products: Product[]
+  customers: Customer[]
 }
 
 export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):Promise<string[]> {

@@ -27,11 +27,14 @@ export class PosDatabase {
         id TEXT PRIMARY KEY, name TEXT NOT NULL, sku TEXT NOT NULL UNIQUE,
         category TEXT NOT NULL, item_type TEXT NOT NULL DEFAULT 'service',
         uom TEXT NOT NULL DEFAULT 'шт', barcode TEXT, stock REAL,
-        price_minor INTEGER NOT NULL CHECK(price_minor >= 0), active INTEGER NOT NULL DEFAULT 1
+        price_minor INTEGER NOT NULL CHECK(price_minor >= 0), active INTEGER NOT NULL DEFAULT 1,
+        track_inventory INTEGER NOT NULL DEFAULT 0, allow_negative_stock INTEGER NOT NULL DEFAULT 0,
+        minimum_sale_price_minor INTEGER NOT NULL DEFAULT 0, prevent_discounts INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT,
-        discount_percent REAL NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
+        discount_percent REAL NOT NULL DEFAULT 0, purchase_count INTEGER NOT NULL DEFAULT 0,
+        total_spent_minor INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
       );
       CREATE TABLE IF NOT EXISTS shifts (
         id TEXT PRIMARY KEY, opened_at TEXT NOT NULL, closed_at TEXT, cashier_name TEXT NOT NULL
@@ -40,7 +43,8 @@ export class PosDatabase {
         id TEXT PRIMARY KEY, client_request_id TEXT NOT NULL UNIQUE, shift_id TEXT NOT NULL,
         total_minor INTEGER NOT NULL, payment_method TEXT NOT NULL,
         payment_transaction_id TEXT NOT NULL, fiscal_number TEXT NOT NULL,
-        customer_name TEXT, status TEXT NOT NULL DEFAULT 'completed', created_at TEXT NOT NULL,
+        customer_id TEXT, customer_name TEXT, receipt_discount_percent REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'completed', created_at TEXT NOT NULL,
         FOREIGN KEY (shift_id) REFERENCES shifts(id)
       );
       CREATE TABLE IF NOT EXISTS sale_items (
@@ -88,8 +92,16 @@ export class PosDatabase {
     this.ensureColumn('products', 'uom', "TEXT NOT NULL DEFAULT 'шт'")
     this.ensureColumn('products', 'barcode', 'TEXT')
     this.ensureColumn('products', 'stock', 'REAL')
+    this.ensureColumn('products', 'track_inventory', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('products', 'allow_negative_stock', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('products', 'minimum_sale_price_minor', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('products', 'prevent_discounts', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('sales', 'customer_id', 'TEXT')
     this.ensureColumn('sales', 'customer_name', 'TEXT')
+    this.ensureColumn('sales', 'receipt_discount_percent', 'REAL NOT NULL DEFAULT 0')
     this.ensureColumn('sales', 'status', "TEXT NOT NULL DEFAULT 'completed'")
+    this.ensureColumn('customers', 'purchase_count', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('customers', 'total_spent_minor', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('sale_items', 'discount_percent', 'REAL NOT NULL DEFAULT 0')
     this.ensureColumn('sale_items', 'line_total_minor', 'INTEGER NOT NULL DEFAULT 0')
   }
@@ -123,19 +135,39 @@ export class PosDatabase {
   }
 
   listProducts():Product[]{return this.db.prepare(`SELECT id,name,sku,category,item_type AS type,uom,barcode,stock,
-    price_minor AS priceMinor FROM products WHERE active=1 ORDER BY category,name`).all() as Product[]}
+      price_minor AS priceMinor,track_inventory AS trackInventory,allow_negative_stock AS allowNegativeStock,
+      minimum_sale_price_minor AS minimumSalePriceMinor,prevent_discounts AS preventDiscounts
+      FROM products WHERE active=1 ORDER BY category,name`).all().map((x:any)=>({
+        ...x,trackInventory:Boolean(x.trackInventory),allowNegativeStock:Boolean(x.allowNegativeStock),
+        preventDiscounts:Boolean(x.preventDiscounts)
+      })) as Product[]}
   replaceProducts(products:Product[]):void {
     const upsert=this.db.prepare(`INSERT INTO products
-      (id,name,sku,category,item_type,uom,barcode,stock,price_minor,active) VALUES (?,?,?,?,?,?,?,?,?,1)
+      (id,name,sku,category,item_type,uom,barcode,stock,price_minor,active,track_inventory,allow_negative_stock,minimum_sale_price_minor,prevent_discounts)
+      VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,
       item_type=excluded.item_type,uom=excluded.uom,barcode=excluded.barcode,stock=excluded.stock,
-      price_minor=excluded.price_minor,active=1`)
+      price_minor=excluded.price_minor,active=1,track_inventory=excluded.track_inventory,
+      allow_negative_stock=excluded.allow_negative_stock,minimum_sale_price_minor=excluded.minimum_sale_price_minor,
+      prevent_discounts=excluded.prevent_discounts`)
     this.db.exec('BEGIN')
-    try{products.forEach((x)=>upsert.run(x.id,x.name,x.sku,x.category,x.type,x.uom,x.barcode??null,x.stock??null,x.priceMinor));this.db.exec('COMMIT')}
+    try{products.forEach((x)=>upsert.run(x.id,x.name,x.sku,x.category,x.type,x.uom,x.barcode??null,x.stock??null,x.priceMinor,
+      x.trackInventory?1:0,x.allowNegativeStock?1:0,x.minimumSalePriceMinor??0,x.preventDiscounts?1:0));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
-  listCustomers(query=''):Customer[]{const q=`%${query}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent
+  listCustomers(query=''):Customer[]{const q=`%${query}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
+    purchase_count AS purchaseCount,total_spent_minor AS totalSpentMinor
     FROM customers WHERE active=1 AND (name LIKE ? OR phone LIKE ?) ORDER BY name LIMIT 50`).all(q,q) as Customer[]}
+  replaceCustomers(customers:Customer[]):void {
+    const upsert=this.db.prepare(`INSERT INTO customers
+      (id,name,phone,discount_percent,purchase_count,total_spent_minor,active) VALUES (?,?,?,?,?,?,1)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,
+      discount_percent=excluded.discount_percent,purchase_count=excluded.purchase_count,
+      total_spent_minor=excluded.total_spent_minor,active=1`)
+    this.db.exec('BEGIN')
+    try{customers.forEach((x)=>upsert.run(x.id,x.name,x.phone??null,x.discountPercent,x.purchaseCount??0,x.totalSpentMinor??0));this.db.exec('COMMIT')}
+    catch(error){this.db.exec('ROLLBACK');throw error}
+  }
 
   currentShift():Shift|null{return (this.db.prepare(`SELECT id,opened_at AS openedAt,closed_at AS closedAt,cashier_name AS cashierName
     FROM shifts WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`).get() as Shift|undefined)??null}
@@ -176,11 +208,11 @@ export class PosDatabase {
     return (this.db.prepare('SELECT id saleId,fiscal_number receiptNumber,total_minor totalMinor FROM sales WHERE client_request_id=?').get(id) as {saleId:string;receiptNumber:string;totalMinor:number}|undefined)??null
   }
 
-  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerName?:string;lines:CartLine[];payments:PaymentPart[]}):void {
+  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;lines:CartLine[];payments:PaymentPart[]}):void {
     this.db.exec('BEGIN')
     try {
-      this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_name,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerName??null,input.createdAt)
+      this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerId??null,input.customerName??null,input.receiptDiscountPercent,input.createdAt)
       const lineRaw=input.lines.map((line)=>Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent??0)/100)))
       const rawTotal=lineRaw.reduce((sum,x)=>sum+x,0)
       const insertLine=this.db.prepare('INSERT INTO sale_items (sale_id,product_id,name,quantity,unit_price_minor,discount_percent,line_total_minor) VALUES (?,?,?,?,?,?,?)')
@@ -190,6 +222,8 @@ export class PosDatabase {
       })
       const pay=this.db.prepare('INSERT INTO sale_payments (sale_id,method,amount_minor,transaction_id) VALUES (?,?,?,?)')
       input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null))
+      const reduceStock=this.db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND track_inventory=1')
+      input.lines.forEach((x)=>reduceStock.run(x.quantity,x.productId))
       this.queue('sale.completed',input,input.createdAt)
       this.db.exec('COMMIT')
     }catch(error){this.db.exec('ROLLBACK');throw error}
@@ -222,12 +256,19 @@ export class PosDatabase {
       input.lines.forEach((x)=>line.run(input.id,x.saleItemId,x.quantity,x.lineTotalMinor))
       const pay=this.db.prepare('INSERT INTO return_payments (return_id,method,amount_minor,transaction_id) VALUES (?,?,?,?)')
       input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null))
+      const restoreStock=this.db.prepare(`UPDATE products SET stock=stock+? WHERE id=(
+        SELECT product_id FROM sale_items WHERE id=?) AND track_inventory=1`)
+      input.lines.forEach((x)=>restoreStock.run(x.quantity,x.saleItemId))
       const remaining=(this.db.prepare(`SELECT COUNT(*) count FROM sale_items WHERE sale_id=? AND quantity>
         COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0)`).get(input.saleId) as {count:number}).count
       const returned=(this.db.prepare('SELECT COALESCE(SUM(total_minor),0) value FROM returns WHERE sale_id=?').get(input.saleId) as {value:number}).value
       const original=(this.db.prepare('SELECT total_minor value FROM sales WHERE id=?').get(input.saleId) as {value:number}).value
       this.db.prepare('UPDATE sales SET status=? WHERE id=?').run(!remaining||returned>=original?'returned':'partially_returned',input.saleId)
-      this.queue('sale.returned',input,input.createdAt)
+      const eventLines=input.lines.map((x)=>{
+        const item=this.db.prepare('SELECT product_id productId,name,unit_price_minor unitPriceMinor FROM sale_items WHERE id=?').get(x.saleItemId) as {productId:string;name:string;unitPriceMinor:number}
+        return {...x,...item}
+      })
+      this.queue('sale.returned',{...input,lines:eventLines},input.createdAt)
       this.db.exec('COMMIT')
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }

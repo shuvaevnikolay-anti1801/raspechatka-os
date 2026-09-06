@@ -6,7 +6,7 @@ import type {
   SalePaymentMethod, SaleSummary, ShiftSummary
 } from '../../shared/contracts'
 
-type Screen='sale'|'orders'|'receipts'|'shift'|'settings'
+type Screen='sale'|'receipts'|'shift'|'settings'
 type PaymentChoice=PaymentMethod|'mixed'
 const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2})
 const formatMoney=(minor:number)=>money.format(minor/100)
@@ -35,6 +35,8 @@ export default function App(){
   const [payment,setPayment]=useState<PaymentChoice|null>(null)
   const [returnSale,setReturnSale]=useState<SaleDetails|null>(null)
   const [cashOperation,setCashOperation]=useState<CashOperationType|null>(null)
+  const [customerOpen,setCustomerOpen]=useState(false)
+  const [freePriceOpen,setFreePriceOpen]=useState(false)
 
   const refresh=async()=>{
     const result=await Promise.all([
@@ -91,6 +93,11 @@ export default function App(){
     if(!boot?.shift){setMessage('Для возврата сначала откройте смену');return}
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
+  const chooseCustomer=(value:Customer|null)=>{setCustomer(value);setDiscount(value?.discountPercent??0);setCustomerOpen(false)}
+  const printSale=async(id:string,kind:'fiscal-copy'|'commodity')=>{
+    try{const result=await window.raspechatkaPos.printSale(id,kind);setMessage(result.message)}
+    catch(e){setMessage(e instanceof Error?e.message:String(e))}
+  }
 
   if(!boot)return <div className="loading"><i/>Запускаем кассу…</div>
   return <div className="app-shell">
@@ -101,7 +108,6 @@ export default function App(){
     </header>
     <nav className="main-nav">
       <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
-      <Nav active={screen==='orders'} icon="▤" label="Заказы" onClick={()=>setScreen('orders')}/>
       <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
       <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
       <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
@@ -112,7 +118,7 @@ export default function App(){
     {screen==='sale'&&<main className="sale-layout">
       <aside className="categories"><strong>Категории</strong>{categories.map((name)=><button key={name} className={category===name?'active':''} onClick={()=>setCategory(name)}>{name}<span>{name==='Все'?products.length:products.filter((p)=>p.category===name).length}</span></button>)}</aside>
       <section className="catalog">
-        <div className="catalog-toolbar"><label className="search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label><button className="secondary">Свободная цена</button></div>
+        <div className="catalog-toolbar"><label className="search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label>{boot.rules.allowFreePrice&&<button className="secondary" onClick={()=>setFreePriceOpen(true)}>Свободная цена</button>}</div>
         <div className="product-grid">{visible.map((p)=><button className="product-card" key={p.id} onClick={()=>add(p)}>
           <span className={'type '+p.type}>{p.type==='service'?'Услуга':p.type==='bundle'?'Комплект':'Товар'}</span>
           <strong>{p.name}</strong><small>{p.sku} · {p.uom}</small>
@@ -121,7 +127,7 @@ export default function App(){
       </section>
       <aside className="receipt">
         <header><div><small>ТЕКУЩАЯ ПРОДАЖА</small><h2>Новый чек</h2></div><button disabled={!cart.length} onClick={clear}>Очистить</button></header>
-        <div className="customer-row"><button onClick={()=>setCustomer(customer?null:customers.find((c)=>c.id!=='retail')??null)}>◎ {customer?.name||'Добавить покупателя'}</button>{customer&&<span>Скидка клиента {customer.discountPercent}%</span>}</div>
+        <div className="customer-row"><button onClick={()=>setCustomerOpen(true)}>◎ {customer?.name||'Найти покупателя по телефону'}</button>{customer&&<span>Скидка клиента {customer.discountPercent}% · <button onClick={()=>chooseCustomer(null)}>убрать</button></span>}</div>
         <div className="receipt-lines">{!cart.length?<div className="empty"><i>＋</i><b>Чек пока пуст</b><span>Выберите услугу или найдите её по названию</span></div>:cart.map((line)=><div className="receipt-line" key={line.productId}>
           <div><strong>{line.name}</strong><small>{formatMoney(line.unitPriceMinor)} за ед.</small></div>
           <div className="qty"><button onClick={()=>change(line.productId,-1)}>−</button><b>{line.quantity}</b><button onClick={()=>change(line.productId,1)}>+</button></div>
@@ -139,11 +145,10 @@ export default function App(){
       </aside>
     </main>}
 
-    {screen==='orders'&&<Page title="Заказы" kicker="РАБОЧЕЕ МЕСТО"><div className="toolbar"><input placeholder="Номер, клиент или телефон"/><select><option>Все статусы</option><option>Новый</option><option>В работе</option><option>Готов</option></select><button className="primary">+ Новый заказ</button></div><Empty title="Заказы подключим к OS" text="Экран подготовлен для заказов точки, сроков готовности, оплаты и выдачи клиенту."/></Page>}
     {screen==='receipts'&&<Page title="Чеки и возвраты" kicker="ИСТОРИЯ">
       {held.length>0&&<section className="held"><h3>Отложенные</h3>{held.map((r)=><article key={r.id}><div><b>{r.label}</b><small>{r.lines.length} поз. · {new Date(r.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div><button onClick={()=>restoreReceipt(r)}>Продолжить</button></article>)}</section>}
       <div className="data-table receipts-table"><header><span>Чек</span><span>Дата</span><span>Покупатель</span><span>Оплата</span><span>Сумма</span><span/></header>
-      {sales.length?sales.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small> − {formatMoney(s.returnedMinor)}</small>}</strong><button disabled={s.status==='returned'} onClick={()=>startReturn(s)}>Возврат</button></div>):<Empty title="Продаж пока нет" text="После первого тестового чека здесь появится история."/>}</div>
+      {sales.length?sales.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small> − {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions"><button onClick={()=>printSale(s.id,'fiscal-copy')}>Копия чека</button><button onClick={()=>printSale(s.id,'commodity')}>Товарный</button><button disabled={s.status==='returned'} onClick={()=>startReturn(s)}>Возврат</button></div></div>):<Empty title="Продаж пока нет" text="После первого тестового чека здесь появится история."/>}</div>
       {returns.length>0&&<section className="return-history"><h3>Оформленные возвраты</h3>{returns.map((x)=><article key={x.id}><div><b>{x.receiptNumber}</b><small>к чеку {x.originalReceiptNumber} · {new Date(x.createdAt).toLocaleString('ru-RU')}</small></div><strong>− {formatMoney(x.totalMinor)}</strong></article>)}</section>}
     </Page>}
     {screen==='shift'&&<Page title="Текущая смена" kicker={boot.shift?'СМЕНА ОТКРЫТА':'СМЕНА ЗАКРЫТА'}>
@@ -158,6 +163,8 @@ export default function App(){
       setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
     }}/>}
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>}
+    {customerOpen&&<CustomerModal customers={customers} selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
+    {freePriceOpen&&<FreePriceModal onClose={()=>setFreePriceOpen(false)} onAdd={(name,price)=>{setCart((current)=>[...current,{productId:'free-'+crypto.randomUUID(),name,quantity:1,unitPriceMinor:price}]);setFreePriceOpen(false)}}/>}
   </div>
 }
 
@@ -207,6 +214,18 @@ function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boole
 function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;onClose:()=>void;onComplete:(amount:number,reason:string)=>Promise<void>}){
   const [amount,setAmount]=useState('');const [reason,setReason]=useState('')
   return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ДЕНЕЖНЫЙ ЯЩИК</small><h2>{type==='deposit'?'Внесение':'Изъятие'}</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Сумма</span><input autoFocus value={amount} onChange={(e)=>setAmount(e.target.value)}/></label><label className="cash-input"><span>Основание</span><input value={reason} onChange={(e)=>setReason(e.target.value)} placeholder={type==='deposit'?'Размен в начале смены':'Инкассация'}/></label><button className="primary confirm" disabled={toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</button></div></div>
+}
+
+function CustomerModal({customers,selected,onClose,onSelect}:{customers:Customer[];selected:Customer|null;onClose:()=>void;onSelect:(value:Customer|null)=>void}){
+  const [query,setQuery]=useState('')
+  const normalized=query.replace(/\D/g,'')
+  const visible=customers.filter((x)=>!query||(x.name+' '+(x.phone||'')).toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru'))||(normalized&&(x.phone||'').replace(/\D/g,'').includes(normalized))).slice(0,50)
+  return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>БАЗА КЛИЕНТОВ OS</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите телефон или имя"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{visible.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone||'Телефон не указан'} · {x.purchaseCount||0} покупок</small></div><strong>−{x.discountPercent}%</strong></button>)}</div></div></div>
+}
+
+function FreePriceModal({onClose,onAdd}:{onClose:()=>void;onAdd:(name:string,price:number)=>void}){
+  const [name,setName]=useState('Свободная позиция');const [price,setPrice]=useState('')
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>РУЧНАЯ ПОЗИЦИЯ</small><h2>Свободная цена</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Наименование</span><input value={name} onChange={(e)=>setName(e.target.value)}/></label><label className="cash-input"><span>Цена</span><input autoFocus value={price} onChange={(e)=>setPrice(e.target.value)} placeholder="0,00"/></label><button className="primary confirm" disabled={!name.trim()||toMinor(price)<=0} onClick={()=>onAdd(name.trim(),toMinor(price))}>Добавить · {formatMoney(toMinor(price))}</button></div></div>
 }
 
 function Nav({active,icon,label,badge,onClick}:{active:boolean;icon:string;label:string;badge?:number;onClick:()=>void}){return <button className={active?'active':''} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}

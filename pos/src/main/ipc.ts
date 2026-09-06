@@ -3,14 +3,14 @@ import { ipcMain } from 'electron'
 import { calculateTotalMinor } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
-  CreateReturnRequest, HeldReceipt, PaymentPart, ReturnResult, Shift
+  CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind, ReturnResult, Shift
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
 import { loadBootstrap, pushEvents } from './frappe'
-import type { FiscalProvider, PaymentProvider } from './providers/contracts'
+import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 
-const demoRules={allowDiscounts:true,maxDiscountPercent:100,acceptsCash:true,acceptsCard:true,acceptsQr:false}
+const demoRules={allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,acceptsCash:true,acceptsCard:true,acceptsQr:false}
 const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='cash'?rules.acceptsCash:method==='card'?rules.acceptsCard:rules.acceptsQr
 
@@ -19,8 +19,9 @@ export function registerIpcHandlers(dependencies:{
   connectionStore:ConnectionStore
   paymentProvider:PaymentProvider
   fiscalProvider:FiscalProvider
+  printProvider:PrintProvider
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider}=dependencies
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider}=dependencies
   const cashierName='Администратор'
 
   const bootState=():BootState=>{
@@ -41,6 +42,11 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:list-sales',()=>database.listSales())
   ipcMain.handle('pos:get-sale',(_event,id:string)=>database.getSale(id))
   ipcMain.handle('pos:list-returns',()=>database.listReturns())
+  ipcMain.handle('pos:print-sale',async(_event,id:string,kind:PrintKind)=>{
+    const sale=database.getSale(id)
+    if(kind==='fiscal-copy')return fiscalProvider.reprintReceipt({saleId:sale.id,receiptNumber:sale.receiptNumber})
+    return printProvider.printCommodityReceipt(sale,bootState())
+  })
   ipcMain.handle('pos:list-held-receipts',()=>database.listHeldReceipts())
   ipcMain.handle('pos:hold-receipt',(_event,input:Omit<HeldReceipt,'id'|'createdAt'>)=>database.holdReceipt(input))
   ipcMain.handle('pos:delete-held-receipt',(_event,id:string)=>database.deleteHeldReceipt(id))
@@ -63,6 +69,7 @@ export function registerIpcHandlers(dependencies:{
     try {
       const remote=await loadBootstrap(config)
       database.replaceProducts(remote.products)
+      database.replaceCustomers(remote.customers)
       const events=database.pendingEvents()
       if(events.length)database.markEventsSent(await pushEvents(config,events))
       const lastSyncAt=new Date().toISOString()
@@ -88,6 +95,17 @@ export function registerIpcHandlers(dependencies:{
     const rules=bootState().rules
     const discount=Math.min(request.receiptDiscountPercent??0,rules.maxDiscountPercent)
     const totalMinor=calculateTotalMinor(request.lines,rules.allowDiscounts?discount:0)
+    const catalog=new Map(database.listProducts().map((x)=>[x.id,x]))
+    for(const line of request.lines){
+      const product=catalog.get(line.productId)
+      if(!product){
+        if(!rules.allowFreePrice)throw new Error('Свободная цена запрещена на этой точке')
+        continue
+      }
+      if(product.preventDiscounts&&(line.discountPercent||discount))throw new Error(`Для «${product.name}» скидка запрещена`)
+      if(line.unitPriceMinor<(product.minimumSalePriceMinor??0))throw new Error(`Цена «${product.name}» ниже минимальной`)
+      if(product.trackInventory&&!product.allowNegativeStock&&(product.stock??0)<line.quantity)throw new Error(`Недостаточно остатка «${product.name}»: доступно ${product.stock??0}`)
+    }
     if(!request.payments.length||request.payments.some((x)=>!accepted(rules,x.method)))throw new Error('Способ оплаты недоступен на этой точке')
     if(request.payments.some((x)=>!Number.isInteger(x.amountMinor)||x.amountMinor<=0))throw new Error('Некорректная сумма оплаты')
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
@@ -104,7 +122,8 @@ export function registerIpcHandlers(dependencies:{
     database.saveSale({
       id:saleId,clientRequestId:request.clientRequestId,shiftId:shift.id,totalMinor,
       paymentMethod:payments.length>1?'mixed':payments[0].method,fiscalNumber:fiscal.receiptNumber,
-      createdAt:new Date().toISOString(),customerName:request.customer?.name,lines:request.lines,payments
+      createdAt:new Date().toISOString(),customerId:request.customer?.id,customerName:request.customer?.name,
+      receiptDiscountPercent:discount,lines:request.lines,payments
     })
     return {saleId,receiptNumber:fiscal.receiptNumber,totalMinor,
       changeMinor:cashAmount?Math.max(0,(request.cashReceivedMinor??cashAmount)-cashAmount):0,queuedForSync:true}

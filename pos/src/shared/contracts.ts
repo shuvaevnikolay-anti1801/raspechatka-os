@@ -11,13 +11,17 @@ export type Product = {
   priceMinor: number
   barcode?: string
   stock?: number | null
+  trackInventory?: boolean
+  allowNegativeStock?: boolean
+  minimumSalePriceMinor?: number
+  preventDiscounts?: boolean
 }
 
-export type Customer = { id: string; name: string; phone?: string; discountPercent: number }
+export type Customer = { id: string; name: string; phone?: string; discountPercent: number; purchaseCount?: number; totalSpentMinor?: number }
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
-export type PointRules = { allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean }
+export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean }
 
 export type BootState = {
   pointId: string
@@ -54,6 +58,8 @@ export type ReturnLine = { saleItemId: number; quantity: number }
 export type CreateReturnRequest = { clientRequestId: string; saleId: string; lines: ReturnLine[]; payments: PaymentPart[] }
 export type ReturnResult = { returnId: string; receiptNumber: string; totalMinor: number; queuedForSync: boolean }
 export type ReturnSummary = { id: string; saleId: string; receiptNumber: string; originalReceiptNumber: string; totalMinor: number; createdAt: string }
+export type PrintKind = 'fiscal-copy' | 'commodity'
+export type PrintResult = { kind: PrintKind; status: 'printed' | 'simulated'; message: string }
 
 export type HeldReceipt = { id: string; label: string; lines: CartLine[]; customer?: Customer | null; discountPercent: number; createdAt: string }
 export type CashOperationType = 'deposit' | 'withdrawal'
@@ -80,6 +86,7 @@ export type PosApi = {
   getSale: (id: string) => Promise<SaleDetails>
   createReturn: (request: CreateReturnRequest) => Promise<ReturnResult>
   listReturns: () => Promise<ReturnSummary[]>
+  printSale: (id: string, kind: PrintKind) => Promise<PrintResult>
   listHeldReceipts: () => Promise<HeldReceipt[]>
   holdReceipt: (receipt: Omit<HeldReceipt, 'id' | 'createdAt'>) => Promise<HeldReceipt>
   deleteHeldReceipt: (id: string) => Promise<void>

@@ -4,6 +4,7 @@ import { PosDatabase } from './database'
 import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
+import { WindowsPrintProvider } from './providers/print'
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -42,7 +43,8 @@ app.whenReady().then(() => {
     database,
     connectionStore: new ConnectionStore(join(app.getPath('userData'), 'connection.bin')),
     paymentProvider: new MockPaymentProvider(),
-    fiscalProvider: new MockFiscalProvider()
+    fiscalProvider: new MockFiscalProvider(),
+    printProvider: new WindowsPrintProvider()
   })
   createWindow()
 

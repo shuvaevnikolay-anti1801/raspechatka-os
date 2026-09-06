@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, HeldReceipt, PosApi } from '../shared/contracts'
+import type { CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, HeldReceipt, PosApi, PrintKind } from '../shared/contracts'
 
 const api: PosApi = {
   getBootState: () => ipcRenderer.invoke('pos:get-boot-state'),
@@ -9,6 +9,7 @@ const api: PosApi = {
   getSale: (id:string) => ipcRenderer.invoke('pos:get-sale',id),
   createReturn: (request:CreateReturnRequest) => ipcRenderer.invoke('pos:create-return',request),
   listReturns: () => ipcRenderer.invoke('pos:list-returns'),
+  printSale: (id:string,kind:PrintKind) => ipcRenderer.invoke('pos:print-sale',id,kind),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
   deleteHeldReceipt: (id:string) => ipcRenderer.invoke('pos:delete-held-receipt',id),

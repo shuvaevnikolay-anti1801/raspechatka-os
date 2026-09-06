@@ -21,4 +21,7 @@ export class MockFiscalProvider implements FiscalProvider {
   async fiscalizeReturn(request: FiscalReturnRequest): Promise<FiscalResult> {
     return { receiptNumber:`TEST-RETURN-${request.returnId.slice(0,8).toUpperCase()}` }
   }
+  async reprintReceipt(request:{saleId:string;receiptNumber:string}) {
+    return {kind:'fiscal-copy' as const,status:'simulated' as const,message:`Копия фискального чека ${request.receiptNumber} подготовлена тестовой ККТ`}
+  }
 }

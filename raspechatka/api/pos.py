@@ -20,6 +20,8 @@ def get_bootstrap(workplace_code=None):
 		"point": {"id": point.name, "name": point.point_name},
 		"workplace": {"id": workplace.name, "name": workplace.workplace_name},
 		"rules": {
+			"allowFreePrice": bool(point.allow_free_price),
+			"allowRemoveCartItem": bool(point.allow_remove_cart_item),
 			"allowDiscounts": bool(point.allow_discounts),
 			"maxDiscountPercent": flt(point.max_discount_percent),
 			"acceptsCash": bool(point.accepts_cash),
@@ -27,6 +29,7 @@ def get_bootstrap(workplace_code=None):
 			"acceptsQr": bool(point.accepts_qr),
 		},
 		"products": _get_products(point.name),
+		"customers": _get_customers(),
 	}
 
 
@@ -66,6 +69,7 @@ def push_events(workplace_code=None, events=None):
 				"payload_json": frappe.as_json(event.get("payload"), indent=2),
 				"received_at": now(),
 			}).insert(ignore_permissions=True)
+			_apply_pos_event(event_type, event_id, workplace, event.get("payload") or {})
 		accepted.append(event_id)
 
 	return {"accepted": accepted}
@@ -129,12 +133,20 @@ def _get_products(point_name):
 	if not assortments:
 		return []
 
+	warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": point_name, "active": 1}, "name")
+	balances = dict(frappe.db.sql(
+		"""select item, coalesce(sum(actual_qty), 0)
+		from `tabStock Ledger Entry` where warehouse=%s group by item""",
+		(warehouse,),
+		as_list=True,
+	)) if warehouse else {}
 	items = {
 		row.name: row
 		for row in frappe.get_all(
 			"Catalog Item",
 			filters={"name": ["in", [row.item for row in assortments]], "active": 1},
-			fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom"],
+			fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom",
+				"track_inventory", "allow_negative_stock", "minimum_sale_price", "prevent_discounts"],
 			limit_page_length=5000,
 		)
 	}
@@ -167,9 +179,143 @@ def _get_products(point_name):
 			"uom": item.stock_uom or "шт",
 			"priceMinor": round(price * 100),
 			"barcode": barcode,
-			"stock": None,
+			"stock": flt(balances.get(item.name)) if item.track_inventory else None,
+			"trackInventory": bool(item.track_inventory),
+			"allowNegativeStock": bool(item.allow_negative_stock),
+			"minimumSalePriceMinor": round(flt(item.minimum_sale_price) * 100),
+			"preventDiscounts": bool(item.prevent_discounts),
 		})
 	return sorted(result, key=lambda row: (row["category"], row["name"]))
+
+
+def _get_customers():
+	purchases = {
+		row.client: row
+		for row in frappe.get_all(
+			"Client Purchase",
+			fields=["client", "count(name) as purchase_count", "sum(net_amount - returned_amount) as total_spent"],
+			group_by="client",
+			limit_page_length=10000,
+		)
+	}
+	return [
+		{
+			"id": row.name,
+			"name": row.client_name,
+			"phone": row.phone,
+			"discountPercent": flt(row.discount_percent),
+			"purchaseCount": int((purchases.get(row.name) or {}).get("purchase_count") or 0),
+			"totalSpentMinor": round(flt((purchases.get(row.name) or {}).get("total_spent")) * 100),
+		}
+		for row in frappe.get_all(
+			"Client",
+			filters={"active": 1},
+			fields=["name", "client_name", "phone", "discount_percent"],
+			order_by="client_name asc",
+			limit_page_length=10000,
+		)
+	]
+
+
+def _apply_pos_event(event_type, event_id, workplace, payload):
+	if event_type == "sale.completed":
+		_apply_sale(event_id, workplace, payload)
+	elif event_type == "sale.returned":
+		_apply_return(event_id, workplace, payload)
+
+
+def _apply_sale(event_id, workplace, payload):
+	sale_id = payload.get("id") or event_id
+	client = payload.get("customerId")
+	lines = payload.get("lines") or []
+	total = flt(payload.get("totalMinor")) / 100
+	gross = sum(flt(line.get("quantity")) * flt(line.get("unitPriceMinor")) / 100 for line in lines)
+	if client and frappe.db.exists("Client", client) and not frappe.db.exists("Client Purchase", {"source_document": sale_id}):
+		frappe.get_doc({
+			"doctype": "Client Purchase",
+			"purchase_datetime": get_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
+			"client": client,
+			"business_point": workplace.business_point,
+			"source_doctype": "POS Event",
+			"source_document": sale_id,
+			"receipt_number": payload.get("fiscalNumber"),
+			"gross_amount": gross,
+			"discount_amount": max(0, gross - total),
+			"net_amount": total,
+			"loyalty_discount_percent": flt(payload.get("receiptDiscountPercent")),
+			"returned_amount": 0,
+			"status": "Completed",
+			"items": [{
+				"item": line.get("productId") if frappe.db.exists("Catalog Item", line.get("productId")) else None,
+				"item_name": line.get("name"),
+				"quantity": flt(line.get("quantity")),
+				"rate": flt(line.get("unitPriceMinor")) / 100,
+				"amount": flt(line.get("quantity")) * flt(line.get("unitPriceMinor")) / 100,
+			} for line in lines],
+		}).insert(ignore_permissions=True)
+	_create_stock_entries(workplace, sale_id, "POS Sale", lines, multiplier=-1)
+
+
+def _apply_return(event_id, workplace, payload):
+	return_id = payload.get("id") or event_id
+	sale_id = payload.get("saleId")
+	total = flt(payload.get("totalMinor")) / 100
+	purchase_name = frappe.db.get_value("Client Purchase", {"source_document": sale_id}, "name")
+	if purchase_name:
+		purchase = frappe.get_doc("Client Purchase", purchase_name)
+		purchase.returned_amount = min(flt(purchase.net_amount), flt(purchase.returned_amount) + total)
+		purchase.status = "Returned" if purchase.returned_amount >= flt(purchase.net_amount) else "Partially Returned"
+		purchase.cancelled = 1 if purchase.status == "Returned" else 0
+		purchase.save(ignore_permissions=True)
+	_create_stock_entries(workplace, return_id, "POS Return", payload.get("lines") or [], multiplier=1)
+
+
+def _create_stock_entries(workplace, voucher_no, voucher_type, lines, multiplier):
+	warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": workplace.business_point, "active": 1}, "name")
+	if not warehouse:
+		return
+	for index, line in enumerate(lines, start=1):
+		item_name = line.get("productId")
+		item = frappe.db.get_value(
+			"Catalog Item", item_name,
+			["item_type", "track_inventory", "allow_negative_stock"], as_dict=True,
+		) if item_name else None
+		if not item or item.item_type != "Product" or not item.track_inventory:
+			continue
+		quantity = multiplier * flt(line.get("quantity"))
+		if quantity < 0 and not item.allow_negative_stock:
+			balance = flt(frappe.db.sql(
+				"""select coalesce(sum(actual_qty), 0) from `tabStock Ledger Entry`
+				where item=%s and warehouse=%s""",
+				(item_name, warehouse),
+			)[0][0])
+			if balance + quantity < 0:
+				frappe.throw(
+					f"Недостаточно остатка «{frappe.db.get_value('Catalog Item', item_name, 'item_name') or item_name}»: доступно {balance:g}"
+				)
+		rate = _stock_rate(item_name, warehouse)
+		frappe.get_doc({
+			"doctype": "Stock Ledger Entry",
+			"posting_datetime": now(),
+			"item": item_name,
+			"warehouse": warehouse,
+			"actual_qty": quantity,
+			"incoming_rate": rate,
+			"stock_value_difference": quantity * rate,
+			"voucher_type": voucher_type,
+			"voucher_no": voucher_no,
+			"voucher_detail_no": f"{voucher_no}:{index}",
+			"is_reversal": 1 if multiplier > 0 else 0,
+		}).insert(ignore_permissions=True)
+
+
+def _stock_rate(item_name, warehouse):
+	return flt(frappe.db.get_value(
+		"Stock Ledger Entry",
+		{"item": item_name, "warehouse": warehouse, "incoming_rate": [">", 0]},
+		"incoming_rate",
+		order_by="posting_datetime desc, creation desc",
+	) or 0)
 
 
 def _network_price(item_name):
