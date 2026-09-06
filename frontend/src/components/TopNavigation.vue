@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
 	<header class="topbar topbar-v2">
 		<router-link class="brand brand-v2" to="/" aria-label="Распечатка ОС — главная" @click="navigate">
 			<img :src="'/assets/raspechatka/images/raspechatka-brand.svg'" alt="" />
-			<span><strong>РАСПЕЧАТКА</strong><small>ОПЕРАЦИОННАЯ СИСТЕМА</small></span>
+			<span class="brand-name">Распечатка <b>ОС</b></span>
 		</router-link>
 
 		<nav class="main-nav main-nav-v2" aria-label="Основные разделы">
@@ -246,52 +246,49 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .topbar-v2 {
-	height: 78px;
+	height: 72px;
 	align-items: stretch;
 	background: rgba(255, 255, 255, 0.98);
 	box-shadow: 0 1px 0 rgba(24, 28, 20, 0.04);
 }
 .brand-v2 {
-	min-width: 236px;
-	gap: 12px;
-	padding: 0 20px;
+	min-width: 208px;
+	gap: 11px;
+	padding: 0 18px;
 }
 .brand-v2 img {
-	width: 42px;
-	height: 42px;
+	width: 40px;
+	height: 40px;
+	flex: 0 0 auto;
 }
-.brand-v2 > span {
-	display: grid;
-	gap: 2px;
-}
-.brand-v2 strong {
-	font-size: 14px;
-	letter-spacing: 0.08em;
-	line-height: 1;
-}
-.brand-v2 small {
-	color: #7a8077;
-	font-size: 7px;
+.brand-name {
+	font-size: 16px;
 	font-weight: 700;
-	letter-spacing: 0.16em;
+	letter-spacing: -0.035em;
+	line-height: 1;
 	white-space: nowrap;
 }
+.brand-name b {
+	color: #789a08;
+	font-weight: 750;
+}
 .main-nav-v2 {
-	justify-content: center;
-	padding: 0 6px;
+	justify-content: flex-start;
+	padding: 0 4px;
 }
 .main-nav-v2 a {
-	min-width: 68px;
+	min-width: 82px;
+	flex: 0 0 auto;
 	flex-direction: column;
 	justify-content: center;
-	gap: 6px;
-	padding: 0 10px;
-	font-size: 10px;
+	gap: 5px;
+	padding: 0 11px;
+	font-size: 11px;
 	font-weight: 650;
 }
 .main-nav-v2 a svg {
-	width: 22px;
-	height: 22px;
+	width: 27px;
+	height: 27px;
 	fill: none;
 	stroke: currentColor;
 	stroke-linecap: round;
@@ -315,7 +312,7 @@ onBeforeUnmount(() => {
 }
 .topbar-actions-v2 {
 	gap: 5px;
-	padding: 0 15px 0 6px;
+	padding: 0 16px 0 10px;
 	border-left: 1px solid var(--line);
 }
 .action-wrap {
@@ -598,7 +595,7 @@ onBeforeUnmount(() => {
 	height: 40px;
 }
 .mobile-nav-v2 {
-	top: 78px;
+	top: 72px;
 	grid-template-columns: repeat(2, 1fr);
 	width: min(360px, calc(100vw - 24px));
 	padding: 8px;
@@ -620,10 +617,12 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1320px) {
 	.brand-v2 {
-		min-width: 205px;
-		padding: 0 14px;
+		min-width: 186px;
+		padding: 0 13px;
 	}
-	.brand-v2 small,
+	.brand-name {
+		font-size: 14px;
+	}
 	.account-copy {
 		display: none;
 	}
@@ -632,8 +631,13 @@ onBeforeUnmount(() => {
 		padding: 5px;
 	}
 	.main-nav-v2 a {
-		min-width: 58px;
-		padding: 0 7px;
+		min-width: 72px;
+		padding: 0 8px;
+		font-size: 10px;
+	}
+	.main-nav-v2 a svg {
+		width: 25px;
+		height: 25px;
 	}
 }
 @media (max-width: 1030px) {
