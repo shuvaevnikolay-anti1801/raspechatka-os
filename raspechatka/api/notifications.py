@@ -71,7 +71,9 @@ def get_notifications(limit_page_length=20):
 				"title": row.title,
 				"message": row.message,
 				"priority": row.priority,
-				"published_label": frappe.format_value(\n\t\t\t\t\trow.published_from or row.creation, {"fieldtype": "Datetime"}\n\t\t\t\t),
+				"published_label": frappe.format_value(
+					row.published_from or row.creation, {"fieldtype": "Datetime"}
+				),
 				"read": row.name in read_names,
 			}
 		)
@@ -122,7 +124,11 @@ def save_announcement(data):
 	if not _is_admin():
 		frappe.throw(_("Недостаточно прав"), frappe.PermissionError)
 	data = frappe.parse_json(data)
-	doc = (\n\t\tfrappe.get_doc("System Announcement", data["name"])\n\t\tif data.get("name")\n\t\telse frappe.new_doc("System Announcement")\n\t)
+	doc = (
+		frappe.get_doc("System Announcement", data["name"])
+		if data.get("name")
+		else frappe.new_doc("System Announcement")
+	)
 	for fieldname in (
 		"title",
 		"message",
