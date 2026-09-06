@@ -129,8 +129,10 @@ jobs:
           source "${PRODUCTION_ENV}"
           set +a
 
-          if ! docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" config --images | grep -Fxq "${IMAGE_TAG}"; then
+          COMPOSE_IMAGES="$(docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" config --images)"
+          if ! grep -Fxq "${IMAGE_TAG}" <<<"${COMPOSE_IMAGES}"; then
             echo "Compose does not reference ${IMAGE_TAG}. Check CUSTOM_IMAGE and CUSTOM_TAG in ${PRODUCTION_ENV}." >&2
+            printf '%s\n' "${COMPOSE_IMAGES}" >&2
             exit 1
           fi
 
