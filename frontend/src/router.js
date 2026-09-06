@@ -22,7 +22,7 @@ import TeamPage from "./pages/TeamPage.vue";
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
   { path: "/catalog", name: "catalog", component: CatalogPage, meta: { module: "catalog" } },
-  { path: "/catalog/groups", name: "catalog-groups", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-groups" } },
+  { path: "/catalog/groups", redirect: "/catalog" },
   { path: "/catalog/units", name: "catalog-units", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-units" } },
   { path: "/catalog/price-types", name: "catalog-price-types", component: MasterDataPage, meta: { module: "catalog", reference: "price-types" } },
   { path: "/references/:reference(entities|points|warehouses)", name: "references", component: ReferencesPage, meta: { module: "references" } },
