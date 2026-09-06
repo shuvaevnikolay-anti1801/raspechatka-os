@@ -3,7 +3,8 @@ import { ipcMain } from 'electron'
 import { calculateTotalMinor } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
-  CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind, ReturnResult, Shift
+  CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
+  ReturnResult, Shift, StockWriteOffRequest, SupplyRequestInput
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -53,6 +54,13 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:get-shift-summary',()=>database.getShiftSummary())
   ipcMain.handle('pos:list-cash-operations',()=>database.listCashOperations())
   ipcMain.handle('pos:add-cash-operation',(_event,type:CashOperationType,amountMinor:number,reason:string)=>database.addCashOperation(type,amountMinor,reason))
+  ipcMain.handle('pos:get-workplace-data',()=>database.getWorkplaceData())
+  ipcMain.handle('pos:report-stock-write-off',(_event,request:StockWriteOffRequest)=>database.reportStockWriteOff(request))
+  ipcMain.handle('pos:create-supply-request',(_event,request:SupplyRequestInput)=>database.createSupplyRequest(request))
+  ipcMain.handle('pos:record-cleaner-visit',()=>database.recordCleanerVisit(bootState().cashierName))
+  ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>database.payCleaner(amountMinor))
+  ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>database.saveCashCount(countType,lines))
+  ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
 
   ipcMain.handle('pos:open-shift',():Shift=>database.openShift({
     id:randomUUID(),openedAt:new Date().toISOString(),cashierName:bootState().cashierName
@@ -67,11 +75,12 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:sync-now',async():Promise<BootState>=>{
     const config=connectionStore.load();if(!config)throw new Error('Сначала заполните подключение к Распечатка OS')
     try {
+      const events=database.pendingEvents()
+      if(events.length)database.markEventsSent(await pushEvents(config,events))
       const remote=await loadBootstrap(config)
       database.replaceProducts(remote.products)
       database.replaceCustomers(remote.customers)
-      const events=database.pendingEvents()
-      if(events.length)database.markEventsSent(await pushEvents(config,events))
+      database.setWorkplaceData(remote.workplaceData)
       const lastSyncAt=new Date().toISOString()
       database.setState('bootstrap',JSON.stringify({
         pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,

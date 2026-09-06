@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
   CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
-  PaymentPart, Product, ReturnSummary, SaleDetails, SaleSummary, Shift, ShiftSummary
+  CashCount, CashCountLine, CleanerVisitResult, PaymentPart, Product, ReturnSummary,
+  SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData
 } from '../shared/contracts'
 
 const emptySummary=():ShiftSummary=>({
@@ -87,6 +88,12 @@ export class PosDatabase {
         id TEXT PRIMARY KEY, event_type TEXT NOT NULL, payload_json TEXT NOT NULL,
         created_at TEXT NOT NULL, sent_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS cash_counts (
+        id TEXT PRIMARY KEY, shift_id TEXT NOT NULL, count_type TEXT NOT NULL,
+        lines_json TEXT NOT NULL, total_minor INTEGER NOT NULL, expected_minor INTEGER NOT NULL,
+        difference_minor INTEGER NOT NULL, created_at TEXT NOT NULL,
+        FOREIGN KEY (shift_id) REFERENCES shifts(id)
+      );
     `)
     this.ensureColumn('products', 'item_type', "TEXT NOT NULL DEFAULT 'service'")
     this.ensureColumn('products', 'uom', "TEXT NOT NULL DEFAULT 'шт'")
@@ -96,6 +103,7 @@ export class PosDatabase {
     this.ensureColumn('products', 'allow_negative_stock', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('products', 'minimum_sale_price_minor', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('products', 'prevent_discounts', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('products', 'storage_address', 'TEXT')
     this.ensureColumn('sales', 'customer_id', 'TEXT')
     this.ensureColumn('sales', 'customer_name', 'TEXT')
     this.ensureColumn('sales', 'receipt_discount_percent', 'REAL NOT NULL DEFAULT 0')
@@ -136,23 +144,24 @@ export class PosDatabase {
 
   listProducts():Product[]{return this.db.prepare(`SELECT id,name,sku,category,item_type AS type,uom,barcode,stock,
       price_minor AS priceMinor,track_inventory AS trackInventory,allow_negative_stock AS allowNegativeStock,
-      minimum_sale_price_minor AS minimumSalePriceMinor,prevent_discounts AS preventDiscounts
+      minimum_sale_price_minor AS minimumSalePriceMinor,prevent_discounts AS preventDiscounts,
+      storage_address AS storageAddress
       FROM products WHERE active=1 ORDER BY category,name`).all().map((x:any)=>({
         ...x,trackInventory:Boolean(x.trackInventory),allowNegativeStock:Boolean(x.allowNegativeStock),
         preventDiscounts:Boolean(x.preventDiscounts)
       })) as Product[]}
   replaceProducts(products:Product[]):void {
     const upsert=this.db.prepare(`INSERT INTO products
-      (id,name,sku,category,item_type,uom,barcode,stock,price_minor,active,track_inventory,allow_negative_stock,minimum_sale_price_minor,prevent_discounts)
-      VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?)
+      (id,name,sku,category,item_type,uom,barcode,stock,price_minor,active,track_inventory,allow_negative_stock,minimum_sale_price_minor,prevent_discounts,storage_address)
+      VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,
       item_type=excluded.item_type,uom=excluded.uom,barcode=excluded.barcode,stock=excluded.stock,
       price_minor=excluded.price_minor,active=1,track_inventory=excluded.track_inventory,
       allow_negative_stock=excluded.allow_negative_stock,minimum_sale_price_minor=excluded.minimum_sale_price_minor,
-      prevent_discounts=excluded.prevent_discounts`)
+      prevent_discounts=excluded.prevent_discounts,storage_address=excluded.storage_address`)
     this.db.exec('BEGIN')
     try{products.forEach((x)=>upsert.run(x.id,x.name,x.sku,x.category,x.type,x.uom,x.barcode??null,x.stock??null,x.priceMinor,
-      x.trackInventory?1:0,x.allowNegativeStock?1:0,x.minimumSalePriceMinor??0,x.preventDiscounts?1:0));this.db.exec('COMMIT')}
+      x.trackInventory?1:0,x.allowNegativeStock?1:0,x.minimumSalePriceMinor??0,x.preventDiscounts?1:0,x.storageAddress??null));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
   listCustomers(query=''):Customer[]{const q=`%${query}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
@@ -288,6 +297,63 @@ export class PosDatabase {
   }
   listCashOperations():CashOperation[]{const shift=this.currentShift();if(!shift)return[];return this.db.prepare(`SELECT id,operation_type type,
     amount_minor amountMinor,reason,created_at createdAt FROM cash_operations WHERE shift_id=? ORDER BY created_at DESC`).all(shift.id) as CashOperation[]}
+
+  getWorkplaceData():WorkplaceData {
+    const raw=this.getState('workplace_data')
+    return raw?JSON.parse(raw) as WorkplaceData:{schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]}}
+  }
+  setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(value))}
+  reportStockWriteOff(request:StockWriteOffRequest):void {
+    const product=this.listProducts().find((x)=>x.id===request.productId)
+    if(!product)throw new Error('Товар не найден')
+    if(!product.trackInventory)throw new Error('Для этой позиции складской учёт не ведётся')
+    if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
+    this.queue('stock.write_off.requested',{...request,productName:product.name,storageAddress:product.storageAddress})
+  }
+  createSupplyRequest(request:SupplyRequestInput):void {
+    if(!request.itemName.trim())throw new Error('Укажите, что требуется точке')
+    if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
+    this.queue('point.supply.requested',{...request,itemName:request.itemName.trim()})
+  }
+  recordCleanerVisit(cashierName:string):CleanerVisitResult {
+    const data=this.getWorkplaceData();const createdAt=new Date().toISOString()
+    const visit={id:randomUUID(),visitDate:createdAt.slice(0,10),recordedBy:cashierName,paid:false}
+    const visitsSincePayment=data.cleaner.visitsSincePayment+1
+    const paymentDueMinor=visitsSincePayment>=4?200000:0
+    data.cleaner={visitsSincePayment,paymentDueMinor,recentVisits:[visit,...data.cleaner.recentVisits].slice(0,12)}
+    this.setWorkplaceData(data);this.queue('cleaner.visit.recorded',visit,createdAt)
+    return {visit,visitsSincePayment,paymentDueMinor}
+  }
+  payCleaner(amountMinor:number):CashOperation {
+    const data=this.getWorkplaceData()
+    if(data.cleaner.paymentDueMinor<=0)throw new Error('Сейчас выплаты уборщице нет')
+    if(amountMinor!==data.cleaner.paymentDueMinor)throw new Error('Сумма выплаты изменилась — обновите данные')
+    const operation=this.addCashOperation('withdrawal',amountMinor,'Уборка: оплата за 4 посещения')
+    data.cleaner.visitsSincePayment=Math.max(0,data.cleaner.visitsSincePayment-4)
+    data.cleaner.paymentDueMinor=data.cleaner.visitsSincePayment>=4?200000:0
+    data.cleaner.recentVisits=data.cleaner.recentVisits.map((x)=>({...x,paid:true}))
+    this.setWorkplaceData(data);this.queue('cleaner.paid',{cashOperationId:operation.id,amountMinor})
+    return operation
+  }
+  saveCashCount(countType:CashCount['countType'],lines:CashCountLine[]):CashCount {
+    const shift=this.currentShift();if(!shift)throw new Error('Сначала откройте смену')
+    const normalized=lines.filter((x)=>Number.isInteger(x.denominationMinor)&&x.denominationMinor>0&&Number.isInteger(x.quantity)&&x.quantity>=0)
+    const totalMinor=normalized.reduce((sum,x)=>sum+x.denominationMinor*x.quantity,0)
+    const expectedMinor=countType==='opening'?totalMinor:this.getShiftSummary().expectedCashMinor
+    const count:CashCount={id:randomUUID(),countType,lines:normalized,totalMinor,expectedMinor,differenceMinor:totalMinor-expectedMinor,createdAt:new Date().toISOString()}
+    this.db.prepare('INSERT INTO cash_counts (id,shift_id,count_type,lines_json,total_minor,expected_minor,difference_minor,created_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(count.id,shift.id,countType,JSON.stringify(normalized),totalMinor,expectedMinor,count.differenceMinor,count.createdAt)
+    this.queue('cash.counted',{...count,shiftId:shift.id},count.createdAt)
+    if(countType==='opening'&&totalMinor>0)this.addCashOperation('deposit',totalMinor,'Остаток наличных при открытии смены')
+    return count
+  }
+  getLastCashCount():CashCount|null {
+    const shift=this.currentShift();if(!shift)return null
+    const row=this.db.prepare(`SELECT id,count_type countType,lines_json lines,total_minor totalMinor,
+      expected_minor expectedMinor,difference_minor differenceMinor,created_at createdAt
+      FROM cash_counts WHERE shift_id=? ORDER BY created_at DESC LIMIT 1`).get(shift.id) as (Omit<CashCount,'lines'>&{lines:string})|undefined
+    return row?{...row,lines:JSON.parse(row.lines) as CashCountLine[]}:null
+  }
 
   holdReceipt(input:Omit<HeldReceipt,'id'|'createdAt'>):HeldReceipt {const x={...input,id:randomUUID(),createdAt:new Date().toISOString()};this.db.prepare('INSERT INTO held_receipts (id,label,payload_json,created_at) VALUES (?,?,?,?)').run(x.id,x.label,JSON.stringify(x),x.createdAt);return x}
   listHeldReceipts():HeldReceipt[]{return (this.db.prepare('SELECT payload_json payload FROM held_receipts ORDER BY created_at DESC').all() as Array<{payload:string}>).map((x)=>JSON.parse(x.payload) as HeldReceipt)}

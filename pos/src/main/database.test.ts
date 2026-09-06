@@ -69,4 +69,24 @@ describe('PosDatabase',()=>{
       lines:[{saleItemId:sale.lines[0].id,quantity:1,lineTotalMinor:1000}],payments:[{method:'cash',amountMinor:1000}]})
     expect(database.listProducts().find((x)=>x.id==='paper')?.stock).toBe(4)
   })
+
+  it('records the employee workplace actions offline',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
+    folders.push(folder)
+    const database=new PosDatabase(join(folder,'test.sqlite'))
+    database.replaceProducts([{id:'paper',name:'Бумага',sku:'PAPER',category:'Товары',type:'product',uom:'пачка',priceMinor:50000,stock:5,trackInventory:true,storageAddress:'Шкаф 3 · верхняя полка'}])
+    database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierName:'Николай'})
+    const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
+    expect(count).toMatchObject({totalMinor:200000,differenceMinor:0})
+    expect(database.getShiftSummary().expectedCashMinor).toBe(200000)
+    database.reportStockWriteOff({productId:'paper',quantity:1,reason:'Брак',comment:'Замята упаковка'})
+    database.createSupplyRequest({productId:'paper',itemName:'Бумага',quantity:10})
+    for(let index=0;index<4;index+=1)database.recordCleanerVisit('Николай')
+    expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(200000)
+    database.payCleaner(200000)
+    expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(0)
+    expect(database.pendingEvents().map((x)=>x.eventType)).toEqual(expect.arrayContaining([
+      'cash.counted','stock.write_off.requested','point.supply.requested','cleaner.visit.recorded','cleaner.paid'
+    ]))
+  })
 })

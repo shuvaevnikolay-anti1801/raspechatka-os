@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, HeldReceipt, PosApi, PrintKind } from '../shared/contracts'
+import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, HeldReceipt, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput } from '../shared/contracts'
 
 const api: PosApi = {
   getBootState: () => ipcRenderer.invoke('pos:get-boot-state'),
@@ -18,6 +18,13 @@ const api: PosApi = {
   getShiftSummary: () => ipcRenderer.invoke('pos:get-shift-summary'),
   listCashOperations: () => ipcRenderer.invoke('pos:list-cash-operations'),
   addCashOperation: (type:CashOperationType,amountMinor:number,reason:string) => ipcRenderer.invoke('pos:add-cash-operation',type,amountMinor,reason),
+  getWorkplaceData: () => ipcRenderer.invoke('pos:get-workplace-data'),
+  reportStockWriteOff: (request:StockWriteOffRequest) => ipcRenderer.invoke('pos:report-stock-write-off',request),
+  createSupplyRequest: (request:SupplyRequestInput) => ipcRenderer.invoke('pos:create-supply-request',request),
+  recordCleanerVisit: () => ipcRenderer.invoke('pos:record-cleaner-visit'),
+  payCleaner: (amountMinor:number) => ipcRenderer.invoke('pos:pay-cleaner',amountMinor),
+  saveCashCount: (countType:CashCount['countType'],lines:CashCountLine[]) => ipcRenderer.invoke('pos:save-cash-count',countType,lines),
+  getLastCashCount: () => ipcRenderer.invoke('pos:get-last-cash-count'),
   completeSale: (request: CompleteSaleRequest) => ipcRenderer.invoke('pos:complete-sale', request),
   getConnectionStatus: () => ipcRenderer.invoke('pos:get-connection-status'),
   saveConnection: (config:ConnectionConfig) => ipcRenderer.invoke('pos:save-connection',config),

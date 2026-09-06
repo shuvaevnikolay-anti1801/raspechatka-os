@@ -15,6 +15,7 @@ export type Product = {
   allowNegativeStock?: boolean
   minimumSalePriceMinor?: number
   preventDiscounts?: boolean
+  storageAddress?: string
 }
 
 export type Customer = { id: string; name: string; phone?: string; discountPercent: number; purchaseCount?: number; totalSpentMinor?: number }
@@ -78,6 +79,18 @@ export type ShiftSummary = {
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
 
+export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
+export type DeliveryNotice = { id:string; supplier:string; expectedDate?:string; deliveryCompany?:string; deliveryCode?:string; details?:string; status:string }
+export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
+export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
+export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
+export type WorkplaceData = { schedule:WorkScheduleItem[]; deliveries:DeliveryNotice[]; supplyRequests:PointSupplyRequest[]; cleaner:CleanerStatus }
+export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'|'Другое'; comment?:string }
+export type SupplyRequestInput = { productId?:string; itemName:string; quantity:number; comment?:string }
+export type CashCountLine = { denominationMinor:number; quantity:number }
+export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
+export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
+
 export type PosApi = {
   getBootState: () => Promise<BootState>
   listProducts: () => Promise<Product[]>
@@ -95,6 +108,13 @@ export type PosApi = {
   getShiftSummary: () => Promise<ShiftSummary>
   listCashOperations: () => Promise<CashOperation[]>
   addCashOperation: (type: CashOperationType, amountMinor: number, reason: string) => Promise<CashOperation>
+  getWorkplaceData: () => Promise<WorkplaceData>
+  reportStockWriteOff: (request:StockWriteOffRequest) => Promise<void>
+  createSupplyRequest: (request:SupplyRequestInput) => Promise<void>
+  recordCleanerVisit: () => Promise<CleanerVisitResult>
+  payCleaner: (amountMinor:number) => Promise<CashOperation>
+  saveCashCount: (countType:CashCount['countType'], lines:CashCountLine[]) => Promise<CashCount>
+  getLastCashCount: () => Promise<CashCount|null>
   completeSale: (request: CompleteSaleRequest) => Promise<CompleteSaleResult>
   getConnectionStatus: () => Promise<ConnectionStatus>
   saveConnection: (config: ConnectionConfig) => Promise<ConnectionStatus>
