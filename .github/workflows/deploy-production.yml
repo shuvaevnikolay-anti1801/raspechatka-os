@@ -78,6 +78,7 @@ jobs:
           GITHUB_KNOWN_HOSTS="/root/.ssh/github_known_hosts"
           CONTAINERFILE="${FRAPPE_DOCKER_DIR}/images/layered/Containerfile"
           IMAGE_TAG="raspechatka-os:version-16"
+          COMPOSE_PROJECT="raspechatka"
           SITE="os.rpechatka.ru"
 
           for command_name in git docker ssh; do
@@ -128,13 +129,13 @@ jobs:
           source "${PRODUCTION_ENV}"
           set +a
 
-          if ! docker compose -f "${COMPOSE_FILE}" config --images | grep -Fxq "${IMAGE_TAG}"; then
+          if ! docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" config --images | grep -Fxq "${IMAGE_TAG}"; then
             echo "Compose does not reference ${IMAGE_TAG}. Check CUSTOM_IMAGE and CUSTOM_TAG in ${PRODUCTION_ENV}." >&2
             exit 1
           fi
 
-          docker compose -f "${COMPOSE_FILE}" up -d --force-recreate
-          docker compose -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" migrate
-          docker compose -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" clear-cache
-          docker compose -f "${COMPOSE_FILE}" ps
+          docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" up -d --force-recreate
+          docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" migrate
+          docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" clear-cache
+          docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" ps
           REMOTE_SCRIPT
