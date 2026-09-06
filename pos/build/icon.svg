@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Распечатка Касса">
+  <rect width="256" height="256" rx="48" fill="#A1CE0F"/>
+  <path d="M64 178V48h38c45 0 75 24 75 61 0 36-27 60-66 60-14 0-26-4-35-10v19H64zm12-67c0 28 13 43 37 43 31 0 51-17 51-44 0-27-22-46-55-46H76v47z" fill="#272727"/>
+  <rect x="45" y="183" width="166" height="42" rx="16" fill="#272727"/>
+  <text x="128" y="212" text-anchor="middle" font-family="Arial, sans-serif" font-size="23" font-weight="700" letter-spacing="2" fill="#fff">КАССА</text>
+</svg>

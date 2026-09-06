@@ -1,0 +1,19 @@
+{
+ "actions":[],"autoname":"NEED-.YYYY.-.#####","doctype":"DocType","engine":"InnoDB",
+ "field_order":["request_date","business_entity","business_point","warehouse","item","item_name","quantity","priority","status","requested_by","comment","source_pos_event"],
+ "fields":[
+  {"fieldname":"request_date","fieldtype":"Date","label":"Дата","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"business_entity","fieldtype":"Link","label":"Юридическое лицо","options":"Business Entity","reqd":1},
+  {"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse"},
+  {"fieldname":"item","fieldtype":"Link","label":"Товар","options":"Catalog Item","in_standard_filter":1},
+  {"fieldname":"item_name","fieldtype":"Data","label":"Что требуется","reqd":1,"in_list_view":1,"search_index":1},
+  {"fieldname":"quantity","fieldtype":"Float","label":"Количество","default":1,"reqd":1,"in_list_view":1},
+  {"fieldname":"priority","fieldtype":"Select","label":"Срочность","options":"Обычная\nСрочная","default":"Обычная","reqd":1},
+  {"fieldname":"status","fieldtype":"Select","label":"Статус","options":"Новая\nВ работе\nЗаказана\nЗакрыта\nОтклонена","default":"Новая","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"requested_by","fieldtype":"Link","label":"Запросил","options":"User","read_only":1},
+  {"fieldname":"comment","fieldtype":"Small Text","label":"Комментарий"},
+  {"fieldname":"source_pos_event","fieldtype":"Data","label":"Событие кассы","read_only":1,"unique":1,"no_copy":1}
+ ],
+ "module":"Raspechatka OS","name":"Point Supply Request","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1}],"sort_field":"creation","sort_order":"DESC","track_changes":1
+}

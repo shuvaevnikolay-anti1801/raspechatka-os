@@ -1,1 +1,35 @@
-{"doctype":"DocType","name":"Client Purchase","module":"Raspechatka OS","autoname":"hash","track_changes":0,"field_order":["purchase_datetime","client","business_point","source_doctype","source_document","gross_amount","discount_amount","net_amount","loyalty_discount_percent","promo_code","campaign","cancelled"],"fields":[{"fieldname":"purchase_datetime","fieldtype":"Datetime","label":"Дата покупки","reqd":1,"read_only":1,"in_list_view":1,"search_index":1},{"fieldname":"client","fieldtype":"Link","label":"Клиент","options":"Client","reqd":1,"in_list_view":1,"in_standard_filter":1,"search_index":1},{"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},{"fieldname":"source_doctype","fieldtype":"Data","label":"Тип документа","read_only":1},{"fieldname":"source_document","fieldtype":"Data","label":"Документ продажи","read_only":1,"unique":1,"search_index":1},{"fieldname":"gross_amount","fieldtype":"Currency","label":"До скидки","reqd":1},{"fieldname":"discount_amount","fieldtype":"Currency","label":"Скидка","default":"0"},{"fieldname":"net_amount","fieldtype":"Currency","label":"К оплате","reqd":1,"in_list_view":1},{"fieldname":"loyalty_discount_percent","fieldtype":"Percent","label":"Скидка клуба, %","default":"0"},{"fieldname":"promo_code","fieldtype":"Link","label":"Промокод","options":"Promo Code","in_standard_filter":1},{"fieldname":"campaign","fieldtype":"Link","label":"Рассылка","options":"Promo Campaign","in_standard_filter":1},{"fieldname":"cancelled","fieldtype":"Check","label":"Продажа отменена","default":"0","read_only":1}],"permissions":[{"role":"System Manager","read":1,"report":1,"export":1},{"role":"Raspechatka Network Admin","read":1,"report":1,"export":1},{"role":"Raspechatka Franchise Owner","read":1,"report":1},{"role":"Raspechatka Point Manager","read":1,"report":1},{"role":"Raspechatka Cashier","read":1}],"sort_field":"purchase_datetime","sort_order":"DESC"}
+{
+ "doctype":"DocType",
+ "name":"Client Purchase",
+ "module":"Raspechatka OS",
+ "autoname":"hash",
+ "track_changes":0,
+ "field_order":["purchase_datetime","client","business_point","source_doctype","source_document","receipt_number","gross_amount","discount_amount","net_amount","returned_amount","status","loyalty_discount_percent","promo_code","campaign","items","cancelled"],
+ "fields":[
+  {"fieldname":"purchase_datetime","fieldtype":"Datetime","label":"Дата покупки","reqd":1,"read_only":1,"in_list_view":1,"search_index":1},
+  {"fieldname":"client","fieldtype":"Link","label":"Клиент","options":"Client","reqd":1,"in_list_view":1,"in_standard_filter":1,"search_index":1},
+  {"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"source_doctype","fieldtype":"Data","label":"Тип документа","read_only":1},
+  {"fieldname":"source_document","fieldtype":"Data","label":"Документ продажи","read_only":1,"unique":1,"search_index":1},
+  {"fieldname":"receipt_number","fieldtype":"Data","label":"Номер чека","read_only":1,"in_list_view":1},
+  {"fieldname":"gross_amount","fieldtype":"Currency","label":"До скидки","reqd":1},
+  {"fieldname":"discount_amount","fieldtype":"Currency","label":"Скидка","default":"0"},
+  {"fieldname":"net_amount","fieldtype":"Currency","label":"К оплате","reqd":1,"in_list_view":1},
+  {"fieldname":"returned_amount","fieldtype":"Currency","label":"Возвращено","default":"0","read_only":1},
+  {"fieldname":"status","fieldtype":"Select","label":"Статус","options":"Completed\nPartially Returned\nReturned","default":"Completed","read_only":1,"in_list_view":1},
+  {"fieldname":"loyalty_discount_percent","fieldtype":"Percent","label":"Скидка клуба, %","default":"0"},
+  {"fieldname":"promo_code","fieldtype":"Link","label":"Промокод","options":"Promo Code","in_standard_filter":1},
+  {"fieldname":"campaign","fieldtype":"Link","label":"Рассылка","options":"Promo Campaign","in_standard_filter":1},
+  {"fieldname":"items","fieldtype":"Table","label":"Что купил клиент","options":"Client Purchase Item","read_only":1},
+  {"fieldname":"cancelled","fieldtype":"Check","label":"Продажа полностью возвращена","default":"0","read_only":1}
+ ],
+ "permissions":[
+  {"role":"System Manager","read":1,"report":1,"export":1},
+  {"role":"Raspechatka Network Admin","read":1,"report":1,"export":1},
+  {"role":"Raspechatka Franchise Owner","read":1,"report":1},
+  {"role":"Raspechatka Point Manager","read":1,"report":1},
+  {"role":"Raspechatka Cashier","read":1}
+ ],
+ "sort_field":"purchase_datetime",
+ "sort_order":"DESC"
+}

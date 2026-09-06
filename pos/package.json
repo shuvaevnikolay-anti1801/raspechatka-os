@@ -1,0 +1,53 @@
+{
+  "name": "raspechatka-pos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows-касса и рабочее место менеджера Распечатки",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "package:win": "npm run build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.0.0",
+    "vitest": "^4.0.0"
+  },
+  "build": {
+    "appId": "ru.raspechatka.pos",
+    "productName": "Распечатка Касса",
+    "artifactName": "Raspechatka-Kassa-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "executableName": "Raspechatka-Kassa"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

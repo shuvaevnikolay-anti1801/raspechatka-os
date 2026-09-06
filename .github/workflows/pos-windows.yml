@@ -1,0 +1,49 @@
+name: POS Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - version-16
+      - codex/pos-foundation
+    paths:
+      - "pos/**"
+      - "shared/**"
+      - ".github/workflows/pos-windows.yml"
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: pos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pos/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check types
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Windows installer
+        run: npm run package:win
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raspechatka-Kassa-Windows
+          path: pos/release/*.exe
+          if-no-files-found: error
+          retention-days: 30
