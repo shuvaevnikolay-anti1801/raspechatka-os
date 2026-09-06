@@ -2,6 +2,9 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call } from "../api";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartDataTable from "../components/SmartDataTable.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
 
 const route = useRoute();
 const loading = ref(true);
@@ -15,6 +18,18 @@ const recalculating = ref(false);
 const section = computed(() => route.meta.section || "employees");
 const title = computed(() => ({ employees: "Сотрудники", schedule: "График работы", payroll: "Зарплата", bonuses: "Премии и игра", hr: "Кадры и документы" })[section.value]);
 const pointNames = computed(() => Object.fromEntries(data.value.points.map((item) => [item.name, item.point_name])));
+const filterModel = computed({ get: () => ({ business_point: point.value, month: month.value }), set: (value) => { point.value = value.business_point; month.value = value.month; } });
+const filterFields = computed(() => [
+  { key: "business_point", label: "Точка", type: "select", allLabel: "Все доступные точки", options: data.value.points.map((item) => ({ value: item.name, label: `${item.point_name} · ${item.city}` })) },
+  { key: "month", label: "Месяц", type: "month" },
+]);
+const employeeColumns = computed(() => [
+  { key: "employee_name", label: "Сотрудник", primary: true, width: 260 },
+  { key: "position", label: "Должность", width: 190 },
+  { key: "business_entity", label: "Работодатель", width: 200 },
+  { key: "default_point", label: "Основная точка", width: 220, format: (value) => pointNames.value[value] || "Не назначена" },
+  { key: "status", label: "Статус", width: 120, format: () => "Работает" },
+]);
 
 async function load() {
   loading.value = true;
@@ -58,13 +73,8 @@ onMounted(load);
 
 <template>
   <section class="page team-page">
-    <div class="page-heading team-heading">
-      <div><div class="eyebrow">ЛЮДИ И РАБОТА</div><h1>{{ title }}</h1><p>Единый контур сотрудников для всех организаций и точек сети.</p></div>
-      <div class="team-filters">
-        <select v-model="point"><option value="">Все доступные точки</option><option v-for="item in data.points" :key="item.name" :value="item.name">{{ item.point_name }} · {{ item.city }}</option></select>
-        <input v-model="month" type="month" />
-      </div>
-    </div>
+    <ListPageHeader :title="title"><template v-if="section==='employees'" #actions><router-link class="button button-primary" to="/references/employees">Открыть карточки</router-link></template></ListPageHeader>
+    <SmartFilterBar v-model="filterModel" :fields="filterFields" :view-key="`team.${section}`" @apply="load" @reset="load" />
 
     <div v-if="error" class="team-error">{{ error }} <button @click="load">Повторить</button></div>
     <div v-else-if="loading" class="team-loading">Загружаем данные сотрудников…</div>
@@ -77,17 +87,7 @@ onMounted(load);
       </div>
 
       <div v-if="section === 'employees'" class="team-panel">
-        <div class="panel-title"><div><h2>Команда сети</h2><p>Карточка сотрудника, работодатель, должность и назначенные точки.</p></div><router-link class="button button-primary" to="/references/employees">Открыть карточки</router-link></div>
-        <div v-if="!data.employees.length" class="team-empty"><b>Сотрудников пока нет</b><span>Создайте первую карточку в справочнике сотрудников.</span></div>
-        <div v-else class="employee-list">
-          <article v-for="employee in data.employees" :key="employee.name">
-            <div class="employee-avatar">{{ (employee.first_name || employee.employee_name || 'С').slice(0, 1) }}</div>
-            <div><h3>{{ employee.employee_name }}</h3><p>{{ employee.position || 'Должность не указана' }}</p></div>
-            <div><span>Работодатель</span><b>{{ employee.business_entity }}</b></div>
-            <div><span>Основная точка</span><b>{{ pointNames[employee.default_point] || 'Не назначена' }}</b></div>
-            <span class="employee-status">Работает</span>
-          </article>
-        </div>
+        <SmartDataTable :rows="data.employees" :columns="employeeColumns" view-key="team.employees" :selectable="false" empty-title="Сотрудников пока нет" empty-text="Создайте первую карточку в справочнике сотрудников." />
       </div>
 
       <div v-else-if="section === 'schedule'" class="team-panel">

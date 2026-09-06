@@ -189,7 +189,12 @@ a { color: inherit; text-decoration: none; }
 .filter-bookmarks button:hover { border-color:#718f0b; }
 .filter-bookmarks i { color:#999; font-size:14px; font-style:normal; }
 .smart-table th { position:relative; }
-.smart-table th>span { display:block; overflow:hidden; text-overflow:ellipsis; }
+.smart-table th>span { display:block; overflow:hidden; text-overflow:ellipsis; cursor:pointer; user-select:none; }
+.smart-table .select-column { width:42px; }
+.smart-table .select-cell { width:42px; padding:0; text-align:center; }
+.smart-table .select-cell input { width:15px; height:15px; accent-color:var(--green); }
+.smart-table tbody tr.selected td { background:#f1f7df; }
+.sort-mark { color:#617c07; font-size:12px; font-style:normal; }
 .column-resizer { position:absolute; top:0; right:-4px; z-index:2; width:9px; height:100%; cursor:col-resize; touch-action:none; }
 .column-resizer::after { position:absolute; top:9px; right:4px; width:1px; height:24px; background:#d9ddd6; content:""; }
 .smart-table table { table-layout:fixed; min-width:760px; }

@@ -1,19 +1,17 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+import SmartDataTable from "../components/SmartDataTable.vue";
+import SmartFilterBar from "../components/SmartFilterBar.vue";
 
 const items = ref([]);
 const groups = ref([]);
 const points = ref([]);
 const loading = ref(true);
 const error = ref("");
-const search = ref("");
-const itemType = ref("");
-const catalogGroup = ref("");
-const active = ref("");
-const businessPoint = ref("");
-let debounceTimer;
+const filters = reactive({ search: "", item_type: "", catalog_group: "", active: "", business_point: "" });
 const editorOpen = ref(false);
 const saving = ref(false);
 const editorError = ref("");
@@ -22,21 +20,29 @@ const itemOptions = reactive({ groups: [], units: [], suppliers: [], price_types
 const canEdit = canAccess("references.catalog", "Edit");
 
 const typeLabels = { Product: "Товар", Service: "Услуга", Bundle: "Комплект" };
-const resultLabel = computed(() => {
-  const count = items.value.length;
-  return `${count} ${count === 1 ? "позиция" : count > 1 && count < 5 ? "позиции" : "позиций"}`;
-});
+const filterFields = computed(() => [
+  { key: "search", label: "Название, код или артикул", placeholder: "Введите текст", wide: true },
+  { key: "item_type", label: "Тип", type: "select", options: [{ value: "Product", label: "Товар" }, { value: "Service", label: "Услуга" }, { value: "Bundle", label: "Комплект" }] },
+  { key: "catalog_group", label: "Группа", type: "select", options: groups.value.map((group) => ({ value: group.name, label: group.group_name })) },
+  { key: "active", label: "Статус", type: "select", options: [{ value: "1", label: "Активные" }, { value: "0", label: "Неактивные" }] },
+  { key: "business_point", label: "Точка продаж", type: "select", options: points.value.map((point) => ({ value: point.name, label: point.point_name })) },
+]);
+const tableColumns = computed(() => [
+  { key: "item_type", label: "Тип", width: 120, format: (value) => typeLabels[value] || value },
+  { key: "item_name", label: "Наименование", primary: true, width: 280 },
+  { key: "item_code", label: "Код", width: 130 },
+  { key: "article", label: "Артикул", width: 140 },
+  { key: "catalog_group", label: "Группа", width: 180 },
+  { key: "stock_uom", label: "Ед. изм.", width: 110 },
+  { key: "active", label: "Статус", width: 120, format: (value) => value ? "Активен" : "Выключен" },
+]);
 
 async function loadItems() {
   loading.value = true;
   error.value = "";
   try {
     const result = await call("raspechatka.api.frontend.get_catalog_items", {
-      search: search.value,
-      item_type: itemType.value,
-      catalog_group: catalogGroup.value,
-      active: active.value,
-      business_point: businessPoint.value,
+      ...filters,
     });
     items.value = result.items || [];
   } catch (exception) {
@@ -90,20 +96,6 @@ function addBarcode() { (itemForm.barcodes ||= []).push({ barcode: "", barcode_t
 function addRow(table, row) { (itemForm[table] ||= []).push(row); }
 function removeRow(table, index) { itemForm[table].splice(index, 1); }
 
-function resetFilters() {
-  search.value = "";
-  itemType.value = "";
-  catalogGroup.value = "";
-  active.value = "";
-  businessPoint.value = "";
-}
-
-watch([itemType, catalogGroup, active, businessPoint], loadItems);
-watch(search, () => {
-  window.clearTimeout(debounceTimer);
-  debounceTimer = window.setTimeout(loadItems, 300);
-});
-
 onMounted(async () => {
   await Promise.all([loadFilters(), loadItems()]);
 });
@@ -111,56 +103,18 @@ onMounted(async () => {
 
 <template>
   <section class="page catalog-page">
-    <div class="page-heading catalog-heading">
-      <div>
-        <div class="eyebrow">КАТАЛОГ</div>
-        <h1>Товары и услуги</h1>
-        <p>Единый каталог сети и ассортимент по точкам</p>
-      </div>
-      <div v-if="canEdit" class="create-actions">
+    <ListPageHeader title="Товары и услуги">
+      <template #actions><div v-if="canEdit" class="create-actions">
         <button class="button button-secondary" type="button" @click="createItem('Service')">＋ Услуга</button>
         <button class="button button-secondary" type="button" @click="createItem('Bundle')">＋ Комплект</button>
         <button class="button button-primary" type="button" @click="createItem('Product')">＋ Создать товар</button>
-      </div>
-    </div>
-
-    <div class="catalog-toolbar">
-      <label class="search-field">
-        <span>⌕</span>
-        <input v-model="search" type="search" placeholder="Название, код или артикул" />
-        <kbd>⌘ K</kbd>
-      </label>
-      <select v-model="itemType" aria-label="Тип позиции">
-        <option value="">Все типы</option><option value="Product">Товары</option><option value="Service">Услуги</option><option value="Bundle">Комплекты</option>
-      </select>
-      <select v-model="catalogGroup" aria-label="Группа">
-        <option value="">Все группы</option><option v-for="group in groups" :key="group.name" :value="group.name">{{ group.group_name }}</option>
-      </select>
-      <select v-model="active" aria-label="Активность">
-        <option value="">Любой статус</option><option value="1">Активные</option><option value="0">Неактивные</option>
-      </select>
-      <select v-model="businessPoint" aria-label="Точка продаж">
-        <option value="">Все точки</option><option v-for="point in points" :key="point.name" :value="point.name">{{ point.point_name }}</option>
-      </select>
-      <button class="filter-reset" type="button" @click="resetFilters" title="Сбросить фильтры">↺</button>
-    </div>
-
-    <div class="table-meta"><strong>{{ resultLabel }}</strong><span>Обновлено сейчас</span></div>
-    <div class="table-shell">
-      <div v-if="error" class="table-message error-message"><strong>Не удалось загрузить каталог</strong><span>{{ error }}</span><button @click="loadItems">Повторить</button></div>
-      <div v-else-if="loading" class="table-message"><span class="loader"></span><span>Загружаем каталог…</span></div>
-      <div v-else-if="!items.length" class="table-message"><strong>Ничего не найдено</strong><span>Измените фильтры или создайте новую позицию.</span></div>
-      <table v-else>
-        <thead><tr><th>Тип</th><th>Наименование</th><th>Код</th><th>Артикул</th><th>Группа</th><th>Ед. изм.</th><th>Статус</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="item in items" :key="item.name" tabindex="0" @click="openItem(item)" @keydown.enter="openItem(item)">
-            <td><span class="type-chip" :class="item.item_type.toLowerCase()">{{ typeLabels[item.item_type] || item.item_type }}</span></td>
-            <td class="item-name">{{ item.item_name }}</td><td>{{ item.item_code }}</td><td>{{ item.article || '—' }}</td><td>{{ item.catalog_group || '—' }}</td><td>{{ item.stock_uom }}</td>
-            <td><span class="state" :class="{ inactive: !item.active }"><i></i>{{ item.active ? 'Активен' : 'Выключен' }}</span></td><td class="row-arrow">→</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+      </div></template>
+    </ListPageHeader>
+    <SmartFilterBar :model-value="filters" :fields="filterFields" view-key="catalog.items" @update:model-value="Object.assign(filters,$event)" @apply="loadItems" @reset="loadItems" />
+    <SmartDataTable :rows="items" :columns="tableColumns" view-key="catalog.items" :loading="loading" :error="error" empty-title="Ничего не найдено" empty-text="Измените фильтры или создайте новую позицию." @open="openItem" @retry="loadItems">
+      <template #cell-item_type="{ row }"><span class="type-chip" :class="row.item_type.toLowerCase()">{{ typeLabels[row.item_type] || row.item_type }}</span></template>
+      <template #cell-active="{ row }"><span class="state" :class="{ inactive: !row.active }"><i></i>{{ row.active ? 'Активен' : 'Выключен' }}</span></template>
+    </SmartDataTable>
     <AppModal v-if="editorOpen" :title="itemForm.item_name || 'Новая позиция'" wide @close="editorOpen = false">
       <form class="editor-form catalog-editor" @submit.prevent="saveItem">
         <div class="form-section"><h3>Основное</h3><div class="form-grid">
