@@ -1,0 +1,140 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - version-16
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy version-16
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'version-16'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+      PRODUCTION_USER: ${{ secrets.PRODUCTION_USER }}
+
+    steps:
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          PRODUCTION_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${PRODUCTION_HOST}" || { echo "PRODUCTION_HOST is not set" >&2; exit 1; }
+          test -n "${PRODUCTION_USER}" || { echo "PRODUCTION_USER is not set" >&2; exit 1; }
+          test -n "${PRODUCTION_SSH_KEY}" || { echo "PRODUCTION_SSH_KEY is not set" >&2; exit 1; }
+          [[ "${DEPLOY_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid deployment commit SHA" >&2; exit 1; }
+
+      - name: Prepare SSH connection
+        shell: bash
+        env:
+          PRODUCTION_SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "${HOME}/.ssh"
+          printf '%s\n' "${PRODUCTION_SSH_KEY}" > "${HOME}/.ssh/production_deploy"
+          chmod 600 "${HOME}/.ssh/production_deploy"
+          ssh-keyscan -H "${PRODUCTION_HOST}" > "${HOME}/.ssh/known_hosts"
+          chmod 600 "${HOME}/.ssh/known_hosts"
+
+      - name: Deploy tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "${HOME}/.ssh/production_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${PRODUCTION_USER}@${PRODUCTION_HOST}" \
+            "bash -se -- '${DEPLOY_SHA}'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          trap 'status=$?; echo "Deployment failed at line ${LINENO} (exit ${status})" >&2; exit "${status}"' ERR
+
+          EXPECTED_SHA="$1"
+          APP_DIR="/opt/raspechatka/raspechatka-os"
+          FRAPPE_DOCKER_DIR="/opt/raspechatka/frappe_docker"
+          COMPOSE_FILE="/opt/raspechatka/gitops/docker-compose.yml"
+          PRODUCTION_ENV="/opt/raspechatka/production.env"
+          APPS_JSON="${FRAPPE_DOCKER_DIR}/apps.json"
+          GITHUB_SSH_KEY="/root/.ssh/raspechatka_github"
+          GITHUB_KNOWN_HOSTS="/root/.ssh/github_known_hosts"
+          CONTAINERFILE="${FRAPPE_DOCKER_DIR}/images/layered/Containerfile"
+          IMAGE_TAG="raspechatka-os:version-16"
+          SITE="os.rpechatka.ru"
+
+          for command_name in git docker ssh; do
+            command -v "${command_name}" >/dev/null || {
+              echo "Required command is missing: ${command_name}" >&2
+              exit 1
+            }
+          done
+
+          test -d "${APP_DIR}/.git" || { echo "Application repository is missing: ${APP_DIR}" >&2; exit 1; }
+          test -d "${FRAPPE_DOCKER_DIR}" || { echo "frappe_docker is missing: ${FRAPPE_DOCKER_DIR}" >&2; exit 1; }
+          test -f "${COMPOSE_FILE}" || { echo "Compose file is missing: ${COMPOSE_FILE}" >&2; exit 1; }
+          test -f "${PRODUCTION_ENV}" || { echo "Production env is missing: ${PRODUCTION_ENV}" >&2; exit 1; }
+          test -f "${APPS_JSON}" || { echo "apps.json is missing: ${APPS_JSON}" >&2; exit 1; }
+          test -f "${GITHUB_SSH_KEY}" || { echo "Server GitHub key is missing: ${GITHUB_SSH_KEY}" >&2; exit 1; }
+          test -f "${GITHUB_KNOWN_HOSTS}" || { echo "GitHub known_hosts is missing: ${GITHUB_KNOWN_HOSTS}" >&2; exit 1; }
+          test -f "${CONTAINERFILE}" || { echo "Containerfile is missing: ${CONTAINERFILE}" >&2; exit 1; }
+
+          if [[ -n "$(git -C "${APP_DIR}" status --porcelain)" ]]; then
+            echo "Deployment stopped: the production repository has local changes." >&2
+            git -C "${APP_DIR}" status --short >&2
+            exit 1
+          fi
+
+          export GIT_SSH_COMMAND="ssh -i ${GITHUB_SSH_KEY} -o IdentitiesOnly=yes -o UserKnownHostsFile=${GITHUB_KNOWN_HOSTS} -o StrictHostKeyChecking=yes"
+          git -C "${APP_DIR}" switch version-16
+          git -C "${APP_DIR}" fetch --prune origin version-16
+          git -C "${APP_DIR}" pull --ff-only origin version-16
+
+          ACTUAL_SHA="$(git -C "${APP_DIR}" rev-parse HEAD)"
+          if [[ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]]; then
+            echo "Deployment stopped: version-16 is at ${ACTUAL_SHA}, but CI tested ${EXPECTED_SHA}." >&2
+            echo "A newer successful CI run will deploy the newer commit." >&2
+            exit 1
+          fi
+
+          DOCKER_BUILDKIT=1 docker build \
+            --build-arg "FRAPPE_BRANCH=version-16" \
+            --build-arg "CACHE_BUST=${EXPECTED_SHA}" \
+            --secret "id=apps_json,src=${APPS_JSON}" \
+            --secret "id=github_ssh,src=${GITHUB_SSH_KEY}" \
+            --secret "id=github_known_hosts,src=${GITHUB_KNOWN_HOSTS}" \
+            --file "${CONTAINERFILE}" \
+            --tag "${IMAGE_TAG}" \
+            "${FRAPPE_DOCKER_DIR}"
+
+          set -a
+          source "${PRODUCTION_ENV}"
+          set +a
+
+          if ! docker compose -f "${COMPOSE_FILE}" config --images | grep -Fxq "${IMAGE_TAG}"; then
+            echo "Compose does not reference ${IMAGE_TAG}. Check CUSTOM_IMAGE and CUSTOM_TAG in ${PRODUCTION_ENV}." >&2
+            exit 1
+          fi
+
+          docker compose -f "${COMPOSE_FILE}" up -d --force-recreate
+          docker compose -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" migrate
+          docker compose -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" clear-cache
+          docker compose -f "${COMPOSE_FILE}" ps
+          REMOTE_SCRIPT
