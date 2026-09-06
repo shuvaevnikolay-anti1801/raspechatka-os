@@ -87,10 +87,14 @@ const submenuItems = computed(() =>
 
 		<nav class="subnav" aria-label="Подразделы">
 			<template v-for="(item, index) in submenuItems" :key="item.label">
-				<router-link v-if="item.to" :to="item.to" :class="{ active: route.path === item.to }">{{
-					item.label
-				}}</router-link>
-				<button v-else type="button" :class="{ active: index === 0 }">{{ item.label }}</button>
+				<router-link v-if="item.to" :to="item.to" :class="{ active: route.path === item.to }">
+					<span class="subnav-label">{{ item.label }}</span>
+					<strong class="subnav-measure" aria-hidden="true">{{ item.label }}</strong>
+				</router-link>
+				<button v-else type="button" :class="{ active: index === 0 }">
+					<span class="subnav-label">{{ item.label }}</span>
+					<strong class="subnav-measure" aria-hidden="true">{{ item.label }}</strong>
+				</button>
 			</template>
 		</nav>
 
@@ -104,6 +108,22 @@ const submenuItems = computed(() =>
 .subnav {
 	top: 72px;
 	overflow-y: hidden;
+}
+.subnav :is(a, button) {
+	display: grid;
+	align-items: center;
+}
+.subnav-label,
+.subnav-measure {
+	grid-area: 1 / 1;
+}
+.subnav-measure {
+	visibility: hidden;
+	font-weight: 650;
+	pointer-events: none;
+}
+.subnav :is(a, button).active::after {
+	background: var(--green);
 }
 @media (max-width: 760px) {
 	.subnav {
