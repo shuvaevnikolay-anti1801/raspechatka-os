@@ -1,106 +1,142 @@
 import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { calculateTotalMinor } from '../shared/cart'
-import type { BootState, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig, HeldReceipt, Shift } from '../shared/contracts'
+import type {
+  BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
+  CreateReturnRequest, HeldReceipt, PaymentPart, ReturnResult, Shift
+} from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
-import { loadBootstrap } from './frappe'
+import { loadBootstrap, pushEvents } from './frappe'
 import type { FiscalProvider, PaymentProvider } from './providers/contracts'
 
-const demoRules = { allowDiscounts:true,maxDiscountPercent:100,acceptsCash:true,acceptsCard:true,acceptsQr:false }
+const demoRules={allowDiscounts:true,maxDiscountPercent:100,acceptsCash:true,acceptsCard:true,acceptsQr:false}
+const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
+  method==='cash'?rules.acceptsCash:method==='card'?rules.acceptsCard:rules.acceptsQr
 
-export function registerIpcHandlers(dependencies: {
-  database: PosDatabase
-  connectionStore: ConnectionStore
-  paymentProvider: PaymentProvider
-  fiscalProvider: FiscalProvider
-}): void {
-  const { database, connectionStore, paymentProvider, fiscalProvider } = dependencies
-  const cashierName = 'Администратор'
+export function registerIpcHandlers(dependencies:{
+  database:PosDatabase
+  connectionStore:ConnectionStore
+  paymentProvider:PaymentProvider
+  fiscalProvider:FiscalProvider
+}):void {
+  const {database,connectionStore,paymentProvider,fiscalProvider}=dependencies
+  const cashierName='Администратор'
 
   const bootState=():BootState=>{
     const cached=database.getState('bootstrap')
-    const remote=cached ? JSON.parse(cached) as Partial<BootState> : {}
+    const remote=cached?JSON.parse(cached) as Partial<BootState>:{}
     return {
-      pointId:remote.pointId ?? 'demo-point',
-      pointName:remote.pointName ?? 'Тестовая точка',
-      workstationName:remote.workstationName ?? 'Касса 1',
-      cashierName:remote.cashierName ?? cashierName,
-      online:Boolean(remote.online),
-      pendingSync:database.pendingSyncCount(),
-      lastSyncAt:remote.lastSyncAt,
-      source:remote.source ?? 'demo',
-      shift:database.currentShift(),
-      rules:remote.rules ?? demoRules
+      pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
+      workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
+      cashierName:remote.cashierName??cashierName,online:Boolean(remote.online),
+      pendingSync:database.pendingSyncCount(),lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
+      shift:database.currentShift(),rules:remote.rules??demoRules
     }
   }
 
-  ipcMain.handle('pos:get-boot-state', bootState)
-  ipcMain.handle('pos:list-products', () => database.listProducts())
-  ipcMain.handle('pos:list-customers', (_event,query?:string) => database.listCustomers(query))
-  ipcMain.handle('pos:list-sales', () => database.listSales())
-  ipcMain.handle('pos:list-held-receipts', () => database.listHeldReceipts())
-  ipcMain.handle('pos:hold-receipt', (_event,input:Omit<HeldReceipt,'id'|'createdAt'>) => database.holdReceipt(input))
-  ipcMain.handle('pos:delete-held-receipt', (_event,id:string) => database.deleteHeldReceipt(id))
-  ipcMain.handle('pos:get-shift-summary', () => database.getShiftSummary())
+  ipcMain.handle('pos:get-boot-state',bootState)
+  ipcMain.handle('pos:list-products',()=>database.listProducts())
+  ipcMain.handle('pos:list-customers',(_event,query?:string)=>database.listCustomers(query))
+  ipcMain.handle('pos:list-sales',()=>database.listSales())
+  ipcMain.handle('pos:get-sale',(_event,id:string)=>database.getSale(id))
+  ipcMain.handle('pos:list-returns',()=>database.listReturns())
+  ipcMain.handle('pos:list-held-receipts',()=>database.listHeldReceipts())
+  ipcMain.handle('pos:hold-receipt',(_event,input:Omit<HeldReceipt,'id'|'createdAt'>)=>database.holdReceipt(input))
+  ipcMain.handle('pos:delete-held-receipt',(_event,id:string)=>database.deleteHeldReceipt(id))
+  ipcMain.handle('pos:get-shift-summary',()=>database.getShiftSummary())
+  ipcMain.handle('pos:list-cash-operations',()=>database.listCashOperations())
+  ipcMain.handle('pos:add-cash-operation',(_event,type:CashOperationType,amountMinor:number,reason:string)=>database.addCashOperation(type,amountMinor,reason))
 
-  ipcMain.handle('pos:open-shift', (): Shift => database.openShift({
-    id: randomUUID(), openedAt: new Date().toISOString(), cashierName:bootState().cashierName
+  ipcMain.handle('pos:open-shift',():Shift=>database.openShift({
+    id:randomUUID(),openedAt:new Date().toISOString(),cashierName:bootState().cashierName
   }))
-  ipcMain.handle('pos:close-shift', () => database.closeShift())
+  ipcMain.handle('pos:close-shift',()=>database.closeShift())
 
-  ipcMain.handle('pos:get-connection-status', () => connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
-  ipcMain.handle('pos:save-connection', (_event,config:ConnectionConfig) => {
-    connectionStore.save(config)
-    database.setState('sync_error','')
+  ipcMain.handle('pos:get-connection-status',()=>connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
+  ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
+    connectionStore.save(config);database.setState('sync_error','')
     return connectionStore.status(bootState().lastSyncAt)
   })
-  ipcMain.handle('pos:sync-now', async ():Promise<BootState> => {
-    const config=connectionStore.load()
-    if(!config) throw new Error('Сначала заполните подключение к Распечатка OS')
+  ipcMain.handle('pos:sync-now',async():Promise<BootState>=>{
+    const config=connectionStore.load();if(!config)throw new Error('Сначала заполните подключение к Распечатка OS')
     try {
       const remote=await loadBootstrap(config)
       database.replaceProducts(remote.products)
+      const events=database.pendingEvents()
+      if(events.length)database.markEventsSent(await pushEvents(config,events))
       const lastSyncAt=new Date().toISOString()
       database.setState('bootstrap',JSON.stringify({
-        pointId:remote.point.id,pointName:remote.point.name,workstationName:remote.workplace.name,
-        cashierName:remote.employee.name,online:true,lastSyncAt,source:'frappe',rules:remote.rules
+        pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
+        workstationName:remote.workplace.name,cashierName:remote.employee.name,online:true,
+        lastSyncAt,source:'frappe',rules:remote.rules
       }))
-      database.setState('sync_error','')
-      return bootState()
-    } catch(error) {
-      const message=error instanceof Error ? error.message : String(error)
+      database.setState('sync_error','');return bootState()
+    }catch(error){
+      const message=error instanceof Error?error.message:String(error)
       database.setState('sync_error',message)
-      const current=bootState()
-      database.setState('bootstrap',JSON.stringify({...current,online:false}))
+      database.setState('bootstrap',JSON.stringify({...bootState(),online:false}))
       throw error
     }
   })
 
-  ipcMain.handle('pos:complete-sale', async (_event, request: CompleteSaleRequest): Promise<CompleteSaleResult> => {
-    const existing = database.findSaleByClientRequestId(request.clientRequestId)
-    if (existing) return { ...existing, changeMinor:0, queuedForSync:true }
-    const shift = database.currentShift()
-    if (!shift) throw new Error('Сначала откройте смену')
-    if (!request.lines.length) throw new Error('Чек пуст')
+  ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
+    const existing=database.findSaleByClientRequestId(request.clientRequestId)
+    if(existing)return {...existing,changeMinor:0,queuedForSync:true}
+    const shift=database.currentShift();if(!shift)throw new Error('Сначала откройте смену')
+    if(!request.lines.length)throw new Error('Чек пуст')
     const rules=bootState().rules
-    const discount=Math.min(request.receiptDiscountPercent ?? 0,rules.maxDiscountPercent)
-    const totalMinor = calculateTotalMinor(request.lines,rules.allowDiscounts ? discount : 0)
-    if(request.paymentMethod==='cash' && (request.cashReceivedMinor ?? 0)<totalMinor) throw new Error('Получено наличными меньше суммы чека')
-    const saleId = randomUUID()
-    const payment = await paymentProvider.charge({ saleId, amountMinor: totalMinor, method: request.paymentMethod })
-    if (!payment.approved) throw new Error('Оплата не подтверждена')
-    const fiscal = await fiscalProvider.fiscalizeSale({ saleId, amountMinor: totalMinor, paymentMethod: request.paymentMethod, lines: request.lines })
+    const discount=Math.min(request.receiptDiscountPercent??0,rules.maxDiscountPercent)
+    const totalMinor=calculateTotalMinor(request.lines,rules.allowDiscounts?discount:0)
+    if(!request.payments.length||request.payments.some((x)=>!accepted(rules,x.method)))throw new Error('Способ оплаты недоступен на этой точке')
+    if(request.payments.some((x)=>!Number.isInteger(x.amountMinor)||x.amountMinor<=0))throw new Error('Некорректная сумма оплаты')
+    if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
+    const cashAmount=request.payments.find((x)=>x.method==='cash')?.amountMinor??0
+    if(cashAmount&&(request.cashReceivedMinor??cashAmount)<cashAmount)throw new Error('Получено наличными меньше суммы наличной оплаты')
+    const saleId=randomUUID()
+    const payments:PaymentPart[]=[]
+    for(const part of request.payments){
+      const result=await paymentProvider.charge({saleId,amountMinor:part.amountMinor,method:part.method})
+      if(!result.approved)throw new Error('Оплата не подтверждена')
+      payments.push({...part,transactionId:result.transactionId})
+    }
+    const fiscal=await fiscalProvider.fiscalizeSale({saleId,amountMinor:totalMinor,payments,lines:request.lines})
     database.saveSale({
       id:saleId,clientRequestId:request.clientRequestId,shiftId:shift.id,totalMinor,
-      paymentMethod:request.paymentMethod,paymentTransactionId:payment.transactionId,
-      fiscalNumber:fiscal.receiptNumber,createdAt:new Date().toISOString(),
-      customerName:request.customer?.name,lines:request.lines
+      paymentMethod:payments.length>1?'mixed':payments[0].method,fiscalNumber:fiscal.receiptNumber,
+      createdAt:new Date().toISOString(),customerName:request.customer?.name,lines:request.lines,payments
     })
-    return {
-      saleId,receiptNumber:fiscal.receiptNumber,totalMinor,
-      changeMinor:request.paymentMethod==='cash' ? (request.cashReceivedMinor ?? totalMinor)-totalMinor : 0,
-      queuedForSync:true
+    return {saleId,receiptNumber:fiscal.receiptNumber,totalMinor,
+      changeMinor:cashAmount?Math.max(0,(request.cashReceivedMinor??cashAmount)-cashAmount):0,queuedForSync:true}
+  })
+
+  ipcMain.handle('pos:create-return',async(_event,request:CreateReturnRequest):Promise<ReturnResult>=>{
+    const existing=database.findReturnByClientRequestId(request.clientRequestId)
+    if(existing)return {...existing,queuedForSync:true}
+    const shift=database.currentShift();if(!shift)throw new Error('Сначала откройте смену')
+    const sale=database.getSale(request.saleId)
+    if(!request.lines.length)throw new Error('Выберите хотя бы одну позицию')
+    const lines=request.lines.map((requested)=>{
+      const original=sale.lines.find((x)=>x.id===requested.saleItemId)
+      if(!original)throw new Error('Позиция исходного чека не найдена')
+      const available=original.quantity-original.returnedQuantity
+      if(requested.quantity<=0||requested.quantity>available)throw new Error(`Для «${original.name}» доступно к возврату: ${available}`)
+      const originalLineTotal=Math.round(original.quantity*original.unitPriceMinor*(1-(original.discountPercent??0)/100))
+      const paidLineTotal=Math.round(sale.totalMinor*originalLineTotal/
+        (sale.lines.reduce((sum,x)=>sum+Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent??0)/100)),0)||1))
+      return {...requested,lineTotalMinor:Math.round(paidLineTotal*requested.quantity/original.quantity)}
+    })
+    const totalMinor=lines.reduce((sum,x)=>sum+x.lineTotalMinor,0)
+    if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма возврата по способам оплаты не совпадает с итогом')
+    const returnId=randomUUID();const payments:PaymentPart[]=[]
+    for(const part of request.payments){
+      const result=await paymentProvider.refund({saleId:returnId,amountMinor:part.amountMinor,method:part.method})
+      if(!result.approved)throw new Error('Возврат оплаты не подтверждён')
+      payments.push({...part,transactionId:result.transactionId})
     }
+    const fiscal=await fiscalProvider.fiscalizeReturn({returnId,saleId:sale.id,amountMinor:totalMinor,payments})
+    database.saveReturn({id:returnId,clientRequestId:request.clientRequestId,saleId:sale.id,shiftId:shift.id,
+      totalMinor,fiscalNumber:fiscal.receiptNumber,createdAt:new Date().toISOString(),lines,payments})
+    return {returnId,receiptNumber:fiscal.receiptNumber,totalMinor,queuedForSync:true}
   })
 }
