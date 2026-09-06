@@ -1,3 +1,5 @@
+# ruff: noqa: RUF001
+
 import json
 from urllib.parse import urljoin
 
