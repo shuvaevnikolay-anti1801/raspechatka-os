@@ -243,6 +243,40 @@ def _apply_pos_event(event_type, event_id, workplace, payload):
 		_apply_cleaner_payment(event_id, workplace, payload)
 	elif event_type == "cash.counted":
 		_apply_cash_count(event_id, workplace, payload)
+	elif event_type == "order.created":
+		_apply_order_created(event_id, workplace, payload)
+	elif event_type == "order.updated":
+		_apply_order_updated(event_id, workplace, payload)
+
+
+def _apply_order_created(event_id, workplace, payload):
+	if not _doctype_exists("POS Order") or frappe.db.exists("POS Order", {"source_pos_event": event_id}):
+		return
+	status = {"new": "New", "in_progress": "In Progress", "ready": "Ready", "issued": "Issued", "cancelled": "Cancelled"}.get(payload.get("status"), "New")
+	doc = frappe.get_doc({"doctype": "POS Order", "order_number": payload.get("orderNumber"), "phone": payload.get("phone"),
+		"customer_name": payload.get("customerName"), "business_point": workplace.business_point,
+		"source_pos_event": event_id, "source_sale_id": payload.get("sourceSaleId"), "fiscal_number": payload.get("fiscalNumber"),
+		"total_amount": flt(payload.get("totalMinor")) / 100, "paid_amount": flt(payload.get("paidMinor")) / 100,
+		"status": status, "comment": payload.get("comment"), "due_at": payload.get("dueAt"),
+		"items": [{"item": x.get("productId") if frappe.db.exists("Catalog Item", x.get("productId")) else None,
+			"item_name": x.get("name"), "quantity": flt(x.get("quantity")), "rate": flt(x.get("unitPriceMinor")) / 100,
+			"amount": flt(x.get("quantity")) * flt(x.get("unitPriceMinor")) / 100} for x in payload.get("lines", [])]})
+	doc.insert(ignore_permissions=True)
+
+
+def _apply_order_updated(event_id, workplace, payload):
+	if not _doctype_exists("POS Order"):
+		return
+	name = frappe.db.get_value("POS Order", {"order_number": payload.get("orderNumber")}, "name")
+	if not name:
+		return
+	doc = frappe.get_doc("POS Order", name)
+	for field in ("phone", "comment", "due_at"):
+		if field in payload:
+			setattr(doc, field, payload.get(field))
+	if payload.get("status"):
+		doc.status = {"new": "New", "in_progress": "In Progress", "ready": "Ready", "issued": "Issued", "cancelled": "Cancelled"}.get(payload["status"], doc.status)
+	doc.save(ignore_permissions=True)
 
 
 def _apply_sale(event_id, workplace, payload):
@@ -345,7 +379,16 @@ def _get_workplace_data(employee, point, workplace):
 		"deliveries": _get_delivery_notices(point.name),
 		"supplyRequests": _get_supply_requests(point.name),
 		"cleaner": _get_cleaner_status(point.name),
+		"orders": _get_orders(point.name),
 	}
+
+
+def _get_orders(point_name):
+	if not _doctype_exists("POS Order"):
+		return []
+	rows = frappe.get_all("POS Order", filters={"business_point": point_name}, fields=["name", "order_number", "phone", "customer_name", "total_amount", "paid_amount", "status", "comment", "due_at", "creation", "source_sale_id", "fiscal_number"], order_by="creation desc", limit_page_length=200)
+	status = {"New": "new", "In Progress": "in_progress", "Ready": "ready", "Issued": "issued", "Cancelled": "cancelled"}
+	return [{"id": x.name, "orderNumber": x.order_number, "phone": x.phone, "customerName": x.customer_name, "lines": [], "totalMinor": int(flt(x.total_amount) * 100), "paidMinor": int(flt(x.paid_amount) * 100), "paymentStatus": "paid" if flt(x.paid_amount) >= flt(x.total_amount) else ("partial" if flt(x.paid_amount) else "unpaid"), "status": status.get(x.status, "new"), "comment": x.comment, "createdAt": str(x.creation), "dueAt": x.due_at, "sourceSaleId": x.source_sale_id, "fiscalNumber": x.fiscal_number} for x in rows]
 
 
 def _doctype_exists(name):

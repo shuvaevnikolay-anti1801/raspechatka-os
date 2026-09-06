@@ -3,7 +3,8 @@ import { DatabaseSync } from 'node:sqlite'
 import type {
   CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
   CashCount, CashCountLine, CleanerVisitResult, PaymentPart, Product, ReturnSummary,
-  SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData
+  SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData,
+  Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 
 const emptySummary=():ShiftSummary=>({
@@ -93,6 +94,13 @@ export class PosDatabase {
         lines_json TEXT NOT NULL, total_minor INTEGER NOT NULL, expected_minor INTEGER NOT NULL,
         difference_minor INTEGER NOT NULL, created_at TEXT NOT NULL,
         FOREIGN KEY (shift_id) REFERENCES shifts(id)
+      );
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY, order_number TEXT NOT NULL UNIQUE, phone TEXT NOT NULL,
+        customer_id TEXT, customer_name TEXT, lines_json TEXT NOT NULL,
+        total_minor INTEGER NOT NULL, paid_minor INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'new', comment TEXT, due_at TEXT,
+        source_sale_id TEXT, fiscal_number TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
     `)
     this.ensureColumn('products', 'item_type', "TEXT NOT NULL DEFAULT 'service'")
@@ -217,7 +225,7 @@ export class PosDatabase {
     return (this.db.prepare('SELECT id saleId,fiscal_number receiptNumber,total_minor totalMinor FROM sales WHERE client_request_id=?').get(id) as {saleId:string;receiptNumber:string;totalMinor:number}|undefined)??null
   }
 
-  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;lines:CartLine[];payments:PaymentPart[]}):void {
+  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;lines:CartLine[];payments:PaymentPart[];order?:{phone:string;comment?:string;dueAt?:string}}):void {
     this.db.exec('BEGIN')
     try {
       this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,created_at)
@@ -234,6 +242,7 @@ export class PosDatabase {
       const reduceStock=this.db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND track_inventory=1')
       input.lines.forEach((x)=>reduceStock.run(x.quantity,x.productId))
       this.queue('sale.completed',input,input.createdAt)
+      if ((input as any).order) this.createOrderFromSale(input, (input as any).order)
       this.db.exec('COMMIT')
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
@@ -300,7 +309,7 @@ export class PosDatabase {
 
   getWorkplaceData():WorkplaceData {
     const raw=this.getState('workplace_data')
-    return raw?JSON.parse(raw) as WorkplaceData:{schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]}}
+    return raw?JSON.parse(raw) as WorkplaceData:{schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
   }
   setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(value))}
   reportStockWriteOff(request:StockWriteOffRequest):void {
@@ -353,6 +362,44 @@ export class PosDatabase {
       expected_minor expectedMinor,difference_minor differenceMinor,created_at createdAt
       FROM cash_counts WHERE shift_id=? ORDER BY created_at DESC LIMIT 1`).get(shift.id) as (Omit<CashCount,'lines'>&{lines:string})|undefined
     return row?{...row,lines:JSON.parse(row.lines) as CashCountLine[]}:null
+  }
+
+  listOrders():Order[] {
+    return (this.db.prepare(`SELECT id,order_number orderNumber,phone,customer_name customerName,lines_json lines,
+      total_minor totalMinor,paid_minor paidMinor,status,comment,created_at createdAt,due_at dueAt,
+      source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 200`).all() as any[])
+      .map((x)=>({...x,lines:JSON.parse(x.lines),paymentStatus:x.paidMinor>=x.totalMinor?'paid':x.paidMinor>0?'partial':'unpaid'})) as Order[]
+  }
+  private createOrderFromSale(input:any, meta:{phone:string;comment?:string;dueAt?:string}):Order {
+    const now=input.createdAt||new Date().toISOString(); const id=randomUUID()
+    const orderNumber=`ORD-${now.slice(0,10).replace(/-/g,'')}-${id.slice(0,6).toUpperCase()}`
+    const customer=this.listCustomers(meta.phone).find((x)=>x.phone===meta.phone)
+    const order:Order={id,orderNumber,phone:meta.phone.trim(),customerName:customer?.name||input.customerName,
+      lines:input.lines,totalMinor:input.totalMinor,paidMinor:input.totalMinor,paymentStatus:'paid',status:'new',
+      comment:meta.comment?.trim()||undefined,createdAt:now,dueAt:meta.dueAt,sourceSaleId:input.id,fiscalNumber:input.fiscalNumber}
+    this.db.prepare(`INSERT INTO orders (id,order_number,phone,customer_id,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(order.id,order.orderNumber,order.phone,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),order.totalMinor,order.paidMinor,order.status,order.comment||null,order.dueAt||null,order.sourceSaleId||null,order.fiscalNumber||null,now,now)
+    this.queue('order.created',order,now); return order
+  }
+  findOrderBySourceSale(saleId:string):Order|undefined{return this.listOrders().find((x)=>x.sourceSaleId===saleId)}
+  createUnpaidOrder(input:CreateUnpaidOrderRequest):Order {
+    if(!input.phone.trim()||input.phone.replace(/\D/g,'').length<5)throw new Error('Укажите телефон покупателя')
+    if(!input.lines.length)throw new Error('Заказ пуст')
+    const now=new Date().toISOString(),id=randomUUID(),orderNumber=`ORD-${now.slice(0,10).replace(/-/g,'')}-${id.slice(0,6).toUpperCase()}`
+    const totalMinor=input.lines.reduce((s,x)=>s+Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent||0)/100)),0)
+    if(totalMinor<=0)throw new Error('Сумма заказа должна быть больше нуля')
+    const order:Order={id,orderNumber,phone:input.phone.trim(),lines:input.lines,totalMinor,paidMinor:0,paymentStatus:'unpaid',status:'new',comment:input.comment?.trim()||undefined,createdAt:now,dueAt:input.dueAt}
+    this.db.prepare(`INSERT INTO orders (id,order_number,phone,lines_json,total_minor,paid_minor,status,comment,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id,orderNumber,order.phone,JSON.stringify(order.lines),totalMinor,0,'new',order.comment||null,order.dueAt||null,now,now)
+    this.queue('order.created',order,now);return order
+  }
+  updateOrder(input:UpdateOrderRequest):Order {
+    const current=this.listOrders().find((x)=>x.id===input.id);if(!current)throw new Error('Заказ не найден')
+    const next={...current,phone:input.phone?.trim()||current.phone,comment:input.comment===undefined?current.comment:input.comment.trim()||undefined,status:input.status||current.status,dueAt:input.dueAt===undefined?current.dueAt:input.dueAt}
+    if(next.phone.replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
+    if(!['new','in_progress','ready','issued','cancelled'].includes(next.status))throw new Error('Некорректный статус заказа')
+    const updatedAt=new Date().toISOString();this.db.prepare('UPDATE orders SET phone=?,comment=?,status=?,due_at=?,updated_at=? WHERE id=?').run(next.phone,next.comment||null,next.status,next.dueAt||null,updatedAt,input.id)
+    const result={...next};this.queue('order.updated',result,updatedAt);return result
   }
 
   holdReceipt(input:Omit<HeldReceipt,'id'|'createdAt'>):HeldReceipt {const x={...input,id:randomUUID(),createdAt:new Date().toISOString()};this.db.prepare('INSERT INTO held_receipts (id,label,payload_json,created_at) VALUES (?,?,?,?)').run(x.id,x.label,JSON.stringify(x),x.createdAt);return x}

@@ -3,23 +3,24 @@ import { calculateSubtotalMinor, calculateTotalMinor } from '../../shared/cart'
 import type {
   BootState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, PaymentMethod, PaymentPart, Product, ReturnSummary, SaleDetails,
-  SalePaymentMethod, SaleSummary, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData
+  SalePaymentMethod, SaleSummary, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, Order, OrderStatus
 } from '../../shared/contracts'
 
-type Screen='sale'|'receipts'|'shift'|'work'|'settings'
+type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
 type PaymentChoice=PaymentMethod|'mixed'
 const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2})
 const formatMoney=(minor:number)=>money.format(minor/100)
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR-код',mixed:'Смешанная'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
-const emptyWorkplace:WorkplaceData={schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]}}
+const emptyWorkplace:WorkplaceData={schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 
 export default function App(){
   const [boot,setBoot]=useState<BootState|null>(null)
   const [products,setProducts]=useState<Product[]>([])
   const [customers,setCustomers]=useState<Customer[]>([])
   const [sales,setSales]=useState<SaleSummary[]>([])
+  const [orders,setOrders]=useState<Order[]>([])
   const [returns,setReturns]=useState<ReturnSummary[]>([])
   const [held,setHeld]=useState<HeldReceipt[]>([])
   const [cashOperations,setCashOperations]=useState<CashOperation[]>([])
@@ -41,6 +42,7 @@ export default function App(){
   const [customerOpen,setCustomerOpen]=useState(false)
   const [freePriceOpen,setFreePriceOpen]=useState(false)
   const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
+  const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
 
   const refresh=async()=>{
     const result=await Promise.all([
@@ -48,12 +50,12 @@ export default function App(){
       window.raspechatkaPos.listCustomers(),window.raspechatkaPos.listSales(),
       window.raspechatkaPos.listReturns(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
-      window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),
+      window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
       window.raspechatkaPos.getLastCashCount()
     ])
     setBoot(result[0]);setProducts(result[1]);setCustomers(result[2]);setSales(result[3])
     setReturns(result[4]);setHeld(result[5]);setSummary(result[6]);setCashOperations(result[7]);setConnection(result[8])
-    setWorkplace(result[9]);setLastCashCount(result[10])
+    setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11])
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
 
@@ -71,7 +73,7 @@ export default function App(){
     return found?current.map((line)=>line.productId===product.id?{...line,quantity:line.quantity+1}:line):[...current,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor}]
   })
   const change=(id:string,delta:number)=>setCart((current)=>current.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{setCart([]);setCustomer(null);setDiscount(0)}
+  const clear=()=>{setCart([]);setCustomer(null);setDiscount(0);setOrderDraft(null)}
   const openShift=async()=>{await window.raspechatkaPos.openShift();await refresh();setCashCountOpen('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
@@ -89,10 +91,10 @@ export default function App(){
     try{
       const result=await window.raspechatkaPos.completeSale({
         clientRequestId:crypto.randomUUID(),payments,lines:cart,customer,
-        receiptDiscountPercent:allowedDiscount,cashReceivedMinor
+        receiptDiscountPercent:allowedDiscount,cashReceivedMinor,order:orderDraft||undefined
       })
       clear();setPayment(null);await refresh()
-      setMessage('Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):''))
+      setMessage(orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):''))
     }catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
   }
   const startReturn=async(sale:SaleSummary)=>{
@@ -115,6 +117,7 @@ export default function App(){
     <nav className="main-nav">
       <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
       <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
+      <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>!['issued','cancelled'].includes(x.status)).length} onClick={()=>setScreen('orders')}/>
       <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
       <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
       <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
@@ -145,7 +148,7 @@ export default function App(){
           {discount>0&&<div className="subtotal"><span>Без скидки</span><s>{formatMoney(subtotal)}</s></div>}
           <div className="total"><span>Итого</span><strong>{formatMoney(total)}</strong></div>
           {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
-            <div className="receipt-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button className="primary" disabled={!cart.length} onClick={()=>setPayment(boot.rules.acceptsCard?'card':'cash')}>К оплате</button></div>
+            <div className="receipt-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:''})}>Оформить заказ</button><button className="primary" disabled={!cart.length} onClick={()=>setPayment(boot.rules.acceptsCard?'card':'cash')}>К оплате</button></div>
             <small className="training">Учебный режим оборудования · деньги не списываются</small>
           </>}
         </footer>
@@ -158,6 +161,7 @@ export default function App(){
       {sales.length?sales.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small> − {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions"><button onClick={()=>printSale(s.id,'fiscal-copy')}>Копия чека</button><button onClick={()=>printSale(s.id,'commodity')}>Товарный</button><button disabled={s.status==='returned'} onClick={()=>startReturn(s)}>Возврат</button></div></div>):<Empty title="Продаж пока нет" text="После первого тестового чека здесь появится история."/>}</div>
       {returns.length>0&&<section className="return-history"><h3>Оформленные возвраты</h3>{returns.map((x)=><article key={x.id}><div><b>{x.receiptNumber}</b><small>к чеку {x.originalReceiptNumber} · {new Date(x.createdAt).toLocaleString('ru-RU')}</small></div><strong>− {formatMoney(x.totalMinor)}</strong></article>)}</section>}
     </Page>}
+    {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker={boot.shift?'СМЕНА ОТКРЫТА':'СМЕНА ЗАКРЫТА'}>
       <div className="metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label="В кассе ожидается" value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
       <section className="shift-card"><div><small>КАССИР</small><h2>{boot.cashierName}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<small>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</small>}</div>{boot.shift?<div className="shift-actions"><button onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</button><button onClick={()=>setCashOperation('deposit')}>Внести деньги</button><button onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</button><button className="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</button></div>:<button className="primary" onClick={openShift}>Открыть смену</button>}</section>
@@ -167,6 +171,7 @@ export default function App(){
     {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();setMessage('Каталог, настройки и очередь операций синхронизированы')}}/>}
 
     {payment&&<PaymentModal choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
+    {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>{setPayment(boot.rules.acceptsCard?'card':'cash')}} onSave={async(d)=>{try{const o=await window.raspechatkaPos.createUnpaidOrder({phone:d.phone,lines:cart,comment:d.comment,dueAt:d.dueAt});setOrderDraft(null);clear();await refresh();setMessage('Заказ '+o.orderNumber+' сохранён без оплаты')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{
       setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
     }}/>}
@@ -175,6 +180,23 @@ export default function App(){
     {freePriceOpen&&<FreePriceModal onClose={()=>setFreePriceOpen(false)} onAdd={(name,price)=>{setCart((current)=>[...current,{productId:'free-'+crypto.randomUUID(),name,quantity:1,unitPriceMinor:price}]);setFreePriceOpen(false)}}/>}
     {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
+}
+
+function OrderModal({draft,total,onClose,onPay,onSave}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onClose:()=>void;onPay:()=>void;onSave:(draft:{phone:string;comment?:string;dueAt?:string})=>Promise<void>}){
+  const [phone,setPhone]=useState(draft.phone);const [comment,setComment]=useState(draft.comment||'');const [dueAt,setDueAt]=useState(draft.dueAt||'')
+  const value={phone,comment,dueAt:dueAt||undefined};
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ОБЯЗАТЕЛЬСТВО КЛИЕНТУ</small><h2>Оформить заказ</h2></div><button onClick={onClose}>×</button></header><p>Сумма: <b>{formatMoney(total)}</b>. Заказ не меняет остатки — он попадёт в очередь выполнения.</p><label className="cash-input"><span>Телефон *</span><input autoFocus value={phone} onChange={(e)=>setPhone(e.target.value)} placeholder="+7 900 000-00-00"/></label><label className="cash-input"><span>Комментарий</span><textarea value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Что изготовить или выдать"/></label><label className="cash-input"><span>Готовность (необязательно)</span><input type="datetime-local" value={dueAt} onChange={(e)=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={()=>onSave(value)}>Сохранить без оплаты</button><button className="confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={()=>{onPay()}}>Сохранить и принять оплату · {formatMoney(total)}</button></div></div>
+}
+
+function OrdersPage({orders,onChanged,notify}:{orders:Order[];onChanged:()=>Promise<void>;notify:(text:string)=>void}){
+  const [editing,setEditing]=useState<Order|null>(null)
+  const update=async(id:string,status:OrderStatus)=>{try{await window.raspechatkaPos.updateOrder({id,status});await onChanged();notify('Статус заказа обновлён')}catch(e){notify(e instanceof Error?e.message:String(e))}}
+  return <Page title="Заказы" kicker="ОБЯЗАТЕЛЬСТВА КЛИЕНТА"><p className="orders-note">Заказ оформляется на кассе и отображается здесь как журнал выполнения. Остатки и складские движения меняются только при фактической продаже.</p><div className="orders-list">{orders.length?orders.map((o)=><article className="order-card" key={o.id}><header><div><small>{o.orderNumber}</small><h2>{o.phone}</h2><span>{o.customerName||'Покупатель не выбран'} · {new Date(o.createdAt).toLocaleString('ru-RU')}</span></div><b className={'order-status '+o.status}>{({new:'Новый',in_progress:'В работе',ready:'Готов',issued:'Выдан',cancelled:'Отменён'} as Record<string,string>)[o.status]}</b></header><div className="order-meta"><strong>{formatMoney(o.totalMinor)}</strong><span>{o.paymentStatus==='paid'?'Оплачено':o.paymentStatus==='partial'?'Частично оплачено':'Не оплачено'}</span>{o.dueAt&&<span>до {new Date(o.dueAt).toLocaleString('ru-RU')}</span>}</div>{o.comment&&<p>{o.comment}</p>}<footer><button onClick={()=>setEditing(o)}>Изменить</button><button onClick={()=>update(o.id,'in_progress')}>В работу</button><button onClick={()=>update(o.id,'ready')}>Готов</button><button onClick={()=>update(o.id,'issued')}>Выдан</button></footer></article>):<Empty title="Заказов пока нет" text="Оформите заказ из текущего чека — он появится здесь."/>}</div>{editing&&<EditOrderModal order={editing} onClose={()=>setEditing(null)} onSaved={async()=>{setEditing(null);await onChanged();notify('Заказ сохранён')}}/>}</Page>
+}
+
+function EditOrderModal({order,onClose,onSaved}:{order:Order;onClose:()=>void;onSaved:()=>Promise<void>}){
+  const [phone,setPhone]=useState(order.phone);const [comment,setComment]=useState(order.comment||'');const [status,setStatus]=useState<OrderStatus>(order.status);const [dueAt,setDueAt]=useState(order.dueAt||'')
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>{order.orderNumber}</small><h2>Изменить заказ</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Телефон</span><input value={phone} onChange={(e)=>setPhone(e.target.value)}/></label><label className="cash-input"><span>Комментарий</span><textarea value={comment} onChange={(e)=>setComment(e.target.value)}/></label><label className="cash-input"><span>Статус</span><select value={status} onChange={(e)=>setStatus(e.target.value as OrderStatus)}><option value="new">Новый</option><option value="in_progress">В работе</option><option value="ready">Готов</option><option value="issued">Выдан</option><option value="cancelled">Отменён</option></select></label><label className="cash-input"><span>Срок готовности</span><input type="datetime-local" value={dueAt} onChange={(e)=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={async()=>{await window.raspechatkaPos.updateOrder({id:order.id,phone,comment,status,dueAt:dueAt||undefined});await onSaved()}}>Сохранить</button></div></div>
 }
 
 function PaymentModal({choice,total,rules,busy,onChoice,onClose,onComplete}:{choice:PaymentChoice;total:number;rules:BootState['rules'];busy:boolean;onChoice:(x:PaymentChoice)=>void;onClose:()=>void;onComplete:(payments:PaymentPart[],cashReceived?:number)=>Promise<void>}){

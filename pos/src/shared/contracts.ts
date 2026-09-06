@@ -48,9 +48,10 @@ export type CompleteSaleRequest = {
   customer?: Customer | null
   receiptDiscountPercent?: number
   cashReceivedMinor?: number
+  order?: { phone:string; comment?:string; dueAt?:string }
 }
 
-export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean }
+export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order }
 export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned' }
 export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[] }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
@@ -84,12 +85,17 @@ export type DeliveryNotice = { id:string; supplier:string; expectedDate?:string;
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
 export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
-export type WorkplaceData = { schedule:WorkScheduleItem[]; deliveries:DeliveryNotice[]; supplyRequests:PointSupplyRequest[]; cleaner:CleanerStatus }
+export type WorkplaceData = { schedule:WorkScheduleItem[]; deliveries:DeliveryNotice[]; supplyRequests:PointSupplyRequest[]; cleaner:CleanerStatus; orders:Order[] }
 export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'|'Другое'; comment?:string }
 export type SupplyRequestInput = { productId?:string; itemName:string; quantity:number; comment?:string }
 export type CashCountLine = { denominationMinor:number; quantity:number }
 export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
+export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
+export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
+export type Order = { id:string; orderNumber:string; phone:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; sourceSaleId?:string; fiscalNumber?:string }
+export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }
+export type UpdateOrderRequest = { id:string; phone?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
 export type PosApi = {
   getBootState: () => Promise<BootState>
@@ -115,6 +121,9 @@ export type PosApi = {
   payCleaner: (amountMinor:number) => Promise<CashOperation>
   saveCashCount: (countType:CashCount['countType'], lines:CashCountLine[]) => Promise<CashCount>
   getLastCashCount: () => Promise<CashCount|null>
+  listOrders: () => Promise<Order[]>
+  createUnpaidOrder: (request:CreateUnpaidOrderRequest) => Promise<Order>
+  updateOrder: (request:UpdateOrderRequest) => Promise<Order>
   completeSale: (request: CompleteSaleRequest) => Promise<CompleteSaleResult>
   getConnectionStatus: () => Promise<ConnectionStatus>
   saveConnection: (config: ConnectionConfig) => Promise<ConnectionStatus>

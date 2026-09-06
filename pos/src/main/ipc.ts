@@ -4,7 +4,7 @@ import { calculateTotalMinor } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, Shift, StockWriteOffRequest, SupplyRequestInput
+  ReturnResult, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -61,6 +61,9 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>database.payCleaner(amountMinor))
   ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>database.saveCashCount(countType,lines))
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
+  ipcMain.handle('pos:list-orders',()=>database.listOrders())
+  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>database.createUnpaidOrder(request))
+  ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>database.updateOrder(request))
 
   ipcMain.handle('pos:open-shift',():Shift=>database.openShift({
     id:randomUUID(),openedAt:new Date().toISOString(),cashierName:bootState().cashierName
@@ -133,9 +136,11 @@ export function registerIpcHandlers(dependencies:{
       paymentMethod:payments.length>1?'mixed':payments[0].method,fiscalNumber:fiscal.receiptNumber,
       createdAt:new Date().toISOString(),customerId:request.customer?.id,customerName:request.customer?.name,
       receiptDiscountPercent:discount,lines:request.lines,payments
+      ,order:request.order
     })
+    const order=request.order?database.findOrderBySourceSale(saleId):undefined
     return {saleId,receiptNumber:fiscal.receiptNumber,totalMinor,
-      changeMinor:cashAmount?Math.max(0,(request.cashReceivedMinor??cashAmount)-cashAmount):0,queuedForSync:true}
+      changeMinor:cashAmount?Math.max(0,(request.cashReceivedMinor??cashAmount)-cashAmount):0,queuedForSync:true,order}
   })
 
   ipcMain.handle('pos:create-return',async(_event,request:CreateReturnRequest):Promise<ReturnResult>=>{

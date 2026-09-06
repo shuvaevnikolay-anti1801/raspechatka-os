@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, HeldReceipt, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput } from '../shared/contracts'
+import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
 const api: PosApi = {
   getBootState: () => ipcRenderer.invoke('pos:get-boot-state'),
@@ -25,6 +25,9 @@ const api: PosApi = {
   payCleaner: (amountMinor:number) => ipcRenderer.invoke('pos:pay-cleaner',amountMinor),
   saveCashCount: (countType:CashCount['countType'],lines:CashCountLine[]) => ipcRenderer.invoke('pos:save-cash-count',countType,lines),
   getLastCashCount: () => ipcRenderer.invoke('pos:get-last-cash-count'),
+  listOrders: () => ipcRenderer.invoke('pos:list-orders'),
+  createUnpaidOrder: (request:CreateUnpaidOrderRequest) => ipcRenderer.invoke('pos:create-unpaid-order',request),
+  updateOrder: (request:UpdateOrderRequest) => ipcRenderer.invoke('pos:update-order',request),
   completeSale: (request: CompleteSaleRequest) => ipcRenderer.invoke('pos:complete-sale', request),
   getConnectionStatus: () => ipcRenderer.invoke('pos:get-connection-status'),
   saveConnection: (config:ConnectionConfig) => ipcRenderer.invoke('pos:save-connection',config),
