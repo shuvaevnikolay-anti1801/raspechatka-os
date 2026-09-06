@@ -168,7 +168,7 @@ export class PosDatabase {
       allow_negative_stock=excluded.allow_negative_stock,minimum_sale_price_minor=excluded.minimum_sale_price_minor,
       prevent_discounts=excluded.prevent_discounts,storage_address=excluded.storage_address`)
     this.db.exec('BEGIN')
-    try{products.forEach((x)=>upsert.run(x.id,x.name,x.sku,x.category,x.type,x.uom,x.barcode??null,x.stock??null,x.priceMinor,
+    try{this.db.exec('UPDATE products SET active=0');products.forEach((x)=>upsert.run(x.id,x.name,x.sku,x.category,x.type,x.uom,x.barcode??null,x.stock??null,x.priceMinor,
       x.trackInventory?1:0,x.allowNegativeStock?1:0,x.minimumSalePriceMinor??0,x.preventDiscounts?1:0,x.storageAddress??null));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
@@ -182,7 +182,7 @@ export class PosDatabase {
       discount_percent=excluded.discount_percent,purchase_count=excluded.purchase_count,
       total_spent_minor=excluded.total_spent_minor,active=1`)
     this.db.exec('BEGIN')
-    try{customers.forEach((x)=>upsert.run(x.id,x.name,x.phone??null,x.discountPercent,x.purchaseCount??0,x.totalSpentMinor??0));this.db.exec('COMMIT')}
+    try{this.db.exec('UPDATE customers SET active=0');customers.forEach((x)=>upsert.run(x.id,x.name,x.phone??null,x.discountPercent,x.purchaseCount??0,x.totalSpentMinor??0));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
 

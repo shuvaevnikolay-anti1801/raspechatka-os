@@ -306,7 +306,7 @@ function Metric({label,value}:{label:string;value:string}){return <article><smal
 function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i>＋</i><b>{title}</b><span>{text}</span></div>}
 
 function Settings({boot,connection,onSaved,onSynced}:{boot:BootState;connection:ConnectionStatus|null;onSaved:()=>Promise<void>;onSynced:()=>Promise<void>}){
-  const [form,setForm]=useState<ConnectionConfig>({serverUrl:connection?.serverUrl||'http://raspechatka.localhost:8000',apiKey:'',apiSecret:'',workplaceCode:connection?.workplaceCode||''})
+  const [form,setForm]=useState<ConnectionConfig>({serverUrl:connection?.serverUrl||'https://os.rpechatka.ru',apiKey:'',apiSecret:'',workplaceCode:connection?.workplaceCode||''})
   const [status,setStatus]=useState('')
   const save=async()=>{try{await window.raspechatkaPos.saveConnection(form);await onSaved();setStatus('Подключение сохранено в защищённом хранилище Windows')}catch(e){setStatus(String(e))}}
   const sync=async()=>{try{setStatus('Отправляем операции и обновляем каталог…');await window.raspechatkaPos.syncNow();await onSynced();setStatus('Синхронизация завершена')}catch(e){setStatus(e instanceof Error?e.message:String(e))}}

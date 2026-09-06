@@ -70,6 +70,26 @@ describe('PosDatabase',()=>{
     expect(database.listProducts().find((x)=>x.id==='paper')?.stock).toBe(4)
   })
 
+  it('removes products and customers that are no longer returned by OS',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
+    folders.push(folder)
+    const database=new PosDatabase(join(folder,'test.sqlite'))
+    database.replaceProducts([
+      {id:'active',name:'Активный',sku:'ACTIVE',category:'Товары',type:'product',uom:'шт',priceMinor:1000},
+      {id:'removed',name:'Удалённый',sku:'REMOVED',category:'Товары',type:'product',uom:'шт',priceMinor:2000}
+    ])
+    database.replaceCustomers([
+      {id:'active-client',name:'Активный клиент',discountPercent:5},
+      {id:'removed-client',name:'Удалённый клиент',discountPercent:0}
+    ])
+    database.replaceProducts([
+      {id:'active',name:'Активный',sku:'ACTIVE',category:'Товары',type:'product',uom:'шт',priceMinor:1000}
+    ])
+    database.replaceCustomers([{id:'active-client',name:'Активный клиент',discountPercent:5}])
+    expect(database.listProducts().map((x)=>x.id)).toEqual(['active'])
+    expect(database.listCustomers().map((x)=>x.id)).toEqual(['active-client'])
+  })
+
   it('records the employee workplace actions offline',()=>{
     const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
     folders.push(folder)

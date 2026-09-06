@@ -2,7 +2,7 @@
   "name": "raspechatka-pos",
   "version": "0.1.0",
   "private": true,
-  "description": "Windows workstation for Raspechatka managers",
+  "description": "Windows-касса и рабочее место менеджера Распечатки",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -30,16 +30,20 @@
   },
   "build": {
     "appId": "ru.raspechatka.pos",
-    "productName": "Распечатка POS",
+    "productName": "Распечатка Касса",
+    "artifactName": "Raspechatka-Kassa-Setup-${version}.${ext}",
     "directories": {
       "output": "release"
     },
     "files": [
       "out/**/*",
+      "build/icon.png",
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "executableName": "Raspechatka-Kassa"
     },
     "nsis": {
       "oneClick": false,
