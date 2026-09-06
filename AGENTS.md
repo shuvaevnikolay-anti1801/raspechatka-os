@@ -15,7 +15,7 @@ These instructions apply to the entire repository. Every coding agent must read 
 2. Unless the user explicitly assigns an integration, merge, or release task, never commit, push, merge, force-push, or move `version-16` directly.
 3. Create one short-lived branch per bounded task from the latest `origin/version-16`. Name it `codex/<task-slug>`.
 4. Keep unrelated work out of the branch.
-5. Open a Pull Request into `version-16`. Do not merge your own PR unless the user explicitly assigned you as the integration agent.
+5. Open a Pull Request into `version-16`. The coding agent is the integration agent for tasks assigned directly by the repository owner in this Codex workspace: after required checks pass, it may merge its own task PR into `version-16` and let the production deployment workflow run. Do not merge when checks fail, when there is an unresolved review or merge conflict, or when the user explicitly asks for a draft/review-only delivery.
 6. Before handoff, update the branch with the latest `version-16`, resolve conflicts, run the required checks, and describe the result.
 7. Integration branches must be named `codex/integration-<scope>`. Only an explicitly assigned integration agent may use them.
 
