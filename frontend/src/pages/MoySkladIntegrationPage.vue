@@ -21,7 +21,6 @@ const status = computed(
       "Not configured": { label: "Не настроено", className: "neutral" },
     }[settings.value.status] || { label: "Не настроено", className: "neutral" })
 );
-const errorExamples = computed(() => salesSync.value.error_examples || []);
 
 async function load() {
   loading.value = true;
@@ -172,6 +171,37 @@ async function startSalesSync(full = false) {
     notice.value = full
       ? "Загрузка истории с 1 июля 2026 года поставлена в очередь"
       : "Синхронизация поставлена в очередь";
+    await load();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+
+async function startSalesRecovery() {
+  await saveSalesSettings();
+  if (error.value) return;
+  busy.value = "recover-sales";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_sales.start_sales_recovery",
+      {},
+      { method: "POST" }
+    );
+    if (!result.queued) {
+      const reasons = {
+        token_missing: "Сначала сохраните токен МойСклад",
+        point_mapping_missing: "Сначала сопоставьте точку продаж",
+        already_running: "Синхронизация уже выполняется",
+      };
+      throw new Error(
+        reasons[result.reason] || "Не удалось запустить восстановление"
+      );
+    }
+    notice.value =
+      "Каталог и вся история с 1 июля поставлены в очередь. Чеки переносить вручную не потребуется.";
     await load();
   } catch (e) {
     error.value = e.message;
@@ -426,6 +456,17 @@ onUnmounted(() => window.clearInterval(statusTimer));
                 : "Загрузить историю с 1 июля"
             }}
           </button>
+          <button
+            class="button"
+            :disabled="Boolean(busy)"
+            @click="startSalesRecovery"
+          >
+            {{
+              busy === "recover-sales"
+                ? "Восстанавливаем…"
+                : "Восстановить каталог и историю"
+            }}
+          </button>
         </div>
 
         <dl class="sync-summary">
@@ -447,37 +488,11 @@ onUnmounted(() => window.clearInterval(statusTimer));
           </div>
         </dl>
 
-        <section v-if="errorExamples.length" class="sync-errors">
-          <div class="sync-errors-heading">
-            <div>
-              <h3>Примеры ошибок импорта</h3>
-              <p>
-                Показаны первые {{ errorExamples.length }} из
-                {{ salesSync.stats?.failed || errorExamples.length }} ошибок.
-                Исправьте причину и затем повторите полную загрузку.
-              </p>
-            </div>
-          </div>
-          <div class="sync-errors-table">
-            <div class="sync-error-row sync-error-head">
-              <span>Документ</span>
-              <span>Ошибка</span>
-              <span>Что сделать</span>
-            </div>
-            <div
-              v-for="item in errorExamples"
-              :key="`${item.type}-${item.id}`"
-              class="sync-error-row"
-            >
-              <div>
-                <strong>{{ item.type_label }}</strong>
-                <small>{{ item.name || item.id || "Без номера" }}</small>
-              </div>
-              <p>{{ item.error }}</p>
-              <p class="sync-error-action">{{ item.action }}</p>
-            </div>
-          </div>
-        </section>
+        <p class="field-hint recovery-hint">
+          Если часть истории не загрузилась из-за старых связей товаров, используйте
+          восстановление: система сначала приведёт каталог в соответствие, затем
+          автоматически повторит импорт всей истории.
+        </p>
 
         <p v-if="salesSync.error" class="last-error">{{ salesSync.error }}</p>
       </article>
@@ -759,67 +774,15 @@ input[type="text"] {
   margin: 4px 0 0;
   font-weight: 650;
 }
-.sync-errors {
-  margin-top: 24px;
-  border-top: 1px solid #edf0ea;
-  padding-top: 20px;
-}
-.sync-errors-heading h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
-}
-.sync-errors-heading p {
-  margin: 0;
-  color: #737a70;
-  font-size: 13px;
+.recovery-hint {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f6f8f4;
+  color: #657064;
   line-height: 1.5;
 }
-.sync-errors-table {
-  margin-top: 14px;
-  overflow-x: auto;
-  border: 1px solid #e6e9e3;
-  border-radius: 11px;
-}
-.sync-error-row {
-  display: grid;
-  min-width: 780px;
-  grid-template-columns: minmax(150px, 0.7fr) minmax(260px, 1.2fr) minmax(260px, 1.2fr);
-  gap: 16px;
-  align-items: start;
-  padding: 13px 14px;
-  border-bottom: 1px solid #edf0ea;
-  font-size: 13px;
-}
-.sync-error-row:last-child {
-  border-bottom: 0;
-}
-.sync-error-row strong,
-.sync-error-row small {
-  display: block;
-}
-.sync-error-row small {
-  margin-top: 3px;
-  color: #858c82;
-}
-.sync-error-row p {
-  margin: 0;
-  color: #5d655b;
-  line-height: 1.45;
-}
-.sync-error-row .sync-error-action {
-  color: #496c08;
-}
-.sync-error-head {
-  min-height: auto;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  background: #f6f8f4;
-  color: #737a70;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
+
 .preview-time {
   font-size: 12px;
   color: #8a9187;
