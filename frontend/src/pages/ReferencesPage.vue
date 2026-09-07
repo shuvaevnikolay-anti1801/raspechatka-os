@@ -14,11 +14,13 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
 const formError = ref("");
-const filters = ref({ search: "", active: "" });
+const filters = ref({ search: "", active: "1" });
 const detail = ref(null);
 const form = reactive({});
 const options = reactive({ organizations: [], entities: [], bank_accounts: [], products: [] });
-const bankForm = reactive({ settlement_account: "", currency: "RUB", bic: "", bank_name: "", correspondent_account: "", bank_address: "", active: 1 });
+const bankForm = reactive({ name: "", settlement_account: "", currency: "RUB", bic: "", bank_name: "", correspondent_account: "", bank_address: "", active: 1 });
+const lookingUpInn = ref(false);
+const lookingUpBic = ref(false);
 const cabinetForm = reactive({ cabinet_number: "", active: 1 });
 const locationForm = reactive({ cabinet: "", location_name: "", active: 1 });
 const storageForm = reactive({ item: "", storage_location: "", active: 1 });
@@ -27,12 +29,12 @@ const configs = {
   entities: {
     eyebrow: "СПРАВОЧНИКИ / БИЗНЕС",
     title: "Юридические лица",
-    description: "Индивидуальные предприниматели сети и их реквизиты",
+    description: "Индивидуальные предприниматели партнёров",
     create: "Добавить ИП",
     columns: [
       { key: "short_name", label: "Наименование", primary: true },
       { key: "inn", label: "ИНН" },
-      { key: "organization", label: "Организация сети" },
+      { key: "organization", label: "Партнёр" },
       { key: "tax_system", label: "Налоговый режим" },
       { key: "phone", label: "Телефон", default: false },
       { key: "email", label: "E-mail", default: false },
@@ -71,7 +73,7 @@ const configs = {
 const config = computed(() => configs[reference.value]);
 const filterFields = computed(() => [
   { key: "search", label: "Поиск", placeholder: "Поиск по справочнику", wide: true },
-  { key: "active", label: "Статус", type: "select", allLabel: "Любой статус", options: [{ value: "1", label: "Активные" }, { value: "0", label: "Неактивные" }] },
+  { key: "active", label: "Статус", type: "select", allLabel: "Любой статус", options: [{ value: "1", label: "Активные" }, { value: "0", label: reference.value === "entities" ? "Архивные" : "Неактивные" }] },
 ]);
 const title = computed(() => detail.value ? (form.short_name || form.point_name || form.warehouse_name) : config.value?.create);
 const entityAccounts = computed(() => options.bank_accounts.filter((account) => account.business_entity === form.business_entity));
@@ -85,6 +87,10 @@ function emptyHours() {
 function resetObject(target, values) {
   Object.keys(target).forEach((key) => delete target[key]);
   Object.assign(target, values);
+}
+
+function defaultFilters() {
+  return { search: "", active: reference.value === "entities" ? "1" : "" };
 }
 
 async function loadRows() {
@@ -111,7 +117,7 @@ function newReference() {
   formError.value = "";
   detail.value = {};
   if (reference.value === "entities") {
-    resetObject(form, { short_name: "", organization: options.organizations[0]?.name || "", active: 1, last_name: "", first_name: "", middle_name: "", inn: "", ogrnip: "", okpo: "", registration_address: "", phone: "", email: "", tax_system: "Патент", vat_payer: 0 });
+    resetObject(form, { short_name: "", full_name: "", organization: options.organizations[0]?.name || "", active: 1, last_name: "", first_name: "", middle_name: "", inn: "", ogrnip: "", okpo: "", registration_address: "", registration_status: "", phone: "", email: "", tax_system: "Патент", vat_payer: 0 });
   } else {
     resetObject(form, { point_name: "", business_entity: options.entities[0]?.name || "", active: 1, city: "", address: "", phone: "", email: "", timezone: "Europe/Moscow", working_hours: emptyHours(), allow_free_price: 0, allow_discounts: 1, max_discount_percent: 100, allow_remove_cart_item: 1, accepts_cash: 1, accepts_card: 1, card_bank_account: "", accepts_qr: 1, qr_bank_account: "" });
   }
@@ -123,9 +129,35 @@ async function openReference(row) {
     const result = await call("raspechatka.api.references.get_reference_detail", { reference: reference.value, name: row.name });
     detail.value = result;
     resetObject(form, JSON.parse(JSON.stringify(result)));
+    resetObject(bankForm, { name: "", settlement_account: "", currency: "RUB", bic: "", bank_name: "", correspondent_account: "", bank_address: "", active: 1 });
     if (reference.value === "points" && !form.working_hours?.length) form.working_hours = emptyHours();
   } catch (exception) {
     error.value = exception.message;
+  }
+}
+
+async function lookupInn() {
+  formError.value = "";
+  lookingUpInn.value = true;
+  try {
+    const result = await call("raspechatka.api.references.lookup_entity_by_inn", { inn: form.inn });
+    Object.assign(form, result);
+  } catch (exception) {
+    formError.value = `${exception.message} Данные можно заполнить вручную.`;
+  } finally {
+    lookingUpInn.value = false;
+  }
+}
+
+async function lookupBic() {
+  formError.value = "";
+  lookingUpBic.value = true;
+  try {
+    Object.assign(bankForm, await call("raspechatka.api.references.lookup_bank_by_bic", { bic: bankForm.bic }));
+  } catch (exception) {
+    formError.value = `${exception.message} Реквизиты банка можно заполнить вручную.`;
+  } finally {
+    lookingUpBic.value = false;
   }
 }
 
@@ -149,22 +181,23 @@ async function setActive(value) {
   await loadRows();
 }
 
-async function removeReference() {
-  if (!window.confirm("Удалить запись без возможности восстановления?")) return;
-  try {
-    await call("raspechatka.api.references.delete_reference", { reference: reference.value, name: form.name }, { method: "POST" });
-    detail.value = null;
-    await loadRows();
-  } catch (exception) {
-    formError.value = exception.message;
-  }
-}
-
 async function saveBank() {
   formError.value = "";
   try {
     await call("raspechatka.api.references.save_bank_account", { data: JSON.stringify({ ...bankForm, business_entity: form.name }) }, { method: "POST" });
-    resetObject(bankForm, { settlement_account: "", currency: "RUB", bic: "", bank_name: "", correspondent_account: "", bank_address: "", active: 1 });
+    resetObject(bankForm, { name: "", settlement_account: "", currency: "RUB", bic: "", bank_name: "", correspondent_account: "", bank_address: "", active: 1 });
+    await Promise.all([openReference({ name: form.name }), loadOptions()]);
+  } catch (exception) { formError.value = exception.message; }
+}
+
+function editBank(account) {
+  resetObject(bankForm, JSON.parse(JSON.stringify(account)));
+}
+
+async function setBankActive(account, active) {
+  formError.value = "";
+  try {
+    await call("raspechatka.api.references.save_bank_account", { data: JSON.stringify({ ...account, active }) }, { method: "POST" });
     await Promise.all([openReference({ name: form.name }), loadOptions()]);
   } catch (exception) { formError.value = exception.message; }
 }
@@ -193,7 +226,7 @@ async function saveStorage() {
   } catch (exception) { formError.value = exception.message; }
 }
 
-watch(reference, () => { filters.value = { search: "", active: "" }; detail.value = null; loadRows(); });
+watch(reference, () => { filters.value = defaultFilters(); detail.value = null; loadRows(); });
 onMounted(() => Promise.all([loadRows(), loadOptions()]));
 </script>
 
@@ -207,23 +240,36 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
     <AppModal v-if="detail !== null" :title="title || config.title" wide @close="detail = null">
       <form v-if="reference === 'entities'" class="editor-form" @submit.prevent="saveReference">
         <div class="form-section"><h3>Основное</h3><div class="form-grid">
-          <label class="span-2">Краткое наименование<input v-model="form.short_name" required /></label>
-          <label>Организация сети<select v-model="form.organization" required><option v-for="item in options.organizations" :key="item.name" :value="item.name">{{ item.organization_name }}</option></select></label>
-          <label class="check-field"><input v-model="form.active" type="checkbox" :true-value="1" :false-value="0" /> Активно</label>
+          <label>Партнёр<select v-model="form.organization" required><option v-for="item in options.organizations" :key="item.name" :value="item.name">{{ item.organization_name }}</option></select></label>
+          <label>Внутренний код<input :value="form.internal_code || 'Будет создан автоматически'" disabled /></label>
+          <label>Краткое наименование<input v-model="form.short_name" required /></label>
+          <label class="span-2">Полное наименование<input v-model="form.full_name" required /></label>
         </div></div>
-        <div class="form-section"><h3>Реквизиты ИП</h3><div class="form-grid">
+        <div class="form-section"><h3>Регистрационные данные</h3><div class="form-grid">
+          <label class="span-2">ИНН<div class="field-with-action"><input v-model="form.inn" inputmode="numeric" maxlength="12" required /><button class="button button-secondary" type="button" :disabled="lookingUpInn || !form.inn" @click="lookupInn">{{ lookingUpInn ? 'Ищем…' : 'Заполнить по ИНН' }}</button></div></label>
+          <p class="muted-note span-3">Автозаполнение помогает внести реквизиты, но все поля можно заполнить и исправить вручную.</p>
+          <label>Статус по реестру<input :value="form.registration_status || 'Не проверен'" disabled /></label>
+          <label>ОГРНИП<input v-model="form.ogrnip" inputmode="numeric" maxlength="15" /></label>
+          <label>ОКПО<input v-model="form.okpo" inputmode="numeric" /></label>
           <label>Фамилия<input v-model="form.last_name" required /></label><label>Имя<input v-model="form.first_name" required /></label><label>Отчество<input v-model="form.middle_name" /></label>
-          <label>ИНН<input v-model="form.inn" inputmode="numeric" maxlength="12" required /></label><label>ОГРНИП<input v-model="form.ogrnip" inputmode="numeric" maxlength="15" /></label><label>ОКПО<input v-model="form.okpo" /></label>
-          <label class="span-3">Адрес регистрации<textarea v-model="form.registration_address" rows="2" required></textarea></label>
+          <label class="span-3">Адрес регистрации<textarea v-model="form.registration_address" rows="2"></textarea></label>
         </div></div>
-        <div class="form-section"><h3>Контакты и налоги</h3><div class="form-grid">
+        <div class="form-section"><h3>Контакты</h3><div class="form-grid">
           <label>Телефон<input v-model="form.phone" /></label><label>E-mail<input v-model="form.email" type="email" /></label>
-          <label>Налоговый режим<select v-model="form.tax_system"><option>Патент</option><option>УСН Доход</option><option>УСН Доход минус расход</option></select></label>
+        </div></div>
+        <div class="form-section"><h3>Налоги</h3><div class="form-grid">
+          <label>Налоговый режим<select v-model="form.tax_system"><option>ОСНО</option><option>УСН Доход</option><option>УСН Доход минус расход</option><option>Патент</option><option>ЕСХН</option><option>АУСН</option></select></label>
           <label class="check-field"><input v-model="form.vat_payer" type="checkbox" :true-value="1" :false-value="0" /> Плательщик НДС</label>
         </div></div>
         <div v-if="form.name" class="form-section"><h3>Расчётные счета</h3>
-          <div v-if="detail.bank_accounts?.length" class="compact-list"><div v-for="account in detail.bank_accounts" :key="account.name"><b>{{ account.bank_name }}</b><span>{{ account.settlement_account }}</span><small>БИК {{ account.bic }}</small></div></div>
-          <div class="inline-form bank-inline"><input v-model="bankForm.bank_name" placeholder="Банк" /><input v-model="bankForm.bic" placeholder="БИК" maxlength="9" /><input v-model="bankForm.settlement_account" placeholder="Расчётный счёт" maxlength="20" /><button class="button button-secondary" type="button" @click="saveBank">Добавить счёт</button></div>
+          <div v-if="detail.bank_accounts?.length" class="compact-list bank-account-list"><div v-for="account in detail.bank_accounts" :key="account.name" :class="{ archived: !account.active }"><b>{{ account.bank_name }}</b><span>{{ account.settlement_account }}</span><small>БИК {{ account.bic }} · {{ account.active ? 'Активен' : 'В архиве' }}</small><span class="row-actions"><button class="text-button" type="button" @click="editBank(account)">Изменить</button><button class="text-button" type="button" @click="setBankActive(account, account.active ? 0 : 1)">{{ account.active ? 'В архив' : 'Восстановить' }}</button></span></div></div>
+          <div class="bank-editor form-grid">
+            <label>БИК<div class="field-with-action"><input v-model="bankForm.bic" inputmode="numeric" maxlength="9" /><button class="button button-secondary" type="button" :disabled="lookingUpBic || !bankForm.bic" @click="lookupBic">{{ lookingUpBic ? 'Ищем…' : 'Заполнить' }}</button></div></label>
+            <label class="span-2">Банк<input v-model="bankForm.bank_name" /></label>
+            <label>Расчётный счёт<input v-model="bankForm.settlement_account" inputmode="numeric" maxlength="20" /></label><label>Корреспондентский счёт<input v-model="bankForm.correspondent_account" inputmode="numeric" maxlength="20" /></label><label>Валюта<input v-model="bankForm.currency" /></label>
+            <label class="span-3">Адрес банка<input v-model="bankForm.bank_address" /></label>
+          </div>
+          <div class="footer-actions"><button v-if="bankForm.name" class="button button-secondary" type="button" @click="resetObject(bankForm, { name: '', settlement_account: '', currency: 'RUB', bic: '', bank_name: '', correspondent_account: '', bank_address: '', active: 1 })">Отмена</button><button class="button button-secondary" type="button" @click="saveBank">{{ bankForm.name ? 'Сохранить счёт' : 'Добавить счёт' }}</button></div>
         </div>
         <p v-if="formError" class="form-error">{{ formError }}</p>
       </form>
@@ -271,7 +317,7 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
       </div>
 
       <template v-if="reference !== 'warehouses'" #footer>
-        <div v-if="form.name" class="danger-actions"><button class="text-button" type="button" @click="setActive(form.active ? 0 : 1)">{{ form.active ? 'Архивировать' : 'Восстановить' }}</button><button class="text-button danger" type="button" @click="removeReference">Удалить</button></div>
+        <div v-if="form.name" class="danger-actions"><button class="text-button" type="button" @click="setActive(form.active ? 0 : 1)">{{ form.active ? 'Архивировать' : 'Восстановить' }}</button><span v-if="reference === 'entities'" class="muted-note">Запись сохраняется в истории и не удаляется.</span></div>
         <div class="footer-actions"><button class="button button-secondary" type="button" @click="detail = null">Отмена</button><button class="button button-primary" type="button" :disabled="saving" @click="saveReference">{{ saving ? 'Сохраняем…' : 'Сохранить' }}</button></div>
       </template>
     </AppModal>

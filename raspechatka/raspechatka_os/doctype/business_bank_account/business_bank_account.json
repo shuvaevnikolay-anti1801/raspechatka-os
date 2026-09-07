@@ -19,7 +19,7 @@
  ],
  "module":"Raspechatka OS",
  "name":"Business Bank Account",
- "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1}],
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"report":1,"export":1,"import":1,"print":1,"share":1}],
  "search_fields":"settlement_account,bank_name,bic",
  "sort_field":"bank_name",
  "sort_order":"ASC",

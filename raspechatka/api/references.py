@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint
 from raspechatka.access import LEVELS, get_access_level, get_scope, require_access
+from raspechatka.dadata import find_bank, find_party
+from raspechatka.requisites import digits, is_valid_bic, is_valid_inn
 
 
 REFERENCE_CONFIG = {
@@ -57,8 +59,8 @@ REFERENCE_CONFIG = {
 	},
 	"entities": {
 		"doctype": "Business Entity",
-		"fields": ["name", "short_name", "organization", "inn", "phone", "email", "tax_system", "active"],
-		"search_fields": ("short_name", "inn", "ogrnip", "phone", "email"),
+		"fields": ["name", "short_name", "full_name", "internal_code", "organization", "inn", "phone", "email", "tax_system", "active"],
+		"search_fields": ("short_name", "full_name", "internal_code", "inn", "ogrnip", "phone", "email"),
 		"order_by": "short_name asc",
 	},
 	"points": {
@@ -88,6 +90,8 @@ def get_reference_list(reference, search=None, active=None):
 	config = _get_config(reference)
 	require_access(AREA_BY_REFERENCE[reference], "read")
 	filters = {}
+	if reference == "entities" and active is None:
+		active = 1
 	if active not in (None, ""):
 		filters["active"] = cint(active)
 	filters.update(_scope_filters(reference))
@@ -171,6 +175,64 @@ def get_reference_detail(reference, name):
 	return result
 
 
+@frappe.whitelist()
+def lookup_entity_by_inn(inn):
+	require_access("references.network", "read")
+	inn = digits(inn)
+	if len(inn) != 12 or not is_valid_inn(inn):
+		frappe.throw(_("Укажите корректный 12-значный ИНН индивидуального предпринимателя"))
+
+	suggestion = find_party(inn)
+	data = suggestion.get("data") or {}
+	if data.get("type") != "INDIVIDUAL":
+		frappe.throw(_("По этому ИНН найдено не ИП. В этом справочнике можно создавать только ИП."))
+
+	name = data.get("name") or {}
+	fio = data.get("fio") or {}
+	address = data.get("address") or {}
+	state = data.get("state") or {}
+	status_labels = {
+		"ACTIVE": _("Действует"),
+		"LIQUIDATING": _("Ликвидируется"),
+		"LIQUIDATED": _("Ликвидировано"),
+		"BANKRUPT": _("Банкротство"),
+		"REORGANIZING": _("Реорганизация"),
+	}
+	full_name = name.get("full_with_opf") or name.get("full") or suggestion.get("unrestricted_value") or suggestion.get("value")
+	short_name = name.get("short_with_opf") or name.get("short") or suggestion.get("value") or full_name
+	return {
+		"short_name": short_name,
+		"full_name": full_name,
+		"last_name": fio.get("surname") or "",
+		"first_name": fio.get("name") or "",
+		"middle_name": fio.get("patronymic") or "",
+		"inn": data.get("inn") or inn,
+		"ogrnip": data.get("ogrn") or "",
+		"okpo": data.get("okpo") or "",
+		"registration_address": address.get("unrestricted_value") or address.get("value") or "",
+		"registration_status": status_labels.get(state.get("status"), state.get("status") or _("Найдено")),
+	}
+
+
+@frappe.whitelist()
+def lookup_bank_by_bic(bic):
+	require_access("references.network", "read")
+	bic = digits(bic)
+	if not is_valid_bic(bic):
+		frappe.throw(_("БИК должен содержать 9 цифр"))
+
+	suggestion = find_bank(bic)
+	data = suggestion.get("data") or {}
+	name = data.get("name") or {}
+	address = data.get("address") or {}
+	return {
+		"bic": data.get("bic") or bic,
+		"bank_name": name.get("payment") or name.get("short") or name.get("full") or suggestion.get("value") or "",
+		"correspondent_account": data.get("correspondent_account") or "",
+		"bank_address": address.get("unrestricted_value") or address.get("value") or "",
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def save_reference(reference, data):
 	data = frappe.parse_json(data)
@@ -184,8 +246,8 @@ def save_reference(reference, data):
 
 	if reference == "entities":
 		allowed = (
-			"short_name", "organization", "active", "phone", "email", "last_name", "first_name",
-			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "tax_system", "vat_payer",
+			"short_name", "full_name", "organization", "phone", "email", "last_name", "first_name",
+			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "registration_status", "tax_system", "vat_payer",
 		)
 	elif reference == "organizations":
 		allowed = ("organization_name", "active", "phone", "email", "address")
@@ -217,6 +279,8 @@ def save_reference(reference, data):
 		allowed = ()
 
 	doc = frappe.get_doc(config["doctype"], name) if name else frappe.new_doc(config["doctype"])
+	if reference == "entities" and not name:
+		doc.active = 1
 	if reference == "organizations" and not name:
 		doc.organization_code = frappe.generate_hash(length=10).upper()
 		doc.organization_type = "Franchisee"
@@ -364,6 +428,8 @@ def delete_reference(reference, name):
 	config = _get_config(reference)
 	require_access(AREA_BY_REFERENCE[reference], "delete")
 	_ensure_scoped_name(reference, name)
+	if reference == "entities":
+		frappe.throw(_("ИП нельзя удалить. Переведите карточку в архив."))
 	if reference == "warehouses":
 		frappe.throw(_("Склад создаётся и удаляется вместе с точкой продаж"))
 	if reference == "points":
