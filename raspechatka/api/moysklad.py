@@ -176,8 +176,11 @@ def _sync_catalog(settings):
 	stats["source_items"] = len(products) + len(services) + len(bundles) + len(variants)
 	item_map = {}
 	item_errors = []
-	deferred_bundles = []
-	for item_type, rows in (("Product", products), ("Service", services), ("Bundle", bundles)):
+
+	# Components in MoySklad bundles point to products or variants. Import all
+	# possible component targets first, then create each bundle atomically with
+	# its child rows already attached.
+	for item_type, rows in (("Product", products), ("Service", services)):
 		for row in rows:
 			name = _safe_upsert_item(
 				row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, item_errors
@@ -185,8 +188,6 @@ def _sync_catalog(settings):
 			if not name:
 				continue
 			item_map[row.get("id")] = name
-			if item_type == "Bundle":
-				deferred_bundles.append((name, row))
 			_commit_periodically(stats["items"])
 
 	for row in variants:
@@ -207,9 +208,23 @@ def _sync_catalog(settings):
 		item_map[row.get("id")] = name
 		_commit_periodically(stats["items"])
 
-	for name, row in deferred_bundles:
-		_sync_bundle_components(name, row, item_map)
-		stats["bundle_components"] += 1
+	for row in bundles:
+		row = _load_bundle_details(settings, row)
+		name = _safe_upsert_item(
+			row,
+			"Bundle",
+			group_map,
+			unit_map,
+			price_type_map,
+			supplier_map,
+			stats,
+			item_errors,
+			component_map=item_map,
+		)
+		if not name:
+			continue
+		item_map[row.get("id")] = name
+		_commit_periodically(stats["items"])
 
 	for source_id, name in item_map.items():
 		if source_id and name:
@@ -342,7 +357,16 @@ def _sync_suppliers(rows, counterparties, stats):
 
 
 def _safe_upsert_item(
-	row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, errors, variant_of=None
+	row,
+	item_type,
+	group_map,
+	unit_map,
+	price_type_map,
+	supplier_map,
+	stats,
+	errors,
+	variant_of=None,
+	component_map=None,
 ):
 	save_point = f"moysklad_item_{stats['items'] + stats['item_errors'] + 1}"
 	frappe.db.savepoint(save_point)
@@ -356,6 +380,7 @@ def _safe_upsert_item(
 			supplier_map,
 			stats,
 			variant_of=variant_of,
+			component_map=component_map,
 		)
 	except Exception as exc:
 		frappe.db.rollback(save_point=save_point)
@@ -369,7 +394,17 @@ def _safe_upsert_item(
 		return None
 
 
-def _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, variant_of=None):
+def _upsert_item(
+	row,
+	item_type,
+	group_map,
+	unit_map,
+	price_type_map,
+	supplier_map,
+	stats,
+	variant_of=None,
+	component_map=None,
+):
 	source_id = row.get("id")
 	if not source_id:
 		return None
@@ -426,28 +461,55 @@ def _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_m
 		if label and value not in (None, ""):
 			doc.append("attributes", {"attribute_name": str(label)[:140], "attribute_value": str(value)[:140]})
 
+	if item_type == "Bundle":
+		_set_bundle_components(doc, row, component_map or {}, stats)
+
 	doc.save(ignore_permissions=True)
 	stats["items"] += 1
 	stats[item_type.lower()] += 1
 	return doc.name
 
 
-def _sync_bundle_components(name, row, item_map):
-	doc = frappe.get_doc("Catalog Item", name)
-	doc.set("bundle_components", [])
+def _load_bundle_details(settings, row):
+	if _bundle_components(row):
+		return row
+	source_id = row.get("id")
+	return _request(settings, f"entity/bundle/{source_id}") if source_id else row
+
+
+def _bundle_components(row):
 	components = row.get("components") or []
 	if isinstance(components, dict):
-		components = components.get("rows") or []
+		return components.get("rows") or []
+	return components
+
+
+def _set_bundle_components(doc, row, item_map, stats):
+	components = _bundle_components(row)
+	missing = []
+	doc.set("bundle_components", [])
 	for component in components:
-		item_id = _ref_id(component.get("assortment"))
-		item = item_map.get(item_id)
-		if item:
-			doc.append("bundle_components", {
+		source_id = _ref_id(component.get("assortment"))
+		item = item_map.get(source_id)
+		if not item:
+			missing.append(source_id or _("неизвестный компонент"))
+			continue
+		doc.append(
+			"bundle_components",
+			{
 				"item": item,
 				"quantity": flt(component.get("quantity") or 1),
 				"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
-			})
-	doc.save(ignore_permissions=True)
+			},
+		)
+
+	if missing:
+		raise frappe.ValidationError(
+			_("Не найдены товары состава комплекта: {0}").format(", ".join(missing))
+		)
+	if not doc.bundle_components:
+		raise frappe.ValidationError(_("В МоемСкладе у комплекта не указан состав."))
+	stats["bundle_components"] += len(doc.bundle_components)
 
 
 def _collect_preview(doc):
