@@ -141,11 +141,7 @@ def generate_invitation(profile):
 	doc = frappe.get_doc("Raspechatka User Profile", profile)
 	doc.ensure_system_user()
 	user = frappe.get_doc("User", doc.system_user)
-	try:
-		path = user.reset_password(send_email=False, password_expired=True)
-	except TypeError:
-		path = user.reset_password(send_email=False)
-	link = path if str(path).startswith(("http://", "https://")) else get_url(path)
+	link = user._reset_password(send_email=False, password_expired=True)
 	frappe.db.set_value(
 		"Raspechatka User Profile",
 		doc.name,
