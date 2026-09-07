@@ -297,9 +297,9 @@ def _apply_safely(kind, row, context):
 	except Exception as exc:
 		frappe.db.rollback(save_point=savepoint)
 		stats["failed"] += 1
-		_failure_key = _failure_key(exc)
+		failure_key = _failure_key(exc)
 		failure_reasons = stats.setdefault("failure_reasons", {})
-		failure_reasons[_failure_key] = failure_reasons.get(_failure_key, 0) + 1
+		failure_reasons[failure_key] = failure_reasons.get(failure_key, 0) + 1
 		if len(stats["errors"]) < 30:
 			stats["errors"].append(
 				{
