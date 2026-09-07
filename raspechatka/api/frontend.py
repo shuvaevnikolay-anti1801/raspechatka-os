@@ -43,11 +43,7 @@ def get_catalog_items(
 	or_filters = None
 	if search:
 		value = f"%{search.strip()}%"
-		or_filters = {
-			"item_name": ["like", value],
-			"item_code": ["like", value],
-			"article": ["like", value],
-		}
+		or_filters = {"item_name": ["like", value]}
 
 	count_rows = frappe.get_all(
 		"Catalog Item",
@@ -61,14 +57,13 @@ def get_catalog_items(
 		"Catalog Item",
 		fields=[
 			"name",
-			"item_code",
 			"item_name",
 			"item_type",
 			"catalog_group",
 			"stock_uom",
 			"active",
-			"article",
-			"minimum_sale_price",
+			"variant_of",
+			"has_variants",
 		],
 		filters=filters,
 		or_filters=or_filters,
@@ -181,33 +176,122 @@ def save_catalog_group(data):
 			frappe.throw("Группу нельзя вложить саму в себя")
 		if not frappe.db.exists("Catalog Group", parent):
 			frappe.throw("Родительская группа не найдена")
+		if not frappe.db.get_value("Catalog Group", parent, "active"):
+			frappe.throw("Нельзя переместить группу в архивную группу")
 
 	doc.group_name = group_name
 	doc.parent_catalog_group = parent
-	doc.description = data.get("description") or ""
-	doc.is_group = cint(data.get("is_group", 0))
 	doc.save(ignore_permissions=True)
-	if parent:
-		frappe.db.set_value("Catalog Group", parent, "is_group", 1, update_modified=False)
+	_refresh_group_flags()
 	return {"name": doc.name}
+
+
+def _refresh_group_flags():
+	parents = set(
+		row.parent_catalog_group
+		for row in frappe.get_all("Catalog Group", fields=["parent_catalog_group"])
+		if row.parent_catalog_group
+	)
+	for group in frappe.get_all("Catalog Group", pluck="name"):
+		frappe.db.set_value("Catalog Group", group, "is_group", group in parents, update_modified=False)
 
 
 @frappe.whitelist()
 def get_catalog_item(name=None, item_type="Product"):
 	require_access("references.catalog", "read")
-	doc = frappe.get_doc("Catalog Item", name).as_dict(no_nulls=False) if name else {"item_type": item_type, "active": 1, "track_inventory": 1 if item_type == "Product" else 0, "stock_uom": "Штука", "valuation_method": "Moving Average", "tracking_method": "None", "vat_rate": "Без НДС", "tax_system": "По настройке точки", "receipt_subject": "Товар" if item_type == "Product" else "Услуга", "prices": [], "barcodes": []}
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 	warehouse_filters = {"active": 1} if scope["global"] else {"active": 1, "business_point": ["in", scope["points"] or ["__none__"]]}
-	doc["assortments"] = frappe.get_all("Catalog Assortment", filters={"item": name, **({} if scope["global"] else {"business_point": ["in", scope["points"] or ["__none__"]]})}, fields=["name", "business_point", "enabled", "visible_in_pos", "local_sale_price", "valid_from", "valid_upto", "default_warehouse", "minimum_stock", "reorder_quantity", "notes"], order_by="business_point asc") if name else []
+	points = frappe.get_all(
+		"Business Point",
+		filters=point_filters,
+		fields=["name", "point_name"],
+		order_by="point_name asc",
+	)
+	warehouses = frappe.get_all(
+		"Catalog Warehouse",
+		filters=warehouse_filters,
+		fields=["name", "warehouse_name", "business_point"],
+		order_by="warehouse_name asc",
+	)
+	if name:
+		doc = frappe.get_doc("Catalog Item", name).as_dict(no_nulls=False)
+		doc["assortments"] = frappe.get_all(
+			"Catalog Assortment",
+			filters={
+				"item": name,
+				**({} if scope["global"] else {"business_point": ["in", scope["points"] or ["__none__"]]}),
+			},
+			fields=[
+				"name",
+				"business_point",
+				"enabled",
+				"visible_in_pos",
+				"default_warehouse",
+				"minimum_stock",
+				"reorder_quantity",
+				"notes",
+			],
+			order_by="business_point asc",
+		)
+	else:
+		default_warehouses = {}
+		for warehouse in warehouses:
+			default_warehouses.setdefault(warehouse.business_point, warehouse.name)
+		doc = {
+			"item_type": item_type,
+			"active": 1,
+			"stock_uom": "шт",
+			"prevent_discounts": 0,
+			"vat_rate": "Без НДС",
+			"tax_system": "По настройке точки",
+			"receipt_subject": "Услуга" if item_type == "Service" else "Товар",
+			"prices": [],
+			"bundle_components": [],
+			"variant_values": [],
+			"assortments": [
+				{
+					"business_point": point.name,
+					"enabled": 1,
+					"visible_in_pos": 1,
+					"default_warehouse": default_warehouses.get(point.name),
+					"minimum_stock": 0,
+					"reorder_quantity": 0,
+				}
+				for point in points
+			],
+		}
 	options = {
-		"groups": frappe.get_all("Catalog Group", filters={"active": 1, "is_group": 0}, fields=["name", "group_name"], order_by="group_name asc"),
-		"units": frappe.get_all("Catalog Unit", filters={"active": 1}, fields=["name", "unit_name"], order_by="unit_name asc"),
+		"groups": frappe.get_all(
+			"Catalog Group",
+			filters={"active": 1},
+			fields=["name", "group_name", "parent_catalog_group"],
+			order_by="group_name asc",
+		),
+		"units": frappe.get_all(
+			"Catalog Unit",
+			filters={"active": 1, "name": ["in", ["шт", "мес"]]},
+			fields=["name", "unit_name"],
+			order_by="unit_name asc",
+		),
 		"suppliers": frappe.get_all("Catalog Supplier", filters=_supplier_filters(), fields=["name", "supplier_name"], order_by="supplier_name asc"),
 		"price_types": frappe.get_all("Catalog Price Type", filters={"active": 1}, fields=["name", "price_type_name"], order_by="price_type_name asc"),
-		"items": frappe.get_all("Catalog Item", filters={"active": 1, **({"name": ["!=", name]} if name else {})}, fields=["name", "item_name", "stock_uom"], order_by="item_name asc", limit_page_length=2000),
-		"points": frappe.get_all("Business Point", filters=point_filters, fields=["name", "point_name"], order_by="point_name asc"),
-		"warehouses": frappe.get_all("Catalog Warehouse", filters=warehouse_filters, fields=["name", "warehouse_name", "business_point"], order_by="warehouse_name asc"),
+		"items": frappe.get_all(
+			"Catalog Item",
+			filters={"active": 1, **({"name": ["!=", name]} if name else {})},
+			fields=["name", "item_name", "item_type", "stock_uom", "catalog_group", "default_supplier", "variant_of"],
+			order_by="item_name asc",
+			limit_page_length=2000,
+		),
+		"variant_parents": frappe.get_all(
+			"Catalog Item",
+			filters={"active": 1, "item_type": "Product", **({"name": ["!=", name]} if name else {})},
+			fields=["name", "item_name", "stock_uom", "catalog_group", "default_supplier"],
+			order_by="item_name asc",
+			limit_page_length=2000,
+		),
+		"points": points,
+		"warehouses": warehouses,
 	}
 	return {"doc": doc, "options": options}
 
@@ -219,18 +303,22 @@ def save_catalog_item(data):
 	doc = frappe.get_doc("Catalog Item", data["name"]) if data.get("name") else frappe.new_doc("Catalog Item")
 	if data.get("default_supplier") and not frappe.db.exists("Catalog Supplier", {"name": data.get("default_supplier"), **_supplier_filters()}):
 		frappe.throw("Поставщик недоступен", frappe.PermissionError)
-	allowed = ("item_code", "item_name", "item_type", "catalog_group", "stock_uom", "description", "article", "external_code", "brand", "country_of_origin", "default_supplier", "weight", "volume", "color", "size", "minimum_sale_price", "prevent_discounts", "track_inventory", "valuation_method", "allow_negative_stock", "tracking_method", "shelf_life_days", "lead_time_days", "minimum_order_qty", "vat_rate", "tax_system", "receipt_subject")
+	allowed = (
+		"item_name",
+		"item_type",
+		"catalog_group",
+		"stock_uom",
+		"default_supplier",
+		"prevent_discounts",
+		"variant_of",
+	)
 	for fieldname in allowed:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	child_tables = {
 		"prices": ("price_type", "business_point", "uom", "currency", "rate", "minimum_quantity", "valid_from", "valid_upto"),
-		"barcodes": ("barcode", "barcode_type", "uom", "quantity"),
-		"reorder_rules": ("warehouse", "minimum_stock", "reorder_quantity", "preferred_supplier"),
 		"bundle_components": ("item", "quantity", "uom", "notes"),
-		"packaging": ("package_name", "uom", "quantity", "barcode", "weight"),
-		"analogues": ("item", "priority", "notes"),
-		"attributes": ("attribute_name", "attribute_value"),
+		"variant_values": ("attribute_name", "attribute_value"),
 	}
 	for table, fields in child_tables.items():
 		if table in data:
@@ -263,17 +351,25 @@ def archive_catalog_item(name, reason=None):
 	if not frappe.db.exists("Catalog Item", name):
 		frappe.throw("Позиция каталога не найдена")
 	batch_id = frappe.generate_hash(length=20)
-	frappe.db.set_value("Catalog Item", name, _archive_values(False, reason, batch_id))
+	item = frappe.db.get_value("Catalog Item", name, ["item_type", "variant_of"], as_dict=True)
+	affected_items = {name}
+	if item.item_type == "Product":
+		affected_items.update(
+			frappe.get_all("Catalog Item", filters={"variant_of": name, "active": 1}, pluck="name")
+		)
+	for affected in affected_items:
+		frappe.db.set_value("Catalog Item", affected, _archive_values(False, reason, batch_id))
 
 	# Bundles that depend on an archived component cannot remain sellable.
 	dependent_bundles = frappe.get_all(
 		"Catalog Bundle Component",
-		filters={"item": name},
+		filters={"item": ["in", list(affected_items)]},
 		pluck="parent",
 	)
 	for bundle in set(dependent_bundles):
 		if frappe.db.get_value("Catalog Item", bundle, "active"):
 			frappe.db.set_value("Catalog Item", bundle, _archive_values(False, "Компонент комплекта перенесён в архив", batch_id))
+	_refresh_variant_flag(item.variant_of or name)
 	return {"name": name, "active": 0, "archive_batch_id": batch_id}
 
 
@@ -288,7 +384,22 @@ def restore_catalog_item(name):
 		if not frappe.db.get_value("Catalog Item", row.item, "active"):
 			frappe.throw("Сначала восстановите все компоненты комплекта")
 	frappe.db.set_value("Catalog Item", name, _archive_values(True))
+	if doc.item_type == "Product" and doc.archive_batch_id:
+		for variant in frappe.get_all(
+			"Catalog Item",
+			filters={"variant_of": name, "archive_batch_id": doc.archive_batch_id},
+			pluck="name",
+		):
+			frappe.db.set_value("Catalog Item", variant, _archive_values(True))
+	_refresh_variant_flag(doc.variant_of or name)
 	return {"name": name, "active": 1}
+
+
+def _refresh_variant_flag(parent):
+	if not parent or not frappe.db.exists("Catalog Item", parent):
+		return
+	has_variants = bool(frappe.db.exists("Catalog Item", {"variant_of": parent, "active": 1}))
+	frappe.db.set_value("Catalog Item", parent, "has_variants", has_variants, update_modified=False)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -302,6 +413,20 @@ def archive_catalog_group(name, reason=None):
 	for group in groups:
 		frappe.db.set_value("Catalog Group", group, _archive_values(False, reason, batch_id))
 	items = frappe.get_all("Catalog Item", filters={"catalog_group": ["in", groups]}, pluck="name")
+	products = frappe.get_all(
+		"Catalog Item",
+		filters={"name": ["in", items or ["__none__"]], "item_type": "Product"},
+		pluck="name",
+	)
+	if products:
+		items.extend(
+			frappe.get_all(
+				"Catalog Item",
+				filters={"variant_of": ["in", products], "active": 1},
+				pluck="name",
+			)
+		)
+	items = list(dict.fromkeys(items))
 	for item in items:
 		frappe.db.set_value("Catalog Item", item, _archive_values(False, reason, batch_id))
 
@@ -342,6 +467,9 @@ def restore_catalog_group(name):
 			components = frappe.get_all("Catalog Bundle Component", filters={"parent": item.name}, pluck="item")
 			if all(frappe.db.get_value("Catalog Item", component, "active") for component in components):
 				frappe.db.set_value("Catalog Item", item.name, _archive_values(True))
+		for item in batch_items:
+			if item.item_type == "Product":
+				_refresh_variant_flag(item.name)
 	return {"name": name, "active": 1}
 
 
@@ -366,12 +494,39 @@ def _save_assortments(item, rows):
 			frappe.throw("Точка недоступна", frappe.PermissionError)
 		if row.get("default_warehouse") and frappe.db.get_value("Catalog Warehouse", row.get("default_warehouse"), "business_point") != row.get("business_point"):
 			frappe.throw("Склад должен относиться к выбранной точке")
-	existing_filters = {"item": item, **({} if scope["global"] else {"business_point": ["in", list(allowed_points) or ["__none__"]]})}
-	for name in frappe.get_all("Catalog Assortment", filters=existing_filters, pluck="name"):
-		frappe.delete_doc("Catalog Assortment", name, ignore_permissions=True)
+	existing_filters = {
+		"item": item,
+		**({} if scope["global"] else {"business_point": ["in", list(allowed_points) or ["__none__"]]}),
+	}
+	existing = {
+		row.business_point: row.name
+		for row in frappe.get_all(
+			"Catalog Assortment",
+			filters=existing_filters,
+			fields=["name", "business_point"],
+		)
+	}
+	submitted_points = set(points)
+	for point, name in existing.items():
+		if point not in submitted_points:
+			frappe.db.set_value(
+				"Catalog Assortment",
+				name,
+				{"enabled": 0, "visible_in_pos": 0},
+			)
 	for row in rows:
-		doc = frappe.new_doc("Catalog Assortment")
-		doc.item = item
-		for fieldname in ("business_point", "enabled", "visible_in_pos", "local_sale_price", "valid_from", "valid_upto", "default_warehouse", "minimum_stock", "reorder_quantity", "notes"):
+		name = existing.get(row.get("business_point"))
+		doc = frappe.get_doc("Catalog Assortment", name) if name else frappe.new_doc("Catalog Assortment")
+		if not name:
+			doc.item = item
+		for fieldname in (
+			"business_point",
+			"enabled",
+			"visible_in_pos",
+			"default_warehouse",
+			"minimum_stock",
+			"reorder_quantity",
+			"notes",
+		):
 			doc.set(fieldname, row.get(fieldname))
-		doc.insert(ignore_permissions=True)
+		doc.save(ignore_permissions=True)

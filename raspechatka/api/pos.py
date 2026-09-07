@@ -157,8 +157,17 @@ def _get_products(point_name):
 		for row in frappe.get_all(
 			"Catalog Item",
 			filters={"name": ["in", [row.item for row in assortments]], "active": 1},
-			fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom",
-				"track_inventory", "allow_negative_stock", "minimum_sale_price", "prevent_discounts"],
+			fields=[
+				"name",
+				"item_name",
+				"item_code",
+				"item_type",
+				"catalog_group",
+				"stock_uom",
+				"track_inventory",
+				"prevent_discounts",
+				"has_variants",
+			],
 			limit_page_length=5000,
 		)
 	}
@@ -174,7 +183,7 @@ def _get_products(point_name):
 	result = []
 	for assortment in assortments:
 		item = items.get(assortment.item)
-		if not item:
+		if not item or item.has_variants:
 			continue
 		resolved_price = resolve_item_price(
 			item.name,
@@ -196,14 +205,19 @@ def _get_products(point_name):
 			"name": item.item_name,
 			"sku": item.item_code,
 			"category": group_names.get(item.catalog_group) or "Без группы",
-			"type": {"Product": "product", "Service": "service", "Bundle": "bundle"}.get(item.item_type, "service"),
+			"type": {
+				"Product": "product",
+				"Variant": "product",
+				"Service": "service",
+				"Bundle": "bundle",
+			}.get(item.item_type, "service"),
 			"uom": item.stock_uom or "шт",
 			"priceMinor": round(price * 100),
 			"barcode": barcode,
 			"stock": flt(balances.get(item.name)) if item.track_inventory else None,
 			"trackInventory": bool(item.track_inventory),
-			"allowNegativeStock": bool(item.allow_negative_stock),
-			"minimumSalePriceMinor": round(flt(item.minimum_sale_price) * 100),
+			"allowNegativeStock": False,
+			"minimumSalePriceMinor": 0,
 			"preventDiscounts": bool(item.prevent_discounts),
 			"storageAddress": storage.get(item.name) or "",
 		})
@@ -346,7 +360,7 @@ def _create_stock_entries(workplace, voucher_no, voucher_type, lines, multiplier
 			"Catalog Item", item_name,
 			["item_type", "track_inventory", "allow_negative_stock"], as_dict=True,
 		) if item_name else None
-		if not item or item.item_type != "Product" or not item.track_inventory:
+		if not item or item.item_type not in {"Product", "Variant"} or not item.track_inventory:
 			continue
 		quantity = multiplier * flt(line.get("quantity"))
 		if quantity < 0 and not item.allow_negative_stock:
@@ -537,5 +551,4 @@ def _apply_cash_count(event_id, workplace, payload):
 		"difference": flt(payload.get("differenceMinor")) / 100, "source_pos_event": event_id,
 		"lines": [{"denomination": flt(row.get("denominationMinor")) / 100, "quantity": row.get("quantity")} for row in payload.get("lines") or []],
 	}).insert(ignore_permissions=True)
-
 
