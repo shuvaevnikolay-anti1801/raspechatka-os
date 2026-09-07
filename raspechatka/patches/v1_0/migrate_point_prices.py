@@ -41,12 +41,14 @@ def execute():
 
 	assortments = frappe.get_all(
 		"Catalog Assortment",
-		filters={"local_sale_price": ["is", "set"]},
 		fields=["item", "business_point", "local_sale_price"],
 		limit_page_length=100000,
 	)
 	by_item = {}
 	for row in assortments:
+		# A zero price is an explicit value; only SQL NULL means that no legacy price exists.
+		if row.local_sale_price is None:
+			continue
 		by_item.setdefault(row.item, []).append(row)
 
 	for item, rows in by_item.items():
