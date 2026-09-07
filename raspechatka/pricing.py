@@ -122,5 +122,7 @@ def round_price(rate, rule):
 	if rule == "До 1 рубля":
 		return float(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 	if rule == "До 10 рублей":
-		return float(\n\t\t\t(value / Decimal("10")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("10")\n\t\t)
+		return float(
+			(value / Decimal("10")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("10")
+		)
 	return float(value)
