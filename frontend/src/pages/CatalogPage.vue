@@ -48,6 +48,7 @@ async function loadItems() {
   try {
     const result = await call("raspechatka.api.frontend.get_catalog_items", {
       ...filters,
+      limit_page_length: 5000,
     });
     items.value = result.items || [];
   } catch (exception) {
