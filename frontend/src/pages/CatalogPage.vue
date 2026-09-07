@@ -320,12 +320,9 @@ async function initializeCatalog(size) {
 
 <template>
 	<section class="page catalog-page">
-		<ListPageHeader title="Товары и услуги">
+		<ListPageHeader title="Товары и Цены">
 			<template #actions>
 				<div v-if="canEdit" class="create-actions">
-					<button class="button button-secondary" type="button" @click="loadEditor(null, 'Service')">＋ Услуга</button>
-					<button class="button button-secondary" type="button" @click="loadEditor(null, 'Bundle')">＋ Комплект</button>
-					<button class="button button-secondary" type="button" @click="loadEditor(null, 'Variant')">＋ Модификация</button>
 					<button class="button button-primary" type="button" @click="loadEditor(null, 'Product')">＋ Создать товар</button>
 				</div>
 			</template>
@@ -400,7 +397,7 @@ async function initializeCatalog(size) {
 			<form class="editor-form catalog-editor" @submit.prevent="saveItem">
 				<div class="form-section">
 					<div class="section-heading">
-						<div><h3>Основное</h3><p>Только данные, необходимые в ежедневной работе.</p></div>
+						<div><h3>Основное</h3></div>
 					</div>
 					<div class="form-grid">
 						<label>Тип
@@ -452,7 +449,7 @@ async function initializeCatalog(size) {
 
 				<div v-if="itemForm.item_type === 'Product' && itemForm.name" class="form-section">
 					<div class="section-heading">
-						<div><h3>Модификации</h3><p>Варианты имеют собственные остатки и могут переопределять цену.</p></div>
+						<div><h3>Модификации</h3></div>
 						<button v-if="canEdit" class="text-button" type="button" @click="createVariantFrom(itemForm.name)">＋ Модификация</button>
 					</div>
 					<div v-if="currentVariants.length" class="variant-list">
@@ -465,7 +462,7 @@ async function initializeCatalog(size) {
 
 				<div class="form-section">
 					<div class="section-heading">
-						<div><h3>Цены</h3><p>Цена точки имеет приоритет над общей ценой сети.</p></div>
+						<div><h3>Цены</h3></div>
 						<button v-if="canEdit" class="text-button" type="button" @click="addPrice">＋ Добавить цену</button>
 					</div>
 					<label class="check-field compact-check"><input v-model="itemForm.prevent_discounts" type="checkbox" :true-value="1" :false-value="0" /> Запретить скидки для позиции</label>
@@ -501,10 +498,7 @@ async function initializeCatalog(size) {
 
 				<div class="form-section">
 					<div class="section-heading">
-						<div>
-							<h3>{{ inventoryType ? "Остатки и доступность в точках" : "Доступность в точках" }}</h3>
-							<p>Отключение точки сохраняет всю историю продаж и движений.</p>
-						</div>
+						<div><h3>{{ inventoryType ? "Остатки и доступность в точках" : "Доступность в точках" }}</h3></div>
 					</div>
 					<div class="point-grid">
 						<article v-for="row in itemForm.assortments" :key="row.business_point" class="point-card">
@@ -526,9 +520,6 @@ async function initializeCatalog(size) {
 					<p v-if="!itemForm.assortments?.length" class="muted-copy">Нет доступных активных точек продаж.</p>
 				</div>
 
-				<div class="form-section system-rules">
-					<div><h3>Налоги и касса</h3><p>Применяются автоматически: без НДС, система налогообложения точки, предмет расчёта — {{ itemForm.item_type === "Service" ? "услуга" : "товар" }}.</p></div>
-				</div>
 				<p v-if="editorError" class="form-error">{{ editorError }}</p>
 			</form>
 			<template #footer>
@@ -546,7 +537,7 @@ async function initializeCatalog(size) {
 .catalog-workspace { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
 .catalog-main { flex: 1; min-width: 0; display: grid; gap: 12px; }
 .catalog-editor { display: grid; gap: 14px; }
-.section-heading > div > p, .muted-copy, .system-rules p { margin: 4px 0 0; color: var(--muted); }
+.section-heading > div > p, .muted-copy { margin: 4px 0 0; color: var(--muted); }
 .compact-check { margin: 10px 0 12px; }
 .price-rows > div { grid-template-columns: 1.2fr 1.2fr .7fr .8fr .8fr 1fr 1fr 34px; }
 .bundle-rows > div { grid-template-columns: 2fr .65fr .8fr 1.4fr 34px; }
@@ -562,8 +553,6 @@ async function initializeCatalog(size) {
 .variant-list button { display: flex; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; text-align: left; cursor: pointer; }
 .variant-list button:hover { border-color: var(--green); background: var(--green-soft); }
 .variant-list small { color: var(--muted); }
-.system-rules { background: #f7f8f5; }
 @media (max-width: 1100px) { .price-rows > div { grid-template-columns: 1fr 1fr 1fr 34px; } }
 @media (max-width: 900px) { .catalog-workspace { flex-direction: column; } .point-card__fields { grid-template-columns: 1fr; } .point-note { grid-column: auto; } }
 </style>
-

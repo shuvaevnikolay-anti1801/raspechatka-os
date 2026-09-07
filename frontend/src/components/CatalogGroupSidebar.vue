@@ -85,7 +85,7 @@ watch(
 <template>
 	<aside class="group-panel" aria-label="Группы каталога">
 		<div class="group-panel__head">
-			<div><span class="group-panel__eyebrow">Навигация</span><h2>Группы</h2></div>
+			<div><h2>Группы</h2></div>
 			<button v-if="canEdit" class="group-add" type="button" title="Создать группу" @click="emit('create', null)">＋</button>
 		</div>
 		<div class="group-tree">
@@ -135,7 +135,7 @@ watch(
 .group-icon { color: #92a080; font-size: 13px; }
 .group-icon.has-children { width: 14px; }
 .group-toggle { position: absolute; z-index: 2; top: 9px; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: #77826b; cursor: pointer; }
-.group-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .group-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .group-edit { position: absolute; right: 7px; top: 8px; width: 27px; height: 25px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; }
 .group-entry:hover .group-edit, .group-edit:focus { opacity: 1; }
