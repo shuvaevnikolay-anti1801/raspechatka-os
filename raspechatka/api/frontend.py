@@ -17,7 +17,7 @@ def get_catalog_items(
 	require_access("references.catalog", "read")
 
 	limit_start = max(cint(limit_start), 0)
-	limit_page_length = min(max(cint(limit_page_length), 1), 200)
+	limit_page_length = min(max(cint(limit_page_length), 1), 5000)
 	filters = {}
 
 	if item_type:
