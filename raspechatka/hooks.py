@@ -166,7 +166,6 @@ scheduler_events = {
 	"cron": {
 		"*/15 * * * *": [
 			"raspechatka.api.tochka.sync_enabled_connections",
-			"raspechatka.api.moysklad.sync_enabled_connection",
 		]
 	}
 }
