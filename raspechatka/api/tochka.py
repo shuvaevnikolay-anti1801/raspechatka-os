@@ -145,6 +145,43 @@ def refresh_accounts(connection):
 	return {"received": len(accounts), "matched": updated}
 
 
+
+def _extract_bank_accounts(value):
+	"""Find bank account records in both flat and nested Tochka API responses."""
+	rows = []
+	seen = set()
+	for candidate in _walk_dicts(value):
+		external_id = str(_pick(candidate, "accountId", "AccountId", "AccountID", "id") or "")
+		number = _account_number(candidate)
+		key = (external_id, number)
+		if external_id and number and key not in seen:
+			seen.add(key)
+			rows.append({"external_id": external_id, "number": number})
+	return rows
+
+
+def _walk_dicts(value):
+	if isinstance(value, dict):
+		yield value
+		for nested in value.values():
+			yield from _walk_dicts(nested)
+	elif isinstance(value, list):
+		for nested in value:
+			yield from _walk_dicts(nested)
+
+
+def _account_number(value):
+	candidate = _pick(value, "accountNumber", "AccountNumber", "identification", "number")
+	digits = _digits(candidate)
+	if len(digits) == 20:
+		return digits
+	for nested in _walk_dicts(value):
+		for nested_value in nested.values():
+			digits = _digits(nested_value)
+			if len(digits) == 20:
+				return digits
+	return ""
+
 def sync_enabled_connections():
 	for name in frappe.get_all("Bank Connection", filters={"enabled": 1, "status": "Connected"}, pluck="name"):
 		frappe.enqueue("raspechatka.api.tochka.sync_connection", queue="long", connection=name, enqueue_after_commit=True)
@@ -509,16 +546,19 @@ def refresh_accounts(connection):
 def _refresh_connection_accounts(connection):
 	doc = frappe.get_doc("Bank Connection", connection)
 	result = _request_json("GET", f"{API_BASE}/open-banking/v1.0/accounts", _valid_token(doc))
-	accounts = _pick(result, "Data.Account", "Data.Accounts", "Data.accounts", "data.Account", "data.Accounts", "data.accounts", "accounts") or []
-	if not isinstance(accounts, list):
-		accounts = [accounts]
+	raw_accounts = _pick(result, "Data.Account", "Data.Accounts", "Data.accounts", "data.Account", "data.Accounts", "data.accounts", "accounts") or []
+	accounts = _extract_bank_accounts(raw_accounts)
+	local_accounts = frappe.get_all(
+		"Business Bank Account",
+		filters={"business_entity": doc.business_entity, "active": 1},
+		fields=["name", "settlement_account"],
+	)
+	accounts_by_number = {_digits(item.settlement_account): item.name for item in local_accounts}
 	updated = 0
 	for account in accounts:
-		external_id = str(_pick(account, "accountId", "AccountId", "AccountID", "id") or "")
-		number = _digits(_pick(account, "accountNumber", "AccountNumber", "identification", "number") or "")
-		name = frappe.db.get_value("Business Bank Account", {"business_entity": doc.business_entity, "settlement_account": number}, "name") if number else None
-		if name and external_id:
-			frappe.db.set_value("Business Bank Account", name, "external_account_id", external_id)
+		name = accounts_by_number.get(account["number"])
+		if name:
+			frappe.db.set_value("Business Bank Account", name, "external_account_id", account["external_id"])
 			updated += 1
 	if not updated:
 		_notify_bank_admins(_("Точка Банк: счёт не сопоставлен"), f"{doc.connection_name}: в ОС не найден ни один счёт из ответа банка.")
