@@ -35,6 +35,7 @@ ENDPOINTS = (
 def get_sales_sync_settings():
 	require_access("settings.access", "admin")
 	settings = frappe.get_single("MoySklad Settings")
+	stats = _load_json(settings.sales_sync_stats_json)
 	return {
 		"enabled": bool(settings.sales_sync_enabled),
 		"sync_from": str(settings.sales_sync_from or HISTORY_START),
@@ -42,7 +43,8 @@ def get_sales_sync_settings():
 		"status": settings.sales_sync_status or "Idle",
 		"last_sync_at": settings.last_sales_sync_at,
 		"error": settings.sales_sync_error,
-		"stats": _load_json(settings.sales_sync_stats_json),
+		"stats": stats,
+		"error_examples": _error_examples(stats),
 		"points": frappe.get_all(
 			"Business Point",
 			filters={"active": 1},
@@ -553,3 +555,37 @@ def _load_json(value):
 		return json.loads(value) if value else {}
 	except (TypeError, ValueError):
 		return {}
+
+
+def _error_examples(stats):
+	return [
+		{
+			**row,
+			"type_label": {
+				"shifts": "Смена",
+				"sales": "Продажа",
+				"returns": "Возврат",
+				"cash_in": "Внесение",
+				"cash_out": "Выплата",
+			}.get(row.get("type"), "Документ"),
+			"action": _error_action(row.get("error")),
+		}
+		for row in (stats.get("errors") or [])
+	]
+
+
+def _error_action(error):
+	error = error or ""
+	if "Не сопоставлена позиция МойСклада" in error:
+		return _("Сопоставьте этот товар с товаром каталога в Распечатка OS.")
+	if "Не найдена смена" in error:
+		return _("Проверьте, что смена загружена и её точка сопоставлена.")
+	if "активный склад" in error:
+		return _("Создайте или включите склад, привязанный к этой точке.")
+	if "разбивку оплаты" in error:
+		return _("Проверьте суммы и типы оплат в исходном чеке МойСклада.")
+	if "нет позиций" in error:
+		return _("Проверьте позиции в исходном документе МойСклада.")
+	if "отсутствует дата" in error or "без ID" in error:
+		return _("Исправьте неполные данные в исходном документе МойСклада.")
+	return _("Проверьте исходный документ и повторите полную загрузку после исправления.")
