@@ -493,6 +493,10 @@ def _payments(row, expected_total):
 	actual = round(sum(amount for _, amount in values), 2)
 	if actual <= 0 and expected_total > 0:
 		raise frappe.ValidationError(_("МойСклад не вернул разбивку оплаты чека"))
+	if actual <= 0 and abs(expected_total) <= 0.01:
+		# A zero-total historical receipt has no payment in MoySklad. Keep one
+		# zero row so the receipt document remains structurally valid.
+		return [{"payment_channel": "Cash", "amount": 0}]
 	difference = round(expected_total - actual, 2)
 	if abs(difference) > 0.01:
 		largest = max(range(len(values)), key=lambda index: values[index][1])
