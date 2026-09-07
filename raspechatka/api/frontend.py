@@ -224,7 +224,7 @@ def save_catalog_item(data):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	child_tables = {
-		"prices": ("price_type", "rate", "minimum_quantity", "valid_from", "valid_upto"),
+		"prices": ("price_type", "business_point", "uom", "currency", "rate", "minimum_quantity", "valid_from", "valid_upto"),
 		"barcodes": ("barcode", "barcode_type", "uom", "quantity"),
 		"reorder_rules": ("warehouse", "minimum_stock", "reorder_quantity", "preferred_supplier"),
 		"bundle_components": ("item", "quantity", "uom", "notes"),
