@@ -19,7 +19,16 @@
   "catalog_sync_status",
   "last_catalog_sync_at",
   "catalog_sync_error",
-  "catalog_sync_stats_json"
+  "catalog_sync_stats_json",
+  "sales_sync_section",
+  "sales_sync_enabled",
+  "sales_sync_from",
+  "sales_sync_interval_minutes",
+  "sales_sync_status",
+  "sales_sync_cursor",
+  "last_sales_sync_at",
+  "sales_sync_error",
+  "sales_sync_stats_json"
  ],
  "fields": [
   {
@@ -113,6 +122,66 @@
    "fieldname": "catalog_sync_stats_json",
    "fieldtype": "Long Text",
    "label": "Статистика переноса",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "sales_sync_section",
+   "fieldtype": "Section Break",
+   "label": "Временная синхронизация продаж"
+  },
+  {
+   "fieldname": "sales_sync_enabled",
+   "fieldtype": "Check",
+   "label": "Автоматическая синхронизация продаж",
+   "default": "0"
+  },
+  {
+   "fieldname": "sales_sync_from",
+   "fieldtype": "Date",
+   "label": "Загружать историю с",
+   "default": "2026-07-01",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_sync_interval_minutes",
+   "fieldtype": "Select",
+   "label": "Интервал синхронизации, минут",
+   "options": "5\n15\n30\n60",
+   "default": "5",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sales_sync_status",
+   "fieldtype": "Select",
+   "label": "Статус синхронизации продаж",
+   "options": "Idle\nQueued\nRunning\nCompleted\nError",
+   "default": "Idle",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_sync_cursor",
+   "fieldtype": "Datetime",
+   "label": "Курсор синхронизации",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "last_sales_sync_at",
+   "fieldtype": "Datetime",
+   "label": "Последняя синхронизация продаж",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_sync_error",
+   "fieldtype": "Long Text",
+   "label": "Ошибка синхронизации продаж",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_sync_stats_json",
+   "fieldtype": "Long Text",
+   "label": "Статистика синхронизации продаж",
    "read_only": 1,
    "hidden": 1
   }
