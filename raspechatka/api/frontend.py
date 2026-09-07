@@ -17,7 +17,7 @@ def get_catalog_items(
 	require_access("references.catalog", "read")
 
 	limit_start = max(cint(limit_start), 0)
-	limit_page_length = min(max(cint(limit_page_length), 1), 5000)
+	limit_page_length = min(max(cint(limit_page_length), 1), 100)
 	filters = {}
 
 	if item_type:
@@ -49,6 +49,14 @@ def get_catalog_items(
 			"article": ["like", value],
 		}
 
+	count_rows = frappe.get_all(
+		"Catalog Item",
+		fields=[{"COUNT": "name", "as": "total_count"}],
+		filters=filters,
+		or_filters=or_filters,
+	)
+	total_count = cint(count_rows[0].total_count) if count_rows else 0
+
 	rows = frappe.get_all(
 		"Catalog Item",
 		fields=[
@@ -71,7 +79,8 @@ def get_catalog_items(
 
 	return {
 		"items": rows[:limit_page_length],
-		"has_more": len(rows) > limit_page_length,
+		"total_count": total_count,
+		"has_more": limit_start + limit_page_length < total_count,
 	}
 
 

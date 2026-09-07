@@ -12,6 +12,9 @@ const groups = ref([]);
 const points = ref([]);
 const loading = ref(true);
 const error = ref("");
+const catalogPage = ref(1);
+const catalogPageSize = ref(25);
+const totalItems = ref(0);
 const filters = reactive({ search: "", item_type: "", catalog_group: "", active: "", business_point: "" });
 const editorOpen = ref(false);
 const saving = ref(false);
@@ -48,9 +51,11 @@ async function loadItems() {
   try {
     const result = await call("raspechatka.api.frontend.get_catalog_items", {
       ...filters,
-      limit_page_length: 5000,
+      limit_start: (catalogPage.value - 1) * catalogPageSize.value,
+      limit_page_length: catalogPageSize.value,
     });
     items.value = result.items || [];
+    totalItems.value = Number(result.total_count || 0);
   } catch (exception) {
     error.value = exception.message;
   } finally {
@@ -108,8 +113,25 @@ async function saveItem() {
   finally { saving.value = false; }
 }
 
+async function applyCatalogFilters() {
+  catalogPage.value = 1;
+  await loadItems();
+}
+
 async function selectGroup(name) {
   filters.catalog_group = name;
+  await applyCatalogFilters();
+}
+
+async function changeCatalogPage(nextPage, size = catalogPageSize.value) {
+  catalogPage.value = nextPage;
+  catalogPageSize.value = size;
+  await loadItems();
+}
+
+async function changeCatalogPageSize(size) {
+  catalogPage.value = 1;
+  catalogPageSize.value = size;
   await loadItems();
 }
 
@@ -159,8 +181,8 @@ onMounted(async () => {
     <div class="catalog-workspace">
       <CatalogGroupSidebar :groups="groups" :selected="filters.catalog_group" :can-edit="canEdit" @select="selectGroup" @create="openGroupEditor" @edit="openGroupEditor" />
       <div class="catalog-main">
-    <SmartFilterBar :model-value="filters" :fields="filterFields" view-key="catalog.items" @update:model-value="Object.assign(filters,$event)" @apply="loadItems" @reset="loadItems" />
-    <SmartDataTable :rows="items" :columns="tableColumns" view-key="catalog.items" :loading="loading" :error="error" empty-title="Ничего не найдено" empty-text="Измените фильтры или создайте новую позицию." @open="openItem" @retry="loadWorkspace">
+    <SmartFilterBar :model-value="filters" :fields="filterFields" view-key="catalog.items" @update:model-value="Object.assign(filters,$event)" @apply="applyCatalogFilters" @reset="applyCatalogFilters" />
+    <SmartDataTable :rows="items" :columns="tableColumns" view-key="catalog.items" :loading="loading" :error="error" server-pagination :total-rows="totalItems" :current-page="catalogPage" empty-title="Ничего не найдено" empty-text="Измените фильтры или создайте новую позицию." @open="openItem" @retry="loadWorkspace" @page-change="changeCatalogPage" @page-size-change="changeCatalogPageSize">
       <template #cell-item_type="{ row }"><span class="type-chip" :class="row.item_type.toLowerCase()">{{ typeLabels[row.item_type] || row.item_type }}</span></template>
       <template #cell-active="{ row }"><span class="state" :class="{ inactive: !row.active }"><i></i>{{ row.active ? 'Активен' : 'Выключен' }}</span></template>
     </SmartDataTable>

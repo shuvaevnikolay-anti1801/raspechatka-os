@@ -8,8 +8,11 @@ const props = defineProps({
   loading: Boolean, error: String, rowKey: { type: String, default: "name" }, emptyTitle: { type: String, default: "Данных пока нет" },
   emptyText: { type: String, default: "Измените фильтры или создайте первую запись." }, totals: { type: Object, default: () => ({}) },
   selectable: { type: Boolean, default: true },
+  serverPagination: Boolean,
+  totalRows: { type: Number, default: 0 },
+  currentPage: { type: Number, default: 1 },
 });
-const emit = defineEmits(["open", "retry", "selection-change"]);
+const emit = defineEmits(["open", "retry", "selection-change", "page-change", "page-size-change"]);
 const selected = ref([]), selectedRows = ref([]), widths = ref({}), settingsOpen = ref(false), page = ref(1), pageSize = ref(25), ready = ref(false), sort = ref({ key: "", direction: "asc" });
 const pageSizes = [25, 50, 100];
 const preferenceKey = computed(() => `${props.viewKey}.table`);
@@ -20,7 +23,8 @@ const filteredRows = computed(() => {
   const allowed = new Set(names);
   return props.rows.filter((row) => allowed.has(row[props.rowKey]));
 });
-const pageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / pageSize.value)));
+const rowCount = computed(() => props.serverPagination ? props.totalRows : filteredRows.value.length);
+const pageCount = computed(() => Math.max(1, Math.ceil(rowCount.value / pageSize.value)));
 const sortedRows = computed(() => {
   if (!sort.value.key) return filteredRows.value;
   return [...filteredRows.value].sort((a,b) => {
@@ -29,9 +33,9 @@ const sortedRows = computed(() => {
     return sort.value.direction==="asc"?result:-result;
   });
 });
-const pageRows = computed(() => sortedRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value));
-const from = computed(() => filteredRows.value.length ? (page.value - 1) * pageSize.value + 1 : 0);
-const to = computed(() => Math.min(page.value * pageSize.value, filteredRows.value.length));
+const pageRows = computed(() => props.serverPagination ? sortedRows.value : sortedRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value));
+const from = computed(() => rowCount.value ? (page.value - 1) * pageSize.value + 1 : 0);
+const to = computed(() => props.serverPagination ? Math.min(from.value + filteredRows.value.length - 1, rowCount.value) : Math.min(page.value * pageSize.value, rowCount.value));
 const effectiveTotals = computed(() => {
   if (!Array.isArray(documentFilterMatches[props.viewKey])) return props.totals;
   return Object.fromEntries(props.columns.filter((column) => column.number).map((column) => [column.key, filteredRows.value.reduce((total, row) => total + Number(row[column.key] || 0), 0)]));
@@ -51,7 +55,7 @@ async function loadPreference() {
     if (valid.length) selected.value = valid;
     widths.value = preference.widths || {};
     if (pageSizes.includes(Number(preference.pageSize))) pageSize.value = Number(preference.pageSize);
-  } catch (_) {} finally { ready.value = true; }
+  } catch (_) {} finally { ready.value = true; if (props.serverPagination) emit("page-size-change", pageSize.value); }
 }
 async function toggleColumn(key) {
   selected.value = selected.value.includes(key) ? (selected.value.length > 1 ? selected.value.filter((item) => item !== key) : selected.value) : [...selected.value, key]; await savePreference();
@@ -62,18 +66,19 @@ function beginResize(event, column) {
 }
 function resize(event) { if (resizing) widths.value = { ...widths.value, [resizing.key]: Math.max(80, resizing.width + event.clientX - resizing.x) }; }
 async function endResize() { window.removeEventListener("pointermove", resize); resizing = null; await savePreference(); }
-function setPageSize(event) { pageSize.value = Number(event.target.value); page.value = 1; savePreference(); }
+function setPageSize(event) { pageSize.value = Number(event.target.value); page.value = 1; savePreference(); if (props.serverPagination) emit("page-size-change", pageSize.value); }
+function changePage(nextPage) { page.value = nextPage; if (props.serverPagination) emit("page-change", nextPage, pageSize.value); }
 function changeSort(key) { sort.value = sort.value.key===key ? {key,direction:sort.value.direction==="asc"?"desc":"asc"} : {key,direction:"asc"}; }
 function toggleRow(row) { const key=row[props.rowKey]; selectedRows.value=selectedRows.value.includes(key)?selectedRows.value.filter(x=>x!==key):[...selectedRows.value,key]; emit("selection-change",selectedRows.value); }
 function togglePage() { const keys=pageRows.value.map(row=>row[props.rowKey]); const all=keys.every(key=>selectedRows.value.includes(key)); selectedRows.value=all?selectedRows.value.filter(key=>!keys.includes(key)):[...new Set([...selectedRows.value,...keys])]; emit("selection-change",selectedRows.value); }
 
-watch(() => props.viewKey, loadPreference); watch(() => filteredRows.value.length, () => { if (page.value > pageCount.value) page.value = pageCount.value; });
+watch(() => props.viewKey, loadPreference); watch(() => props.currentPage, (value) => { page.value = value; }); watch(() => filteredRows.value.length, () => { if (page.value > pageCount.value) page.value = pageCount.value; });
 onMounted(loadPreference); onBeforeUnmount(() => window.removeEventListener("pointermove", resize));
 </script>
 
 <template>
   <div class="smart-table">
-    <div class="table-meta"><strong>{{ selectedRows.length ? `Выбрано: ${selectedRows.length}` : `${filteredRows.length} записей` }}</strong><div class="column-settings"><button class="text-button" type="button" @click="settingsOpen=!settingsOpen">Настроить столбцы</button><div v-if="settingsOpen" class="column-popover"><label v-for="column in columns" :key="column.key"><input type="checkbox" :checked="selected.includes(column.key)" @change="toggleColumn(column.key)" /><span>{{ column.label }}</span></label></div></div></div>
+    <div class="table-meta"><strong>{{ selectedRows.length ? `Выбрано: ${selectedRows.length}` : `${rowCount} записей` }}</strong><div class="column-settings"><button class="text-button" type="button" @click="settingsOpen=!settingsOpen">Настроить столбцы</button><div v-if="settingsOpen" class="column-popover"><label v-for="column in columns" :key="column.key"><input type="checkbox" :checked="selected.includes(column.key)" @change="toggleColumn(column.key)" /><span>{{ column.label }}</span></label></div></div></div>
     <div class="table-shell">
       <div v-if="error" class="table-message error-message"><strong>Не удалось загрузить данные</strong><span>{{ error }}</span><button @click="$emit('retry')">Повторить</button></div>
       <div v-else-if="loading" class="table-message"><span class="loader"></span><span>Загружаем данные…</span></div>
@@ -85,6 +90,6 @@ onMounted(loadPreference); onBeforeUnmount(() => window.removeEventListener("poi
         <tfoot v-if="Object.keys(effectiveTotals).length"><tr><td v-if="selectable"></td><td v-for="column in visibleColumns" :key="column.key" :class="{ 'number-cell': column.number }"><strong v-if="column.primary">Итого</strong><strong v-else-if="effectiveTotals[column.key]!==undefined">{{ column.format ? column.format(effectiveTotals[column.key], effectiveTotals) : effectiveTotals[column.key] }}</strong></td></tr></tfoot>
       </table>
     </div>
-    <footer class="table-footer"><span>{{ from }}–{{ to }} из {{ filteredRows.length }}</span><div class="table-pages"><button :disabled="page===1" @click="page--">←</button><span>{{ page }} / {{ pageCount }}</span><button :disabled="page===pageCount" @click="page++">→</button></div><label>Строк на странице<select :value="pageSize" @change="setPageSize"><option v-for="size in pageSizes" :key="size" :value="size">{{size}}</option></select></label></footer>
+    <footer class="table-footer"><span>{{ from }}–{{ to }} из {{ rowCount }}</span><div class="table-pages"><button :disabled="page===1" @click="changePage(page-1)">←</button><span>{{ page }} / {{ pageCount }}</span><button :disabled="page===pageCount" @click="changePage(page+1)">→</button></div><label>Строк на странице<select :value="pageSize" @change="setPageSize"><option v-for="size in pageSizes" :key="size" :value="size">{{size}}</option></select></label></footer>
   </div>
 </template>
