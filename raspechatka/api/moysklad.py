@@ -682,7 +682,11 @@ def _unlinked_catalog_items(filters, item_type):
 	return [
 		row.name
 		for row in rows
-		if not row.moysklad_id and (not item_type or frappe.db.get_value("Catalog Item", row.name, "item_type") == item_type)
+		if not row.moysklad_id
+		and (
+			not item_type
+			or frappe.db.get_value("Catalog Item", row.name, "item_type") == item_type
+		)
 	]
 
 
