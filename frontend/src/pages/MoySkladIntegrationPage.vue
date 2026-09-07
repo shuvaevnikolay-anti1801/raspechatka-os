@@ -493,6 +493,26 @@ onUnmounted(() => window.clearInterval(statusTimer));
           восстановление: система сначала приведёт каталог в соответствие, затем
           автоматически повторит импорт всей истории.
         </p>
+        <section
+          v-if="salesSync.failure_summary?.length"
+          class="failure-summary"
+        >
+          <h3>Что ещё не удалось перенести</h3>
+          <p>
+            Это сводка причин, а не список чеков. После следующего
+            восстановления она покажет, что система обработала автоматически.
+          </p>
+          <div class="failure-summary-list">
+            <div
+              v-for="reason in salesSync.failure_summary"
+              :key="reason.key"
+              class="failure-summary-row"
+            >
+              <span>{{ reason.label }}</span>
+              <strong>{{ reason.count }}</strong>
+            </div>
+          </div>
+        </section>
 
         <p v-if="salesSync.error" class="last-error">{{ salesSync.error }}</p>
       </article>
@@ -781,6 +801,39 @@ input[type="text"] {
   background: #f6f8f4;
   color: #657064;
   line-height: 1.5;
+}
+.failure-summary {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #f0dfbb;
+  border-radius: 11px;
+  background: #fffbf2;
+}
+.failure-summary h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.failure-summary p {
+  margin: 0;
+  color: #746b57;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.failure-summary-list {
+  margin-top: 12px;
+  border-top: 1px solid #f0e5cc;
+}
+.failure-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f0e5cc;
+  color: #5f594c;
+  font-size: 13px;
+}
+.failure-summary-row strong {
+  color: #9a6e1f;
 }
 
 .preview-time {
