@@ -3,6 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe.utils import flt, get_datetime, getdate, now, nowdate
 
+from raspechatka.pricing import resolve_item_price
+
 
 @frappe.whitelist()
 def get_bootstrap(workplace_code=None):
@@ -123,7 +125,7 @@ def _get_products(point_name):
 	assortments = frappe.get_all(
 		"Catalog Assortment",
 		filters={"business_point": point_name, "enabled": 1, "visible_in_pos": 1},
-		fields=["item", "local_sale_price", "valid_from", "valid_upto"],
+		fields=["item", "valid_from", "valid_upto"],
 		limit_page_length=5000,
 	)
 	assortments = [
@@ -174,7 +176,16 @@ def _get_products(point_name):
 		item = items.get(assortment.item)
 		if not item:
 			continue
-		price = flt(assortment.local_sale_price) or _network_price(item.name)
+		resolved_price = resolve_item_price(
+			item.name,
+			point_name,
+			quantity=1,
+			uom=item.stock_uom,
+			required=False,
+		)
+		if not resolved_price and not frappe.db.get_value("Business Point", point_name, "allow_free_price"):
+			continue
+		price = resolved_price["rate"] if resolved_price else 0
 		barcode = frappe.db.get_value(
 			"Catalog Item Barcode",
 			{"parent": item.name, "parenttype": "Catalog Item", "parentfield": "barcodes"},
@@ -528,21 +539,3 @@ def _apply_cash_count(event_id, workplace, payload):
 	}).insert(ignore_permissions=True)
 
 
-def _network_price(item_name):
-	rows = frappe.get_all(
-		"Catalog Item Price",
-		filters={"parent": item_name, "parenttype": "Catalog Item", "parentfield": "prices"},
-		fields=["rate", "minimum_quantity", "valid_from", "valid_upto", "idx"],
-		order_by="minimum_quantity asc, idx asc",
-		limit_page_length=100,
-	)
-	today = getdate(nowdate())
-	for row in rows:
-		if flt(row.minimum_quantity or 1) > 1:
-			continue
-		if row.valid_from and getdate(row.valid_from) > today:
-			continue
-		if row.valid_upto and getdate(row.valid_upto) < today:
-			continue
-		return flt(row.rate)
-	return 0
