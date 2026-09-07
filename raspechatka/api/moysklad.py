@@ -162,10 +162,13 @@ def _sync_catalog(settings):
 	stats = defaultdict(int)
 	groups = _active_rows(_iter_rows(settings, "entity/productfolder"), stats)
 	units = _active_rows(_iter_rows(settings, "entity/uom"), stats)
-	products = _active_rows(_iter_rows(settings, "entity/product"), stats)
-	services = _active_rows(_iter_rows(settings, "entity/service"), stats)
-	bundles = _active_rows(_iter_rows(settings, "entity/bundle"), stats)
-	variants = _active_rows(_iter_rows(settings, "entity/variant"), stats)
+	# Historical receipts can reference archived assortment records. Import
+	# those cards as inactive Catalog Items so the full sales history remains
+	# reproducible without exposing retired products for current sale.
+	products = list(_iter_rows(settings, "entity/product"))
+	services = list(_iter_rows(settings, "entity/service"))
+	bundles = list(_iter_rows(settings, "entity/bundle"))
+	variants = list(_iter_rows(settings, "entity/variant"))
 	counterparties = {row.get("id"): row for row in _active_rows(_iter_rows(settings, "entity/counterparty"), stats)}
 
 	group_map = _sync_groups(groups, stats)

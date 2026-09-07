@@ -510,6 +510,19 @@ onUnmounted(() => window.clearInterval(statusTimer));
             >
               <span>{{ reason.label }}</span>
               <strong>{{ reason.count }}</strong>
+              <div
+                v-if="reason.details?.length"
+                class="failure-detail-list"
+              >
+                <div
+                  v-for="detail in reason.details"
+                  :key="detail.label"
+                  class="failure-detail-row"
+                >
+                  <span>{{ detail.label }}</span>
+                  <strong>{{ detail.count }}</strong>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -824,16 +837,30 @@ input[type="text"] {
   border-top: 1px solid #f0e5cc;
 }
 .failure-summary-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
   padding: 9px 0;
   border-bottom: 1px solid #f0e5cc;
   color: #5f594c;
   font-size: 13px;
 }
-.failure-summary-row strong {
+.failure-summary-row > strong,
+.failure-detail-row strong {
   color: #9a6e1f;
+}
+.failure-detail-list {
+  grid-column: 1 / -1;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid #ead7aa;
+}
+.failure-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 4px 0;
+  color: #746b57;
+  font-size: 12px;
 }
 
 .preview-time {
