@@ -97,22 +97,35 @@ def get_catalog_filters():
 		order_by="group_name asc",
 		limit_page_length=2000,
 	)
-	count_rows = frappe.db.sql(
-		"""
-		SELECT catalog_group, COUNT(name) AS item_count
-		FROM \`tabCatalog Item\`
-		WHERE active = 1 AND IFNULL(catalog_group, '') != ''
-		GROUP BY catalog_group
-		""",
-		as_dict=True,
+	count_rows = frappe.get_all(
+		"Catalog Item",
+		filters={"active": 1},
+		fields=["catalog_group", {"COUNT": "name", "as": "item_count"}],
+		group_by="catalog_group",
+		limit_page_length=2000,
 	)
-	counts = {row.catalog_group: cint(row.item_count) for row in count_rows}
+	counts = {
+		row.catalog_group: cint(row.item_count)
+		for row in count_rows
+		if row.catalog_group
+	}
 	children = {}
 	for group in groups:
 		children.setdefault(group.parent_catalog_group or "", []).append(group.name)
 
-	def branch_count(name):
-		return counts.get(name, 0) + sum(branch_count(child) for child in children.get(name, []))
+	def branch_count(root):
+		"""Count a group branch without recursion or duplicate traversal."""
+		total = 0
+		pending = [root]
+		seen = set()
+		while pending:
+			name = pending.pop()
+			if name in seen:
+				continue
+			seen.add(name)
+			total += counts.get(name, 0)
+			pending.extend(children.get(name, []))
+		return total
 
 	for group in groups:
 		group["direct_item_count"] = counts.get(group.name, 0)
