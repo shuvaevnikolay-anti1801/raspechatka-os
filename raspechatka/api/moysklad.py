@@ -2,6 +2,7 @@
 
 import json
 from collections import defaultdict
+from time import sleep
 from urllib.parse import urljoin
 
 import frappe
@@ -14,6 +15,7 @@ from raspechatka.access import require_access
 
 API_BASE = "https://api.moysklad.ru/api/remap/1.2/"
 DEFAULT_TIMEOUT = 30
+REQUEST_ATTEMPTS = 4
 PAGE_SIZE = 100
 MIN_SYNC_INTERVAL = 15
 MAX_SYNC_INTERVAL = 1440
@@ -424,25 +426,59 @@ def _request(doc, endpoint, params=None):
 	token = doc.get_password("access_token", raise_exception=False)
 	if not token:
 		raise MoySkladRequestError(_("Сохраните токен МоегоСклада"))
-	try:
-		response = requests.get(
-			urljoin(API_BASE, endpoint),
-			headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "gzip", "User-Agent": "Raspechatka-OS/1.0"},
-			params=params,
-			timeout=DEFAULT_TIMEOUT,
-		)
-	except requests.Timeout as exc:
-		raise MoySkladRequestError(_("МойСклад не ответил за отведённое время")) from exc
-	except requests.RequestException as exc:
-		raise MoySkladRequestError(_("Не удалось соединиться с МоимСкладом")) from exc
-	if not response.ok:
-		messages = {401: _("Токен МоегоСклада недействителен"), 403: _("У токена нет доступа к этим данным МоегоСклада"), 404: _("Раздел данных не поддерживается аккаунтом МоегоСклада"), 429: _("МойСклад временно ограничил число запросов. Повторите позже")}
-		raise MoySkladRequestError(messages.get(response.status_code, _("МойСклад вернул ошибку {0}").format(response.status_code)), response.status_code)
-	try:
-		return response.json()
-	except ValueError as exc:
-		raise MoySkladRequestError(_("МойСклад вернул некорректный ответ")) from exc
 
+	last_error = None
+	for attempt in range(REQUEST_ATTEMPTS):
+		try:
+			response = requests.get(
+				urljoin(API_BASE, endpoint),
+				headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "gzip", "User-Agent": "Raspechatka-OS/1.0"},
+				params=params,
+				timeout=DEFAULT_TIMEOUT,
+			)
+		except requests.Timeout as exc:
+			last_error = MoySkladRequestError(_("МойСклад не ответил за отведённое время"))
+			if attempt == REQUEST_ATTEMPTS - 1:
+				raise last_error from exc
+			sleep(_retry_delay(attempt))
+			continue
+		except requests.RequestException as exc:
+			last_error = MoySkladRequestError(_("Не удалось соединиться с МоимСкладом"))
+			if attempt == REQUEST_ATTEMPTS - 1:
+				raise last_error from exc
+			sleep(_retry_delay(attempt))
+			continue
+
+		if response.ok:
+			try:
+				return response.json()
+			except ValueError as exc:
+				raise MoySkladRequestError(_("МойСклад вернул некорректный ответ")) from exc
+
+		messages = {
+			401: _("Токен МоегоСклада недействителен"),
+			403: _("У токена нет доступа к этим данным МоегоСклада"),
+			404: _("Раздел данных не поддерживается аккаунтом МоегоСклада"),
+			429: _("МойСклад временно ограничил число запросов"),
+		}
+		last_error = MoySkladRequestError(
+			messages.get(response.status_code, _("МойСклад вернул ошибку {0}").format(response.status_code)),
+			response.status_code,
+		)
+		if response.status_code != 429 and response.status_code < 500:
+			raise last_error
+		if attempt == REQUEST_ATTEMPTS - 1:
+			raise last_error
+		sleep(_retry_delay(attempt, response.headers.get("Retry-After")))
+
+	raise last_error or MoySkladRequestError(_("Не удалось получить ответ МоегоСклада"))
+
+
+def _retry_delay(attempt, retry_after=None):
+	try:
+		return min(30.0, max(0.0, float(retry_after)))
+	except (TypeError, ValueError):
+		return min(8, 2**attempt)
 
 def _safe_settings(doc):
 	preview = _load_json(doc.last_preview_json)
