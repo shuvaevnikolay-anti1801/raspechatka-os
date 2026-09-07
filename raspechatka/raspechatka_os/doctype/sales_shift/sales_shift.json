@@ -1,345 +1,346 @@
 {
-  "doctype": "DocType",
-  "name": "Sales Shift",
-  "module": "Raspechatka OS",
-  "autoname": "naming_series:",
-  "title_field": "name",
-  "track_changes": 1,
-  "field_order": [
-    "naming_series",
-    "external_id",
-    "status",
-    "shift_type",
-    "opened_at",
-    "closed_at",
-    "business_entity",
-    "business_point",
-    "warehouse",
-    "cashier",
-    "opening_cash",
-    "closing_cash",
-    "expected_cash",
-    "receipt_count",
-    "sale_count",
-    "return_count",
-    "gross_sales",
-    "returns_total",
-    "net_sales",
-    "sales_before_discount",
-    "discounts_total",
-    "review_discounts",
-    "other_discounts",
-    "discounted_receipt_count",
-    "discount_conversion",
-    "cash_sales",
-    "card_sales",
-    "qr_sales",
-    "average_check",
-    "reviews_count",
-    "club_registrations",
-    "gift_orders",
-    "gift_orders_1",
-    "gift_orders_2",
-    "gift_orders_3",
-    "card_commission_amount",
-    "qr_commission_amount",
-    "source",
-    "comment"
-  ],
-  "fields": [
-    {
-      "fieldname": "naming_series",
-      "fieldtype": "Select",
-      "label": "Серия",
-      "options": "SHIFT-.YYYY.-.#####",
-      "default": "SHIFT-.YYYY.-.#####",
-      "reqd": 1,
-      "hidden": 1
-    },
-    {
-      "fieldname": "external_id",
-      "fieldtype": "Data",
-      "label": "ID кассы",
-      "unique": 1,
-      "search_index": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "status",
-      "fieldtype": "Select",
-      "label": "Статус",
-      "options": "Open\nClosed\nCancelled",
-      "default": "Open",
-      "reqd": 1,
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "shift_type",
-      "fieldtype": "Select",
-      "label": "Тип смены",
-      "options": "Утро\nВечер",
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "opened_at",
-      "fieldtype": "Datetime",
-      "label": "Открыта",
-      "reqd": 1,
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "closed_at",
-      "fieldtype": "Datetime",
-      "label": "Закрыта",
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "business_entity",
-      "fieldtype": "Link",
-      "label": "ИП",
-      "options": "Business Entity",
-      "reqd": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "business_point",
-      "fieldtype": "Link",
-      "label": "Точка продаж",
-      "options": "Business Point",
-      "reqd": 1,
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "warehouse",
-      "fieldtype": "Link",
-      "label": "Склад",
-      "options": "Catalog Warehouse",
-      "reqd": 1
-    },
-    {
-      "fieldname": "cashier",
-      "fieldtype": "Link",
-      "label": "Кассир",
-      "options": "Employee",
-      "in_list_view": 1,
-      "in_standard_filter": 1
-    },
-    {
-      "fieldname": "opening_cash",
-      "fieldtype": "Currency",
-      "label": "Денег при открытии",
-      "default": "0"
-    },
-    {
-      "fieldname": "closing_cash",
-      "fieldtype": "Currency",
-      "label": "Денег при закрытии",
-      "default": "0"
-    },
-    {
-      "fieldname": "expected_cash",
-      "fieldtype": "Currency",
-      "label": "Расчётный остаток",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "receipt_count",
-      "fieldtype": "Int",
-      "label": "Чеков",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "sale_count",
-      "fieldtype": "Int",
-      "label": "Продаж",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "return_count",
-      "fieldtype": "Int",
-      "label": "Возвратов",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "gross_sales",
-      "fieldtype": "Currency",
-      "label": "Выручка",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "returns_total",
-      "fieldtype": "Currency",
-      "label": "Возвраты",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "net_sales",
-      "fieldtype": "Currency",
-      "label": "Чистая выручка",
-      "default": "0",
-      "read_only": 1,
-      "in_list_view": 1
-    },
-    {
-      "fieldname": "sales_before_discount",
-      "fieldtype": "Currency",
-      "label": "Выручка без скидок",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "discounts_total",
-      "fieldtype": "Currency",
-      "label": "Скидки",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "review_discounts",
-      "fieldtype": "Currency",
-      "label": "Скидка за отзывы",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "other_discounts",
-      "fieldtype": "Currency",
-      "label": "Прочие скидки",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "discounted_receipt_count",
-      "fieldtype": "Int",
-      "label": "Чеков со скидкой",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "discount_conversion",
-      "fieldtype": "Percent",
-      "label": "Конверсия скидки",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "cash_sales",
-      "fieldtype": "Currency",
-      "label": "Наличные",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "card_sales",
-      "fieldtype": "Currency",
-      "label": "Картой",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "qr_sales",
-      "fieldtype": "Currency",
-      "label": "По QR",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "average_check",
-      "fieldtype": "Currency",
-      "label": "Средний чек",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "reviews_count",
-      "fieldtype": "Int",
-      "label": "Отзывы",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "club_registrations",
-      "fieldtype": "Int",
-      "label": "Регистрации клуба",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "gift_orders",
-      "fieldtype": "Int",
-      "label": "Заказы подарков",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "gift_orders_1",
-      "fieldtype": "Int",
-      "label": "Подарки GIFT_1",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "gift_orders_2",
-      "fieldtype": "Int",
-      "label": "Подарки GIFT_2",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "gift_orders_3",
-      "fieldtype": "Int",
-      "label": "Подарки GIFT_3",
-      "default": "0",
-      "read_only": 1
-    },
-    {
-      "fieldname": "card_commission_amount",
-      "fieldtype": "Currency",
-      "label": "Комиссия эквайринга",
-      "default": "0"
-    },
-    {
-      "fieldname": "qr_commission_amount",
-      "fieldtype": "Currency",
-      "label": "Комиссия QR",
-      "default": "0"
-    },
-    {
-      "fieldname": "source",
-      "fieldtype": "Select",
-      "label": "Источник",
-      "options": "POS\nManual\nImport",
-      "default": "POS",
-      "reqd": 1,
-      "read_only": 1
-    },
-    {
-      "fieldname": "comment",
-      "fieldtype": "Small Text",
-      "label": "Комментарий"
-    }
-  ],
-  "permissions": [
-    {
-      "role": "System Manager",
-      "read": 1,
-      "write": 1,
-      "create": 1,
-      "delete": 1,
-      "report": 1,
-      "export": 1
-    }
-  ],
-  "sort_field": "opened_at",
-  "sort_order": "DESC"
+ "doctype": "DocType",
+ "name": "Sales Shift",
+ "module": "Raspechatka OS",
+ "autoname": "naming_series:",
+ "title_field": "name",
+ "track_changes": 1,
+ "field_order": [
+  "naming_series",
+  "external_id",
+  "status",
+  "shift_type",
+  "opened_at",
+  "closed_at",
+  "business_entity",
+  "business_point",
+  "warehouse",
+  "cashier",
+  "opening_cash",
+  "closing_cash",
+  "expected_cash",
+  "receipt_count",
+  "sale_count",
+  "return_count",
+  "gross_sales",
+  "returns_total",
+  "net_sales",
+  "sales_before_discount",
+  "discounts_total",
+  "review_discounts",
+  "other_discounts",
+  "discounted_receipt_count",
+  "discount_conversion",
+  "cash_sales",
+  "card_sales",
+  "qr_sales",
+  "average_check",
+  "reviews_count",
+  "club_registrations",
+  "gift_orders",
+  "gift_orders_1",
+  "gift_orders_2",
+  "gift_orders_3",
+  "card_commission_amount",
+  "qr_commission_amount",
+  "source",
+  "comment"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Серия",
+   "options": "SHIFT-.YYYY.-.#####",
+   "default": "SHIFT-.YYYY.-.#####",
+   "reqd": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "label": "ID кассы",
+   "unique": 1,
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Статус",
+   "options": "Open\nClosed\nCancelled",
+   "default": "Open",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "shift_type",
+   "fieldtype": "Select",
+   "label": "Тип смены",
+   "options": "Утро\nВечер",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "opened_at",
+   "fieldtype": "Datetime",
+   "label": "Открыта",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "closed_at",
+   "fieldtype": "Datetime",
+   "label": "Закрыта",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "business_entity",
+   "fieldtype": "Link",
+   "label": "ИП",
+   "options": "Business Entity",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_point",
+   "fieldtype": "Link",
+   "label": "Точка продаж",
+   "options": "Business Point",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Склад",
+   "options": "Catalog Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cashier",
+   "fieldtype": "Link",
+   "label": "Кассир",
+   "options": "Employee",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "opening_cash",
+   "fieldtype": "Currency",
+   "label": "Денег при открытии",
+   "default": "0"
+  },
+  {
+   "fieldname": "closing_cash",
+   "fieldtype": "Currency",
+   "label": "Денег при закрытии",
+   "default": "0"
+  },
+  {
+   "fieldname": "expected_cash",
+   "fieldtype": "Currency",
+   "label": "Расчётный остаток",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "receipt_count",
+   "fieldtype": "Int",
+   "label": "Чеков",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sale_count",
+   "fieldtype": "Int",
+   "label": "Продаж",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "return_count",
+   "fieldtype": "Int",
+   "label": "Возвратов",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gross_sales",
+   "fieldtype": "Currency",
+   "label": "Выручка",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "returns_total",
+   "fieldtype": "Currency",
+   "label": "Возвраты",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "net_sales",
+   "fieldtype": "Currency",
+   "label": "Чистая выручка",
+   "default": "0",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sales_before_discount",
+   "fieldtype": "Currency",
+   "label": "Выручка без скидок",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discounts_total",
+   "fieldtype": "Currency",
+   "label": "Скидки",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_discounts",
+   "fieldtype": "Currency",
+   "label": "Скидка за отзывы",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "other_discounts",
+   "fieldtype": "Currency",
+   "label": "Прочие скидки",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discounted_receipt_count",
+   "fieldtype": "Int",
+   "label": "Чеков со скидкой",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discount_conversion",
+   "fieldtype": "Percent",
+   "label": "Конверсия скидки",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cash_sales",
+   "fieldtype": "Currency",
+   "label": "Наличные",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "card_sales",
+   "fieldtype": "Currency",
+   "label": "Картой",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qr_sales",
+   "fieldtype": "Currency",
+   "label": "По QR",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "average_check",
+   "fieldtype": "Currency",
+   "label": "Средний чек",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviews_count",
+   "fieldtype": "Int",
+   "label": "Отзывы",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "club_registrations",
+   "fieldtype": "Int",
+   "label": "Регистрации клуба",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gift_orders",
+   "fieldtype": "Int",
+   "label": "Заказы подарков",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gift_orders_1",
+   "fieldtype": "Int",
+   "label": "Подарки GIFT_1",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gift_orders_2",
+   "fieldtype": "Int",
+   "label": "Подарки GIFT_2",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gift_orders_3",
+   "fieldtype": "Int",
+   "label": "Подарки GIFT_3",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "card_commission_amount",
+   "fieldtype": "Currency",
+   "label": "Комиссия эквайринга",
+   "default": "0"
+  },
+  {
+   "fieldname": "qr_commission_amount",
+   "fieldtype": "Currency",
+   "label": "Комиссия QR",
+   "default": "0"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Источник",
+   "options": "POS\nMoySklad\nManual\nImport",
+   "default": "POS",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "comment",
+   "fieldtype": "Small Text",
+   "label": "Комментарий"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "opened_at",
+ "sort_order": "DESC"
 }
+
