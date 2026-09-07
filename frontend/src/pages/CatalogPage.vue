@@ -163,6 +163,35 @@ async function saveGroup() {
   }
 }
 
+async function changeItemArchiveState() {
+  if (!itemForm.name) return;
+  const archiving = Boolean(itemForm.active);
+  if (archiving && !window.confirm("Перенести позицию в архив? Исторические документы сохранятся.")) return;
+  saving.value = true; editorError.value = "";
+  try {
+    const method = archiving ? "archive_catalog_item" : "restore_catalog_item";
+    await call(`raspechatka.api.frontend.${method}`, { name: itemForm.name }, { method: "POST" });
+    await loadItems();
+    await loadEditor(itemForm.name);
+  } catch (exception) { editorError.value = exception.message; }
+  finally { saving.value = false; }
+}
+
+async function changeGroupArchiveState() {
+  if (!groupForm.name) return;
+  const archiving = Boolean(groupForm.active);
+  if (archiving && !window.confirm("Перенести группу и все вложенные позиции в архив?")) return;
+  groupSaving.value = true; groupError.value = "";
+  try {
+    const method = archiving ? "archive_catalog_group" : "restore_catalog_group";
+    await call(`raspechatka.api.frontend.${method}`, { name: groupForm.name }, { method: "POST" });
+    groupEditorOpen.value = false;
+    filters.catalog_group = "";
+    await loadWorkspace();
+  } catch (exception) { groupError.value = exception.message; }
+  finally { groupSaving.value = false; }
+}
+
 function addPrice() { (itemForm.prices ||= []).push({ price_type: itemOptions.price_types[0]?.name || "", rate: 0, minimum_quantity: 1 }); }
 function addBarcode() { (itemForm.barcodes ||= []).push({ barcode: "", barcode_type: "EAN-13", uom: itemForm.stock_uom, quantity: 1 }); }
 function addRow(table, row) { (itemForm[table] ||= []).push(row); }
@@ -200,18 +229,18 @@ async function initializeCatalog(size) {
         <div class="form-section"><div class="form-grid">
           <label class="span-2">Название<input v-model="groupForm.group_name" required autofocus /></label>
           <label>Родительская группа<select v-model="groupForm.parent_catalog_group"><option value="">Верхний уровень</option><option v-for="g in groups.filter(g => g.name !== groupForm.name)" :key="g.name" :value="g.name">{{ g.group_name }}</option></select></label>
-          <label class="check-field"><input v-model="groupForm.active" type="checkbox" :true-value="1" :false-value="0" /> Активна</label>
+          
           <label class="span-3">Описание<textarea v-model="groupForm.description" rows="3"></textarea></label>
         </div></div>
         <p v-if="groupError" class="form-error">{{ groupError }}</p>
       </form>
-      <template #footer><span></span><div class="footer-actions"><button class="button button-secondary" @click="groupEditorOpen=false">Отмена</button><button class="button button-primary" :disabled="groupSaving" @click="saveGroup">{{groupSaving?'Сохраняем…':'Сохранить группу'}}</button></div></template>
+      <template #footer><button v-if="groupForm.name && canEdit" class="button button-secondary" :disabled="groupSaving" @click="changeGroupArchiveState">{{ groupForm.active ? "В архив" : "Восстановить" }}</button><div class="footer-actions"><button class="button button-secondary" @click="groupEditorOpen=false">Отмена</button><button class="button button-primary" :disabled="groupSaving" @click="saveGroup">{{groupSaving?'Сохраняем…':'Сохранить группу'}}</button></div></template>
     </AppModal>
     <AppModal v-if="editorOpen" :title="itemForm.item_name || 'Новая позиция'" wide @close="editorOpen = false">
       <form class="editor-form catalog-editor" @submit.prevent="saveItem">
         <div class="form-section"><h3>Основное</h3><div class="form-grid">
           <label>Тип<select v-model="itemForm.item_type"><option value="Product">Товар</option><option value="Service">Услуга</option><option value="Bundle">Комплект</option></select></label>
-          <label>Код<input v-model="itemForm.item_code" required /></label><label class="check-field"><input v-model="itemForm.active" type="checkbox" :true-value="1" :false-value="0" /> Активен</label>
+          <label>Код<input v-model="itemForm.item_code" required /></label>
           <label class="span-2">Наименование<input v-model="itemForm.item_name" required /></label><label>Артикул<input v-model="itemForm.article" /></label>
           <label>Группа<select v-model="itemForm.catalog_group"><option value="">Не выбрана</option><option v-for="g in itemOptions.groups" :key="g.name" :value="g.name">{{g.group_name}}</option></select></label>
           <label>Единица<select v-model="itemForm.stock_uom" required><option v-for="u in itemOptions.units" :key="u.name" :value="u.name">{{u.unit_name}}</option></select></label>
@@ -231,7 +260,7 @@ async function initializeCatalog(size) {
         <div class="form-section"><h3>Налоги и касса</h3><div class="form-grid"><label>НДС<select v-model="itemForm.vat_rate"><option>Без НДС</option><option>0%</option><option>5%</option><option>7%</option><option>10%</option><option>18%</option><option>20%</option><option>22%</option></select></label><label>Система налогообложения<select v-model="itemForm.tax_system"><option>По настройке точки</option><option>ОСН</option><option>УСН Доход</option><option>УСН Доход минус расход</option><option>Патент</option></select></label><label>Предмет расчёта<select v-model="itemForm.receipt_subject"><option>Товар</option><option>Подакцизный товар</option><option>Работа</option><option>Услуга</option><option>Платёж</option><option>Иное</option></select></label></div></div>
         <p v-if="editorError" class="form-error">{{editorError}}</p>
       </form>
-      <template #footer><span></span><div class="footer-actions"><button class="button button-secondary" @click="editorOpen=false">Закрыть</button><button v-if="canEdit" class="button button-primary" :disabled="saving" @click="saveItem">{{saving?'Сохраняем…':'Сохранить'}}</button></div></template>
+      <template #footer><button v-if="itemForm.name && canEdit" class="button button-secondary" :disabled="saving" @click="changeItemArchiveState">{{ itemForm.active ? "В архив" : "Восстановить" }}</button><div class="footer-actions"><button class="button button-secondary" @click="editorOpen=false">Закрыть</button><button v-if="canEdit && itemForm.active !== 0" class="button button-primary" :disabled="saving" @click="saveItem">{{saving?'Сохраняем…':'Сохранить'}}</button></div></template>
     </AppModal>
   </section>
 </template>
