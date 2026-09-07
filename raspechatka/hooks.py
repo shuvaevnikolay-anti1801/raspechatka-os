@@ -166,6 +166,7 @@ scheduler_events = {
 	"cron": {
 		"*/5 * * * *": [
 			"raspechatka.api.tochka.sync_enabled_connections",
+			"raspechatka.api.moysklad_sales.sync_enabled_sales",
 		]
 	}
 }
@@ -275,4 +276,3 @@ scheduler_events = {
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
