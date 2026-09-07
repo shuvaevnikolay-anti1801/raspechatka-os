@@ -67,8 +67,8 @@ async function loadItems() {
   }
 }
 
-async function loadFilters() {
-  const result = await call("raspechatka.api.frontend.get_catalog_filters");
+async function loadFilters(includeArchived = filters.active === "0") {
+  const result = await call("raspechatka.api.frontend.get_catalog_filters", { include_archived: includeArchived ? 1 : 0 });
   groups.value = result.groups || [];
   points.value = result.business_points || [];
 }
@@ -119,6 +119,7 @@ async function saveItem() {
 
 async function applyCatalogFilters() {
   catalogPage.value = 1;
+  await loadFilters();
   await loadItems();
 }
 
