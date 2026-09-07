@@ -179,6 +179,37 @@ async function startSalesSync(full = false) {
   }
 }
 
+
+async function startSalesRecovery() {
+  await saveSalesSettings();
+  if (error.value) return;
+  busy.value = "recover-sales";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_sales.start_sales_recovery",
+      {},
+      { method: "POST" }
+    );
+    if (!result.queued) {
+      const reasons = {
+        token_missing: "Сначала сохраните токен МойСклад",
+        point_mapping_missing: "Сначала сопоставьте точку продаж",
+        already_running: "Синхронизация уже выполняется",
+      };
+      throw new Error(
+        reasons[result.reason] || "Не удалось запустить восстановление"
+      );
+    }
+    notice.value =
+      "Каталог и вся история с 1 июля поставлены в очередь. Чеки переносить вручную не потребуется.";
+    await load();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
 async function refreshRunningSync() {
   if (!["Queued", "Running"].includes(salesSync.value.status)) return;
   try {
@@ -425,6 +456,17 @@ onUnmounted(() => window.clearInterval(statusTimer));
                 : "Загрузить историю с 1 июля"
             }}
           </button>
+          <button
+            class="button"
+            :disabled="Boolean(busy)"
+            @click="startSalesRecovery"
+          >
+            {{
+              busy === "recover-sales"
+                ? "Восстанавливаем…"
+                : "Восстановить каталог и историю"
+            }}
+          </button>
         </div>
 
         <dl class="sync-summary">
@@ -445,6 +487,13 @@ onUnmounted(() => window.clearInterval(statusTimer));
             <dd>{{ salesSync.stats?.failed || 0 }}</dd>
           </div>
         </dl>
+
+        <p class="field-hint recovery-hint">
+          Если часть истории не загрузилась из-за старых связей товаров, используйте
+          восстановление: система сначала приведёт каталог в соответствие, затем
+          автоматически повторит импорт всей истории.
+        </p>
+
         <p v-if="salesSync.error" class="last-error">{{ salesSync.error }}</p>
       </article>
 
@@ -725,6 +774,15 @@ input[type="text"] {
   margin: 4px 0 0;
   font-weight: 650;
 }
+.recovery-hint {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f6f8f4;
+  color: #657064;
+  line-height: 1.5;
+}
+
 .preview-time {
   font-size: 12px;
   color: #8a9187;

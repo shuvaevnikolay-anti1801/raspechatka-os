@@ -17,7 +17,13 @@ from frappe.utils import cint, flt, get_datetime, now_datetime
 from raspechatka.access import require_access
 from raspechatka.sales import update_shift_totals
 
-from raspechatka.api.moysklad import MoySkladRequestError, _ref_id, _request
+from raspechatka.api.moysklad import (
+	MoySkladCatalogImportError,
+	MoySkladRequestError,
+	_ref_id,
+	_request,
+	_sync_catalog,
+)
 
 HISTORY_START = "2026-07-01"
 JOB_NAME = "raspechatka-moysklad-sales-sync"
@@ -35,6 +41,7 @@ ENDPOINTS = (
 def get_sales_sync_settings():
 	require_access("settings.access", "admin")
 	settings = frappe.get_single("MoySklad Settings")
+	stats = _load_json(settings.sales_sync_stats_json)
 	return {
 		"enabled": bool(settings.sales_sync_enabled),
 		"sync_from": str(settings.sales_sync_from or HISTORY_START),
@@ -42,7 +49,7 @@ def get_sales_sync_settings():
 		"status": settings.sales_sync_status or "Idle",
 		"last_sync_at": settings.last_sales_sync_at,
 		"error": settings.sales_sync_error,
-		"stats": _load_json(settings.sales_sync_stats_json),
+		"stats": stats,
 		"points": frappe.get_all(
 			"Business Point",
 			filters={"active": 1},
@@ -113,6 +120,53 @@ def save_sales_sync_settings(data):
 def start_sales_sync(full=0):
 	require_access("settings.access", "admin")
 	return enqueue_sales_sync(full=bool(cint(full)))
+
+@frappe.whitelist(methods=["POST"])
+def start_sales_recovery():
+	"""Rebuild catalog links and then safely replay all retail history."""
+	require_access("settings.access", "admin")
+	settings = frappe.get_single("MoySklad Settings")
+	if not settings.get_password("access_token", raise_exception=False):
+		return {"queued": False, "reason": "token_missing"}
+	if settings.sales_sync_status in ("Queued", "Running"):
+		return {"queued": False, "reason": "already_running"}
+	if not frappe.db.exists("Business Point", {"moysklad_retail_store_id": ["!=", ""], "active": 1}):
+		return {"queued": False, "reason": "point_mapping_missing"}
+	settings.sales_sync_status = "Queued"
+	settings.sales_sync_error = None
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.enqueue(
+		"raspechatka.api.moysklad_sales.run_sales_recovery",
+		queue="long",
+		job_name=f"{JOB_NAME}-recovery",
+		timeout=7200,
+	)
+	return {"queued": True, "full": True}
+
+
+def run_sales_recovery():
+	"""Make item links complete before re-importing sales from 1 July."""
+	settings = frappe.get_single("MoySklad Settings")
+	catalog_stats = {}
+	try:
+		catalog_stats = _sync_catalog(settings)
+	except MoySkladCatalogImportError as exc:
+		# Good records were saved by the catalog synchronizer. Continue with them
+		# so one malformed catalog card cannot block the whole sales history.
+		catalog_stats = exc.stats
+		catalog_stats["completed_with_warnings"] = 1
+	except Exception as exc:
+		catalog_stats = {"error": str(exc)[:500]}
+		frappe.log_error(frappe.get_traceback(), "MoySklad catalog recovery")
+
+	sales_stats = run_sales_sync(full=True)
+	sales_stats["catalog_recovery"] = catalog_stats
+	settings = frappe.get_single("MoySklad Settings")
+	settings.sales_sync_stats_json = json.dumps(sales_stats, ensure_ascii=False)
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	return sales_stats
 
 
 def enqueue_sales_sync(full=False):
