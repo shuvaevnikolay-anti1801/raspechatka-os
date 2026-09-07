@@ -2,6 +2,7 @@
 
 import json
 from collections import defaultdict
+from time import sleep
 from urllib.parse import urljoin
 
 import frappe
@@ -14,6 +15,7 @@ from raspechatka.access import require_access
 
 API_BASE = "https://api.moysklad.ru/api/remap/1.2/"
 DEFAULT_TIMEOUT = 30
+REQUEST_ATTEMPTS = 4
 PAGE_SIZE = 100
 MIN_SYNC_INTERVAL = 15
 MAX_SYNC_INTERVAL = 1440
@@ -38,6 +40,12 @@ class MoySkladRequestError(Exception):
 	def __init__(self, message, status_code=None):
 		super().__init__(message)
 		self.status_code = status_code
+
+
+class MoySkladCatalogImportError(Exception):
+	def __init__(self, message, stats):
+		super().__init__(message)
+		self.stats = stats
 
 
 @frappe.whitelist()
@@ -136,6 +144,8 @@ def run_catalog_sync():
 		doc.catalog_sync_status = "Error"
 		doc.catalog_sync_error = str(exc)[:2000]
 		doc.last_error = str(exc)[:2000]
+		if isinstance(exc, MoySkladCatalogImportError):
+			doc.catalog_sync_stats_json = json.dumps(exc.stats, ensure_ascii=False)
 		doc.status = "Error"
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -163,11 +173,17 @@ def _sync_catalog(settings):
 	price_type_map = _sync_price_types(products + services + bundles + variants, stats)
 	supplier_map = _sync_suppliers(products + services + bundles, counterparties, stats)
 
+	stats["source_items"] = len(products) + len(services) + len(bundles) + len(variants)
 	item_map = {}
+	item_errors = []
 	deferred_bundles = []
 	for item_type, rows in (("Product", products), ("Service", services), ("Bundle", bundles)):
 		for row in rows:
-			name = _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_map, stats)
+			name = _safe_upsert_item(
+				row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, item_errors
+			)
+			if not name:
+				continue
 			item_map[row.get("id")] = name
 			if item_type == "Bundle":
 				deferred_bundles.append((name, row))
@@ -175,7 +191,7 @@ def _sync_catalog(settings):
 
 	for row in variants:
 		parent_id = _ref_id(row.get("product"))
-		name = _upsert_item(
+		name = _safe_upsert_item(
 			row,
 			"Product",
 			group_map,
@@ -183,8 +199,11 @@ def _sync_catalog(settings):
 			price_type_map,
 			supplier_map,
 			stats,
+			item_errors,
 			variant_of=item_map.get(parent_id),
 		)
+		if not name:
+			continue
 		item_map[row.get("id")] = name
 		_commit_periodically(stats["items"])
 
@@ -198,8 +217,18 @@ def _sync_catalog(settings):
 				_ref_id(variant.get("product")) == source_id for variant in variants
 			)), update_modified=False)
 
+	stats["database_items"] = frappe.db.count("Catalog Item", {"moysklad_id": ["!=", ""]})
+	stats["database_groups"] = frappe.db.count("Catalog Group", {"moysklad_id": ["!=", ""]})
+	result = dict(stats)
+	if item_errors:
+		result["error_samples"] = item_errors[:20]
+		frappe.db.commit()
+		raise MoySkladCatalogImportError(
+			_("Перенос завершён с ошибками в {0} позициях; остальные данные сохранены").format(len(item_errors)),
+			result,
+		)
 	frappe.db.commit()
-	return dict(stats)
+	return result
 
 
 def _sync_groups(rows, stats):
@@ -310,6 +339,34 @@ def _sync_suppliers(rows, counterparties, stats):
 		result[source_id] = doc.name
 		stats["suppliers"] += 1
 	return result
+
+
+def _safe_upsert_item(
+	row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, errors, variant_of=None
+):
+	save_point = f"moysklad_item_{stats['items'] + stats['item_errors'] + 1}"
+	frappe.db.savepoint(save_point)
+	try:
+		return _upsert_item(
+			row,
+			item_type,
+			group_map,
+			unit_map,
+			price_type_map,
+			supplier_map,
+			stats,
+			variant_of=variant_of,
+		)
+	except Exception as exc:
+		frappe.db.rollback(save_point=save_point)
+		stats["item_errors"] += 1
+		errors.append({
+			"id": row.get("id"),
+			"name": row.get("name"),
+			"type": item_type,
+			"error": str(exc)[:500],
+		})
+		return None
 
 
 def _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, variant_of=None):
@@ -424,25 +481,59 @@ def _request(doc, endpoint, params=None):
 	token = doc.get_password("access_token", raise_exception=False)
 	if not token:
 		raise MoySkladRequestError(_("Сохраните токен МоегоСклада"))
-	try:
-		response = requests.get(
-			urljoin(API_BASE, endpoint),
-			headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "gzip", "User-Agent": "Raspechatka-OS/1.0"},
-			params=params,
-			timeout=DEFAULT_TIMEOUT,
-		)
-	except requests.Timeout as exc:
-		raise MoySkladRequestError(_("МойСклад не ответил за отведённое время")) from exc
-	except requests.RequestException as exc:
-		raise MoySkladRequestError(_("Не удалось соединиться с МоимСкладом")) from exc
-	if not response.ok:
-		messages = {401: _("Токен МоегоСклада недействителен"), 403: _("У токена нет доступа к этим данным МоегоСклада"), 404: _("Раздел данных не поддерживается аккаунтом МоегоСклада"), 429: _("МойСклад временно ограничил число запросов. Повторите позже")}
-		raise MoySkladRequestError(messages.get(response.status_code, _("МойСклад вернул ошибку {0}").format(response.status_code)), response.status_code)
-	try:
-		return response.json()
-	except ValueError as exc:
-		raise MoySkladRequestError(_("МойСклад вернул некорректный ответ")) from exc
 
+	last_error = None
+	for attempt in range(REQUEST_ATTEMPTS):
+		try:
+			response = requests.get(
+				urljoin(API_BASE, endpoint),
+				headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "gzip", "User-Agent": "Raspechatka-OS/1.0"},
+				params=params,
+				timeout=DEFAULT_TIMEOUT,
+			)
+		except requests.Timeout as exc:
+			last_error = MoySkladRequestError(_("МойСклад не ответил за отведённое время"))
+			if attempt == REQUEST_ATTEMPTS - 1:
+				raise last_error from exc
+			sleep(_retry_delay(attempt))
+			continue
+		except requests.RequestException as exc:
+			last_error = MoySkladRequestError(_("Не удалось соединиться с МоимСкладом"))
+			if attempt == REQUEST_ATTEMPTS - 1:
+				raise last_error from exc
+			sleep(_retry_delay(attempt))
+			continue
+
+		if response.ok:
+			try:
+				return response.json()
+			except ValueError as exc:
+				raise MoySkladRequestError(_("МойСклад вернул некорректный ответ")) from exc
+
+		messages = {
+			401: _("Токен МоегоСклада недействителен"),
+			403: _("У токена нет доступа к этим данным МоегоСклада"),
+			404: _("Раздел данных не поддерживается аккаунтом МоегоСклада"),
+			429: _("МойСклад временно ограничил число запросов"),
+		}
+		last_error = MoySkladRequestError(
+			messages.get(response.status_code, _("МойСклад вернул ошибку {0}").format(response.status_code)),
+			response.status_code,
+		)
+		if response.status_code != 429 and response.status_code < 500:
+			raise last_error
+		if attempt == REQUEST_ATTEMPTS - 1:
+			raise last_error
+		sleep(_retry_delay(attempt, response.headers.get("Retry-After")))
+
+	raise last_error or MoySkladRequestError(_("Не удалось получить ответ МоегоСклада"))
+
+
+def _retry_delay(attempt, retry_after=None):
+	try:
+		return min(30.0, max(0.0, float(retry_after)))
+	except (TypeError, ValueError):
+		return min(8, 2**attempt)
 
 def _safe_settings(doc):
 	preview = _load_json(doc.last_preview_json)

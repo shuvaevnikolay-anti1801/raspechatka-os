@@ -45,7 +45,8 @@ export async function call(method, params = {}, options = {}) {
       const response = await fetch(url, request);
       const payload = await response.json().catch(() => ({}));
       if (response.ok && !payload.exc_type) return payload.message;
-      const error = new Error(payload.message || payload._server_messages || "Ошибка запроса к серверу");
+      const fallback = response.status ? `Ошибка запроса к серверу (HTTP ${response.status})` : "Ошибка запроса к серверу";
+      const error = new Error(payload.message || payload._server_messages || fallback);
       if (response.status < 500 || attempt === attempts - 1) throw error;
       lastError = error;
     } catch (error) {

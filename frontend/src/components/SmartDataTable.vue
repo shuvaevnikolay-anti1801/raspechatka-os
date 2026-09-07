@@ -12,7 +12,7 @@ const props = defineProps({
   totalRows: { type: Number, default: 0 },
   currentPage: { type: Number, default: 1 },
 });
-const emit = defineEmits(["open", "retry", "selection-change", "page-change", "page-size-change"]);
+const emit = defineEmits(["open", "retry", "selection-change", "page-change", "page-size-change", "ready"]);
 const selected = ref([]), selectedRows = ref([]), widths = ref({}), settingsOpen = ref(false), page = ref(1), pageSize = ref(25), ready = ref(false), sort = ref({ key: "", direction: "asc" });
 const pageSizes = [25, 50, 100];
 const preferenceKey = computed(() => `${props.viewKey}.table`);
@@ -55,7 +55,7 @@ async function loadPreference() {
     if (valid.length) selected.value = valid;
     widths.value = preference.widths || {};
     if (pageSizes.includes(Number(preference.pageSize))) pageSize.value = Number(preference.pageSize);
-  } catch (_) {} finally { ready.value = true; if (props.serverPagination) emit("page-size-change", pageSize.value); }
+  } catch (_) {} finally { ready.value = true; emit("ready", pageSize.value); }
 }
 async function toggleColumn(key) {
   selected.value = selected.value.includes(key) ? (selected.value.length > 1 ? selected.value.filter((item) => item !== key) : selected.value) : [...selected.value, key]; await savePreference();
