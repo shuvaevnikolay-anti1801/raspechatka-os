@@ -42,6 +42,12 @@ class MoySkladRequestError(Exception):
 		self.status_code = status_code
 
 
+class MoySkladCatalogImportError(Exception):
+	def __init__(self, message, stats):
+		super().__init__(message)
+		self.stats = stats
+
+
 @frappe.whitelist()
 def get_settings():
 	require_access("settings.access", "admin")
@@ -138,6 +144,8 @@ def run_catalog_sync():
 		doc.catalog_sync_status = "Error"
 		doc.catalog_sync_error = str(exc)[:2000]
 		doc.last_error = str(exc)[:2000]
+		if isinstance(exc, MoySkladCatalogImportError):
+			doc.catalog_sync_stats_json = json.dumps(exc.stats, ensure_ascii=False)
 		doc.status = "Error"
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -165,11 +173,17 @@ def _sync_catalog(settings):
 	price_type_map = _sync_price_types(products + services + bundles + variants, stats)
 	supplier_map = _sync_suppliers(products + services + bundles, counterparties, stats)
 
+	stats["source_items"] = len(products) + len(services) + len(bundles) + len(variants)
 	item_map = {}
+	item_errors = []
 	deferred_bundles = []
 	for item_type, rows in (("Product", products), ("Service", services), ("Bundle", bundles)):
 		for row in rows:
-			name = _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_map, stats)
+			name = _safe_upsert_item(
+				row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, item_errors
+			)
+			if not name:
+				continue
 			item_map[row.get("id")] = name
 			if item_type == "Bundle":
 				deferred_bundles.append((name, row))
@@ -177,7 +191,7 @@ def _sync_catalog(settings):
 
 	for row in variants:
 		parent_id = _ref_id(row.get("product"))
-		name = _upsert_item(
+		name = _safe_upsert_item(
 			row,
 			"Product",
 			group_map,
@@ -185,8 +199,11 @@ def _sync_catalog(settings):
 			price_type_map,
 			supplier_map,
 			stats,
+			item_errors,
 			variant_of=item_map.get(parent_id),
 		)
+		if not name:
+			continue
 		item_map[row.get("id")] = name
 		_commit_periodically(stats["items"])
 
@@ -200,8 +217,18 @@ def _sync_catalog(settings):
 				_ref_id(variant.get("product")) == source_id for variant in variants
 			)), update_modified=False)
 
+	stats["database_items"] = frappe.db.count("Catalog Item", {"moysklad_id": ["!=", ""]})
+	stats["database_groups"] = frappe.db.count("Catalog Group", {"moysklad_id": ["!=", ""]})
+	result = dict(stats)
+	if item_errors:
+		result["error_samples"] = item_errors[:20]
+		frappe.db.commit()
+		raise MoySkladCatalogImportError(
+			_("Перенос завершён с ошибками в {0} позициях; остальные данные сохранены").format(len(item_errors)),
+			result,
+		)
 	frappe.db.commit()
-	return dict(stats)
+	return result
 
 
 def _sync_groups(rows, stats):
@@ -312,6 +339,34 @@ def _sync_suppliers(rows, counterparties, stats):
 		result[source_id] = doc.name
 		stats["suppliers"] += 1
 	return result
+
+
+def _safe_upsert_item(
+	row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, errors, variant_of=None
+):
+	save_point = f"moysklad_item_{stats['items'] + stats['item_errors'] + 1}"
+	frappe.db.savepoint(save_point)
+	try:
+		return _upsert_item(
+			row,
+			item_type,
+			group_map,
+			unit_map,
+			price_type_map,
+			supplier_map,
+			stats,
+			variant_of=variant_of,
+		)
+	except Exception as exc:
+		frappe.db.rollback(save_point=save_point)
+		stats["item_errors"] += 1
+		errors.append({
+			"id": row.get("id"),
+			"name": row.get("name"),
+			"type": item_type,
+			"error": str(exc)[:500],
+		})
+		return None
 
 
 def _upsert_item(row, item_type, group_map, unit_map, price_type_map, supplier_map, stats, variant_of=None):
