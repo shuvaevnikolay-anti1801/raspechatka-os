@@ -300,6 +300,10 @@ def _apply_safely(kind, row, context):
 		failure_key = _failure_key(exc)
 		failure_reasons = stats.setdefault("failure_reasons", {})
 		failure_reasons[failure_key] = failure_reasons.get(failure_key, 0) + 1
+		if failure_key == "other":
+			detail = _failure_detail(exc)
+			other_reasons = stats.setdefault("other_failure_reasons", {})
+			other_reasons[detail] = other_reasons.get(detail, 0) + 1
 		if len(stats["errors"]) < 30:
 			stats["errors"].append(
 				{
@@ -634,11 +638,26 @@ def _failure_summary(stats):
 		"other": "Прочие данные МоегоСклада",
 	}
 	reasons = (stats or {}).get("failure_reasons") or {}
-	return [
-		{"key": key, "label": labels.get(key, labels["other"]), "count": count}
-		for key, count in sorted(reasons.items(), key=lambda item: (-item[1], item[0]))
-		if count
-	]
+	summary = []
+	for key, count in sorted(reasons.items(), key=lambda item: (-item[1], item[0])):
+		if not count:
+			continue
+		row = {"key": key, "label": labels.get(key, labels["other"]), "count": count}
+		if key == "other":
+			details = (stats or {}).get("other_failure_reasons") or {}
+			row["details"] = [
+				{"label": message, "count": detail_count}
+				for message, detail_count in sorted(
+					details.items(), key=lambda item: (-item[1], item[0])
+				)
+				if detail_count
+			]
+		summary.append(row)
+	return summary
+
+
+def _failure_detail(exc):
+	return " ".join(str(exc).split())[:300] or _("Неизвестная ошибка")
 
 
 def _load_json(value):
