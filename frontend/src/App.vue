@@ -54,6 +54,7 @@ const submenus = {
 		{ label: "Взаиморасчёты", to: "/finance/settlements", area: "finance.reporting" },
 		{ label: "Прибыльность", to: "/finance/profitability", area: "finance.reporting" },
 		{ label: "Точка Банк", to: "/finance/tochka", area: "finance.bank" },
+		{ label: "Настройки", to: "/finance/settings", area: "finance.operations", minimum: "Admin" },
 	],
 	references: [
 		{ label: "Партнёры", to: "/references/organizations", area: "references.network" },
@@ -62,7 +63,6 @@ const submenus = {
 		{ label: "Склады", to: "/references/warehouses", area: "references.storage" },
 		{ label: "Поставщики", to: "/references/suppliers", area: "references.suppliers" },
 		{ label: "Пользователи", to: "/references/users", area: "settings.access", minimum: "Admin" },
-		{ label: "Финансовые статьи", to: "/references/financial-articles", area: "references.finance" },
 		{ label: "МойСклад", to: "/settings/moysklad", area: "settings.access", minimum: "Admin" },
 		{ label: "Права доступа", to: "/settings/access", area: "settings.access", minimum: "Admin" },
 	],
