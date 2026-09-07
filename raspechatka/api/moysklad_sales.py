@@ -17,7 +17,13 @@ from frappe.utils import cint, flt, get_datetime, now_datetime
 from raspechatka.access import require_access
 from raspechatka.sales import update_shift_totals
 
-from raspechatka.api.moysklad import MoySkladRequestError, _ref_id, _request
+from raspechatka.api.moysklad import (
+	MoySkladCatalogImportError,
+	MoySkladRequestError,
+	_ref_id,
+	_request,
+	_sync_catalog,
+)
 
 HISTORY_START = "2026-07-01"
 JOB_NAME = "raspechatka-moysklad-sales-sync"
@@ -44,7 +50,6 @@ def get_sales_sync_settings():
 		"last_sync_at": settings.last_sales_sync_at,
 		"error": settings.sales_sync_error,
 		"stats": stats,
-		"error_examples": _error_examples(stats),
 		"points": frappe.get_all(
 			"Business Point",
 			filters={"active": 1},
@@ -115,6 +120,53 @@ def save_sales_sync_settings(data):
 def start_sales_sync(full=0):
 	require_access("settings.access", "admin")
 	return enqueue_sales_sync(full=bool(cint(full)))
+
+@frappe.whitelist(methods=["POST"])
+def start_sales_recovery():
+	"""Rebuild catalog links and then safely replay all retail history."""
+	require_access("settings.access", "admin")
+	settings = frappe.get_single("MoySklad Settings")
+	if not settings.get_password("access_token", raise_exception=False):
+		return {"queued": False, "reason": "token_missing"}
+	if settings.sales_sync_status in ("Queued", "Running"):
+		return {"queued": False, "reason": "already_running"}
+	if not frappe.db.exists("Business Point", {"moysklad_retail_store_id": ["!=", ""], "active": 1}):
+		return {"queued": False, "reason": "point_mapping_missing"}
+	settings.sales_sync_status = "Queued"
+	settings.sales_sync_error = None
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.enqueue(
+		"raspechatka.api.moysklad_sales.run_sales_recovery",
+		queue="long",
+		job_name=f"{JOB_NAME}-recovery",
+		timeout=7200,
+	)
+	return {"queued": True, "full": True}
+
+
+def run_sales_recovery():
+	"""Make item links complete before re-importing sales from 1 July."""
+	settings = frappe.get_single("MoySklad Settings")
+	catalog_stats = {}
+	try:
+		catalog_stats = _sync_catalog(settings)
+	except MoySkladCatalogImportError as exc:
+		# Good records were saved by the catalog synchronizer. Continue with them
+		# so one malformed catalog card cannot block the whole sales history.
+		catalog_stats = exc.stats
+		catalog_stats["completed_with_warnings"] = 1
+	except Exception as exc:
+		catalog_stats = {"error": str(exc)[:500]}
+		frappe.log_error(frappe.get_traceback(), "MoySklad catalog recovery")
+
+	sales_stats = run_sales_sync(full=True)
+	sales_stats["catalog_recovery"] = catalog_stats
+	settings = frappe.get_single("MoySklad Settings")
+	settings.sales_sync_stats_json = json.dumps(sales_stats, ensure_ascii=False)
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	return sales_stats
 
 
 def enqueue_sales_sync(full=False):
@@ -555,37 +607,3 @@ def _load_json(value):
 		return json.loads(value) if value else {}
 	except (TypeError, ValueError):
 		return {}
-
-
-def _error_examples(stats):
-	return [
-		{
-			**row,
-			"type_label": {
-				"shifts": "Смена",
-				"sales": "Продажа",
-				"returns": "Возврат",
-				"cash_in": "Внесение",
-				"cash_out": "Выплата",
-			}.get(row.get("type"), "Документ"),
-			"action": _error_action(row.get("error")),
-		}
-		for row in (stats.get("errors") or [])
-	]
-
-
-def _error_action(error):
-	error = error or ""
-	if "Не сопоставлена позиция МойСклада" in error:
-		return _("Сопоставьте этот товар с товаром каталога в Распечатка OS.")
-	if "Не найдена смена" in error:
-		return _("Проверьте, что смена загружена и её точка сопоставлена.")
-	if "активный склад" in error:
-		return _("Создайте или включите склад, привязанный к этой точке.")
-	if "разбивку оплаты" in error:
-		return _("Проверьте суммы и типы оплат в исходном чеке МойСклада.")
-	if "нет позиций" in error:
-		return _("Проверьте позиции в исходном документе МойСклада.")
-	if "отсутствует дата" in error or "без ID" in error:
-		return _("Исправьте неполные данные в исходном документе МойСклада.")
-	return _("Проверьте исходный документ и повторите полную загрузку после исправления.")
