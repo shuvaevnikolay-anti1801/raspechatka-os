@@ -474,7 +474,19 @@ def _load_bundle_details(settings, row):
 	if _bundle_components(row):
 		return row
 	source_id = row.get("id")
-	return _request(settings, f"entity/bundle/{source_id}") if source_id else row
+	if not source_id:
+		return row
+
+	# Components are a separate MetaArray resource in MoySklad. The bundle
+	# card may contain only its metadata even when requested by ID.
+	payload = _request(
+		settings,
+		f"entity/bundle/{source_id}/components",
+		params={"limit": 1000, "offset": 0},
+	)
+	result = dict(row)
+	result["components"] = payload
+	return result
 
 
 def _bundle_components(row):
