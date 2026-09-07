@@ -85,21 +85,21 @@ def get_catalog_items(
 
 
 @frappe.whitelist()
-def get_catalog_filters():
+def get_catalog_filters(include_archived=0):
 	require_access("references.catalog", "read")
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
 	groups = frappe.get_all(
 		"Catalog Group",
-		filters={"active": 1},
-		fields=["name", "group_name", "parent_catalog_group", "is_group"],
+		filters={} if cint(include_archived) else {"active": 1},
+		fields=["name", "group_name", "parent_catalog_group", "is_group", "active"],
 		order_by="group_name asc",
 		limit_page_length=2000,
 	)
 	count_rows = frappe.get_all(
 		"Catalog Item",
-		filters={"active": 1},
+		filters={} if cint(include_archived) else {"active": 1},
 		fields=["catalog_group", {"COUNT": "name", "as": "item_count"}],
 		group_by="catalog_group",
 		limit_page_length=2000,
