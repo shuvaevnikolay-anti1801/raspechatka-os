@@ -318,7 +318,7 @@
       "fieldname": "source",
       "fieldtype": "Select",
       "label": "Источник",
-      "options": "POS\nManual\nImport",
+      "options": "POS\nMoySklad\nManual\nImport",
       "default": "POS",
       "reqd": 1,
       "read_only": 1
