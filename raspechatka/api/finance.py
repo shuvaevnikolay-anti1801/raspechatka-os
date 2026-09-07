@@ -21,8 +21,21 @@ def get_finance_options():
 		"points": frappe.get_all("Business Point", filters=point_filters, fields=["name", "point_name", "business_entity"], order_by="point_name asc"),
 		"accounts": frappe.get_all("Business Bank Account", filters=account_filters, fields=["name", "bank_name", "settlement_account", "business_entity"], order_by="bank_name asc"),
 		"articles": frappe.get_all("Financial Article", filters={"active": 1, "is_group": 0}, fields=["name", "article_name", "article_type", "cash_flow_type", "include_in_pnl", "include_in_cash_flow"], order_by="article_type asc, article_name asc"),
-		"payment_methods": frappe.get_all("Payment Method", filters={"active": 1}, fields=["name", "payment_method_name"], order_by="payment_method_name asc"),
+		"payment_methods": _get_payment_method_options(),
 	}
+
+
+def _get_payment_method_options():
+	"""Return payment methods using the stable API key expected by the frontend."""
+	rows = frappe.get_all(
+		"Payment Method",
+		filters={"active": 1},
+		fields=["name", "method_name"],
+		order_by="method_name asc",
+	)
+	for row in rows:
+		row["payment_method_name"] = row.get("method_name") or row.get("name")
+	return rows
 
 
 @frappe.whitelist()
