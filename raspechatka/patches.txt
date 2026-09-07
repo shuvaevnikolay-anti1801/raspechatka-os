@@ -14,3 +14,4 @@ raspechatka.patches.v0_0.add_finance_module
 raspechatka.patches.v0_0.add_sales_module
 raspechatka.patches.v0_0.add_team_module
 raspechatka.patches.v1_0.import_moysklad_catalog_once
+raspechatka.patches.v1_0.resume_moysklad_catalog_import
