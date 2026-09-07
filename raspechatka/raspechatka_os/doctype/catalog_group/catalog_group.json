@@ -10,6 +10,10 @@
   "parent_catalog_group",
   "is_group",
   "active",
+  "archived_at",
+  "archived_by",
+  "archive_reason",
+  "archive_batch_id",
   "description",
   "integration_section",
   "moysklad_id",
@@ -45,6 +49,35 @@
    "label": "Активна",
    "default": "1",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "archived_at",
+   "fieldtype": "Datetime",
+   "label": "Перенесено в архив",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "archived_by",
+   "fieldtype": "Link",
+   "label": "Кем архивировано",
+   "options": "User",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "archive_reason",
+   "fieldtype": "Small Text",
+   "label": "Причина архивирования",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "archive_batch_id",
+   "fieldtype": "Data",
+   "label": "Операция архивирования",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "description",
@@ -89,7 +122,7 @@
    "read": 1,
    "write": 1,
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "report": 1,
    "export": 1,
    "import": 1,
