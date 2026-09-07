@@ -55,7 +55,7 @@ async function loadPreference() {
     if (valid.length) selected.value = valid;
     widths.value = preference.widths || {};
     if (pageSizes.includes(Number(preference.pageSize))) pageSize.value = Number(preference.pageSize);
-  } catch (_) {} finally { ready.value = true; }
+  } catch (_) {} finally { ready.value = true; if (props.serverPagination) emit("page-size-change", pageSize.value); }
 }
 async function toggleColumn(key) {
   selected.value = selected.value.includes(key) ? (selected.value.length > 1 ? selected.value.filter((item) => item !== key) : selected.value) : [...selected.value, key]; await savePreference();
