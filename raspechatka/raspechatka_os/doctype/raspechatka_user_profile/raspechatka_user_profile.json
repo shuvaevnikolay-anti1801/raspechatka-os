@@ -1,0 +1,40 @@
+{
+ "doctype": "DocType",
+ "name": "Raspechatka User Profile",
+ "module": "Raspechatka OS",
+ "autoname": "hash",
+ "title_field": "full_name",
+ "track_changes": 1,
+ "field_order": [
+  "identity_tab", "full_name", "active", "last_name", "first_name", "middle_name", "phone",
+  "access_tab", "access_profile", "scope_type", "organization", "business_entity", "assigned_points",
+  "connection_tab", "system_user", "linked_employee", "invitation_status", "invited_at", "notes"
+ ],
+ "fields": [
+  {"fieldname": "identity_tab", "fieldtype": "Tab Break", "label": "Пользователь"},
+  {"fieldname": "full_name", "fieldtype": "Data", "label": "ФИО", "read_only": 1, "bold": 1, "in_list_view": 1, "in_global_search": 1},
+  {"fieldname": "active", "fieldtype": "Check", "label": "Доступ активен", "default": "1", "in_list_view": 1, "in_standard_filter": 1},
+  {"fieldname": "last_name", "fieldtype": "Data", "label": "Фамилия", "reqd": 1},
+  {"fieldname": "first_name", "fieldtype": "Data", "label": "Имя", "reqd": 1},
+  {"fieldname": "middle_name", "fieldtype": "Data", "label": "Отчество"},
+  {"fieldname": "phone", "fieldtype": "Data", "label": "Телефон — логин", "reqd": 1, "unique": 1, "in_list_view": 1, "in_global_search": 1},
+  {"fieldname": "access_tab", "fieldtype": "Tab Break", "label": "Права доступа"},
+  {"fieldname": "access_profile", "fieldtype": "Select", "label": "Профиль доступа", "options": "Network Admin\nFranchise Owner\nPoint Manager\nCashier", "default": "Cashier", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "scope_type", "fieldtype": "Select", "label": "Область доступа", "options": "Network\nPartner\nBusiness Entity\nPoints", "default": "Points", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "organization", "fieldtype": "Link", "label": "Партнёр", "options": "Organization"},
+  {"fieldname": "business_entity", "fieldtype": "Link", "label": "ИП", "options": "Business Entity"},
+  {"fieldname": "assigned_points", "fieldtype": "Table", "label": "Доступные точки", "options": "Raspechatka User Point"},
+  {"fieldname": "connection_tab", "fieldtype": "Tab Break", "label": "Связи"},
+  {"fieldname": "system_user", "fieldtype": "Link", "label": "Системная учётная запись", "options": "User", "read_only": 1, "unique": 1},
+  {"fieldname": "linked_employee", "fieldtype": "Link", "label": "Карточка сотрудника", "options": "Employee", "unique": 1},
+  {"fieldname": "invitation_status", "fieldtype": "Select", "label": "Приглашение", "options": "Not Generated\nGenerated\nActivated", "default": "Not Generated", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "invited_at", "fieldtype": "Datetime", "label": "Приглашение сформировано", "read_only": 1},
+  {"fieldname": "notes", "fieldtype": "Small Text", "label": "Комментарий"}
+ ],
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "report": 1, "export": 1, "import": 1}
+ ],
+ "search_fields": "full_name,phone",
+ "sort_field": "full_name",
+ "sort_order": "ASC"
+}
