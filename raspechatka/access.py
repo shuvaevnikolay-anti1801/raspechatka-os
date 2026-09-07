@@ -28,13 +28,102 @@ def require_access(area_code, action="read"):
 def get_scope(user=None):
 	user = user or frappe.session.user
 	roles = set(frappe.get_roles(user))
-	if "System Manager" in roles or "Raspechatka Network Admin" in roles:
-		return {"global": True, "business_entity": None, "points": []}
-	employee = frappe.db.get_value("Employee", {"user": user, "active": 1}, ["name", "business_entity"], as_dict=True)
+	if user == "Administrator" or "System Manager" in roles or "Raspechatka Network Admin" in roles:
+		return {
+			"global": True,
+			"organization": None,
+			"business_entity": None,
+			"business_entities": [],
+			"points": [],
+		}
+
+	profile = frappe.db.get_value(
+		"Raspechatka User Profile",
+		{"system_user": user, "active": 1},
+		["name", "scope_type", "organization", "business_entity"],
+		as_dict=True,
+	)
+	if profile:
+		if profile.scope_type == "Network":
+			return {
+				"global": True,
+				"organization": None,
+				"business_entity": None,
+				"business_entities": [],
+				"points": [],
+			}
+		entities = []
+		points = []
+		if profile.scope_type == "Partner":
+			entities = frappe.get_all(
+				"Business Entity",
+				filters={"organization": profile.organization, "active": 1},
+				pluck="name",
+			)
+			points = frappe.get_all(
+				"Business Point",
+				filters={"business_entity": ["in", entities or ["__none__"]], "active": 1},
+				pluck="name",
+			)
+		elif profile.scope_type == "Business Entity":
+			entities = [profile.business_entity] if profile.business_entity else []
+			points = frappe.get_all(
+				"Business Point",
+				filters={
+					"business_entity": ["in", entities or ["__none__"]],
+					"active": 1,
+				},
+				pluck="name",
+			)
+		else:
+			points = frappe.get_all(
+				"Raspechatka User Point",
+				filters={"parent": profile.name},
+				pluck="business_point",
+			)
+			entities = list(
+				{
+					frappe.db.get_value("Business Point", point, "business_entity")
+					for point in points
+				}
+				- {None}
+			)
+		return {
+			"global": False,
+			"organization": profile.organization,
+			"business_entity": entities[0] if len(entities) == 1 else None,
+			"business_entities": entities,
+			"points": points,
+		}
+
+	employee = frappe.db.get_value(
+		"Employee",
+		{"user": user, "active": 1},
+		["name", "business_entity"],
+		as_dict=True,
+	)
 	if not employee:
-		return {"global": False, "business_entity": None, "points": []}
-	points = frappe.get_all("Employee Point Assignment", filters={"parent": employee.name}, pluck="business_point")
-	return {"global": False, "business_entity": employee.business_entity, "points": points}
+		return {
+			"global": False,
+			"organization": None,
+			"business_entity": None,
+			"business_entities": [],
+			"points": [],
+		}
+	points = frappe.get_all(
+		"Employee Point Assignment",
+		filters={"parent": employee.name},
+		pluck="business_point",
+	)
+	return {
+		"global": False,
+		"organization": frappe.db.get_value(
+			"Business Entity", employee.business_entity, "organization"
+		),
+		"business_entity": employee.business_entity,
+		"business_entities": [employee.business_entity],
+		"points": points,
+	}
 
 
 @frappe.whitelist()

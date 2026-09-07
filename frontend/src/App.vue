@@ -38,7 +38,8 @@ const submenus = {
 		{ label: "Обороты", to: "/warehouse/turnover", area: "warehouse.operations" },
 	],
 	team: [
-		{ label: "Сотрудники", to: "/team", area: "team.employees" },
+		{ label: "Сотрудники", to: "/team/employees", area: "team.employees" },
+		{ label: "Должности", to: "/team/positions", area: "team.employees" },
 		{ label: "График", to: "/team/schedule", area: "team.schedule" },
 		{ label: "Зарплата", to: "/team/payroll", area: "team.payroll" },
 		{ label: "Премии и игра", to: "/team/bonuses", area: "team.motivation" },
@@ -60,8 +61,7 @@ const submenus = {
 		{ label: "Точки продаж", to: "/references/points", area: "references.network" },
 		{ label: "Склады", to: "/references/warehouses", area: "references.storage" },
 		{ label: "Поставщики", to: "/references/suppliers", area: "references.suppliers" },
-		{ label: "Сотрудники", to: "/references/employees", area: "references.employees" },
-		{ label: "Должности", to: "/references/positions", area: "references.employees" },
+		{ label: "Пользователи", to: "/references/users", area: "settings.access", minimum: "Admin" },
 		{ label: "Финансовые статьи", to: "/references/financial-articles", area: "references.finance" },
 		{ label: "МойСклад", to: "/settings/moysklad", area: "settings.access", minimum: "Admin" },
 		{ label: "Права доступа", to: "/settings/access", area: "settings.access", minimum: "Admin" },
@@ -82,7 +82,6 @@ const submenuItems = computed(() =>
 <template>
 	<div class="app-shell">
 		<TopNavigation />
-
 		<nav class="subnav" aria-label="Подразделы">
 			<template v-for="(item, index) in submenuItems" :key="item.label">
 				<router-link v-if="item.to" :to="item.to" :class="{ active: route.path === item.to }">
@@ -95,38 +94,15 @@ const submenuItems = computed(() =>
 				</button>
 			</template>
 		</nav>
-
-		<main class="workspace">
-			<router-view />
-		</main>
+		<main class="workspace"><router-view /></main>
 	</div>
 </template>
 
 <style scoped>
-.subnav {
-	top: 72px;
-	overflow-y: hidden;
-}
-.subnav :is(a, button) {
-	display: grid;
-	align-items: center;
-}
-.subnav-label,
-.subnav-measure {
-	grid-area: 1 / 1;
-}
-.subnav-measure {
-	visibility: hidden;
-	font-weight: 650;
-	pointer-events: none;
-}
-.subnav :is(a, button).active::after {
-	background: var(--green);
-}
-@media (max-width: 760px) {
-	.subnav {
-		top: 64px;
-	}
-}
+.subnav { top: 72px; overflow-y: hidden; }
+.subnav :is(a, button) { display: grid; align-items: center; }
+.subnav-label, .subnav-measure { grid-area: 1 / 1; }
+.subnav-measure { visibility: hidden; font-weight: 650; pointer-events: none; }
+.subnav :is(a, button).active::after { background: var(--green); }
+@media (max-width: 760px) { .subnav { top: 64px; } }
 </style>
-
