@@ -16,6 +16,10 @@
   "stock_uom",
   "column_main",
   "active",
+  "archived_at",
+  "archived_by",
+  "archive_reason",
+  "archive_batch_id",
   "image",
   "description",
   "identifiers_section",
@@ -134,6 +138,35 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "description": "Отключённый товар нельзя выбирать в новых операциях."
+  },
+  {
+   "fieldname": "archived_at",
+   "fieldtype": "Datetime",
+   "label": "Перенесено в архив",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "archived_by",
+   "fieldtype": "Link",
+   "label": "Кем архивировано",
+   "options": "User",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "archive_reason",
+   "fieldtype": "Small Text",
+   "label": "Причина архивирования",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "archive_batch_id",
+   "fieldtype": "Data",
+   "label": "Операция архивирования",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "image",
@@ -464,7 +497,7 @@
    "read": 1,
    "write": 1,
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "submit": 0,
    "cancel": 0,
    "amend": 0,
