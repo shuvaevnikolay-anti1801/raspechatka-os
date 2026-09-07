@@ -39,7 +39,7 @@ class RaspechatkaUserProfile(Document):
 				"name",
 			)
 			if duplicate:
-				frappe.throw(_("Сотрудник уже связан с другим пользователем"))
+				frappe.throw(_("Сотрудник уже связан с другим пользователем"))  # noqa: RUF001
 
 	def after_insert(self):
 		self.ensure_system_user()
@@ -69,13 +69,13 @@ class RaspechatkaUserProfile(Document):
 			for point in points:
 				entity = frappe.db.get_value("Business Point", point, "business_entity")
 				if entity != self.business_entity:
-					frappe.throw(_("Все выбранные точки должны относиться к указанному ИП"))
+					frappe.throw(_("Все выбранные точки должны относиться к указанному ИП"))  # noqa: RUF001
 		if self.scope_type == "Partner":
 			for point in points:
 				entity = frappe.db.get_value("Business Point", point, "business_entity")
 				organization = frappe.db.get_value("Business Entity", entity, "organization")
 				if organization != self.organization:
-					frappe.throw(_("Все выбранные точки должны относиться к указанному партнёру"))
+					frappe.throw(_("Все выбранные точки должны относиться к указанному партнёру"))  # noqa: RUF001
 
 	def ensure_system_user(self):
 		system_user = self.system_user
