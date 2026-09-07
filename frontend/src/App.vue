@@ -10,7 +10,7 @@ const can = canAccess;
 const submenus = {
 	dashboard: [{ label: "Обзор", to: "/", area: "dashboard" }],
 	catalog: [
-		{ label: "Товары и услуги", to: "/catalog", area: "references.catalog" },
+		{ label: "Товары и Цены", to: "/catalog", area: "references.catalog" },
 	],
 	sales: [
 		{ label: "Точки продаж", to: "/sales", area: "sales.analytics" },
