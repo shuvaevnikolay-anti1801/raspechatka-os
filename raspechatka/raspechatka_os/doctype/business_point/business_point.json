@@ -13,6 +13,8 @@
   "active",
   "point_code",
   "point_type",
+  "moysklad_retail_store_id",
+  "moysklad_retail_store_name",
   "contact_tab",
   "city",
   "address",
@@ -88,6 +90,21 @@
    "label": "Тип точки",
    "options": "Copy Center",
    "default": "Copy Center",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "moysklad_retail_store_id",
+   "fieldtype": "Data",
+   "label": "ID точки продаж в МойСклад",
+   "unique": 1,
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "moysklad_retail_store_name",
+   "fieldtype": "Data",
+   "label": "Точка продаж в МойСклад",
    "read_only": 1,
    "hidden": 1
   },
