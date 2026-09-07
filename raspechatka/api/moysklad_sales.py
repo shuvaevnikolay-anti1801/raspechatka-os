@@ -228,6 +228,8 @@ def _iter_rows(settings, endpoint, cursor=None):
             "filter": filter_value,
             "order": "moment,asc",
         }
+        if endpoint in ("entity/retaildemand", "entity/retailsalesreturn"):
+            params["expand"] = "positions"
         payload = _request(settings, endpoint, params=params)
         rows = payload.get("rows") or []
         yield from rows
