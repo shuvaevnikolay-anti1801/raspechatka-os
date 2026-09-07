@@ -86,7 +86,7 @@ class CatalogItem(Document):
 			if row.valid_from and row.valid_upto and row.valid_from > row.valid_upto:
 				frappe.throw(_("Дата окончания цены не может быть раньше даты начала."))
 
-			scope = (row.price_type, row.business_point or "", row.uom or self.stock_uom, row.currency or "RUB", row.minimum_quantity)
+			scope = (\n\t\t\t\trow.price_type,\n\t\t\t\trow.business_point or "",\n\t\t\t\trow.uom or self.stock_uom,\n\t\t\t\trow.currency or "RUB",\n\t\t\t\trow.minimum_quantity,\n\t\t\t)
 			for existing_from, existing_upto in price_scopes.get(scope, []):
 				if (not existing_upto or not row.valid_from or row.valid_from <= existing_upto) and (
 					not row.valid_upto or not existing_from or existing_from <= row.valid_upto
