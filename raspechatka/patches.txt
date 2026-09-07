@@ -21,3 +21,4 @@ raspechatka.patches.v1_0.migrate_point_prices
 raspechatka.patches.v1_0.simplify_catalog_card_and_units
 raspechatka.patches.v1_0.upgrade_business_entities
 raspechatka.patches.v1_0.separate_users_and_employees
+raspechatka.patches.v1_0.seed_financial_articles
