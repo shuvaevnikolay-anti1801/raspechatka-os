@@ -16,6 +16,7 @@ import FinanceCalendarPage from "./pages/FinanceCalendarPage.vue";
 import FinanceReportPage from "./pages/FinanceReportPage.vue";
 import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
 import FinanceBankPage from "./pages/FinanceBankPage.vue";
+import FinanceSettingsPage from "./pages/FinanceSettingsPage.vue";
 import SalesPage from "./pages/SalesPage.vue";
 import TeamPage from "./pages/TeamPage.vue";
 import UsersPage from "./pages/UsersPage.vue";
@@ -31,7 +32,7 @@ const routes = [
   { path: "/references/employees", redirect: "/team/employees" },
   { path: "/references/positions", redirect: "/team/positions" },
   { path: "/references/users", name: "users", component: UsersPage, meta: { module: "references" } },
-  { path: "/references/:reference(organizations|suppliers|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
+  { path: "/references/:reference(organizations|suppliers|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
   { path: "/settings/access", name: "access-settings", component: AccessSettingsPage, meta: { module: "references" } },
   { path: "/settings/moysklad", name: "moysklad-settings", component: MoySkladIntegrationPage, meta: { module: "references" } },
   { path: "/warehouse", redirect: "/warehouse/receipts" },
@@ -55,6 +56,8 @@ const routes = [
   { path: "/finance/settlements", name: "finance-settlements", component: FinanceReportPage, meta: { module: "finance", kind: "settlements" } },
   { path: "/finance/profitability", name: "finance-profitability", component: FinanceReportPage, meta: { module: "finance", kind: "profitability" } },
   { path: "/finance/tochka", name: "finance-tochka", component: FinanceBankPage, meta: { module: "finance" } },
+  { path: "/finance/settings", name: "finance-settings", component: FinanceSettingsPage, meta: { module: "finance" } },
+  { path: "/references/financial-articles", redirect: "/finance/settings" },
   { path: "/sales", name: "sales-overview", component: SalesPage, meta: { module: "sales", kind: "overview" } },
   { path: "/sales/shifts", name: "sales-shifts", component: SalesPage, meta: { module: "sales", kind: "shifts" } },
   { path: "/sales/receipts", name: "sales-receipts", component: SalesPage, meta: { module: "sales", kind: "receipts" } },
