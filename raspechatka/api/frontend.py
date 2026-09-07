@@ -88,17 +88,16 @@ def get_catalog_filters():
 		order_by="group_name asc",
 		limit_page_length=2000,
 	)
-	counts = {
-		row.catalog_group: cint(row.item_count)
-		for row in frappe.get_all(
-			"Catalog Item",
-			filters={"active": 1},
-			fields=["catalog_group", "count(name) as item_count"],
-			group_by="catalog_group",
-			limit_page_length=2000,
-		)
-		if row.catalog_group
-	}
+	count_rows = frappe.db.sql(
+		"""
+		SELECT catalog_group, COUNT(name) AS item_count
+		FROM \`tabCatalog Item\`
+		WHERE active = 1 AND IFNULL(catalog_group, '') != ''
+		GROUP BY catalog_group
+		""",
+		as_dict=True,
+	)
+	counts = {row.catalog_group: cint(row.item_count) for row in count_rows}
 	children = {}
 	for group in groups:
 		children.setdefault(group.parent_catalog_group or "", []).append(group.name)
