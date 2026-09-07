@@ -71,18 +71,28 @@ class CatalogItem(Document):
 				if duplicate:
 					frappe.throw(_("Штрихкод {0} уже используется другой позицией.").format(row.barcode))
 
-		price_keys = set()
+		price_scopes = {}
 		for row in self.prices:
 			if not row.minimum_quantity or row.minimum_quantity <= 0:
 				frappe.throw(_("Минимальное количество для цены должно быть больше нуля."))
-			key = (row.price_type, row.minimum_quantity, row.valid_from, row.valid_upto)
-			if key in price_keys:
-				frappe.throw(_("Одинаковые условия цены указаны дважды."))
-			price_keys.add(key)
+			if row.business_point and not frappe.db.exists("Business Point", {"name": row.business_point, "active": 1}):
+				frappe.throw(_("Нельзя использовать неактивную точку в цене."))
+			if row.uom and not frappe.db.exists("Catalog Unit", {"name": row.uom, "active": 1}):
+				frappe.throw(_("Нельзя использовать неактивную единицу в цене."))
+			if not frappe.db.exists("Catalog Price Type", {"name": row.price_type, "active": 1}):
+				frappe.throw(_("Нельзя использовать неактивный вид цены."))
 			if row.rate is not None and row.rate < 0:
 				frappe.throw(_("Цена не может быть отрицательной."))
 			if row.valid_from and row.valid_upto and row.valid_from > row.valid_upto:
 				frappe.throw(_("Дата окончания цены не может быть раньше даты начала."))
+
+			scope = (row.price_type, row.business_point or "", row.uom or self.stock_uom, row.currency or "RUB", row.minimum_quantity)
+			for existing_from, existing_upto in price_scopes.get(scope, []):
+				if (not existing_upto or not row.valid_from or row.valid_from <= existing_upto) and (
+					not row.valid_upto or not existing_from or existing_from <= row.valid_upto
+				):
+					frappe.throw(_("Периоды одинаковых цен не должны пересекаться."))
+			price_scopes.setdefault(scope, []).append((row.valid_from, row.valid_upto))
 
 		component_items = set()
 		for row in self.bundle_components:
