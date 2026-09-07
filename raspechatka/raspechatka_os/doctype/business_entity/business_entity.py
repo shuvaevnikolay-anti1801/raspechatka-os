@@ -1,21 +1,32 @@
-import re
-
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from raspechatka.requisites import digits, is_valid_inn, is_valid_ogrnip
+
 
 class BusinessEntity(Document):
+	def before_insert(self):
+		self.active = 1
+		if not self.internal_code:
+			self.internal_code = _new_internal_code()
+
 	def validate(self):
-		self.inn = _digits(self.inn)
-		self.ogrnip = _digits(self.ogrnip)
-		self.okpo = _digits(self.okpo)
+		self.inn = digits(self.inn)
+		self.ogrnip = digits(self.ogrnip)
+		self.okpo = digits(self.okpo)
 
-		if self.inn and len(self.inn) != 12:
-			frappe.throw(_("ИНН индивидуального предпринимателя должен содержать 12 цифр"))
-		if self.ogrnip and len(self.ogrnip) != 15:
-			frappe.throw(_("ОГРНИП должен содержать 15 цифр"))
+		if not is_valid_inn(self.inn) or len(self.inn) != 12:
+			frappe.throw(_("Укажите корректный 12-значный ИНН индивидуального предпринимателя"))
+		if self.ogrnip and not is_valid_ogrnip(self.ogrnip):
+			frappe.throw(_("Укажите корректный 15-значный ОГРНИП"))
+
+	def on_trash(self):
+		frappe.throw(_("ИП нельзя удалить. Переведите карточку в архив."))
 
 
-def _digits(value):
-	return re.sub(r"\D", "", value or "")
+def _new_internal_code():
+	while True:
+		value = f"IP-{frappe.generate_hash(length=12).upper()}"
+		if not frappe.db.exists("Business Entity", {"internal_code": value}):
+			return value
