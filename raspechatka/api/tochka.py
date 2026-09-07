@@ -156,7 +156,7 @@ def _extract_bank_accounts(value):
 		key = (external_id, number)
 		if external_id and number and key not in seen:
 			seen.add(key)
-			rows.append({"external_id": external_id, "number": number})
+			rows.append({"external_id": external_id, "identification": number})
 	return rows
 
 
@@ -173,12 +173,12 @@ def _walk_dicts(value):
 def _account_number(value):
 	candidate = _pick(value, "accountNumber", "AccountNumber", "identification", "number")
 	digits = _digits(candidate)
-	if len(digits) == 20:
+	if len(digits) >= 20:
 		return digits
 	for nested in _walk_dicts(value):
 		for nested_value in nested.values():
 			digits = _digits(nested_value)
-			if len(digits) == 20:
+			if len(digits) >= 20:
 				return digits
 	return ""
 
@@ -556,7 +556,10 @@ def _refresh_connection_accounts(connection):
 	accounts_by_number = {_digits(item.settlement_account): item.name for item in local_accounts}
 	updated = 0
 	for account in accounts:
-		name = accounts_by_number.get(account["number"])
+		name = next(
+			(account_name for number, account_name in accounts_by_number.items() if number and number in account["identification"]),
+			None,
+		)
 		if name:
 			frappe.db.set_value("Business Bank Account", name, "external_account_id", account["external_id"])
 			updated += 1
