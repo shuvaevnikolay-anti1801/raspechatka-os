@@ -185,7 +185,6 @@ def save_catalog_group(data):
 	doc.group_name = group_name
 	doc.parent_catalog_group = parent
 	doc.description = data.get("description") or ""
-	doc.active = cint(data.get("active", 1))
 	doc.is_group = cint(data.get("is_group", 0))
 	doc.save(ignore_permissions=True)
 	if parent:
@@ -305,6 +304,15 @@ def archive_catalog_group(name, reason=None):
 	items = frappe.get_all("Catalog Item", filters={"catalog_group": ["in", groups]}, pluck="name")
 	for item in items:
 		frappe.db.set_value("Catalog Item", item, _archive_values(False, reason, batch_id))
+
+	dependent_bundles = frappe.get_all(
+		"Catalog Bundle Component",
+		filters={"item": ["in", items]},
+		pluck="parent",
+	)
+	for bundle in set(dependent_bundles) - set(items):
+		if frappe.db.get_value("Catalog Item", bundle, "active"):
+			frappe.db.set_value("Catalog Item", bundle, _archive_values(False, "Компонент комплекта перенесён в архив", batch_id))
 	return {"name": name, "active": 0, "groups": len(groups), "items": len(items), "archive_batch_id": batch_id}
 
 
@@ -320,8 +328,20 @@ def restore_catalog_group(name):
 	if batch_id:
 		for group in frappe.get_all("Catalog Group", filters={"archive_batch_id": batch_id}, pluck="name"):
 			frappe.db.set_value("Catalog Group", group, _archive_values(True))
-		for item in frappe.get_all("Catalog Item", filters={"archive_batch_id": batch_id}, pluck="name"):
-			frappe.db.set_value("Catalog Item", item, _archive_values(True))
+		batch_items = frappe.get_all(
+			"Catalog Item",
+			filters={"archive_batch_id": batch_id},
+			fields=["name", "item_type"],
+		)
+		for item in batch_items:
+			if item.item_type != "Bundle":
+				frappe.db.set_value("Catalog Item", item.name, _archive_values(True))
+		for item in batch_items:
+			if item.item_type != "Bundle":
+				continue
+			components = frappe.get_all("Catalog Bundle Component", filters={"parent": item.name}, pluck="item")
+			if all(frappe.db.get_value("Catalog Item", component, "active") for component in components):
+				frappe.db.set_value("Catalog Item", item.name, _archive_values(True))
 	return {"name": name, "active": 1}
 
 
