@@ -18,6 +18,7 @@ import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
 import FinanceBankPage from "./pages/FinanceBankPage.vue";
 import SalesPage from "./pages/SalesPage.vue";
 import TeamPage from "./pages/TeamPage.vue";
+import UsersPage from "./pages/UsersPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -27,7 +28,10 @@ const routes = [
   { path: "/catalog/price-types", name: "catalog-price-types", component: MasterDataPage, meta: { module: "catalog", reference: "price-types" } },
   { path: "/references/:reference(entities|points|warehouses)", name: "references", component: ReferencesPage, meta: { module: "references" } },
   { path: "/references/clients", redirect: "/clients" },
-  { path: "/references/:reference(organizations|suppliers|employees|positions|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
+  { path: "/references/employees", redirect: "/team/employees" },
+  { path: "/references/positions", redirect: "/team/positions" },
+  { path: "/references/users", name: "users", component: UsersPage, meta: { module: "references" } },
+  { path: "/references/:reference(organizations|suppliers|catalog-groups|catalog-units|price-types|payment-methods|pos-workplaces|cash-registers|financial-articles)", name: "master-data", component: MasterDataPage, meta: { module: "references" } },
   { path: "/settings/access", name: "access-settings", component: AccessSettingsPage, meta: { module: "references" } },
   { path: "/settings/moysklad", name: "moysklad-settings", component: MoySkladIntegrationPage, meta: { module: "references" } },
   { path: "/warehouse", redirect: "/warehouse/receipts" },
@@ -58,7 +62,9 @@ const routes = [
   { path: "/sales/cash", name: "sales-cash", component: SalesPage, meta: { module: "sales", kind: "cash" } },
   { path: "/sales/actions", name: "sales-actions", component: SalesPage, meta: { module: "sales", kind: "actions" } },
   { path: "/sales/integration", name: "sales-integration", component: SalesPage, meta: { module: "sales", kind: "integration" } },
-  { path: "/team", name: "team-employees", component: TeamPage, meta: { module: "team", section: "employees" } },
+  { path: "/team", redirect: "/team/employees" },
+  { path: "/team/employees", name: "team-employees", component: MasterDataPage, meta: { module: "team", reference: "employees" } },
+  { path: "/team/positions", name: "team-positions", component: MasterDataPage, meta: { module: "team", reference: "positions" } },
   { path: "/team/schedule", name: "team-schedule", component: TeamPage, meta: { module: "team", section: "schedule" } },
   { path: "/team/payroll", name: "team-payroll", component: TeamPage, meta: { module: "team", section: "payroll" } },
   { path: "/team/bonuses", name: "team-bonuses", component: TeamPage, meta: { module: "team", section: "bonuses" } },
