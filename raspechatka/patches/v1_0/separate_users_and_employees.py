@@ -38,6 +38,13 @@ def execute():
 		phone = _migration_phone(employee)
 		if not phone:
 			continue
+		phone_owner = frappe.db.get_value(
+			"Raspechatka User Profile", {"phone": phone}, "name"
+		)
+		if phone_owner:
+			_link_employee(employee.name, phone_owner)
+			continue
+
 		profile = frappe.new_doc("Raspechatka User Profile")
 		profile.last_name = employee.last_name
 		profile.first_name = employee.first_name
