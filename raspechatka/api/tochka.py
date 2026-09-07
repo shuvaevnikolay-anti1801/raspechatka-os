@@ -106,6 +106,8 @@ def oauth_callback(code=None, state=None, token_id=None):
 	doc.oauth_url = None
 	doc.error_message = None
 	doc.save(ignore_permissions=True)
+	# OAuth providers return here through GET; Frappe does not auto-commit GET requests.
+	frappe.db.commit()
 	frappe.local.response["type"] = "redirect"
 	frappe.local.response["location"] = "/raspechatka/finance/tochka?connected=1"
 
