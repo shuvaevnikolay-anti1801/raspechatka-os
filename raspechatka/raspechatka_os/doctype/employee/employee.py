@@ -22,4 +22,4 @@ class Employee(Document):
 				"linked_employee",
 			)
 			if linked_employee and linked_employee != self.name:
-				frappe.throw(_("Пользователь уже связан с другим сотрудником"))
+				frappe.throw(_("Пользователь уже связан с другим сотрудником"))  # noqa: RUF001
