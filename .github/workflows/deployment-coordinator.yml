@@ -1,0 +1,63 @@
+name: Deployment Coordinator
+
+on:
+  pull_request:
+    branches:
+      - version-16
+    types:
+      - closed
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: production-ci-coordinator
+  cancel-in-progress: false
+
+jobs:
+  ensure-version-ci:
+    name: Ensure CI for current version-16
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start missing CI run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          HEAD_SHA="$(gh api             --method GET             "repos/${GITHUB_REPOSITORY}/commits/version-16"             --jq '.sha')"
+          [[ "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Could not resolve version-16 HEAD." >&2
+            exit 1
+          }
+
+          RUN_STATE="$(gh api             --method GET             "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs"             -f branch=version-16             -f head_sha="${HEAD_SHA}"             -f per_page=20             --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch")] | sort_by(.created_at) | reverse | .[0] | if . == null then "missing" else (.status + ":" + (.conclusion // "")) end')"
+
+          case "${RUN_STATE}" in
+            completed:success)
+              echo "CI already passed for ${HEAD_SHA}."
+              ;;
+            queued:*|in_progress:*|requested:*|waiting:*|pending:*)
+              echo "CI is already running for ${HEAD_SHA}: ${RUN_STATE}."
+              ;;
+            completed:failure|completed:cancelled|completed:timed_out|completed:action_required|completed:stale)
+              echo "The latest CI for ${HEAD_SHA} failed: ${RUN_STATE}." >&2
+              echo "Automatic deployment remains blocked until the code is fixed or CI is rerun." >&2
+              exit 1
+              ;;
+            missing)
+              echo "No CI run exists for ${HEAD_SHA}; starting one."
+              gh workflow run ci.yml --ref version-16
+              ;;
+            *)
+              echo "Unexpected CI state for ${HEAD_SHA}: ${RUN_STATE}" >&2
+              exit 1
+              ;;
+          esac
