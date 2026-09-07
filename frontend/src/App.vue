@@ -11,8 +11,6 @@ const submenus = {
 	dashboard: [{ label: "Обзор", to: "/", area: "dashboard" }],
 	catalog: [
 		{ label: "Товары и услуги", to: "/catalog", area: "references.catalog" },
-		{ label: "Единицы измерения", to: "/catalog/units", area: "references.catalog" },
-		{ label: "Типы цен", to: "/catalog/price-types", area: "references.catalog" },
 	],
 	sales: [
 		{ label: "Точки продаж", to: "/sales", area: "sales.analytics" },
