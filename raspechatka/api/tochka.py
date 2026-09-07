@@ -1,4 +1,5 @@
 import hashlib
+import os
 import json
 import re
 import time
@@ -18,6 +19,7 @@ CONSENT_URL = "https://enter.tochka.com/uapi/consent/v1.0/consents"
 AUTHORIZE_URL = "https://enter.tochka.com/connect/authorize"
 API_BASE = "https://enter.tochka.com/uapi"
 PERMISSIONS = ["ReadAccountsBasic", "ReadAccountsDetail", "ReadBalances", "ReadStatements", "ReadCustomerData"]
+TOCHKA_CA_BUNDLE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "certificates", "russian_trusted_root_ca.pem")
 
 
 @frappe.whitelist()
@@ -281,14 +283,21 @@ def _valid_token(doc):
 	return token.get("access_token")
 
 
+def _tochka_ca_bundle():
+	"""Trusted Russian root used exclusively for Tochka Bank HTTPS requests."""
+	if not os.path.isfile(TOCHKA_CA_BUNDLE):
+		raise RuntimeError("Не найден сертификат доверия для соединения с Точка Банком")
+	return TOCHKA_CA_BUNDLE
+
+
 def _token_request(payload):
-	response = requests.post(TOKEN_URL, data=payload, timeout=30)
+	response = requests.post(TOKEN_URL, data=payload, timeout=30, verify=_tochka_ca_bundle())
 	response.raise_for_status()
 	return response.json()
 
 
 def _request_json(method, url, token, payload=None):
-	response = requests.request(method, url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json"}, json=payload, timeout=60)
+	response = requests.request(method, url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json"}, json=payload, timeout=60, verify=_tochka_ca_bundle())
 	response.raise_for_status()
 	return response.json()
 
