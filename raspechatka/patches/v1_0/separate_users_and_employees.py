@@ -66,11 +66,15 @@ def execute():
 			for row in assignments:
 				profile.append(
 					"assigned_points",
-					{"business_point": row.business_point, "is_default": row.is_default},
+					{
+						"business_point": row.business_point,
+						"is_default": row.is_default,
+					},
 				)
 		else:
 			profile.scope_type = "Business Entity"
 			profile.business_entity = employee.business_entity
+
 		profile.insert(ignore_permissions=True)
 		_link_employee(employee.name, profile.name)
 
@@ -92,7 +96,10 @@ def _migration_phone(employee):
 
 
 def _link_employee(employee, profile):
-	if frappe.db.has_column("Employee", "system_user_profile"):
-		frappe.db.set_value(
-			"Employee", employee, "system_user_profile", profile, update_modified=False
-		)
+	frappe.db.set_value(
+		"Employee",
+		employee,
+		"system_user_profile",
+		profile,
+		update_modified=False,
+	)
