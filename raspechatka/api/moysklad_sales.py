@@ -50,6 +50,7 @@ def get_sales_sync_settings():
 		"last_sync_at": settings.last_sales_sync_at,
 		"error": settings.sales_sync_error,
 		"stats": stats,
+		"failure_summary": _failure_summary(stats),
 		"points": frappe.get_all(
 			"Business Point",
 			filters={"active": 1},
@@ -296,6 +297,9 @@ def _apply_safely(kind, row, context):
 	except Exception as exc:
 		frappe.db.rollback(save_point=savepoint)
 		stats["failed"] += 1
+		_failure_key = _failure_key(exc)
+		failure_reasons = stats.setdefault("failure_reasons", {})
+		failure_reasons[_failure_key] = failure_reasons.get(_failure_key, 0) + 1
 		if len(stats["errors"]) < 30:
 			stats["errors"].append(
 				{
@@ -600,6 +604,41 @@ def _required_id(row):
 
 def _external_id(kind, source_id):
 	return f"moysklad:{kind}:{source_id}"
+
+
+def _failure_key(exc):
+	message = str(exc)
+	if "Не сопоставлена позиция МойСклада" in message:
+		return "catalog_item_missing"
+	if "Не найдена смена для чека" in message:
+		return "receipt_shift_missing"
+	if "Не найдена смена для кассовой операции" in message:
+		return "cash_shift_missing"
+	if "разбивку оплаты чека" in message:
+		return "payment_breakdown_missing"
+	if "активный склад" in message:
+		return "warehouse_missing"
+	if "В чеке нет позиций" in message:
+		return "receipt_items_missing"
+	return "other"
+
+
+def _failure_summary(stats):
+	labels = {
+		"catalog_item_missing": "Не удалось сопоставить товар",
+		"receipt_shift_missing": "У чека не найдена смена",
+		"cash_shift_missing": "У кассовой операции не найдена смена",
+		"payment_breakdown_missing": "Нет разбивки по способам оплаты",
+		"warehouse_missing": "У точки не настроен активный склад",
+		"receipt_items_missing": "В чеке нет товарных позиций",
+		"other": "Прочие данные МоегоСклада",
+	}
+	reasons = (stats or {}).get("failure_reasons") or {}
+	return [
+		{"key": key, "label": labels.get(key, labels["other"]), "count": count}
+		for key, count in sorted(reasons.items(), key=lambda item: (-item[1], item[0]))
+		if count
+	]
 
 
 def _load_json(value):
