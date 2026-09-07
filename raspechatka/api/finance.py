@@ -269,6 +269,60 @@ def get_profitability(from_date=None, to_date=None, business_entity=None, busine
 	return {"rows": result, "totals": {key: sum(row[key] for row in result) for key in keys}, "source_ready": frappe.db.count("Profitability Entry") > 0}
 
 
+@frappe.whitelist()
+def get_finance_settings():
+	require_access("finance.operations", "admin")
+	return {
+		"articles": frappe.get_all(
+			"Financial Article",
+			fields=[
+				"name",
+				"article_name",
+				"article_type",
+				"active",
+				"system_article",
+			],
+			order_by="article_type asc, article_name asc",
+			limit_page_length=1000,
+		)
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_financial_article(data):
+	require_access("finance.operations", "admin")
+	data = frappe.parse_json(data) or {}
+	name = data.get("name")
+	if name:
+		doc = frappe.get_doc("Financial Article", name)
+		if doc.system_article:
+			frappe.throw(_("Системную финансовую статью нельзя изменять"))
+		if data.get("article_type") and data.get("article_type") != doc.article_type:
+			frappe.throw(_("Тип существующей статьи изменить нельзя"))
+	else:
+		doc = frappe.new_doc("Financial Article")
+		doc.article_type = data.get("article_type")
+		doc.cash_flow_type = "Operating"
+		doc.include_in_pnl = 1
+		doc.include_in_cash_flow = 1
+		doc.is_group = 0
+		doc.system_article = 0
+	doc.article_name = (data.get("article_name") or "").strip()
+	doc.active = cint(data.get("active", 1))
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_financial_article(name):
+	require_access("finance.operations", "admin")
+	doc = frappe.get_doc("Financial Article", name)
+	if doc.system_article:
+		frappe.throw(_("Системную финансовую статью нельзя удалить"))
+	frappe.delete_doc("Financial Article", name, ignore_permissions=True)
+	return {"deleted": name}
+
+
 def _transaction_filters(from_date=None, to_date=None, business_entity=None, business_point=None, direction=None, financial_article=None, status=None):
 	filters = _scope_entity_filter(business_entity)
 	if from_date and to_date:
