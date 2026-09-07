@@ -17,3 +17,4 @@ raspechatka.patches.v1_0.import_moysklad_catalog_once
 raspechatka.patches.v1_0.resume_moysklad_catalog_import
 raspechatka.patches.v1_0.resume_moysklad_bundle_import
 raspechatka.patches.v1_0.fetch_moysklad_bundle_components_once
+raspechatka.patches.v1_0.migrate_point_prices

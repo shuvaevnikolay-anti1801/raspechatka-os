@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "field:price_type_name",
  "creation": "2026-09-05 15:00:00.000000",
  "doctype": "DocType",
@@ -78,7 +78,7 @@
    "read": 1,
    "write": 1,
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "report": 1,
    "export": 1,
    "import": 1,
