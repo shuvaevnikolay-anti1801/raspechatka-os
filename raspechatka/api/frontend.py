@@ -85,21 +85,21 @@ def get_catalog_items(
 
 
 @frappe.whitelist()
-def get_catalog_filters():
+def get_catalog_filters(include_archived=0):
 	require_access("references.catalog", "read")
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
 	groups = frappe.get_all(
 		"Catalog Group",
-		filters={"active": 1},
-		fields=["name", "group_name", "parent_catalog_group", "is_group"],
+		filters={} if cint(include_archived) else {"active": 1},
+		fields=["name", "group_name", "parent_catalog_group", "is_group", "active"],
 		order_by="group_name asc",
 		limit_page_length=2000,
 	)
 	count_rows = frappe.get_all(
 		"Catalog Item",
-		filters={"active": 1},
+		filters={} if cint(include_archived) else {"active": 1},
 		fields=["catalog_group", {"COUNT": "name", "as": "item_count"}],
 		group_by="catalog_group",
 		limit_page_length=2000,
@@ -143,10 +143,10 @@ def get_catalog_filters():
 	}
 
 
-def _catalog_group_branch(root):
+def _catalog_group_branch(root, active_only=True):
 	groups = frappe.get_all(
 		"Catalog Group",
-		filters={"active": 1},
+		filters={"active": 1} if active_only else {},
 		fields=["name", "parent_catalog_group"],
 		limit_page_length=2000,
 	)
@@ -185,7 +185,6 @@ def save_catalog_group(data):
 	doc.group_name = group_name
 	doc.parent_catalog_group = parent
 	doc.description = data.get("description") or ""
-	doc.active = cint(data.get("active", 1))
 	doc.is_group = cint(data.get("is_group", 0))
 	doc.save(ignore_permissions=True)
 	if parent:
@@ -220,7 +219,7 @@ def save_catalog_item(data):
 	doc = frappe.get_doc("Catalog Item", data["name"]) if data.get("name") else frappe.new_doc("Catalog Item")
 	if data.get("default_supplier") and not frappe.db.exists("Catalog Supplier", {"name": data.get("default_supplier"), **_supplier_filters()}):
 		frappe.throw("Поставщик недоступен", frappe.PermissionError)
-	allowed = ("item_code", "item_name", "item_type", "catalog_group", "stock_uom", "active", "description", "article", "external_code", "brand", "country_of_origin", "default_supplier", "weight", "volume", "color", "size", "minimum_sale_price", "prevent_discounts", "track_inventory", "valuation_method", "allow_negative_stock", "tracking_method", "shelf_life_days", "lead_time_days", "minimum_order_qty", "vat_rate", "tax_system", "receipt_subject")
+	allowed = ("item_code", "item_name", "item_type", "catalog_group", "stock_uom", "description", "article", "external_code", "brand", "country_of_origin", "default_supplier", "weight", "volume", "color", "size", "minimum_sale_price", "prevent_discounts", "track_inventory", "valuation_method", "allow_negative_stock", "tracking_method", "shelf_life_days", "lead_time_days", "minimum_order_qty", "vat_rate", "tax_system", "receipt_subject")
 	for fieldname in allowed:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
@@ -242,6 +241,109 @@ def save_catalog_item(data):
 	if "assortments" in data:
 		_save_assortments(doc.name, data.get("assortments") or [])
 	return {"name": doc.name}
+
+
+
+def _archive_values(active, reason=None, batch_id=None):
+	from frappe.utils import now_datetime
+
+	return {
+		"active": 1 if active else 0,
+		"archived_at": None if active else now_datetime(),
+		"archived_by": None if active else frappe.session.user,
+		"archive_reason": None if active else (reason or "").strip() or None,
+		"archive_batch_id": None if active else batch_id,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def archive_catalog_item(name, reason=None):
+	"""Archive an item without breaking links from historical documents."""
+	require_access("references.catalog", "write")
+	if not frappe.db.exists("Catalog Item", name):
+		frappe.throw("Позиция каталога не найдена")
+	batch_id = frappe.generate_hash(length=20)
+	frappe.db.set_value("Catalog Item", name, _archive_values(False, reason, batch_id))
+
+	# Bundles that depend on an archived component cannot remain sellable.
+	dependent_bundles = frappe.get_all(
+		"Catalog Bundle Component",
+		filters={"item": name},
+		pluck="parent",
+	)
+	for bundle in set(dependent_bundles):
+		if frappe.db.get_value("Catalog Item", bundle, "active"):
+			frappe.db.set_value("Catalog Item", bundle, _archive_values(False, "Компонент комплекта перенесён в архив", batch_id))
+	return {"name": name, "active": 0, "archive_batch_id": batch_id}
+
+
+@frappe.whitelist(methods=["POST"])
+def restore_catalog_item(name):
+	"""Restore an item only when all of its dependencies are active."""
+	require_access("references.catalog", "write")
+	doc = frappe.get_doc("Catalog Item", name)
+	if doc.catalog_group and not frappe.db.get_value("Catalog Group", doc.catalog_group, "active"):
+		frappe.throw("Сначала восстановите группу этой позиции")
+	for row in doc.bundle_components:
+		if not frappe.db.get_value("Catalog Item", row.item, "active"):
+			frappe.throw("Сначала восстановите все компоненты комплекта")
+	frappe.db.set_value("Catalog Item", name, _archive_values(True))
+	return {"name": name, "active": 1}
+
+
+@frappe.whitelist(methods=["POST"])
+def archive_catalog_group(name, reason=None):
+	"""Atomically archive a group branch and every item inside it."""
+	require_access("references.catalog", "write")
+	if not frappe.db.exists("Catalog Group", name):
+		frappe.throw("Группа каталога не найдена")
+	batch_id = frappe.generate_hash(length=20)
+	groups = _catalog_group_branch(name, active_only=False)
+	for group in groups:
+		frappe.db.set_value("Catalog Group", group, _archive_values(False, reason, batch_id))
+	items = frappe.get_all("Catalog Item", filters={"catalog_group": ["in", groups]}, pluck="name")
+	for item in items:
+		frappe.db.set_value("Catalog Item", item, _archive_values(False, reason, batch_id))
+
+	dependent_bundles = frappe.get_all(
+		"Catalog Bundle Component",
+		filters={"item": ["in", items]},
+		pluck="parent",
+	)
+	for bundle in set(dependent_bundles) - set(items):
+		if frappe.db.get_value("Catalog Item", bundle, "active"):
+			frappe.db.set_value("Catalog Item", bundle, _archive_values(False, "Компонент комплекта перенесён в архив", batch_id))
+	return {"name": name, "active": 0, "groups": len(groups), "items": len(items), "archive_batch_id": batch_id}
+
+
+@frappe.whitelist(methods=["POST"])
+def restore_catalog_group(name):
+	"""Restore only records archived by the same cascading operation."""
+	require_access("references.catalog", "write")
+	doc = frappe.get_doc("Catalog Group", name)
+	if doc.parent_catalog_group and not frappe.db.get_value("Catalog Group", doc.parent_catalog_group, "active"):
+		frappe.throw("Сначала восстановите родительскую группу")
+	batch_id = doc.archive_batch_id
+	frappe.db.set_value("Catalog Group", name, _archive_values(True))
+	if batch_id:
+		for group in frappe.get_all("Catalog Group", filters={"archive_batch_id": batch_id}, pluck="name"):
+			frappe.db.set_value("Catalog Group", group, _archive_values(True))
+		batch_items = frappe.get_all(
+			"Catalog Item",
+			filters={"archive_batch_id": batch_id},
+			fields=["name", "item_type"],
+		)
+		for item in batch_items:
+			if item.item_type != "Bundle":
+				frappe.db.set_value("Catalog Item", item.name, _archive_values(True))
+		for item in batch_items:
+			if item.item_type != "Bundle":
+				continue
+			components = frappe.get_all("Catalog Bundle Component", filters={"parent": item.name}, pluck="item")
+			if all(frappe.db.get_value("Catalog Item", component, "active") for component in components):
+				frappe.db.set_value("Catalog Item", item.name, _archive_values(True))
+	return {"name": name, "active": 1}
+
 
 
 def _supplier_filters():
