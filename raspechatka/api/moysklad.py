@@ -408,7 +408,7 @@ def _upsert_item(
 	source_id = row.get("id")
 	if not source_id:
 		return None
-	name = _find_by_source("Catalog Item", source_id)
+	name = _find_by_source("Catalog Item", source_id) or _find_existing_catalog_item(row, item_type)
 	doc = frappe.get_doc("Catalog Item", name) if name else frappe.new_doc("Catalog Item")
 	doc.item_code = _unique_value("Catalog Item", "item_code", _item_code(row), name)
 	doc.item_name = row.get("name") or doc.item_code
@@ -632,6 +632,58 @@ def _safe_settings(doc):
 
 def _find_by_source(doctype, source_id):
 	return frappe.db.get_value(doctype, {"moysklad_id": source_id}, "name") if source_id else None
+
+
+def _find_existing_catalog_item(row, item_type):
+	"""Safely bind a source item to an existing OS item before creating a copy.
+
+	Only an unambiguous code, article, barcode or exact title is used. Existing
+	links are never overwritten, so a wrong source record cannot silently change
+	a previously imported catalog item.
+	"""
+	filters = (
+		("external_code", row.get("externalCode")),
+		("article", row.get("article")),
+		("item_code", row.get("code")),
+		("item_name", row.get("name")),
+	)
+	for fieldname, value in filters:
+		value = str(value or "").strip()
+		if not value:
+			continue
+		candidates = _unlinked_catalog_items({fieldname: value}, item_type)
+		if len(candidates) == 1:
+			return candidates[0]
+
+	barcode_values = []
+	for barcode in row.get("barcodes") or []:
+		value, _barcode_type = _barcode(barcode)
+		if value:
+			barcode_values.append(value)
+	for value in barcode_values:
+		parents = frappe.get_all(
+			"Catalog Item Barcode",
+			filters={"barcode": value},
+			pluck="parent",
+		)
+		candidates = _unlinked_catalog_items({"name": ["in", parents]}, item_type) if parents else []
+		if len(candidates) == 1:
+			return candidates[0]
+	return None
+
+
+def _unlinked_catalog_items(filters, item_type):
+	rows = frappe.get_all(
+		"Catalog Item",
+		filters=filters,
+		fields=["name", "moysklad_id"],
+		limit_page_length=3,
+	)
+	return [
+		row.name
+		for row in rows
+		if not row.moysklad_id and (not item_type or frappe.db.get_value("Catalog Item", row.name, "item_type") == item_type)
+	]
 
 
 def _unique_value(doctype, fieldname, value, current_name=None):
