@@ -48,6 +48,7 @@ async function loadItems() {
   try {
     const result = await call("raspechatka.api.frontend.get_catalog_items", {
       ...filters,
+      limit_page_length: 5000,
     });
     items.value = result.items || [];
   } catch (exception) {
@@ -58,12 +59,23 @@ async function loadItems() {
 }
 
 async function loadFilters() {
-  try {
-    const result = await call("raspechatka.api.frontend.get_catalog_filters");
-    groups.value = result.groups || [];
-    points.value = result.business_points || [];
-  } catch (exception) {
-    error.value = exception.message;
+  const result = await call("raspechatka.api.frontend.get_catalog_filters");
+  groups.value = result.groups || [];
+  points.value = result.business_points || [];
+}
+
+async function loadWorkspace() {
+  error.value = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await loadFilters();
+      await loadItems();
+      if (!error.value) return;
+    } catch (exception) {
+      error.value = exception.message;
+      loading.value = false;
+    }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 350));
   }
 }
 
@@ -131,7 +143,7 @@ function addRow(table, row) { (itemForm[table] ||= []).push(row); }
 function removeRow(table, index) { itemForm[table].splice(index, 1); }
 
 onMounted(async () => {
-  await Promise.all([loadFilters(), loadItems()]);
+  await loadWorkspace();
 });
 </script>
 
@@ -148,7 +160,7 @@ onMounted(async () => {
       <CatalogGroupSidebar :groups="groups" :selected="filters.catalog_group" :can-edit="canEdit" @select="selectGroup" @create="openGroupEditor" @edit="openGroupEditor" />
       <div class="catalog-main">
     <SmartFilterBar :model-value="filters" :fields="filterFields" view-key="catalog.items" @update:model-value="Object.assign(filters,$event)" @apply="loadItems" @reset="loadItems" />
-    <SmartDataTable :rows="items" :columns="tableColumns" view-key="catalog.items" :loading="loading" :error="error" empty-title="Ничего не найдено" empty-text="Измените фильтры или создайте новую позицию." @open="openItem" @retry="loadItems">
+    <SmartDataTable :rows="items" :columns="tableColumns" view-key="catalog.items" :loading="loading" :error="error" empty-title="Ничего не найдено" empty-text="Измените фильтры или создайте новую позицию." @open="openItem" @retry="loadWorkspace">
       <template #cell-item_type="{ row }"><span class="type-chip" :class="row.item_type.toLowerCase()">{{ typeLabels[row.item_type] || row.item_type }}</span></template>
       <template #cell-active="{ row }"><span class="state" :class="{ inactive: !row.active }"><i></i>{{ row.active ? 'Активен' : 'Выключен' }}</span></template>
     </SmartDataTable>

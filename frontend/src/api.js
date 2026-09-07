@@ -36,10 +36,23 @@ export async function call(method, params = {}, options = {}) {
     request.body = JSON.stringify(params);
   }
 
-  const response = await fetch(url, request);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.exc_type) {
-    throw new Error(payload.message || payload._server_messages || "Ошибка запроса к серверу");
+  // Повторяем только безопасные запросы чтения: это защищает все страницы
+  // от краткого сбоя при старте backend-контейнера, не дублируя сохранения.
+  const attempts = requestMethod === "GET" ? 2 : 1;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, request);
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && !payload.exc_type) return payload.message;
+      const error = new Error(payload.message || payload._server_messages || "Ошибка запроса к серверу");
+      if (response.status < 500 || attempt === attempts - 1) throw error;
+      lastError = error;
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350));
   }
-  return payload.message;
+  throw lastError || new Error("Ошибка запроса к серверу");
 }

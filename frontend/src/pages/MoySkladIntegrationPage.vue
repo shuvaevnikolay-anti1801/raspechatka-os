@@ -7,7 +7,7 @@ const busy = ref("");
 const error = ref("");
 const notice = ref("");
 const settings = ref({});
-const form = reactive({ access_token: "", enabled: false, sync_interval_minutes: 60 });
+const form = reactive({ access_token: "" });
 const preview = ref(null);
 
 const status = computed(() => ({
@@ -30,8 +30,6 @@ async function load() {
 
 function applySettings(value) {
   settings.value = value || {};
-  form.enabled = Boolean(value?.enabled);
-  form.sync_interval_minutes = Number(value?.sync_interval_minutes || 60);
   preview.value = value?.preview || preview.value;
 }
 
@@ -41,8 +39,6 @@ async function save(showNotice = true) {
   const saved = await call("raspechatka.api.moysklad.save_settings", {
     data: JSON.stringify({
       access_token: form.access_token,
-      enabled: form.enabled,
-      sync_interval_minutes: form.sync_interval_minutes,
     }),
   }, { method: "POST" });
   form.access_token = "";
@@ -80,7 +76,7 @@ onMounted(load);
       <div>
         <div class="eyebrow">ИНТЕГРАЦИИ</div>
         <h1>МойСклад</h1>
-        <p>Безопасное чтение справочников перед настройкой постоянной синхронизации</p>
+        <p>Однократный импорт исходных данных. После переноса система работает самостоятельно.</p>
       </div>
       <div v-if="!loading" class="connection-status" :class="status.className">
         <span></span>{{ status.label }}
@@ -111,24 +107,7 @@ onMounted(load);
           />
           <p class="field-hint">API: {{ settings.api_base }}</p>
 
-          <label class="switch-row">
-            <input v-model="form.enabled" type="checkbox" />
-            <span>
-              <strong>Фоновое чтение</strong>
-              <small>Периодически обновлять обзор данных без импорта</small>
-            </span>
-          </label>
-
-          <label class="field-label" for="sync-interval">Интервал чтения</label>
-          <select id="sync-interval" v-model.number="form.sync_interval_minutes">
-            <option :value="15">15 минут</option>
-            <option :value="30">30 минут</option>
-            <option :value="60">1 час</option>
-            <option :value="180">3 часа</option>
-            <option :value="360">6 часов</option>
-            <option :value="720">12 часов</option>
-            <option :value="1440">1 день</option>
-          </select>
+          <p class="field-hint">Постоянная синхронизация выключена. Данные переносятся только по явному разовому запуску.</p>
 
           <div class="button-row">
             <button class="button" :disabled="Boolean(busy)" @click="save().catch((e) => error = e.message)">

@@ -51,8 +51,8 @@ def save_settings(data):
 	require_access("settings.access", "admin")
 	data = frappe.parse_json(data) or {}
 	doc = frappe.get_single("MoySklad Settings")
-	doc.enabled = cint(bool(data.get("enabled")))
-	doc.sync_interval_minutes = _validated_interval(data.get("sync_interval_minutes"))
+	# МойСклад используется только для разового импорта по явному действию.
+	doc.enabled = 0
 	if data.get("access_token"):
 		doc.access_token = str(data["access_token"]).strip()
 	doc.save(ignore_permissions=True)
@@ -144,17 +144,8 @@ def run_catalog_sync():
 
 
 def sync_enabled_connection():
-	"""Retain the lightweight scheduled preview; catalog import is manual/one-time."""
-	try:
-		doc = frappe.get_single("MoySklad Settings")
-	except frappe.DoesNotExistError:
-		return
-	if not doc.enabled or not _has_token(doc) or not _sync_is_due(doc):
-		return
-	try:
-		_save_preview(doc, _collect_preview(doc))
-	except MoySkladRequestError as exc:
-		_update_status(doc, "Error", error_message=str(exc))
+	"""Legacy hook kept harmless for existing installations; no background sync."""
+	return None
 
 
 def _sync_catalog(settings):
