@@ -31,6 +31,7 @@
   "default_supplier",
   "variant_of",
   "has_variants",
+  "variant_values",
   "dimensions_section",
   "weight",
   "volume",
@@ -84,6 +85,8 @@
    "label": "Код",
    "reqd": 1,
    "unique": 1,
+   "read_only": 1,
+   "hidden": 1,
    "bold": 1,
    "in_list_view": 1,
    "in_global_search": 1,
@@ -104,7 +107,7 @@
    "fieldname": "item_type",
    "fieldtype": "Select",
    "label": "Тип",
-   "options": "Product\nService\nBundle",
+   "options": "Product\nService\nBundle\nVariant",
    "default": "Product",
    "reqd": 1,
    "in_list_view": 1,
@@ -176,7 +179,8 @@
   {
    "fieldname": "description",
    "fieldtype": "Text Editor",
-   "label": "Описание"
+   "label": "Описание",
+   "hidden": 1
   },
   {
    "fieldname": "identifiers_section",
@@ -188,6 +192,7 @@
    "fieldname": "article",
    "fieldtype": "Data",
    "label": "Артикул",
+   "hidden": 1,
    "in_global_search": 1,
    "search_index": 1
   },
@@ -195,19 +200,22 @@
    "fieldname": "external_code",
    "fieldtype": "Data",
    "label": "Внешний код",
+   "hidden": 1,
    "unique": 1,
    "in_global_search": 1
   },
   {
    "fieldname": "brand",
    "fieldtype": "Data",
-   "label": "Бренд"
+   "label": "Бренд",
+   "hidden": 1
   },
   {
    "fieldname": "country_of_origin",
    "fieldtype": "Link",
    "label": "Страна происхождения",
-   "options": "Country"
+   "options": "Country",
+   "hidden": 1
   },
   {
    "fieldname": "column_identifiers",
@@ -233,6 +241,13 @@
    "default": "0"
   },
   {
+   "fieldname": "variant_values",
+   "fieldtype": "Table",
+   "label": "Параметры модификации",
+   "options": "Catalog Variant Value",
+   "depends_on": "eval:doc.item_type=='Variant'"
+  },
+  {
    "fieldname": "dimensions_section",
    "fieldtype": "Section Break",
    "label": "Физические параметры",
@@ -242,23 +257,27 @@
    "fieldname": "weight",
    "fieldtype": "Float",
    "label": "Вес, кг",
-   "non_negative": 1
+   "non_negative": 1,
+   "hidden": 1
   },
   {
    "fieldname": "volume",
    "fieldtype": "Float",
    "label": "Объём, м³",
-   "non_negative": 1
+   "non_negative": 1,
+   "hidden": 1
   },
   {
    "fieldname": "color",
    "fieldtype": "Data",
-   "label": "Цвет"
+   "label": "Цвет",
+   "hidden": 1
   },
   {
    "fieldname": "size",
    "fieldtype": "Data",
-   "label": "Размер"
+   "label": "Размер",
+   "hidden": 1
   },
   {
    "fieldname": "pricing_tab",
@@ -269,7 +288,8 @@
    "fieldname": "minimum_sale_price",
    "fieldtype": "Currency",
    "label": "Минимальная цена продажи",
-   "non_negative": 1
+   "non_negative": 1,
+   "hidden": 1
   },
   {
    "fieldname": "prevent_discounts",

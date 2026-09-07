@@ -33,7 +33,7 @@ def resolve_item_price(
 	item_row = frappe.db.get_value(
 		"Catalog Item",
 		item,
-		["active", "stock_uom"],
+		["active", "stock_uom", "variant_of"],
 		as_dict=True,
 	)
 	if not item_row or not item_row.active:
@@ -100,6 +100,20 @@ def resolve_item_price(
 		reverse=True,
 	)
 	if not candidates:
+		if item_row.variant_of:
+			parent_price = resolve_item_price(
+				item_row.variant_of,
+				business_point,
+				quantity=quantity,
+				price_type=price_type,
+				uom=uom,
+				on_date=on_date,
+				required=False,
+			)
+			if parent_price:
+				parent_price["source"] = "Variant Parent"
+				parent_price["inherited_from"] = item_row.variant_of
+				return parent_price
 		if required:
 			frappe.throw(
 				_("Для позиции «{0}» не настроена действующая цена «{1}».").format(item, price_type)
