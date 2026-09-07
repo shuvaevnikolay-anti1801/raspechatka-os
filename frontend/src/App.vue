@@ -53,7 +53,6 @@ const submenus = {
 		{ label: "План и модель", to: "/finance/planning", area: "finance.planning" },
 		{ label: "Взаиморасчёты", to: "/finance/settlements", area: "finance.reporting" },
 		{ label: "Прибыльность", to: "/finance/profitability", area: "finance.reporting" },
-		{ label: "Точка Банк", to: "/finance/tochka", area: "finance.bank" },
 		{ label: "Настройки", to: "/finance/settings", area: "finance.operations", minimum: "Admin" },
 	],
 	references: [

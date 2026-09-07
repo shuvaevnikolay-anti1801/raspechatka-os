@@ -1,0 +1,60 @@
+{
+  "doctype": "DocType",
+  "name": "Tochka Bank Settings",
+  "module": "Raspechatka OS",
+  "issingle": 1,
+  "field_order": [
+    "oauth_section",
+    "client_id",
+    "client_secret",
+    "default_sync_interval_minutes",
+    "callback_section",
+    "callback_url"
+  ],
+  "fields": [
+    {
+      "fieldname": "oauth_section",
+      "fieldtype": "Section Break",
+      "label": "Приложение Распечатка ОС"
+    },
+    {
+      "fieldname": "client_id",
+      "fieldtype": "Password",
+      "label": "Client ID"
+    },
+    {
+      "fieldname": "client_secret",
+      "fieldtype": "Password",
+      "label": "Client Secret"
+    },
+    {
+      "fieldname": "default_sync_interval_minutes",
+      "fieldtype": "Int",
+      "label": "Стандартный интервал синхронизации, минут",
+      "default": "15"
+    },
+    {
+      "fieldname": "callback_section",
+      "fieldtype": "Section Break",
+      "label": "OAuth callback"
+    },
+    {
+      "fieldname": "callback_url",
+      "fieldtype": "Data",
+      "label": "Адрес callback",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1
+    },
+    {
+      "role": "Finance Bank Manager",
+      "read": 1,
+      "write": 1
+    }
+  ]
+}
