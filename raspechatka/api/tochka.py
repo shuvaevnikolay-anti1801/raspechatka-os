@@ -81,7 +81,7 @@ def begin_oauth(connection):
 		frappe.throw(_("Банк не вернул идентификатор согласия"))
 	state = uuid.uuid4().hex
 	url = requests.Request("GET", AUTHORIZE_URL, params={"client_id": client_id, "response_type": "code", "redirect_uri": redirect_uri, "consent_id": consent_id, "state": state}).prepare().url
-	doc.db_set({"consent_id": consent_id, "oauth_state": state, "oauth_url": url, "status": "Awaiting Consent", "error_message": None})
+	doc.db_set({"consent_id": consent_id, "oauth_state": state, "oauth_url": url, "consent_sent_at": now_datetime(), "status": "Awaiting Consent", "error_message": None})
 	return {"url": url}
 
 
@@ -325,3 +325,260 @@ def _entity_filters(entity=None):
 def _ensure_entity(entity):
 	if not entity: frappe.throw(_("Выберите ИП"))
 	_entity_filters(entity)
+
+
+# Centralised Tochka Bank configuration. The old per-connection credentials are
+# intentionally ignored: a bank application belongs to the network, while OAuth
+# consent belongs to one individual entrepreneur.
+
+BANK_MANAGER_ROLE = "Finance Bank Manager"
+CENTRAL_SETTINGS_DOCTYPE = "Tochka Bank Settings"
+
+
+def _require_bank_manager():
+	if "System Manager" not in frappe.get_roles() and BANK_MANAGER_ROLE not in frappe.get_roles():
+		frappe.throw(_("Настройки Точка Банка доступны только центральному администратору или роли «Финансы / Банк»"), frappe.PermissionError)
+
+
+def _tochka_settings():
+	return frappe.get_single(CENTRAL_SETTINGS_DOCTYPE)
+
+
+def _callback_url():
+	return frappe.utils.get_url("/api/method/raspechatka.api.tochka.oauth_callback")
+
+
+def _notify_bank_admins(subject, message):
+	for user in frappe.get_all("Has Role", filters={"role": ["in", ["System Manager", BANK_MANAGER_ROLE]], "parenttype": "User"}, pluck="parent"):
+		if user and user != "Guest":
+			frappe.publish_realtime("raspechatka_bank_alert", {"subject": subject, "message": message}, user=user)
+	frappe.log_error(message, subject)
+
+
+def _connection_error(doc, error):
+	message = str(error)[:1000]
+	doc.db_set({"status": "Error", "error_message": message})
+	_notify_bank_admins(_("Ошибка интеграции Точка Банка"), f"{doc.connection_name}: {message}")
+
+
+def _effective_interval(doc, settings=None):
+	settings = settings or _tochka_settings()
+	return max(5, int(doc.sync_interval_minutes or settings.default_sync_interval_minutes or 15))
+
+
+@frappe.whitelist()
+def get_bank_settings():
+	_require_bank_manager()
+	settings = _tochka_settings()
+	connections = frappe.get_all(
+		"Bank Connection",
+		fields=["name", "connection_name", "business_entity", "bank_name", "enabled", "status", "sync_mode",
+			"sync_interval_minutes", "overlap_days", "last_sync_at", "token_expires_at", "oauth_url", "error_message"],
+		order_by="connection_name asc",
+	)
+	review = frappe.get_all(
+		"Bank Operation",
+		filters={"processing_status": "Review"},
+		fields=["name", "business_entity", "posted_at", "direction", "amount", "currency", "counterparty_name", "purpose"],
+		order_by="posted_at desc", limit_page_length=20,
+	)
+	return {
+		"configured": bool(settings.get_password("client_id") and settings.get_password("client_secret")),
+		"default_sync_interval_minutes": max(5, int(settings.default_sync_interval_minutes or 15)),
+		"callback_url": _callback_url(),
+		"connections": connections,
+		"review_operations": review,
+		"review_count": frappe.db.count("Bank Operation", {"processing_status": "Review"}),
+		"entities": frappe.get_all("Business Entity", filters={"active": 1}, fields=["name", "short_name"], order_by="short_name asc"),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_bank_settings(data):
+	_require_bank_manager()
+	data = frappe.parse_json(data) or {}
+	doc = _tochka_settings()
+	interval = int(data.get("default_sync_interval_minutes") or 15)
+	if interval < 5:
+		frappe.throw(_("Минимальный интервал синхронизации — 5 минут"))
+	doc.default_sync_interval_minutes = interval
+	if data.get("client_id"):
+		doc.client_id = data["client_id"].strip()
+	if data.get("client_secret"):
+		doc.client_secret = data["client_secret"]
+	doc.save(ignore_permissions=True)
+	return {"configured": bool(doc.get_password("client_id") and doc.get_password("client_secret"))}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_connection(data):
+	_require_bank_manager()
+	data = frappe.parse_json(data) or {}
+	_ensure_entity(data.get("business_entity"))
+	name = data.get("name")
+	doc = frappe.get_doc("Bank Connection", name) if name else frappe.new_doc("Bank Connection")
+	for fieldname in ("connection_name", "business_entity", "bank_name", "enabled", "sync_mode", "sync_interval_minutes", "overlap_days"):
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+	if int(doc.sync_interval_minutes or 0) and int(doc.sync_interval_minutes) < 5:
+		frappe.throw(_("Минимальный интервал синхронизации — 5 минут"))
+	if not doc.connection_name:
+		doc.connection_name = f"Точка Банк — {frappe.db.get_value('Business Entity', doc.business_entity, 'short_name')}"
+	doc.bank_name = "Точка"
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def begin_oauth(connection):
+	_require_bank_manager()
+	doc = frappe.get_doc("Bank Connection", connection)
+	settings = _tochka_settings()
+	client_id = settings.get_password("client_id")
+	client_secret = settings.get_password("client_secret")
+	if not client_id or not client_secret:
+		frappe.throw(_("Сначала сохраните централизованные Client ID и Client Secret Точка Банка"))
+	app_token = _token_request({"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret})
+	consent = _request_json("POST", CONSENT_URL, app_token.get("access_token"), {"Data": {"permissions": PERMISSIONS}})
+	consent_id = _pick(consent, "Data.consentId", "data.consentId", "consentId")
+	if not consent_id:
+		frappe.throw(_("Банк не вернул идентификатор согласия"))
+	state = uuid.uuid4().hex
+	url = requests.Request("GET", AUTHORIZE_URL, params={"client_id": client_id, "response_type": "code", "redirect_uri": _callback_url(), "consent_id": consent_id, "state": state}).prepare().url
+	doc.db_set({"consent_id": consent_id, "oauth_state": state, "oauth_url": url, "status": "Awaiting Consent", "error_message": None})
+	return {"url": url, "connection": doc.name}
+
+
+@frappe.whitelist(allow_guest=True)
+def oauth_callback(code=None, state=None, token_id=None):
+	name = frappe.db.get_value("Bank Connection", {"oauth_state": state}, "name")
+	if not name or not code:
+		frappe.throw(_("Ссылка подключения недействительна или уже использована"))
+	settings = _tochka_settings()
+	client_id = settings.get_password("client_id")
+	client_secret = settings.get_password("client_secret")
+	if not client_id or not client_secret:
+		frappe.throw(_("Настройки приложения Точка Банка не заполнены"))
+	doc = frappe.get_doc("Bank Connection", name)
+	payload = {"grant_type": "authorization_code", "code": code, "client_id": client_id, "client_secret": client_secret, "redirect_uri": _callback_url()}
+	if token_id:
+		payload["token_id"] = token_id
+	token = _token_request(payload)
+	doc.access_token = token.get("access_token")
+	if token.get("refresh_token"):
+		doc.refresh_token = token.get("refresh_token")
+	doc.token_expires_at = now_datetime() + timedelta(seconds=int(token.get("expires_in") or 86400))
+	doc.oauth_state = None
+	doc.oauth_url = None
+	doc.status = "Connected"
+	doc.error_message = None
+	doc.save(ignore_permissions=True)
+	frappe.local.response["type"] = "redirect"
+	frappe.local.response["location"] = "/raspechatka/finance/settings/tochka?connected=1"
+
+
+@frappe.whitelist(methods=["POST"])
+def sync_now(connection):
+	_require_bank_manager()
+	doc = frappe.get_doc("Bank Connection", connection)
+	if doc.status != "Connected":
+		frappe.throw(_("Сначала получите согласие владельца ИП в Точка Банке"))
+	frappe.enqueue("raspechatka.api.tochka.sync_connection", queue="long", connection=connection, enqueue_after_commit=True)
+	return {"queued": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def refresh_accounts(connection):
+	_require_bank_manager()
+	return _refresh_connection_accounts(connection)
+
+
+def _refresh_connection_accounts(connection):
+	doc = frappe.get_doc("Bank Connection", connection)
+	result = _request_json("GET", f"{API_BASE}/open-banking/v1.0/accounts", _valid_token(doc))
+	accounts = _pick(result, "Data.Account", "Data.Accounts", "Data.accounts", "data.Account", "data.Accounts", "data.accounts", "accounts") or []
+	if not isinstance(accounts, list):
+		accounts = [accounts]
+	updated = 0
+	for account in accounts:
+		external_id = str(_pick(account, "accountId", "AccountId", "AccountID", "id") or "")
+		number = _digits(_pick(account, "accountNumber", "AccountNumber", "identification", "number") or "")
+		name = frappe.db.get_value("Business Bank Account", {"business_entity": doc.business_entity, "settlement_account": number}, "name") if number else None
+		if name and external_id:
+			frappe.db.set_value("Business Bank Account", name, "external_account_id", external_id)
+			updated += 1
+	if not updated:
+		_notify_bank_admins(_("Точка Банк: счёт не сопоставлен"), f"{doc.connection_name}: в ОС не найден ни один счёт из ответа банка.")
+	return {"received": len(accounts), "matched": updated}
+
+
+def sync_enabled_connections():
+	settings = _tochka_settings()
+	for name in frappe.get_all("Bank Connection", filters={"enabled": 1, "status": "Connected"}, pluck="name"):
+		doc = frappe.get_doc("Bank Connection", name)
+		last = get_datetime(doc.last_sync_at) if doc.last_sync_at else None
+		if last and now_datetime() < last + timedelta(minutes=_effective_interval(doc, settings)):
+			continue
+		frappe.enqueue("raspechatka.api.tochka.sync_connection", queue="long", connection=name, enqueue_after_commit=True)
+
+
+def sync_connection(connection):
+	doc = frappe.get_doc("Bank Connection", connection)
+	lock_key = f"raspechatka:tochka:sync:{doc.name}"
+	if frappe.cache().get_value(lock_key):
+		return
+	frappe.cache().set_value(lock_key, "1", expires_in_sec=240)
+	try:
+		token = _valid_token(doc)
+		accounts = frappe.get_all("Business Bank Account", filters={"business_entity": doc.business_entity, "active": 1, "external_account_id": ["is", "set"]}, fields=["name", "external_account_id", "settlement_account", "currency"])
+		if not accounts:
+			_refresh_connection_accounts(doc.name)
+			accounts = frappe.get_all("Business Bank Account", filters={"business_entity": doc.business_entity, "active": 1, "external_account_id": ["is", "set"]}, fields=["name", "external_account_id", "settlement_account", "currency"])
+		if not accounts:
+			raise RuntimeError(_("Не найден сопоставленный расчётный счёт. Добавьте счёт ИП в ОС или проверьте его номер."))
+		for account in accounts:
+			for transaction in _fetch_transactions(token, account.external_account_id, int(doc.overlap_days or 2)):
+				_ingest(doc, account, transaction)
+		doc.db_set({"last_sync_at": now_datetime(), "last_successful_sync_at": now_datetime(), "error_message": None, "status": "Connected"})
+	except Exception as error:
+		_connection_error(doc, error)
+		raise
+	finally:
+		frappe.cache().delete_value(lock_key)
+
+
+def _valid_token(doc):
+	if doc.token_expires_at and get_datetime(doc.token_expires_at) > now_datetime() + timedelta(minutes=5):
+		return doc.get_password("access_token")
+	refresh = doc.get_password("refresh_token")
+	if not refresh:
+		raise RuntimeError(_("Истёк доступ к банку: отправьте владельцу ИП новую ссылку согласия"))
+	settings = _tochka_settings()
+	token = _token_request({"grant_type": "refresh_token", "refresh_token": refresh, "client_id": settings.get_password("client_id"), "client_secret": settings.get_password("client_secret")})
+	doc.access_token = token.get("access_token")
+	if token.get("refresh_token"):
+		doc.refresh_token = token.get("refresh_token")
+	doc.token_expires_at = now_datetime() + timedelta(seconds=int(token.get("expires_in") or 86400))
+	doc.status = "Connected"
+	doc.save(ignore_permissions=True)
+	return token.get("access_token")
+
+
+def _ingest(connection, account, payload):
+	normalized = _normalize(connection, account, payload)
+	if frappe.db.exists("Bank Operation", {"operation_key": normalized["operation_key"]}):
+		return
+	operation = frappe.get_doc({"doctype": "Bank Operation", **normalized}).insert(ignore_permissions=True)
+	# Dry Run receives and preserves the statement, but deliberately does not
+	# create financial transactions. Live mode only posts after a matching rule.
+	if connection.sync_mode != "Live":
+		operation.db_set("processing_status", "Review")
+		return
+	action = _classify(operation)
+	if action.get("result") == "Ignore":
+		operation.db_set("processing_status", "Ignored")
+	elif action.get("result") == "Review" or not action.get("financial_article"):
+		operation.db_set({"processing_status": "Review", "matched_rule": action.get("rule")})
+	else:
+		_create_ledger(operation, action)
+		operation.db_set({"processing_status": "Classified", "matched_rule": action.get("rule")})

@@ -78,7 +78,7 @@ onMounted(load);
 
 <template>
 	<section class="page finance-settings">
-		<ListPageHeader title="Настройки" />
+		<ListPageHeader title="Настройки" />\n\t\t<router-link class="bank-settings-link" to="/finance/settings/tochka"><div><small>ИНТЕГРАЦИИ</small><strong>Точка Банк</strong><span>Подключения ИП, согласия владельцев и загрузка выписок.</span></div><b>Настроить →</b></router-link>
 		<div class="settings-intro">
 			<div>
 				<strong>Финансовые статьи</strong>
@@ -133,7 +133,7 @@ onMounted(load);
 </template>
 
 <style scoped>
-.settings-intro {
+.bank-settings-link { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:18px; padding:16px 18px; border:1px solid var(--border); border-radius:14px; background:var(--surface); color:var(--ink); text-decoration:none; }\n.bank-settings-link div { display:grid; gap:3px; }\n.bank-settings-link small { color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.08em; }\n.bank-settings-link span { color:var(--muted); font-size:13px; }\n.bank-settings-link b { color:var(--green-dark); white-space:nowrap; }\n.settings-intro {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;

@@ -164,7 +164,7 @@ app_include_js = "/assets/raspechatka/js/raspechatka.js"
 
 scheduler_events = {
 	"cron": {
-		"*/15 * * * *": [
+		"*/5 * * * *": [
 			"raspechatka.api.tochka.sync_enabled_connections",
 		]
 	}

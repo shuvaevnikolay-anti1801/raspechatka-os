@@ -15,7 +15,7 @@ import FinancePaymentsPage from "./pages/FinancePaymentsPage.vue";
 import FinanceCalendarPage from "./pages/FinanceCalendarPage.vue";
 import FinanceReportPage from "./pages/FinanceReportPage.vue";
 import FinancePlanningPage from "./pages/FinancePlanningPage.vue";
-import FinanceBankPage from "./pages/FinanceBankPage.vue";
+import FinanceBankSettingsPage from "./pages/FinanceBankSettingsPage.vue";
 import FinanceSettingsPage from "./pages/FinanceSettingsPage.vue";
 import SalesPage from "./pages/SalesPage.vue";
 import TeamPage from "./pages/TeamPage.vue";
@@ -55,7 +55,8 @@ const routes = [
   { path: "/finance/planning", name: "finance-planning", component: FinancePlanningPage, meta: { module: "finance" } },
   { path: "/finance/settlements", name: "finance-settlements", component: FinanceReportPage, meta: { module: "finance", kind: "settlements" } },
   { path: "/finance/profitability", name: "finance-profitability", component: FinanceReportPage, meta: { module: "finance", kind: "profitability" } },
-  { path: "/finance/tochka", name: "finance-tochka", component: FinanceBankPage, meta: { module: "finance" } },
+  { path: "/finance/tochka", redirect: "/finance/settings/tochka" },
+  { path: "/finance/settings/tochka", name: "finance-bank-settings", component: FinanceBankSettingsPage, meta: { module: "finance" } },
   { path: "/finance/settings", name: "finance-settings", component: FinanceSettingsPage, meta: { module: "finance" } },
   { path: "/references/financial-articles", redirect: "/finance/settings" },
   { path: "/sales", name: "sales-overview", component: SalesPage, meta: { module: "sales", kind: "overview" } },
