@@ -115,15 +115,32 @@ jobs:
             exit 1
           fi
 
-          DOCKER_BUILDKIT=1 docker build \
-            --build-arg "FRAPPE_BRANCH=version-16" \
-            --build-arg "CACHE_BUST=${EXPECTED_SHA}" \
-            --secret "id=apps_json,src=${APPS_JSON}" \
-            --secret "id=github_ssh,src=${GITHUB_SSH_KEY}" \
-            --secret "id=github_known_hosts,src=${GITHUB_KNOWN_HOSTS}" \
-            --file "${CONTAINERFILE}" \
-            --tag "${IMAGE_TAG}" \
-            "${FRAPPE_DOCKER_DIR}"
+          build_image() {
+            DOCKER_BUILDKIT=1 docker build \
+              --build-arg "FRAPPE_BRANCH=version-16" \
+              --build-arg "CACHE_BUST=${EXPECTED_SHA}" \
+              --secret "id=apps_json,src=${APPS_JSON}" \
+              --secret "id=github_ssh,src=${GITHUB_SSH_KEY}" \
+              --secret "id=github_known_hosts,src=${GITHUB_KNOWN_HOSTS}" \
+              --file "${CONTAINERFILE}" \
+              --tag "${IMAGE_TAG}" \
+              "${FRAPPE_DOCKER_DIR}"
+          }
+
+          BUILD_ATTEMPTS=5
+          for attempt in $(seq 1 "${BUILD_ATTEMPTS}"); do
+            if build_image; then
+              echo "Docker image built successfully on attempt ${attempt}."
+              break
+            fi
+            if [[ "${attempt}" -eq "${BUILD_ATTEMPTS}" ]]; then
+              echo "Docker build failed after ${BUILD_ATTEMPTS} attempts." >&2
+              exit 1
+            fi
+            delay=$((30 * 2 ** (attempt - 1)))
+            echo "Docker registry or build is temporarily unavailable. Retrying in ${delay}s (attempt ${attempt}/${BUILD_ATTEMPTS})." >&2
+            sleep "${delay}"
+          done
 
           set -a
           source "${PRODUCTION_ENV}"
