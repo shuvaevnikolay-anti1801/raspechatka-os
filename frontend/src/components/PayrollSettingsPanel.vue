@@ -13,6 +13,8 @@ const seeding = ref(false);
 const error = ref("");
 const notice = ref("");
 const components = ref([]);
+const positions = ref([]);
+const position = ref("");
 const policy = reactive({
   business_point: "",
   ndfl_rate: 13,
@@ -29,6 +31,7 @@ function emptyComponent() {
   return {
     name: "",
     business_point: props.businessPoint || "",
+    position: position.value || "",
     component_code: "",
     component_name: "",
     active: 1,
@@ -48,6 +51,7 @@ function resetDraft(values = null) {
   Object.keys(draft).forEach((key) => delete draft[key]);
   Object.assign(draft, values ? JSON.parse(JSON.stringify(values)) : emptyComponent(), {
     business_point: props.businessPoint,
+    position: values?.position || position.value,
   });
 }
 
@@ -58,7 +62,12 @@ async function load() {
   try {
     const result = await call("raspechatka.api.team.get_payroll_settings", {
       business_point: props.businessPoint,
+      position: position.value || undefined,
     });
+    positions.value = result.positions || [];
+    if (!position.value || !positions.value.some((item) => item.name === position.value)) {
+      position.value = positions.value[0]?.name || "";
+    }
     Object.assign(policy, result.policy || {}, { business_point: props.businessPoint });
     components.value = result.components || [];
     resetDraft();
@@ -106,6 +115,7 @@ async function seedDefaults() {
   try {
     const result = await call("raspechatka.api.team.create_default_payroll_components", {
       business_point: props.businessPoint,
+      position: position.value,
     }, { method: "POST" });
     notice.value = result.created
       ? `Добавлено стандартных начислений: ${result.created}.`
@@ -118,7 +128,8 @@ async function seedDefaults() {
   }
 }
 
-watch(() => props.businessPoint, load);
+watch(() => props.businessPoint, () => { position.value = ""; load(); });
+watch(position, load);
 onMounted(load);
 </script>
 
@@ -127,9 +138,9 @@ onMounted(load);
     <div class="panel-heading">
       <div>
         <h3>Оплата труда</h3>
-        <p>Правила действуют для всех сотрудников этой точки. Индивидуальные начисления оформляются при расчёте зарплаты.</p>
+        <p>Общие ставки действуют для точки, а виды начислений настраиваются отдельно для каждой должности.</p>
       </div>
-      <button class="button button-secondary" type="button" :disabled="loading || seeding" @click="seedDefaults">
+      <button class="button button-secondary" type="button" :disabled="loading || seeding || !position" @click="seedDefaults">
         {{ seeding ? "Создаём…" : "Добавить стандартные начисления" }}
       </button>
     </div>
@@ -151,7 +162,16 @@ onMounted(load);
         </button>
       </div>
 
-      <div class="component-list">
+      <div class="position-picker">
+        <label>Должность
+          <select v-model="position">
+            <option v-for="item in positions" :key="item.name" :value="item.name">{{ item.position_name }}</option>
+          </select>
+        </label>
+        <span v-if="position">Ниже показаны условия выбранной должности на этой точке.</span>
+      </div>
+
+      <div v-if="position" class="component-list">
         <article v-for="item in components" :key="item.name" :class="{ inactive: !item.active }">
           <div><b>{{ item.component_name }}</b><small>{{ item.component_code }} · {{ item.calculation_basis }}</small></div>
           <span v-if="item.calculation_basis === 'Personal Sales'">{{ item.default_percent || 0 }}%</span>
@@ -162,7 +182,7 @@ onMounted(load);
         <p v-if="!components.length" class="muted-note">Виды начислений ещё не настроены.</p>
       </div>
 
-      <form class="component-editor" @submit.prevent="saveComponent">
+      <form v-if="position" class="component-editor" @submit.prevent="saveComponent">
         <h4>{{ draft.name ? "Изменить начисление" : "Добавить начисление" }}</h4>
         <div class="editor-grid">
           <label>Код<input v-model="draft.component_code" required placeholder="HOURLY" /></label>
@@ -215,6 +235,9 @@ onMounted(load);
 .policy-grid, .editor-grid { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 14px; }
 label { display: grid; gap: 6px; font-size: 13px; }
 input, select, textarea { width: 100%; }
+.position-picker { display: flex; align-items: end; gap: 18px; }
+.position-picker label { min-width: min(380px, 100%); }
+.position-picker span { color: var(--text-muted, #667085); padding-bottom: 10px; }
 .component-list { display: grid; border: 1px solid var(--border, #dfe3e6); border-radius: 10px; overflow: hidden; }
 .component-list article { display: grid; grid-template-columns: minmax(220px, 2fr) 120px 120px auto; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border, #e7e9eb); }
 .component-list article:last-child { border-bottom: 0; }
@@ -232,7 +255,7 @@ input, select, textarea { width: 100%; }
   .component-list article { grid-template-columns: 1fr auto; }
 }
 @media (max-width: 620px) {
-  .panel-heading, .policy-actions { align-items: stretch; flex-direction: column; }
+  .panel-heading, .policy-actions, .position-picker { align-items: stretch; flex-direction: column; }
   .policy-grid, .editor-grid { grid-template-columns: 1fr; }
 }
 </style>
