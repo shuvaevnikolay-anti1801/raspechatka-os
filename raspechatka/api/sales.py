@@ -178,7 +178,7 @@ def _ingest_shift(row, connection, result, update_existing=False):
 	if name and not update_existing: result["duplicates"] += 1; return
 	doc = frappe.get_doc("Sales Shift", name) if name else frappe.new_doc("Sales Shift")
 	if not name: doc.external_id = external_id
-	_set_shift_scope(doc, connection, row)
+	_set_shift_scope(doc, connection)
 	for field in ("status", "shift_type", "opened_at", "closed_at", "cashier", "opening_cash", "closing_cash", "card_commission_amount", "qr_commission_amount", "comment"):
 		if field in row: doc.set(field, row.get(field))
 	doc.source = "POS"; doc.save(ignore_permissions=True)
@@ -234,10 +234,15 @@ def _shift_name(external_id, point):
 	return name
 
 
-def _set_shift_scope(doc, connection, row):
+def _set_shift_scope(doc, connection):
 	doc.business_point, doc.business_entity = connection.business_point, connection.business_entity
-	doc.warehouse = row.get("warehouse") or frappe.db.get_value("Catalog Warehouse", {"business_point": connection.business_point, "active": 1}, "name")
-	if not doc.warehouse: frappe.throw(_("У точки нет активного склада"))
+	doc.warehouse = frappe.db.get_value(
+		"Catalog Warehouse",
+		{"business_point": connection.business_point, "active": 1},
+		"name",
+	)
+	if not doc.warehouse:
+		frappe.throw(_("У точки нет активного склада"))
 
 
 def _set_doc_scope(doc, connection, shift):
