@@ -490,7 +490,7 @@ def save_schedule(business_point, month, entries=None, publish=0):
 			"shift_template": template.name,
 			"start_time": template.start_time,
 			"end_time": template.end_time,
-			"planned_hours": template.planned_hours,
+			"planned_hours": template.paid_hours,
 			"notes": item.get("notes"),
 		})
 	if cint(publish):
