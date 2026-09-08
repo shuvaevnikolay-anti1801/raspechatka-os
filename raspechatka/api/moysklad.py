@@ -284,22 +284,19 @@ def _sync_groups(rows, stats):
 
 
 def _sync_units(rows, stats):
+	"""Map source units to the two canonical units supported by the catalog."""
+
 	result = {}
+	_ensure_default_unit()
+	_ensure_month_unit()
 	for row in rows:
 		source_id = row.get("id")
 		if not source_id:
 			continue
-		name = _find_by_source("Catalog Unit", source_id)
-		doc = frappe.get_doc("Catalog Unit", name) if name else frappe.new_doc("Catalog Unit")
-		doc.unit_name = _unique_value("Catalog Unit", "unit_name", row.get("name") or source_id, name)
-		doc.symbol = row.get("code") or row.get("name") or "ед."
-		doc.allow_fraction = 1
-		doc.active = int(not row.get("archived"))
-		doc.moysklad_id = source_id
-		doc.moysklad_external_code = row.get("externalCode")
-		doc.moysklad_payload_json = _dump(row)
-		doc.save(ignore_permissions=True)
-		result[source_id] = doc.name
+		label = " ".join(
+			str(value or "") for value in (row.get("name"), row.get("code"))
+		).casefold()
+		result[source_id] = "мес" if "мес" in label else "шт"
 		stats["units"] += 1
 	return result
 
@@ -720,10 +717,31 @@ def _unique_value(doctype, fieldname, value, current_name=None):
 
 
 def _ensure_default_unit():
-	name = frappe.db.get_value("Catalog Unit", {"unit_name": "Штука"}, "name")
-	if name:
+	return _ensure_canonical_unit("шт")
+
+
+def _ensure_month_unit():
+	return _ensure_canonical_unit("мес")
+
+
+def _ensure_canonical_unit(name):
+	if frappe.db.exists("Catalog Unit", name):
+		frappe.db.set_value(
+			"Catalog Unit",
+			name,
+			{"unit_name": name, "symbol": name, "allow_fraction": 0, "active": 1},
+			update_modified=False,
+		)
 		return name
-	doc = frappe.get_doc({"doctype": "Catalog Unit", "unit_name": "Штука", "symbol": "шт.", "active": 1})
+	doc = frappe.get_doc(
+		{
+			"doctype": "Catalog Unit",
+			"unit_name": name,
+			"symbol": name,
+			"allow_fraction": 0,
+			"active": 1,
+		}
+	)
 	doc.insert(ignore_permissions=True)
 	return doc.name
 
