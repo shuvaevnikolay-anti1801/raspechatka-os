@@ -6,6 +6,7 @@ import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import PayrollSettingsPanel from "../components/PayrollSettingsPanel.vue";
 
 const route = useRoute();
 const reference = computed(() => route.params.reference || "entities");
@@ -298,6 +299,7 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
           <label class="check-field"><input v-model="form.accepts_qr" type="checkbox" :true-value="1" :false-value="0" /> QR-код</label>
           <label>Счёт для QR<select v-model="form.qr_bank_account" :disabled="!form.accepts_qr"><option value="">Не выбран</option><option v-for="item in entityAccounts" :key="item.name" :value="item.name">{{ item.bank_name }} · {{ item.settlement_account }}</option></select></label>
         </div></div>
+        <div v-if="form.name" class="form-section"><PayrollSettingsPanel :business-point="form.name" compact /></div>
         <p v-if="formError" class="form-error">{{ formError }}</p>
       </form>
 

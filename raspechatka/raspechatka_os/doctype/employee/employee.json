@@ -29,18 +29,21 @@
   "passport_series",
   "passport_number",
   "registration_address",
+  "passport_issue_date",
+  "passport_issued_by",
+  "passport_department_code",
+  "passport_main_file",
+  "passport_registration_file",
+  "bank_section",
+  "salary_bank_name",
+  "salary_bic",
+  "salary_correspondent_account",
+  "salary_account",
+  "salary_recipient_name",
   "disability",
   "hazardous_conditions",
   "medical_exam_required",
-  "payroll_tab",
-  "hourly_rate",
-  "sales_percent",
-  "ndfl_rate",
-  "insurance_rate",
-  "injury_rate",
   "annual_leave_days",
-  "bank_payment_share",
-  "other_accruals_default",
   "assigned_points",
   "documents_tab",
   "documents",
@@ -264,63 +267,82 @@
    "hidden": 1
   },
   {
-   "fieldname": "payroll_tab",
-   "fieldtype": "Tab Break",
-   "label": "Оплата труда"
-  },
-  {
-   "fieldname": "hourly_rate",
-   "fieldtype": "Currency",
-   "label": "Ставка за час",
-   "default": "0"
-  },
-  {
-   "fieldname": "sales_percent",
-   "fieldtype": "Percent",
-   "label": "Процент от личной выручки",
-   "default": "0"
-  },
-  {
-   "fieldname": "ndfl_rate",
-   "fieldtype": "Percent",
-   "label": "Ставка НДФЛ",
-   "default": "13"
-  },
-  {
-   "fieldname": "insurance_rate",
-   "fieldtype": "Percent",
-   "label": "Страховые взносы",
-   "default": "30"
-  },
-  {
-   "fieldname": "injury_rate",
-   "fieldtype": "Percent",
-   "label": "Травматизм",
-   "default": "0.2"
-  },
-  {
    "fieldname": "annual_leave_days",
    "fieldtype": "Float",
    "label": "Отпуск по договору, дней в год",
    "default": "28"
   },
   {
-   "fieldname": "bank_payment_share",
-   "fieldtype": "Percent",
-   "label": "Доля выплаты безналично",
-   "default": "100"
-  },
-  {
-   "fieldname": "other_accruals_default",
-   "fieldtype": "Currency",
-   "label": "Другие начисления по умолчанию",
-   "default": "0"
-  },
-  {
    "fieldname": "assigned_points",
    "fieldtype": "Table",
    "label": "Точки работы",
    "options": "Employee Point Assignment"
+  },
+  {
+   "fieldname": "passport_issue_date",
+   "fieldtype": "Date",
+   "label": "Дата выдачи паспорта",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "passport_issued_by",
+   "fieldtype": "Small Text",
+   "label": "Кем выдан паспорт",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "passport_department_code",
+   "fieldtype": "Data",
+   "label": "Код подразделения",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "passport_main_file",
+   "fieldtype": "Attach",
+   "label": "Паспорт — основная страница",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "passport_registration_file",
+   "fieldtype": "Attach",
+   "label": "Паспорт — регистрация",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "bank_section",
+   "fieldtype": "Section Break",
+   "label": "Банковские реквизиты для зарплаты",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "salary_bank_name",
+   "fieldtype": "Data",
+   "label": "Банк",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "salary_bic",
+   "fieldtype": "Data",
+   "label": "БИК",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "salary_correspondent_account",
+   "fieldtype": "Data",
+   "label": "Корреспондентский счёт",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "salary_account",
+   "fieldtype": "Data",
+   "label": "Счёт получателя",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "salary_recipient_name",
+   "fieldtype": "Data",
+   "label": "Получатель",
+   "permlevel": 1
   }
  ],
  "permissions": [

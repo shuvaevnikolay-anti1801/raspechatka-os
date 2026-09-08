@@ -81,7 +81,8 @@
       { "area": "page.team.schedule", "label": "График", "route": "/team/schedule", "legacy_area": "team.schedule", "order": 30 },
       { "area": "page.team.payroll", "label": "Зарплата", "route": "/team/payroll", "legacy_area": "team.payroll", "order": 40 },
       { "area": "page.team.bonuses", "label": "Премии и игра", "route": "/team/bonuses", "legacy_area": "team.motivation", "order": 50 },
-      { "area": "page.team.hr", "label": "Кадры и документы", "route": "/team/hr", "legacy_area": "team.hr", "order": 60 }
+      { "area": "page.team.hr", "label": "Кадры и документы", "route": "/team/hr", "legacy_area": "team.hr", "order": 60 },
+      { "area": "page.team.settings", "label": "Настройки", "route": "/team/settings", "legacy_area": "team.payroll", "order": 70 }
     ]
   },
   {
