@@ -2,11 +2,12 @@ import hashlib
 import hmac
 import importlib.util
 import json
-from pathlib import Path
 import unittest
+from pathlib import Path
 
-
-spec = importlib.util.spec_from_file_location("protocol", Path(__file__).resolve().parents[1] / "raspechatka/club_sync_protocol.py")
+spec = importlib.util.spec_from_file_location(
+	"protocol", Path(__file__).resolve().parents[1] / "raspechatka/club_sync_protocol.py"
+)
 p = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(p)
 
@@ -16,10 +17,15 @@ class ProtocolTests(unittest.TestCase):
 		self.secret = "test-only-secret-not-production-000000"
 		self.stamp = "1788850000"
 		self.payload = json.dumps({"version": 1, "event_id": "test-1", "value": "Клуб"}, ensure_ascii=False)
-		self.signature = hmac.new(self.secret.encode(), (self.stamp + "\n" + self.payload).encode(), hashlib.sha256).hexdigest()
+		self.signature = hmac.new(
+			self.secret.encode(), (self.stamp + "\n" + self.payload).encode(), hashlib.sha256
+		).hexdigest()
 
 	def test_signature(self):
-		self.assertEqual(p.verify(self.payload, self.stamp, self.signature, self.secret, int(self.stamp))["event_id"], "test-1")
+		self.assertEqual(
+			p.verify(self.payload, self.stamp, self.signature, self.secret, int(self.stamp))["event_id"],
+			"test-1",
+		)
 
 	def test_reject_tampering(self):
 		with self.assertRaises(ValueError):

@@ -6,8 +6,8 @@ import time
 
 import frappe
 from frappe.utils import get_datetime, now_datetime
-
 from raspechatka.access import get_scope, require_access
+
 from raspechatka.club_sync_protocol import digest, identifier, truth, verify
 from raspechatka.raspechatka_os.doctype.client.client import normalize_phone
 
@@ -26,8 +26,8 @@ def _validate_point(point):
 	row = frappe.db.get_value("Business Point", point, ["city", "address", "active"], as_dict=True)
 	if not row or not row.active:
 		raise ValueError("POINT_NOT_FOUND")
-	city = str(row.city).lower().replace("ё", "е")
-	address = str(row.address).lower().replace("ё", "е")
+	city = str(row.city).lower().replace("ё", "е")  # noqa: RUF001
+	address = str(row.address).lower().replace("ё", "е")  # noqa: RUF001
 	if "ярославль" not in city or "комсомольск" not in address or not re.search(r"(?<!\d)12(?!\d)", address):
 		raise ValueError("EXPECTED_YAROSLAVL_KOMSOMOLSKAYA_12")
 	return point
@@ -38,12 +38,21 @@ def status():
 	_admin()
 	s = _settings()
 	return {
-		"enabled": bool(s.enabled), "business_point": s.business_point,
-		"source_id": s.source_id, "secret_configured": bool(s.get_password("shared_secret", raise_exception=False)),
+		"enabled": bool(s.enabled),
+		"business_point": s.business_point,
+		"source_id": s.source_id,
+		"secret_configured": bool(s.get_password("shared_secret", raise_exception=False)),
 		"clients": frappe.db.count("Client", {"legacy_club_id": ["is", "set"]}),
 		"last_received_at": s.last_received_at,
-		"recent": frappe.get_all("Club Sync Receipt", fields=["name", "outcome", "received_at"], order_by="received_at desc", limit_page_length=20),
-		"points": frappe.get_all("Business Point", filters={"active": 1}, fields=["name", "point_name", "city", "address"]),
+		"recent": frappe.get_all(
+			"Club Sync Receipt",
+			fields=["name", "outcome", "received_at"],
+			order_by="received_at desc",
+			limit_page_length=20,
+		),
+		"points": frappe.get_all(
+			"Business Point", filters={"active": 1}, fields=["name", "point_name", "city", "address"]
+		),
 	}
 
 
@@ -61,7 +70,9 @@ def configure(data):
 			raise ValueError("SECRET_MINIMUM_32_CHARACTERS")
 		s.shared_secret = data["shared_secret"]
 	s.enabled = int(truth(data.get("enabled")))
-	if s.enabled and not (data.get("shared_secret") or s.get_password("shared_secret", raise_exception=False)):
+	if s.enabled and not (
+		data.get("shared_secret") or s.get_password("shared_secret", raise_exception=False)
+	):
 		raise ValueError("SECRET_REQUIRED")
 	s.save(ignore_permissions=True)
 	return {"saved": True}
@@ -86,19 +97,38 @@ def _audit(client, rows, kind):
 		key = digest(kind + ":" + client.client_id + ":" + external + ":" + str(row.get("Дата отзыва") or ""))
 		if frappe.db.exists(doctype, {keyfield: key}):
 			continue
-		common = {"doctype": doctype, "client": client.name, keyfield: key, "source": row.get("Источник") or "Google Sheets"}
+		common = {
+			"doctype": doctype,
+			"client": client.name,
+			keyfield: key,
+			"source": row.get("Источник") or "Google Sheets",
+		}
 		if is_consent:
-			common.update({
-				"consent_type": row.get("Тип согласия"), "accepted": int(truth(row.get("Согласие"))),
-				"recorded_at": _date(row.get("Дата/время")), "document_version": row.get("Версия документа") or "legacy",
-				"document_url": row.get("URL документа"), "submission_id": identifier(row.get("Form Submission ID")),
-				"revoked_at": _date(row.get("Дата отзыва")), "ip_address": row.get("IP"), "user_agent": row.get("User-Agent"),
-			})
+			common.update(
+				{
+					"consent_type": row.get("Тип согласия"),
+					"accepted": int(truth(row.get("Согласие"))),
+					"recorded_at": _date(row.get("Дата/время")),
+					"document_version": row.get("Версия документа") or "legacy",
+					"document_url": row.get("URL документа"),
+					"submission_id": identifier(row.get("Form Submission ID")),
+					"revoked_at": _date(row.get("Дата отзыва")),
+					"ip_address": row.get("IP"),
+					"user_agent": row.get("User-Agent"),
+				}
+			)
 		else:
 			# Raw request bodies in the old log contain login tokens. Never import them.
-			common.update({"event_datetime": _date(row.get("Дата/время")), "event_type": row.get("Событие") or "LEGACY_EVENT",
-				"channel": row.get("Канал"), "status": row.get("Статус"), "external_id": external,
-				"details": "Историческое событие. Исходное тело запроса не перенесено (секреты)."})
+			common.update(
+				{
+					"event_datetime": _date(row.get("Дата/время")),
+					"event_type": row.get("Событие") or "LEGACY_EVENT",
+					"channel": row.get("Канал"),
+					"status": row.get("Статус"),
+					"external_id": external,
+					"details": "Историческое событие. Исходное тело запроса не перенесено (секреты).",
+				}
+			)
 		frappe.get_doc(common).insert(ignore_permissions=True)
 
 
@@ -128,7 +158,11 @@ def _apply(data, settings):
 	doc.registered_at = _date(row.get("Дата регистрации")) or doc.registered_at
 	doc.active = int(row.get("Статус") != "Заблокирован")
 	doc.notes = row.get("Комментарий")
-	for field, source in (("personal_data_consent", "Согласие ПД"), ("marketing_consent", "Согласие на рекламу"), ("club_rules_consent", "Правила клуба")):
+	for field, source in (
+		("personal_data_consent", "Согласие ПД"),
+		("marketing_consent", "Согласие на рекламу"),
+		("club_rules_consent", "Правила клуба"),
+	):
 		doc.set(field, int(truth(row.get(source))))
 	for field, source in (("link_token", "Link Token"), ("session_token", "Session Token")):
 		doc.set(field, identifier(row.get(source)) or None)
@@ -149,13 +183,21 @@ def _apply(data, settings):
 	doc.set("messengers", [])
 	priority = {row.get("Основной канал"): 0, row.get("Резервный канал"): 1}
 	for name, (_, ch) in sorted(latest.items(), key=lambda pair: priority.get(pair[0], 2)):
-		doc.append("messengers", {
-			"messenger_type": name, "legacy_channel_id": identifier(ch.get("Channel Record ID")),
-			"status": ch.get("Статус") or "Отключен", "platform_user_id": identifier(ch.get("Platform User ID")),
-			"bothelp_subscriber_id": identifier(ch.get("BotHelp Subscriber ID")), "health": ch.get("Health") or "ACTIVE",
-			"connected_at": _date(ch.get("Дата подключения")), "last_activity": _date(ch.get("Последняя активность")),
-			"disconnected_at": _date(ch.get("Дата отключения")), "last_error": ch.get("Последняя ошибка"),
-		})
+		doc.append(
+			"messengers",
+			{
+				"messenger_type": name,
+				"legacy_channel_id": identifier(ch.get("Channel Record ID")),
+				"status": ch.get("Статус") or "Отключен",
+				"platform_user_id": identifier(ch.get("Platform User ID")),
+				"bothelp_subscriber_id": identifier(ch.get("BotHelp Subscriber ID")),
+				"health": ch.get("Health") or "ACTIVE",
+				"connected_at": _date(ch.get("Дата подключения")),
+				"last_activity": _date(ch.get("Последняя активность")),
+				"disconnected_at": _date(ch.get("Дата отключения")),
+				"last_error": ch.get("Последняя ошибка"),
+			},
+		)
 	doc.legacy_club_synced_at = now_datetime()
 	doc.legacy_club_hash = data["state_hash"]
 	doc.legacy_club_revision = str(data["revision"])
@@ -163,11 +205,24 @@ def _apply(data, settings):
 	_audit(doc, data.get("consents", []), "consents")
 	_audit(doc, data.get("events", []), "events")
 	# Preserve historical consent dates, never invent today's consent for imported flags.
-	consent_types = {"Персональные данные": "personal_data_consent_at", "Рекламные сообщения": "marketing_consent_at", "Правила клуба": "club_rules_consent_at"}
+	consent_types = {
+		"Персональные данные": "personal_data_consent_at",
+		"Рекламные сообщения": "marketing_consent_at",
+		"Правила клуба": "club_rules_consent_at",
+	}
 	for kind, field in consent_types.items():
-		dates = [_date(c.get("Дата/время")) for c in data.get("consents", []) if c.get("Тип согласия") == kind and truth(c.get("Согласие")) and c.get("Дата/время")]
+		dates = [
+			_date(c.get("Дата/время"))
+			for c in data.get("consents", [])
+			if c.get("Тип согласия") == kind and truth(c.get("Согласие")) and c.get("Дата/время")
+		]
 		frappe.db.set_value("Client", doc.name, field, min(dates) if dates else None, update_modified=False)
-	return "MATCH" if float(doc.discount_percent) == doc.legacy_club_discount and doc.active_channels == int(row.get("Активных каналов") or 0) else "DIFFERENCE"
+	return (
+		"MATCH"
+		if float(doc.discount_percent) == doc.legacy_club_discount
+		and doc.active_channels == int(row.get("Активных каналов") or 0)
+		else "DIFFERENCE"
+	)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -176,7 +231,9 @@ def receive(payload=None, timestamp=None, signature=None):
 	if not s.enabled:
 		return {"ok": False, "error": "SYNC_DISABLED"}
 	try:
-		data = verify(payload, timestamp, signature, s.get_password("shared_secret", raise_exception=False), time.time())
+		data = verify(
+			payload, timestamp, signature, s.get_password("shared_secret", raise_exception=False), time.time()
+		)
 	except (ValueError, TypeError):
 		frappe.local.response.http_status_code = 403
 		return {"ok": False, "error": "INVALID_SIGNED_REQUEST"}
@@ -194,11 +251,21 @@ def receive(payload=None, timestamp=None, signature=None):
 		if data.get("dry_run") is True:
 			frappe.db.rollback(save_point="club_shadow_event")
 			return {"ok": True, "dry_run": True, "outcome": outcome}
-		frappe.get_doc({"doctype": "Club Sync Receipt", "name": key, "outcome": outcome, "received_at": now_datetime()}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{"doctype": "Club Sync Receipt", "name": key, "outcome": outcome, "received_at": now_datetime()}
+		).insert(ignore_permissions=True)
 		frappe.db.set_single_value("Club Shadow Settings", "last_received_at", now_datetime())
 	except ValueError as exc:
 		frappe.db.rollback(save_point="club_shadow_event")
-		known = {"POINT_NOT_FOUND", "EXPECTED_YAROSLAVL_KOMSOMOLSKAYA_12", "CLIENT_ID_AND_PHONE_REQUIRED", "PHONE_ID_CONFLICT", "OS_CLIENT_REQUIRES_MANUAL_MATCH", "UNKNOWN_CHANNEL", "AUDIT_ID_REQUIRED"}
+		known = {
+			"POINT_NOT_FOUND",
+			"EXPECTED_YAROSLAVL_KOMSOMOLSKAYA_12",
+			"CLIENT_ID_AND_PHONE_REQUIRED",
+			"PHONE_ID_CONFLICT",
+			"OS_CLIENT_REQUIRES_MANUAL_MATCH",
+			"UNKNOWN_CHANNEL",
+			"AUDIT_ID_REQUIRED",
+		}
 		return {"ok": False, "error": str(exc) if str(exc) in known else "INVALID_SOURCE_VALUE"}
 	except Exception:
 		frappe.db.rollback(save_point="club_shadow_event")

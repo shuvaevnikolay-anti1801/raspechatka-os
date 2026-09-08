@@ -6,9 +6,8 @@ from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 from frappe.utils import add_days, cint, flt, now_datetime
 
-
 CHANNELS = ("Telegram", "MAX", "VK")
-SUPPORTED_MESSENGERS = CHANNELS + ("WhatsApp",)
+SUPPORTED_MESSENGERS = (*CHANNELS, "WhatsApp")
 
 
 def normalize_phone(value):
@@ -34,7 +33,7 @@ class Client(Document):
 		self.client_id = self.client_id or make_autoname("RP-.######")
 		self.registered_by = self.registered_by or frappe.session.user
 		self.registered_at = self.registered_at or now_datetime()
-		self.registration_source = self.registration_source or "Распечатка ОС"
+		self.registration_source = self.registration_source or "Распечатка ОС"  # noqa: RUF001
 
 	def validate(self):
 		if self.get("legacy_club_id") and not self.flags.club_shadow_import:
@@ -55,21 +54,29 @@ class Client(Document):
 			if row.messenger_type in seen:
 				frappe.throw(_("Мессенджер {0} добавлен дважды").format(row.messenger_type))
 			seen.add(row.messenger_type)
-		active = [row for row in self.messengers if row.status == "Активен" and row.messenger_type in CHANNELS]
+		active = [
+			row for row in self.messengers if row.status == "Активен" and row.messenger_type in CHANNELS
+		]
 		settings = get_loyalty_settings()
 		limit = cint(getattr(settings, "max_active_channels", 2) or 2)
 		if len(active) > limit:
 			frappe.throw(_("Можно подключить не более {0} активных каналов").format(limit))
 
 	def _set_consent_dates(self):
-		for flag, timestamp in (("personal_data_consent", "personal_data_consent_at"), ("marketing_consent", "marketing_consent_at"), ("club_rules_consent", "club_rules_consent_at")):
+		for flag, timestamp in (
+			("personal_data_consent", "personal_data_consent_at"),
+			("marketing_consent", "marketing_consent_at"),
+			("club_rules_consent", "club_rules_consent_at"),
+		):
 			if cint(self.get(flag)) and not self.get(timestamp):
 				self.set(timestamp, now_datetime())
 			if not cint(self.get(flag)):
 				self.set(timestamp, None)
 
 	def _recalculate_loyalty(self):
-		active = [row for row in self.messengers if row.status == "Активен" and row.messenger_type in CHANNELS]
+		active = [
+			row for row in self.messengers if row.status == "Активен" and row.messenger_type in CHANNELS
+		]
 		for index, row in enumerate(active):
 			row.channel_role = "Основной" if index == 0 else "Резервный" if index == 1 else "Дополнительный"
 		for row in self.messengers:
@@ -90,7 +97,14 @@ class Client(Document):
 		)
 		discount = 0
 		if settings and settings.active and eligible:
-			matching = sorted((row for row in settings.discount_rules if cint(row.active) and cint(row.active_channel_count) <= len(active)), key=lambda row: cint(row.active_channel_count))
+			matching = sorted(
+				(
+					row
+					for row in settings.discount_rules
+					if cint(row.active) and cint(row.active_channel_count) <= len(active)
+				),
+				key=lambda row: cint(row.active_channel_count),
+			)
 			if matching:
 				discount = flt(matching[-1].discount_percent)
 			discount = min(discount, flt(settings.maximum_discount_percent or discount))
