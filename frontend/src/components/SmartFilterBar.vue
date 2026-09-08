@@ -23,6 +23,17 @@ const fields = computed(() => {
   return [...configured, ...schemaFields.value.filter((field) => !keys.has(field.key)).map((field) => ({ ...field, source: "doctype", doctypeField: true, default: false }))];
 });
 const shownFields = computed(() => fields.value.filter((field) => visible.value.includes(field.key)));
+const periodFieldPair = computed(() => {
+  const dateFields = fields.value.filter((field) => field.type === "date");
+  const byKey = new Map(dateFields.map((field) => [field.key, field]));
+  const knownPairs = [["from_date", "to_date"], ["date_from", "date_to"], ["period_from", "period_to"], ["start_date", "end_date"]];
+  for (const [fromKey, toKey] of knownPairs) {
+    if (byKey.has(fromKey) && byKey.has(toKey)) return { from: byKey.get(fromKey), to: byKey.get(toKey) };
+  }
+  const from = dateFields.find((field) => /(^|\\s)(с|от)$/i.test((field.label || "").trim()));
+  const to = dateFields.find((field) => /(^|\\s)(по|до)$/i.test((field.label || "").trim()));
+  return from && to ? { from, to } : null;
+});
 const operatorOptions = {
   text: [{ value: "contains", label: "содержит" }, { value: "equals", label: "равно" }, { value: "not_equals", label: "не равно" }, { value: "not_contains", label: "не содержит" }, { value: "is_set", label: "заполнено" }, { value: "is_not_set", label: "не заполнено" }],
   exact: [{ value: "equals", label: "равно" }, { value: "not_equals", label: "не равно" }, { value: "is_set", label: "заполнено" }, { value: "is_not_set", label: "не заполнено" }],
@@ -31,6 +42,30 @@ const operatorOptions = {
 
 function defaults() { return fields.value.filter((field) => field.default !== false).map((field) => field.key); }
 function setValue(key, value) { emit("update:modelValue", { ...props.modelValue, [key]: value }); }
+function formatDateValue(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function setPeriod(preset) {
+  if (!periodFieldPair.value) return;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const from = new Date(today);
+  const to = new Date(today);
+  if (preset === "yesterday") {
+    from.setDate(from.getDate() - 1);
+    to.setDate(to.getDate() - 1);
+  } else if (preset === "week") {
+    from.setDate(from.getDate() - ((from.getDay() + 6) % 7));
+  } else if (preset === "month") {
+    from.setDate(1);
+  }
+  emit("update:modelValue", {
+    ...props.modelValue,
+    [periodFieldPair.value.from.key]: formatDateValue(from),
+    [periodFieldPair.value.to.key]: formatDateValue(to),
+  });
+}
 function operatorKey(field) { return `${field.key}__operator`; }
 function defaultOperator(field) { return field.type === "select" ? "equals" : (["number", "date", "datetime-local", "time"].includes(field.type) ? "equals" : "contains"); }
 function selectedOperator(field) { return props.modelValue[operatorKey(field)] || defaultOperator(field); }
@@ -109,7 +144,7 @@ onMounted(loadPreference);
 <template>
   <section class="smart-filter">
     <div class="smart-filter-topline">
-      <strong>Фильтр <small v-if="documentType">· {{ documentType }}</small></strong>
+      <strong>Фильтр</strong>
       <div class="smart-filter-actions">
         <span v-if="schemaLoading" class="filter-schema-state">Поля загружаются…</span>
         <button class="icon-action" type="button" title="Настроить поля" aria-label="Настроить поля фильтра" @click="settingsOpen=!settingsOpen">⚙</button>
@@ -132,6 +167,12 @@ onMounted(loadPreference);
           </select>
           <input v-else-if="needsValue(field)" :type="field.type||'text'" :value="modelValue[field.key]" :placeholder="field.placeholder||''" @input="setValue(field.key,$event.target.value)" @keyup.enter="apply" />
           <span v-else class="filter-no-value">Значение не требуется</span>
+        </div>
+        <div v-if="periodFieldPair && field.key === periodFieldPair.from.key" class="filter-period-presets" aria-label="Быстрый выбор периода">
+          <button type="button" @click="setPeriod('today')">Сегодня</button>
+          <button type="button" @click="setPeriod('yesterday')">Вчера</button>
+          <button type="button" @click="setPeriod('week')">Неделя</button>
+          <button type="button" @click="setPeriod('month')">Месяц</button>
         </div>
       </label>
       <div class="smart-filter-submit"><button class="button button-primary" type="button" @click="apply">Найти</button><button class="button button-secondary" type="button" @click="reset">Очистить</button></div>
