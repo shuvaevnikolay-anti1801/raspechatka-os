@@ -1,10 +1,19 @@
 from collections import defaultdict
-from datetime import date, datetime, time
+from datetime import datetime, time
 
 import frappe
 from frappe import _
-from frappe.utils import add_months, cint, flt, get_first_day, get_last_day, getdate, nowdate, nowtime
-
+from frappe.utils import (
+	cint,
+	flt,
+	get_datetime,
+	get_first_day,
+	get_last_day,
+	getdate,
+	now_datetime,
+	nowdate,
+	nowtime,
+)
 from raspechatka.access import get_scope, require_access
 
 
@@ -14,14 +23,22 @@ def get_finance_options():
 	entity_filters, point_filters = _scope_filters()
 	scope = get_scope()
 	account_filters = {"active": 1}
+	point_names = frappe.get_all("Business Point", filters=point_filters, pluck="name")
 	if not scope["global"]:
-		account_filters["business_entity"] = scope["business_entity"] or "__none__"
+		entities = scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else [])
+		account_filters["business_entity"] = ["in", entities or ["__none__"]]
 	return {
 		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc"),
 		"points": frappe.get_all("Business Point", filters=point_filters, fields=["name", "point_name", "business_entity"], order_by="point_name asc"),
 		"accounts": frappe.get_all("Business Bank Account", filters=account_filters, fields=["name", "bank_name", "settlement_account", "business_entity"], order_by="bank_name asc"),
 		"articles": frappe.get_all("Financial Article", filters={"active": 1, "is_group": 0}, fields=["name", "article_name", "article_type", "cash_flow_type", "include_in_pnl", "include_in_cash_flow"], order_by="article_type asc, article_name asc"),
 		"payment_methods": _get_payment_method_options(),
+		"cash_registers": frappe.get_all(
+			"Cash Register",
+			filters={"active": 1, "business_point": ["in", point_names or ["__none__"]]},
+			fields=["name", "register_name", "business_point", "currency"],
+			order_by="register_name asc",
+		),
 	}
 
 
@@ -48,7 +65,7 @@ def get_payments(from_date=None, to_date=None, business_entity=None, business_po
 		value = f"%{query}%"
 		or_filters = {"purpose": ["like", value], "counterparty_name": ["like", value], "document_number": ["like", value], "name": ["like", value]}
 	limit = min(max(cint(limit_page_length), 1), 500)
-	rows = frappe.get_all("Finance Transaction", filters=filters, or_filters=or_filters, fields=["name", "posting_date", "posting_time", "direction", "amount", "currency", "status", "docstatus", "business_entity", "business_point", "bank_account", "financial_article", "cash_flow_type", "counterparty_name", "purpose", "source", "document_number"], order_by="posting_date desc, posting_time desc, creation desc", limit_start=max(cint(limit_start), 0), limit_page_length=limit + 1)
+	rows = frappe.get_all("Finance Transaction", filters=filters, or_filters=or_filters, fields=["name", "posting_date", "posting_time", "direction", "amount", "currency", "status", "processing_status", "docstatus", "business_entity", "business_point", "bank_account", "financial_article", "cash_flow_type", "counterparty_name", "purpose", "source", "document_number", "bank_operation", "cash_movement"], order_by="posting_date desc, posting_time desc, creation desc", limit_start=max(cint(limit_start), 0), limit_page_length=limit + 1)
 	visible = rows[:limit]
 	return {"rows": visible, "has_more": len(rows) > limit, "totals": _payment_totals(visible)}
 
@@ -60,13 +77,15 @@ def get_payment(name=None, direction="Expense"):
 		doc = frappe.get_doc("Finance Transaction", name)
 		_ensure_entity(doc.business_entity)
 		return doc.as_dict(no_nulls=False)
-	return {"posting_date": nowdate(), "posting_time": nowtime(), "direction": direction, "amount": 0, "currency": "RUB", "status": "Draft", "cash_flow_type": "Operating", "source": "Manual"}
+	frappe.throw(_("Ручное создание произвольных платежей отключено. Используйте «Наличный расход»."))
 
 
 @frappe.whitelist(methods=["POST"])
 def save_payment(data, submit=0):
 	data = frappe.parse_json(data) or {}
-	require_access("finance.operations", "write" if data.get("name") else "create")
+	if not data.get("name"):
+		frappe.throw(_("Ручное создание произвольных платежей отключено. Используйте «Наличный расход»."))
+	require_access("finance.operations", "write")
 	_ensure_entity(data.get("business_entity"))
 	_ensure_point(data.get("business_point"), data.get("business_entity"))
 	doc = frappe.get_doc("Finance Transaction", data["name"]) if data.get("name") else frappe.new_doc("Finance Transaction")
@@ -84,13 +103,159 @@ def save_payment(data, submit=0):
 	return {"name": doc.name, "docstatus": doc.docstatus, "status": doc.status}
 
 
+@frappe.whitelist()
+def get_cash_expense():
+	require_access("finance.cash_expense", "create")
+	return {
+		"posting_date": nowdate(),
+		"posting_time": nowtime(),
+		"direction": "Expense",
+		"amount": 0,
+		"currency": "RUB",
+		"source": "Cash",
+		"counterparty_name": "",
+		"purpose": "",
+		"comment": "",
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def create_cash_expense(data):
+	"""Post one controlled cash expense and its matching finance transaction."""
+	require_access("finance.cash_expense", "create")
+	data = frappe.parse_json(data) or {}
+	entity = data.get("business_entity")
+	point = data.get("business_point")
+	article_name = data.get("financial_article")
+	amount = flt(data.get("amount"))
+	_ensure_entity(entity)
+	_ensure_point(point, entity)
+	if amount <= 0:
+		frappe.throw(_("Сумма расхода должна быть больше нуля"))
+	article = frappe.db.get_value(
+		"Financial Article",
+		article_name,
+		["article_type", "cash_flow_type", "active", "is_group"],
+		as_dict=True,
+	)
+	if not article or article.article_type != "Expense" or not article.active or article.is_group:
+		frappe.throw(_("Выберите активную статью расходов"))
+	shift = frappe.db.get_value(
+		"Sales Shift",
+		{"business_point": point, "business_entity": entity, "status": "Open"},
+		["name", "cashier", "expected_cash"],
+		as_dict=True,
+		order_by="opened_at desc",
+	)
+	if not shift:
+		frappe.throw(_("На выбранной точке нет открытой кассовой смены"))
+	if amount > flt(shift.expected_cash):
+		frappe.throw(
+			_("В кассе недостаточно денег: доступно {0}").format(
+				frappe.format_value(shift.expected_cash, {"fieldtype": "Currency"})
+			)
+		)
+	purpose = (data.get("purpose") or "").strip()
+	if not purpose:
+		frappe.throw(_("Укажите назначение наличного расхода"))
+	movement = frappe.get_doc(
+		{
+			"doctype": "Cash Movement",
+			"movement_type": "Withdrawal",
+			"withdrawal_purpose": "Expense",
+			"posting_datetime": now_datetime(),
+			"shift": shift.name,
+			"business_entity": entity,
+			"business_point": point,
+			"cashier": shift.cashier,
+			"amount": amount,
+			"reason": purpose,
+			"source": "Manual",
+		}
+	).insert(ignore_permissions=True)
+	movement.submit()
+	payment_method = frappe.db.get_value("Payment Method", {"method_name": ["like", "%налич%"], "active": 1}, "name")
+	transaction = frappe.get_doc(
+		{
+			"doctype": "Finance Transaction",
+			"posting_date": getdate(nowdate()),
+			"posting_time": nowtime(),
+			"direction": "Expense",
+			"amount": amount,
+			"currency": "RUB",
+			"status": "Draft",
+			"processing_status": "Manual Posted",
+			"business_entity": entity,
+			"business_point": point,
+			"financial_article": article_name,
+			"cash_flow_type": article.cash_flow_type or "Operating",
+			"counterparty_type": "Other",
+			"counterparty_name": (data.get("counterparty_name") or "").strip(),
+			"purpose": purpose,
+			"payment_method": payment_method,
+			"source": "Cash",
+			"linked_doctype": "Cash Movement",
+			"linked_document": movement.name,
+			"cash_movement": movement.name,
+			"comment": (data.get("comment") or "").strip(),
+		}
+	).insert(ignore_permissions=True)
+	transaction.submit()
+	return {"name": transaction.name, "cash_movement": movement.name, "status": transaction.status}
+
+
+def record_cash_collection(movement):
+	"""Create the cash-flow entry for a submitted POS collection, once."""
+	if movement.docstatus != 1 or movement.movement_type != "Withdrawal" or movement.withdrawal_purpose != "Collection":
+		return None
+	existing = frappe.db.get_value("Finance Transaction", {"cash_movement": movement.name}, "name")
+	if existing:
+		return existing
+	article_name = frappe.db.get_value("Financial Article", {"article_name": "Выручка", "active": 1}, "name")
+	if not article_name:
+		frappe.throw(_("Для инкассации не настроена системная статья «Выручка»"))
+	article_flow = frappe.db.get_value("Financial Article", article_name, "cash_flow_type") or "Operating"
+	transaction = frappe.get_doc(
+		{
+			"doctype": "Finance Transaction",
+			"posting_date": get_datetime(movement.posting_datetime).date(),
+			"posting_time": get_datetime(movement.posting_datetime).time(),
+			"direction": "Income",
+			"amount": movement.amount,
+			"currency": "RUB",
+			"status": "Draft",
+			"processing_status": "Auto Posted",
+			"business_entity": movement.business_entity,
+			"business_point": movement.business_point,
+			"financial_article": article_name,
+			"cash_flow_type": article_flow,
+			"counterparty_type": "Other",
+			"counterparty_name": frappe.db.get_value("Business Point", movement.business_point, "point_name"),
+			"purpose": _("Инкассация из кассы точки"),
+			"source": "Cash",
+			"linked_doctype": "Cash Movement",
+			"linked_document": movement.name,
+			"cash_movement": movement.name,
+		}
+	).insert(ignore_permissions=True)
+	transaction.submit()
+	return transaction.name
+
+
 @frappe.whitelist(methods=["POST"])
 def cancel_payment(name):
-	require_access("finance.operations", "write")
 	doc = frappe.get_doc("Finance Transaction", name)
+	if doc.source == "Cash":
+		require_access("finance.cash_expense", "write")
+	else:
+		require_access("finance.operations", "write")
 	_ensure_entity(doc.business_entity)
 	if doc.docstatus == 1:
 		doc.cancel()
+		if doc.cash_movement:
+			movement = frappe.get_doc("Cash Movement", doc.cash_movement)
+			if movement.docstatus == 1:
+				movement.cancel()
 	return {"name": doc.name, "docstatus": doc.docstatus}
 
 
@@ -285,6 +450,7 @@ def get_profitability(from_date=None, to_date=None, business_entity=None, busine
 @frappe.whitelist()
 def get_finance_settings():
 	require_access("finance.operations", "admin")
+	entity_filters, point_filters = _scope_filters()
 	return {
 		"articles": frappe.get_all(
 			"Financial Article",
@@ -292,12 +458,29 @@ def get_finance_settings():
 				"name",
 				"article_name",
 				"article_type",
+				"cash_flow_type",
 				"active",
 				"system_article",
 			],
 			order_by="article_type asc, article_name asc",
 			limit_page_length=1000,
-		)
+		),
+		"rules": frappe.get_all(
+			"Finance Classification Rule",
+			fields=["name", "rule_name", "priority", "enabled", "business_entity", "bank_account", "direction", "counterparty_inn", "counterparty_account", "counterparty_contains", "purpose_contains", "purpose_regex", "amount_from", "amount_to", "financial_article", "cash_flow_type", "business_point", "result", "auto_created", "match_count", "last_matched_at"],
+			order_by="priority asc, rule_name asc",
+			limit_page_length=2000,
+		),
+		"review_operations": frappe.get_all(
+			"Bank Operation",
+			filters={**_scope_entity_filter(), "processing_status": "Review"},
+			fields=["name", "business_entity", "bank_account", "posted_at", "direction", "amount", "currency", "counterparty_name", "counterparty_inn", "counterparty_account", "purpose", "document_number"],
+			order_by="posted_at desc",
+			limit_page_length=500,
+		),
+		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc"),
+		"points": frappe.get_all("Business Point", filters=point_filters, fields=["name", "point_name", "business_entity"], order_by="point_name asc"),
+		"accounts": frappe.get_all("Business Bank Account", filters={"active": 1, **_scope_entity_filter()}, fields=["name", "bank_name", "settlement_account", "business_entity"], order_by="bank_name asc"),
 	}
 
 
@@ -331,9 +514,146 @@ def delete_financial_article(name):
 	require_access("finance.operations", "admin")
 	doc = frappe.get_doc("Financial Article", name)
 	if doc.system_article:
-		frappe.throw(_("Системную финансовую статью нельзя удалить"))
-	frappe.delete_doc("Financial Article", name, ignore_permissions=True)
-	return {"deleted": name}
+		frappe.throw(_("Системную финансовую статью нельзя архивировать"))
+	doc.db_set("active", 0)
+	return {"archived": name}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_classification_rule(data):
+	require_access("finance.operations", "admin")
+	data = frappe.parse_json(data) or {}
+	name = data.get("name")
+	doc = frappe.get_doc("Finance Classification Rule", name) if name else frappe.new_doc("Finance Classification Rule")
+	allowed = (
+		"rule_name", "priority", "enabled", "stop_processing", "business_entity", "bank_account",
+		"direction", "counterparty_inn", "counterparty_account", "counterparty_contains",
+		"purpose_contains", "purpose_regex", "amount_from", "amount_to", "financial_article",
+		"cash_flow_type", "business_point", "result", "split_acquiring_commission", "comment",
+	)
+	for fieldname in allowed:
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+	if doc.business_entity:
+		_ensure_entity(doc.business_entity)
+	if doc.business_point:
+		_ensure_point(doc.business_point, doc.business_entity)
+	if not doc.rule_name:
+		frappe.throw(_("Укажите название правила"))
+	if doc.financial_article:
+		doc.cash_flow_type = frappe.db.get_value("Financial Article", doc.financial_article, "cash_flow_type") or "Operating"
+	if doc.result != "Approve":
+		doc.financial_article = None
+		doc.business_point = None
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def archive_classification_rule(name):
+	require_access("finance.operations", "admin")
+	doc = frappe.get_doc("Finance Classification Rule", name)
+	if doc.business_entity:
+		_ensure_entity(doc.business_entity)
+	doc.db_set("enabled", 0)
+	return {"archived": name}
+
+
+@frappe.whitelist(methods=["POST"])
+def classify_bank_operation(name, financial_article=None, business_point=None, result="Approve", remember=0):
+	"""Turn a reviewed bank row into one immutable, idempotent payment."""
+	require_access("finance.operations", "admin")
+	operation = frappe.get_doc("Bank Operation", name)
+	_ensure_entity(operation.business_entity)
+	if operation.processing_status not in ("New", "Review", "Error"):
+		return {"status": operation.processing_status, "already_processed": True}
+	if result == "Ignore":
+		operation.db_set({"processing_status": "Ignored", "processed_at": now_datetime(), "error_message": None})
+		return {"status": "Ignored"}
+	article = frappe.db.get_value(
+		"Financial Article",
+		financial_article,
+		["article_type", "cash_flow_type", "active", "is_group"],
+		as_dict=True,
+	)
+	if not article or not article.active or article.is_group or article.article_type != operation.direction:
+		frappe.throw(_("Выберите подходящую активную финансовую статью"))
+	if business_point:
+		_ensure_point(business_point, operation.business_entity)
+	rule_name = None
+	if cint(remember):
+		rule_name = _remember_operation_rule(operation, financial_article, business_point, article.cash_flow_type)
+	from raspechatka.api.tochka import _create_ledger
+
+	_create_ledger(
+		operation,
+		{
+			"financial_article": financial_article,
+			"business_point": business_point,
+			"cash_flow_type": article.cash_flow_type or "Operating",
+			"rule": rule_name,
+		},
+	)
+	operation.db_set({"processing_status": "Classified", "matched_rule": rule_name, "processed_at": now_datetime(), "error_message": None})
+	return {"status": "Classified", "rule": rule_name}
+
+
+def _remember_operation_rule(operation, financial_article, business_point, cash_flow_type):
+	matcher = {}
+	if operation.counterparty_inn:
+		matcher["counterparty_inn"] = operation.counterparty_inn
+	elif operation.counterparty_account:
+		matcher["counterparty_account"] = operation.counterparty_account
+	elif operation.counterparty_name:
+		matcher["counterparty_contains"] = operation.counterparty_name
+	else:
+		matcher["purpose_contains"] = (operation.purpose or "")[:140]
+	base_name = _("{0}: {1}").format(operation.direction, operation.counterparty_name or operation.purpose or operation.name)[:120]
+	rule_name = base_name
+	index = 2
+	while frappe.db.exists("Finance Classification Rule", {"rule_name": rule_name}):
+		rule_name = f"{base_name[:112]} ({index})"
+		index += 1
+	rule = frappe.get_doc(
+		{
+			"doctype": "Finance Classification Rule",
+			"rule_name": rule_name,
+			"priority": 100,
+			"enabled": 1,
+			"stop_processing": 1,
+			"business_entity": operation.business_entity,
+			"bank_account": operation.bank_account,
+			"direction": operation.direction,
+			"financial_article": financial_article,
+			"cash_flow_type": cash_flow_type or "Operating",
+			"business_point": business_point,
+			"result": "Approve",
+			"auto_created": 1,
+			**matcher,
+		}
+	).insert(ignore_permissions=True)
+	return rule.name
+
+
+@frappe.whitelist(methods=["POST"])
+def reprocess_bank_operations(limit=500):
+	require_access("finance.operations", "admin")
+	from raspechatka.api.tochka import _process_operation
+
+	processed = 0
+	for name in frappe.get_all(
+		"Bank Operation",
+		filters={**_scope_entity_filter(), "processing_status": ["in", ["New", "Review", "Error"]]},
+		pluck="name",
+		order_by="posted_at asc",
+		limit_page_length=min(max(cint(limit), 1), 2000),
+	):
+		operation = frappe.get_doc("Bank Operation", name)
+		if frappe.db.get_value("Bank Connection", operation.connection, "sync_mode") != "Live":
+			continue
+		if _process_operation(operation):
+			processed += 1
+	return {"processed": processed}
 
 
 def _transaction_filters(from_date=None, to_date=None, business_entity=None, business_point=None, direction=None, financial_article=None, status=None):
@@ -360,15 +680,19 @@ def _scope_filters():
 	scope = get_scope()
 	if scope["global"]:
 		return {"active": 1}, {"active": 1}
-	return {"active": 1, "name": scope["business_entity"] or "__none__"}, {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
+	entities = scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else [])
+	return {"active": 1, "name": ["in", entities or ["__none__"]]}, {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
 
 def _scope_entity_filter(business_entity=None):
 	scope = get_scope()
 	if not scope["global"]:
-		if business_entity and business_entity != scope["business_entity"]:
+		entities = scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else [])
+		if business_entity and business_entity not in entities:
 			frappe.throw(_("ИП недоступно"), frappe.PermissionError)
-		return {"business_entity": scope["business_entity"] or "__none__"}
+		if business_entity:
+			return {"business_entity": business_entity}
+		return {"business_entity": ["in", entities or ["__none__"]]}
 	if business_entity:
 		return {"business_entity": business_entity}
 	return {}

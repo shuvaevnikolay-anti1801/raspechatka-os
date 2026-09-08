@@ -1,18 +1,16 @@
 import hashlib
-import os
 import json
+import os
 import re
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import frappe
 import requests
 from frappe import _
 from frappe.utils import add_days, flt, get_datetime, now_datetime, nowdate
-
 from raspechatka.access import get_scope, require_access
-
 
 TOKEN_URL = "https://enter.tochka.com/connect/token"
 CONSENT_URL = "https://enter.tochka.com/uapi/consent/v1.0/consents"
@@ -233,11 +231,24 @@ def _ingest(connection, account, payload):
 
 
 def _classify(operation):
+	if _is_own_account(operation.counterparty_account):
+		return {"result": "Ignore", "rule": None, "cash_flow_type": "Transfer"}
 	rules = frappe.get_all("Finance Classification Rule", filters={"enabled": 1}, fields=["*"], order_by="priority asc", limit_page_length=10000)
 	for rule in rules:
 		if _matches(rule, operation):
 			return {"rule": rule.name, "financial_article": rule.financial_article, "cash_flow_type": rule.cash_flow_type, "business_point": rule.business_point, "result": rule.result, "split": rule.split_acquiring_commission}
 	return {"result": "Review"}
+
+
+def _is_own_account(account_number):
+	candidate = _digits(account_number)
+	if not candidate:
+		return False
+	for number in frappe.get_all("Business Bank Account", filters={"active": 1}, pluck="settlement_account"):
+		local = _digits(number)
+		if local and (local in candidate or candidate in local):
+			return True
+	return False
 
 
 def _matches(rule, operation):
@@ -248,7 +259,7 @@ def _matches(rule, operation):
 	if rule.counterparty_account and _digits(rule.counterparty_account) != _digits(operation.counterparty_account): return False
 	if rule.counterparty_contains and rule.counterparty_contains.lower() not in (operation.counterparty_name or "").lower(): return False
 	if rule.purpose_contains and rule.purpose_contains.lower() not in (operation.purpose or "").lower(): return False
-	if rule.purpose_regex and not re.search(rule.purpose_regex, operation.purpose or "", re.I): return False
+	if rule.purpose_regex and not re.search(rule.purpose_regex, operation.purpose or "", re.IGNORECASE): return False
 	if rule.amount_from and flt(operation.amount) < flt(rule.amount_from): return False
 	if rule.amount_to and flt(operation.amount) > flt(rule.amount_to): return False
 	return True
@@ -267,9 +278,65 @@ def _create_ledger(operation, action):
 
 
 def _create_transaction(operation, action, amount, direction, comment=None):
-	doc = frappe.get_doc({"doctype": "Finance Transaction", "posting_date": get_datetime(operation.posted_at).date(), "posting_time": get_datetime(operation.posted_at).time(), "direction": direction, "amount": amount, "currency": operation.currency, "status": "Draft", "business_entity": operation.business_entity, "business_point": action.get("business_point"), "bank_account": operation.bank_account, "financial_article": action.get("financial_article"), "cash_flow_type": action.get("cash_flow_type") or "Operating", "counterparty_type": "Other", "counterparty_name": operation.counterparty_name, "purpose": operation.purpose or "Банковская операция", "document_number": operation.document_number, "source": "Tochka Bank", "bank_operation": operation.name, "comment": comment})
+	part_key = hashlib.sha256(f"{operation.name}|{direction}|{comment or ''}".encode()).hexdigest()
+	existing = frappe.db.get_value(
+		"Finance Transaction",
+		{"operation_part_key": part_key},
+		"name",
+	)
+	if existing:
+		return existing
+	counterparty = _match_counterparty(operation)
+	doc = frappe.get_doc({"doctype": "Finance Transaction", "posting_date": get_datetime(operation.posted_at).date(), "posting_time": get_datetime(operation.posted_at).time(), "direction": direction, "amount": amount, "currency": operation.currency, "status": "Draft", "processing_status": "Auto Posted", "business_entity": operation.business_entity, "business_point": action.get("business_point"), "bank_account": operation.bank_account, "financial_article": action.get("financial_article"), "cash_flow_type": action.get("cash_flow_type") or "Operating", "counterparty_type": counterparty.get("type") or "Other", "supplier": counterparty.get("supplier"), "client": counterparty.get("client"), "counterparty_name": operation.counterparty_name, "purpose": operation.purpose or "Банковская операция", "document_number": operation.document_number, "source": "Tochka Bank", "bank_operation": operation.name, "operation_part_key": part_key, "comment": comment})
 	doc.insert(ignore_permissions=True)
 	doc.submit()
+	return doc.name
+
+
+def _match_counterparty(operation):
+	inn = _digits(operation.counterparty_inn)
+	if inn:
+		supplier = frappe.db.get_value("Catalog Supplier", {"inn": inn, "active": 1}, "name")
+		if supplier:
+			return {"type": "Supplier", "supplier": supplier}
+	return {"type": "Other"}
+
+
+def _process_operation(operation):
+	"""Classify a bank operation exactly once; return True when it leaves review."""
+	if operation.processing_status not in ("New", "Review", "Error"):
+		return False
+	action = _classify(operation)
+	if action.get("result") == "Ignore":
+		operation.db_set({"processing_status": "Ignored", "matched_rule": action.get("rule"), "processed_at": now_datetime(), "error_message": None})
+		_update_rule_usage(action.get("rule"))
+		return True
+	if action.get("result") == "Review" or not action.get("financial_article"):
+		operation.db_set({"processing_status": "Review", "matched_rule": action.get("rule"), "error_message": None})
+		return False
+	try:
+		_create_ledger(operation, action)
+		operation.db_set({"processing_status": "Classified", "matched_rule": action.get("rule"), "processed_at": now_datetime(), "error_message": None})
+		_update_rule_usage(action.get("rule"))
+		return True
+	except Exception as error:  # noqa
+		operation.db_set({"processing_status": "Error", "matched_rule": action.get("rule"), "processed_at": now_datetime(), "error_message": str(error)[:1000]})
+		frappe.log_error(frappe.get_traceback(), "Raspechatka bank operation processing")
+		return False
+
+
+def _update_rule_usage(rule_name):
+	if not rule_name:
+		return
+	frappe.db.set_value(
+		"Finance Classification Rule",
+		rule_name,
+		{
+			"match_count": int(frappe.db.get_value("Finance Classification Rule", rule_name, "match_count") or 0) + 1,
+			"last_matched_at": now_datetime(),
+		},
+		update_modified=False,
+	)
 
 
 def _normalize(connection, account, tx):
@@ -354,7 +421,7 @@ def _pick(obj, *paths):
 
 
 def _commission(purpose):
-	match = re.search(r"(?:сумм[аы]\s+)?комисси[ия]\s*(?:банка\s*)?(?:составляет\s*)?[:=-]?\s*([0-9][0-9\s]*(?:[.,][0-9]{1,2})?)", (purpose or "").replace("\u00a0", " "), re.I)
+	match = re.search(r"(?:сумм[аы]\s+)?комисси[ия]\s*(?:банка\s*)?(?:составляет\s*)?[:=-]?\s*([0-9][0-9\s]*(?:[.,][0-9]{1,2})?)", (purpose or "").replace("\u00a0", " "), re.IGNORECASE)
 	return round(flt(match.group(1).replace(" ", "").replace(",", ".")), 2) if match else 0
 
 
@@ -421,9 +488,13 @@ def get_bank_settings():
 	connections = frappe.get_all(
 		"Bank Connection",
 		fields=["name", "connection_name", "business_entity", "bank_name", "enabled", "status", "sync_mode",
-			"sync_interval_minutes", "overlap_days", "last_sync_at", "token_expires_at", "oauth_url", "error_message"],
+			"sync_interval_minutes", "overlap_days", "last_sync_at", "last_successful_sync_at", "token_expires_at", "oauth_url", "error_message"],
 		order_by="connection_name asc",
 	)
+	for connection in connections:
+		connection["classified_count"] = frappe.db.count("Bank Operation", {"connection": connection.name, "processing_status": "Classified"})
+		connection["review_count"] = frappe.db.count("Bank Operation", {"connection": connection.name, "processing_status": "Review"})
+		connection["error_count"] = frappe.db.count("Bank Operation", {"connection": connection.name, "processing_status": "Error"})
 	review = frappe.get_all(
 		"Bank Operation",
 		filters={"processing_status": "Review"},
@@ -630,11 +701,4 @@ def _ingest(connection, account, payload):
 	if connection.sync_mode != "Live":
 		operation.db_set("processing_status", "Review")
 		return
-	action = _classify(operation)
-	if action.get("result") == "Ignore":
-		operation.db_set("processing_status", "Ignored")
-	elif action.get("result") == "Review" or not action.get("financial_article"):
-		operation.db_set({"processing_status": "Review", "matched_rule": action.get("rule")})
-	else:
-		_create_ledger(operation, action)
-		operation.db_set({"processing_status": "Classified", "matched_rule": action.get("rule")})
+	_process_operation(operation)

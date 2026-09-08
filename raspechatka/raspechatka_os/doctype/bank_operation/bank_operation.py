@@ -12,3 +12,6 @@ class BankOperation(Document):
 		stored = None if self.is_new() else frappe.db.get_value("Bank Operation", self.name, "raw_payload")
 		if stored is not None and stored != self.raw_payload:
 			frappe.throw(_("Исходные данные банковской операции нельзя изменять"))
+
+	def on_trash(self):
+		frappe.throw(_("Исходные банковские операции нельзя удалять"))
