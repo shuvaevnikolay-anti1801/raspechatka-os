@@ -1,0 +1,125 @@
+{
+ "doctype": "DocType",
+ "name": "Payroll Run",
+ "module": "Raspechatka OS",
+ "autoname": "hash",
+ "title_field": "run_title",
+ "track_changes": 1,
+ "field_order": [
+  "run_title",
+  "business_point",
+  "business_entity",
+  "period_start",
+  "period_end",
+  "status",
+  "calculated_at",
+  "lines",
+  "total_accrued",
+  "total_ndfl",
+  "total_net",
+  "total_cost",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "run_title",
+   "fieldtype": "Data",
+   "label": "Расчёт зарплаты",
+   "read_only": 1,
+   "bold": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "business_point",
+   "fieldtype": "Link",
+   "label": "Точка",
+   "options": "Business Point",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_entity",
+   "fieldtype": "Link",
+   "label": "Работодатель",
+   "options": "Business Entity",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Начало периода",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Date",
+   "label": "Конец периода",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Статус",
+   "options": "Draft\nCalculated\nApproved\nPaid",
+   "default": "Draft",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "calculated_at",
+   "fieldtype": "Datetime",
+   "label": "Рассчитано",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lines",
+   "fieldtype": "Table",
+   "label": "Расчёт по сотрудникам",
+   "options": "Payroll Run Line"
+  },
+  {
+   "fieldname": "total_accrued",
+   "fieldtype": "Currency",
+   "label": "Всего начислено",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_ndfl",
+   "fieldtype": "Currency",
+   "label": "НДФЛ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_net",
+   "fieldtype": "Currency",
+   "label": "К выплате",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_cost",
+   "fieldtype": "Currency",
+   "label": "Полная стоимость",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Комментарий"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}
