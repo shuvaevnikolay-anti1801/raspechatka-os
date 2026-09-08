@@ -319,7 +319,7 @@ def _process_operation(operation):
 		operation.db_set({"processing_status": "Classified", "matched_rule": action.get("rule"), "processed_at": now_datetime(), "error_message": None})
 		_update_rule_usage(action.get("rule"))
 		return True
-	except Exception as error:  # noqa: BLE001 - isolate one invalid bank row from the statement batch
+	except Exception as error:  # noqa
 		operation.db_set({"processing_status": "Error", "matched_rule": action.get("rule"), "processed_at": now_datetime(), "error_message": str(error)[:1000]})
 		frappe.log_error(frappe.get_traceback(), "Raspechatka bank operation processing")
 		return False
