@@ -670,3 +670,209 @@ def get_hr_overview(business_point=None):
 	)
 	return {"employees": employees, "leaves": leaves, "employee_names": _employee_name_map(names)}
 
+def _allowed_employee_entities(scope):
+	return None if scope["global"] else (scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else []))
+
+
+def _assert_employee_scope(employee=None, business_entity=None):
+	scope = get_scope()
+	entity = business_entity
+	if employee:
+		entity = frappe.db.get_value("Employee", employee, "business_entity")
+	allowed = _allowed_employee_entities(scope)
+	if allowed is not None and entity not in allowed:
+		frappe.throw(_("Сотрудник относится к недоступному юридическому лицу"), frappe.PermissionError)
+	return scope
+
+
+@frappe.whitelist()
+def get_employee_registry(search=None, active=None):
+	require_access("team.employees", "read")
+	scope = get_scope()
+	filters = {}
+	if active not in (None, ""):
+		filters["active"] = cint(active)
+	allowed = _allowed_employee_entities(scope)
+	if allowed is not None:
+		filters["business_entity"] = ["in", allowed or ["__none__"]]
+	or_filters = None
+	if search:
+		value = f"%{search.strip()}%"
+		or_filters = {"employee_name": ["like", value], "phone": ["like", value]}
+	rows = frappe.get_all(
+		"Employee",
+		filters=filters,
+		or_filters=or_filters,
+		fields=[
+			"name", "employee_name", "phone", "position", "business_entity", "employment_type",
+			"hire_date", "active", "system_user_profile", "hourly_rate", "sales_percent",
+		],
+		order_by="employee_name asc",
+		limit_page_length=1000,
+	)
+	profiles = {}
+	profile_names = [row.system_user_profile for row in rows if row.system_user_profile]
+	if profile_names:
+		profiles = {
+			row.name: row
+			for row in frappe.get_all(
+				"Raspechatka User Profile",
+				filters={"name": ["in", profile_names]},
+				fields=["name", "active", "access_profile", "invitation_status", "system_user"],
+				limit_page_length=1000,
+			)
+		}
+	for row in rows:
+		row["access"] = profiles.get(row.system_user_profile)
+	return rows
+
+
+@frappe.whitelist()
+def get_employee_editor(name=None):
+	require_access("team.employees", "read")
+	scope = get_scope()
+	allowed_entities = _allowed_employee_entities(scope)
+	entity_filters = {"active": 1}
+	if allowed_entities is not None:
+		entity_filters["name"] = ["in", allowed_entities or ["__none__"]]
+	entities = frappe.get_all(
+		"Business Entity",
+		filters=entity_filters,
+		fields=["name", "short_name", "organization"],
+		order_by="short_name asc",
+		limit_page_length=500,
+	)
+	point_filters = {"active": 1}
+	if not scope["global"]:
+		point_filters["name"] = ["in", scope.get("points") or ["__none__"]]
+	points = frappe.get_all(
+		"Business Point",
+		filters=point_filters,
+		fields=["name", "point_name", "business_entity"],
+		order_by="point_name asc",
+		limit_page_length=1000,
+	)
+	positions = frappe.get_all("Position", fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500)
+	result = {"employee": None, "entities": entities, "points": points, "positions": positions, "access": None}
+	if name:
+		_assert_employee_scope(employee=name)
+		doc = frappe.get_doc("Employee", name)
+		result["employee"] = doc.as_dict(no_nulls=False)
+		if doc.system_user_profile:
+			profile = frappe.get_doc("Raspechatka User Profile", doc.system_user_profile)
+			result["access"] = {
+				"name": profile.name,
+				"active": profile.active,
+				"access_profile": profile.access_profile,
+				"invitation_status": profile.invitation_status,
+				"invited_at": profile.invited_at,
+				"system_user": profile.system_user,
+				"assigned_points": [row.as_dict() for row in profile.assigned_points],
+			}
+	return result
+
+
+@frappe.whitelist(methods=["POST"])
+def save_employee(data):
+	require_access("team.employees", "write")
+	data = frappe.parse_json(data)
+	name = data.get("name")
+	if name:
+		_assert_employee_scope(employee=name)
+	_assert_employee_scope(business_entity=data.get("business_entity"))
+	doc = frappe.get_doc("Employee", name) if name else frappe.new_doc("Employee")
+	for fieldname in (
+		"active", "last_name", "first_name", "middle_name", "birth_date", "gender", "phone", "email",
+		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
+		"passport_series", "passport_number", "registration_address", "disability", "hazardous_conditions",
+		"medical_exam_required", "document_folder_url", "notes", "hourly_rate", "sales_percent", "ndfl_rate",
+		"insurance_rate", "injury_rate", "annual_leave_days", "bank_payment_share", "other_accruals_default",
+	):
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+	scope = get_scope()
+	allowed_points = None if scope["global"] else set(scope.get("points") or [])
+	doc.set("assigned_points", [])
+	seen = set()
+	for row in data.get("assigned_points") or []:
+		point = row.get("business_point")
+		if not point or point in seen:
+			continue
+		if allowed_points is not None and point not in allowed_points:
+			frappe.throw(_("Нельзя назначить сотруднику недоступную точку"), frappe.PermissionError)
+		if frappe.db.get_value("Business Point", point, "business_entity") != doc.business_entity:
+			frappe.throw(_("Точка сотрудника должна относиться к его работодателю"))
+		seen.add(point)
+		doc.append("assigned_points", {"business_point": point, "is_default": cint(row.get("is_default"))})
+	if sum(cint(row.is_default) for row in doc.assigned_points) > 1:
+		frappe.throw(_("Основной может быть только одна точка"))
+	if doc.assigned_points and not any(cint(row.is_default) for row in doc.assigned_points):
+		doc.assigned_points[0].is_default = 1
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def grant_employee_access(employee, access_profile="Cashier", assigned_points=None):
+	require_access("team.employees", "write")
+	scope = _assert_employee_scope(employee=employee)
+	if access_profile not in ("Cashier", "Point Manager"):
+		frappe.throw(_("Из карточки сотрудника можно выдать только доступ кассира или управляющего"))
+	employee_doc = frappe.get_doc("Employee", employee)
+	points = frappe.parse_json(assigned_points) if isinstance(assigned_points, str) else (assigned_points or [])
+	points = list(dict.fromkeys(points))
+	employee_points = {row.business_point for row in employee_doc.assigned_points}
+	allowed_points = employee_points if scope["global"] else employee_points.intersection(scope.get("points") or [])
+	if not points or any(point not in allowed_points for point in points):
+		frappe.throw(_("Выберите только точки, назначенные этому сотруднику"))
+	profile_name = employee_doc.system_user_profile
+	profile = frappe.get_doc("Raspechatka User Profile", profile_name) if profile_name else frappe.new_doc("Raspechatka User Profile")
+	profile.active = 1
+	profile.last_name = employee_doc.last_name
+	profile.first_name = employee_doc.first_name
+	profile.middle_name = employee_doc.middle_name
+	profile.phone = employee_doc.phone
+	profile.access_profile = access_profile
+	profile.scope_type = "Points"
+	profile.business_entity = employee_doc.business_entity
+	profile.organization = frappe.db.get_value("Business Entity", employee_doc.business_entity, "organization")
+	profile.linked_employee = employee_doc.name
+	profile.set("assigned_points", [])
+	for index, point in enumerate(points):
+		profile.append("assigned_points", {"business_point": point, "is_default": 1 if index == 0 else 0})
+	profile.save(ignore_permissions=True)
+	if employee_doc.system_user_profile != profile.name:
+		frappe.db.set_value("Employee", employee_doc.name, "system_user_profile", profile.name, update_modified=False)
+	profile.reload()
+	user = frappe.get_doc("User", profile.system_user)
+	link = user._reset_password(send_email=False, password_expired=True)
+	frappe.db.set_value(
+		"Raspechatka User Profile",
+		profile.name,
+		{"invitation_status": "Generated", "invited_at": now_datetime()},
+		update_modified=True,
+	)
+	message = _(
+		"Вам предоставлен доступ к системе «Распечатка ОС».\n"
+		"Ссылка для входа: {0}/login\n"
+		"Логин: {1}\n"
+		"Чтобы установить пароль, перейдите по одноразовой ссылке: {2}\n"
+		"После установки пароля используйте номер телефона как логин."
+	).format(frappe.utils.get_url(), profile.phone, link)
+	return {"profile": profile.name, "login": profile.phone, "link": link, "message": message}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_employee_access_active(employee, active):
+	require_access("team.employees", "write")
+	_assert_employee_scope(employee=employee)
+	profile_name = frappe.db.get_value("Employee", employee, "system_user_profile")
+	if not profile_name:
+		frappe.throw(_("Доступ сотруднику ещё не выдавался"))
+	profile = frappe.get_doc("Raspechatka User Profile", profile_name)
+	profile.active = cint(active)
+	profile.save(ignore_permissions=True)
+	if not profile.active and profile.system_user:
+		frappe.db.delete("Sessions", {"user": profile.system_user})
+	return {"profile": profile.name, "active": profile.active}
+
