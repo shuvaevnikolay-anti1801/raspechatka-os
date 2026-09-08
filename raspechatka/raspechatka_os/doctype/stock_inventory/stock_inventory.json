@@ -1,21 +1,153 @@
 {
- "actions":[],"autoname":"WH-INV-.YYYY.-.#####","doctype":"DocType","engine":"InnoDB","is_submittable":1,
- "field_order":["posting_datetime","business_entity","business_point","warehouse","reason","items_section","items","totals_section","total_lines","surplus_amount","shortage_amount","remarks","amended_from"],
- "fields":[
-  {"fieldname":"posting_datetime","fieldtype":"Datetime","label":"Дата и время","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"business_entity","fieldtype":"Link","label":"Юридическое лицо","options":"Business Entity","reqd":1,"in_standard_filter":1},
-  {"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"reason","fieldtype":"Data","label":"Основание","default":"Плановая инвентаризация","reqd":1},
-  {"fieldname":"items_section","fieldtype":"Section Break","label":"Результаты пересчёта"},
-  {"fieldname":"items","fieldtype":"Table","label":"Товары","options":"Stock Inventory Item","reqd":1},
-  {"fieldname":"totals_section","fieldtype":"Section Break","label":"Итоги"},
-  {"fieldname":"total_lines","fieldtype":"Int","label":"Позиций","read_only":1},
-  {"fieldname":"surplus_amount","fieldtype":"Currency","label":"Излишки","read_only":1},
-  {"fieldname":"shortage_amount","fieldtype":"Currency","label":"Недостача","read_only":1},
-  {"fieldname":"remarks","fieldtype":"Small Text","label":"Комментарий"},
-  {"fieldname":"amended_from","fieldtype":"Link","label":"Исправляет","options":"Stock Inventory","read_only":1,"no_copy":1}
+ "actions": [],
+ "autoname": "WH-INV-.YYYY.-.#####",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "is_submittable": 1,
+ "field_order": [
+  "posting_datetime",
+  "business_entity",
+  "business_point",
+  "warehouse",
+  "reason",
+  "source",
+  "external_id",
+  "items_section",
+  "items",
+  "totals_section",
+  "total_lines",
+  "surplus_amount",
+  "shortage_amount",
+  "remarks",
+  "amended_from"
  ],
- "module":"Raspechatka OS","name":"Stock Inventory","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"submit":1,"cancel":1,"amend":1,"report":1,"export":1,"print":1}],
- "search_fields":"reason","sort_field":"posting_datetime","sort_order":"DESC","states":[],"track_changes":1
+ "fields": [
+  {
+   "fieldname": "posting_datetime",
+   "fieldtype": "Datetime",
+   "label": "Дата и время",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_entity",
+   "fieldtype": "Link",
+   "label": "Юридическое лицо",
+   "options": "Business Entity",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_point",
+   "fieldtype": "Link",
+   "label": "Точка продаж",
+   "options": "Business Point",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Склад",
+   "options": "Catalog Warehouse",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Data",
+   "label": "Основание",
+   "default": "Плановая инвентаризация",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Источник",
+   "options": "Manual\\nMoySklad Opening Balance",
+   "default": "Manual",
+   "read_only": 1
+  },
+  {
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "label": "Внешний ID",
+   "unique": 1,
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Результаты пересчёта"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Товары",
+   "options": "Stock Inventory Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Итоги"
+  },
+  {
+   "fieldname": "total_lines",
+   "fieldtype": "Int",
+   "label": "Позиций",
+   "read_only": 1
+  },
+  {
+   "fieldname": "surplus_amount",
+   "fieldtype": "Currency",
+   "label": "Излишки",
+   "read_only": 1
+  },
+  {
+   "fieldname": "shortage_amount",
+   "fieldtype": "Currency",
+   "label": "Недостача",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Комментарий"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Исправляет",
+   "options": "Stock Inventory",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "module": "Raspechatka OS",
+ "name": "Stock Inventory",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  }
+ ],
+ "search_fields": "reason",
+ "sort_field": "posting_datetime",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }
