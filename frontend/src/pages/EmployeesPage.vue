@@ -11,6 +11,7 @@ const filters=ref({search:"",active:"1"});
 const options=reactive({entities:[],points:[],positions:[]});
 const form=reactive({});
 const accessForm=reactive({access_profile:"Cashier",points:[]});
+const uploading=ref("");
 const columns=[
  {key:"employee_name",label:"Сотрудник",primary:true},
  {key:"phone",label:"Телефон"},
@@ -56,6 +57,18 @@ async function setAccess(active){
  try{await call("raspechatka.api.team.set_employee_access_active",{employee:form.name,active},{method:"POST"});await Promise.all([refreshAccess(),load()])}
  catch(e){formError.value=e.message}
 }
+async function uploadPassport(event,field){
+ const file=event.target.files?.[0];if(!file)return;
+ if(!form.name){formError.value="Сначала сохраните карточку сотрудника, затем прикрепите паспорт.";return}
+ if(file.type!=="application/pdf"){formError.value="Для паспорта прикрепите файл PDF.";return}
+ uploading.value=field;formError.value="";
+ try{
+  const body=new FormData();body.append("file",file);body.append("is_private","1");body.append("doctype","Employee");body.append("docname",form.name);body.append("fieldname",field);
+  const response=await fetch("/api/method/upload_file",{method:"POST",headers:{"X-Frappe-CSRF-Token":window.csrf_token||""},body,credentials:"same-origin"});
+  const result=await response.json();if(!response.ok||result.exc)throw new Error(result.message||"Не удалось загрузить файл");
+  form[field]=result.message.file_url;await save();
+ }catch(e){formError.value=e.message}finally{uploading.value=""}
+}
 async function copyInvitation(){await navigator.clipboard.writeText(invitation.value)}
 onMounted(load);
 </script>
@@ -86,15 +99,27 @@ onMounted(load);
    </div>
    <h4>Точки работы</h4><div class="point-picker"><label v-for="p in availablePoints" :key="p.name"><input type="checkbox" :checked="selectedPoints.includes(p.name)" @change="togglePoint(p)"> {{p.point_name}}</label></div>
    </div>
-   <div class="form-section"><h3>Оплата труда</h3><div class="form-grid">
-    <label>Ставка за час<input v-model.number="form.hourly_rate" type="number" min="0" step=".01"></label>
-    <label>Процент от выручки<input v-model.number="form.sales_percent" type="number" min="0" step=".01"></label>
-    <label>НДФЛ, %<input v-model.number="form.ndfl_rate" type="number" min="0" step=".01"></label>
-    <label>Страховые взносы, %<input v-model.number="form.insurance_rate" type="number" min="0" step=".01"></label>
-    <label>Травматизм, %<input v-model.number="form.injury_rate" type="number" min="0" step=".01"></label>
-    <label>Доля безналичной выплаты, %<input v-model.number="form.bank_payment_share" type="number" min="0" max="100" step=".01"></label>
-    <label>Отпуск, дней в год<input v-model.number="form.annual_leave_days" type="number" min="0" step=".01"></label>
-    <label>Доп. начисление<input v-model.number="form.other_accruals_default" type="number" min="0" step=".01"></label>
+   <div class="form-section"><h3>Данные для трудоустройства</h3><div class="form-grid">
+    <label>ИНН<input v-model="form.inn" inputmode="numeric" maxlength="12"></label>
+    <label>СНИЛС<input v-model="form.snils" inputmode="numeric" maxlength="14"></label>
+    <label>Серия паспорта<input v-model="form.passport_series" inputmode="numeric" maxlength="4"></label>
+    <label>Номер паспорта<input v-model="form.passport_number" inputmode="numeric" maxlength="6"></label>
+    <label>Дата выдачи<input v-model="form.passport_issue_date" type="date"></label>
+    <label>Код подразделения<input v-model="form.passport_department_code" placeholder="000-000"></label>
+    <label class="span-3">Кем выдан<textarea v-model="form.passport_issued_by" rows="2"></textarea></label>
+    <label class="span-3">Адрес регистрации<textarea v-model="form.registration_address" rows="2"></textarea></label>
+    <label>Отпуск по договору, дней<input v-model.number="form.annual_leave_days" type="number" min="0" step=".01"></label>
+   </div></div>
+   <div class="form-section"><h3>Паспорт — файлы</h3><p class="section-note">Прикрепляются два отдельных PDF. Для загрузки сначала сохраните новую карточку.</p><div class="document-grid">
+    <label><b>Основная страница</b><a v-if="form.passport_main_file" :href="form.passport_main_file" target="_blank">Открыть текущий файл</a><input type="file" accept="application/pdf" :disabled="!form.name||uploading" @change="uploadPassport($event,'passport_main_file')"><span v-if="uploading==='passport_main_file'">Загрузка…</span></label>
+    <label><b>Страница регистрации</b><a v-if="form.passport_registration_file" :href="form.passport_registration_file" target="_blank">Открыть текущий файл</a><input type="file" accept="application/pdf" :disabled="!form.name||uploading" @change="uploadPassport($event,'passport_registration_file')"><span v-if="uploading==='passport_registration_file'">Загрузка…</span></label>
+   </div></div>
+   <div class="form-section"><h3>Банковские реквизиты для зарплаты</h3><div class="form-grid">
+    <label class="span-2">Получатель<input v-model="form.salary_recipient_name" :placeholder="form.employee_name"></label>
+    <label>БИК<input v-model="form.salary_bic" inputmode="numeric" maxlength="9"></label>
+    <label class="span-2">Банк<input v-model="form.salary_bank_name"></label>
+    <label>Корреспондентский счёт<input v-model="form.salary_correspondent_account" inputmode="numeric" maxlength="20"></label>
+    <label class="span-2">Счёт получателя<input v-model="form.salary_account" inputmode="numeric" maxlength="20"></label>
    </div></div>
    <div v-if="form.name" class="form-section access-section"><div class="access-title"><div><h3>Доступ в систему</h3><p v-if="!detail.access">Сотрудник учитывается в графике и зарплате без учётной записи.</p><p v-else>{{labelProfile(detail.access.access_profile)}} · {{detail.access.active?"доступ активен":"доступ отключён"}} · {{detail.access.invitation_status}}</p></div></div>
     <template v-if="!detail.access">
@@ -113,5 +138,5 @@ onMounted(load);
 </template>
 
 <style scoped>
-.point-picker{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px}.point-picker label{display:flex;align-items:center;gap:7px;border:1px solid #dfe6d8;border-radius:9px;padding:9px 12px;background:#fff}.access-section{border:1px solid #dfe9d6;border-radius:12px;background:#f8fbf5;padding:16px}.access-title h3{margin:0}.access-title p{margin:5px 0 14px;color:#6f7d68}.security-actions{display:flex;gap:10px;flex-wrap:wrap}.invitation{display:grid;gap:10px;margin-top:14px}.invitation textarea{width:100%;resize:vertical}.form-section h4{margin:14px 0 6px}.footer-actions{display:flex;gap:10px;margin-left:auto}
+.point-picker{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 16px}.point-picker label{display:flex;align-items:center;gap:7px;border:1px solid #dfe6d8;border-radius:9px;padding:9px 12px;background:#fff}.access-section{border:1px solid #dfe9d6;border-radius:12px;background:#f8fbf5;padding:16px}.access-title h3{margin:0}.access-title p{margin:5px 0 14px;color:#6f7d68}.security-actions{display:flex;gap:10px;flex-wrap:wrap}.invitation{display:grid;gap:10px;margin-top:14px}.invitation textarea{width:100%;resize:vertical}.form-section h4{margin:14px 0 6px}.footer-actions{display:flex;gap:10px;margin-left:auto}.section-note{color:#74806f;margin:-4px 0 12px}.document-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.document-grid label{display:grid;gap:8px;border:1px solid #e1e7dc;border-radius:10px;padding:14px}.document-grid a{color:#4f7d2d;font-size:13px}.document-grid input{padding:8px;border:1px dashed #cfd9c7;border-radius:8px}@media(max-width:700px){.document-grid{grid-template-columns:1fr}}
 </style>
