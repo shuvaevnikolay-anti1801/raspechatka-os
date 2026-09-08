@@ -163,12 +163,14 @@ app_include_js = "/assets/raspechatka/js/raspechatka.js"
 # ---------------
 
 scheduler_events = {
+	# Run the lightweight guard on every scheduler tick. The function itself
+	# observes the administrator-selected interval before enqueueing a sync.
+	"all": ["raspechatka.api.moysklad_sales.sync_enabled_sales"],
 	"cron": {
 		"*/5 * * * *": [
 			"raspechatka.api.tochka.sync_enabled_connections",
-			"raspechatka.api.moysklad_sales.sync_enabled_sales",
 		]
-	}
+	},
 }
 # scheduler_events = {
 # 	"all": [

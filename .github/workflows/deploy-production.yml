@@ -155,6 +155,7 @@ jobs:
 
           docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" up -d --force-recreate
           docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" migrate
+          docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" enable-scheduler
           docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" exec -T backend bench --site "${SITE}" clear-cache
           docker compose --project-name "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" ps
           REMOTE_SCRIPT
