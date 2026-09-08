@@ -89,6 +89,19 @@ def get_balance(
         values.append(posting_datetime)
     if lock:
         _lock_balance(item, warehouse)
+    if (
+        storage_location is None
+        and posting_datetime is None
+        and frappe.db.table_exists("Stock Balance")
+    ):
+        current = frappe.db.get_value(
+            "Stock Balance",
+            _balance_key(item, warehouse),
+            ["actual_qty", "stock_value"],
+            as_dict=True,
+        )
+        if current:
+            return {"qty": flt(current.actual_qty), "value": flt(current.stock_value)}
     row = frappe.db.sql(
         f"""select coalesce(sum(actual_qty), 0) as qty,
 			coalesce(sum(stock_value_difference), 0) as value
@@ -169,7 +182,51 @@ def make_ledger_entry(
     entry.movement_key = movement_key
     entry.is_reversal = 1 if reversal else 0
     entry.insert(ignore_permissions=True)
+    write_operational_balance(
+        row.item,
+        warehouse,
+        qty_after,
+        value_after,
+        posting_datetime,
+        entry.name,
+    )
     return entry
+
+
+def write_operational_balance(
+    item, warehouse, quantity, stock_value, last_movement_at, last_ledger_entry
+):
+    """Update the fast current balance inside the caller's transaction."""
+    _lock_balance(item, warehouse)
+    key = _balance_key(item, warehouse)
+    existing = frappe.db.exists("Stock Balance", key)
+    reserved = flt(
+        frappe.db.get_value("Stock Balance", key, "reserved_qty") if existing else 0
+    )
+    values = {
+        "item": item,
+        "warehouse": warehouse,
+        "actual_qty": flt(quantity),
+        "reserved_qty": reserved,
+        "available_qty": flt(quantity) - reserved,
+        "stock_value": flt(stock_value),
+        "average_rate": flt(stock_value / quantity) if quantity else 0,
+        "last_movement_at": last_movement_at,
+        "last_ledger_entry": last_ledger_entry,
+    }
+    if existing:
+        frappe.db.set_value("Stock Balance", key, values, update_modified=False)
+        return key
+
+    doc = frappe.new_doc("Stock Balance")
+    doc.balance_key = key
+    doc.update(values)
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+
+def _balance_key(item, warehouse):
+    return hashlib.sha256(f"{item}|{warehouse}".encode()).hexdigest()
 
 
 def _lock_balance(item, warehouse):
