@@ -14,10 +14,11 @@ from raspechatka.api.moysklad import API_BASE, PAGE_SIZE, _money, _ref_id, _requ
 def get_opening_stock_settings():
     require_access("settings.access", "admin")
     settings = frappe.get_single("MoySklad Settings")
+    snapshot = _loads(settings.opening_stock_preview_json)
     return {
         "status": settings.opening_stock_status or "Idle",
         "preview_token": settings.opening_stock_preview_token,
-        "preview": _loads(settings.opening_stock_preview_json),
+        "preview": snapshot.get("summary") if snapshot else None,
         "documents": _loads(settings.opening_stock_documents_json) or [],
         "imported_at": settings.opening_stock_imported_at,
         "error": settings.opening_stock_error,
@@ -57,6 +58,10 @@ def discover_stock_sources():
 @frappe.whitelist(methods=["POST"])
 def save_stock_mappings(data):
     require_access("settings.access", "admin")
+    settings = frappe.get_single("MoySklad Settings")
+    if settings.opening_stock_status == "Imported":
+        frappe.throw(_("Начальные остатки уже перенесены. Сопоставления менять нельзя."))
+
     mappings = (frappe.parse_json(data) or {}).get("mappings") or []
     by_warehouse = {row.get("warehouse"): row for row in mappings}
     used_sources = set()
@@ -82,7 +87,6 @@ def save_stock_mappings(data):
             },
         )
 
-    settings = frappe.get_single("MoySklad Settings")
     settings.opening_stock_status = "Idle"
     settings.opening_stock_preview_token = None
     settings.opening_stock_preview_json = None
