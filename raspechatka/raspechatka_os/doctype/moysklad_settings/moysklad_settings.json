@@ -28,7 +28,14 @@
   "sales_sync_cursor",
   "last_sales_sync_at",
   "sales_sync_error",
-  "sales_sync_stats_json"
+  "sales_sync_stats_json",
+  "opening_stock_section",
+  "opening_stock_status",
+  "opening_stock_preview_token",
+  "opening_stock_preview_json",
+  "opening_stock_documents_json",
+  "opening_stock_imported_at",
+  "opening_stock_error"
  ],
  "fields": [
   {
@@ -184,6 +191,52 @@
    "label": "Статистика синхронизации продаж",
    "read_only": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "opening_stock_section",
+   "fieldtype": "Section Break",
+   "label": "Одноразовый перенос начальных остатков"
+  },
+  {
+   "fieldname": "opening_stock_status",
+   "fieldtype": "Select",
+   "label": "Статус начальных остатков",
+   "options": "Idle\\nPreviewed\\nImported\\nError",
+   "default": "Idle",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opening_stock_preview_token",
+   "fieldtype": "Data",
+   "label": "Ключ проверенного снимка",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "opening_stock_preview_json",
+   "fieldtype": "Long Text",
+   "label": "Проверенный снимок остатков",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "opening_stock_documents_json",
+   "fieldtype": "Long Text",
+   "label": "Созданные инвентаризации",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "opening_stock_imported_at",
+   "fieldtype": "Datetime",
+   "label": "Остатки перенесены",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opening_stock_error",
+   "fieldtype": "Long Text",
+   "label": "Ошибка переноса остатков",
+   "read_only": 1
   }
  ],
  "permissions": [
