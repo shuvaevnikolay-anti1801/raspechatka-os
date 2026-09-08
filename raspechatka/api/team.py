@@ -739,7 +739,7 @@ def get_employee_registry(search=None, active=None):
 		or_filters=or_filters,
 		fields=[
 			"name", "employee_name", "phone", "position", "business_entity", "employment_type",
-			"hire_date", "active", "system_user_profile", "hourly_rate", "sales_percent",
+			"hire_date", "active", "system_user_profile",
 		],
 		order_by="employee_name asc",
 		limit_page_length=1000,
@@ -819,8 +819,8 @@ def save_employee(data):
 		"active", "last_name", "first_name", "middle_name", "birth_date", "gender", "phone", "email",
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
 		"registration_address", "disability", "hazardous_conditions",
-		"medical_exam_required", "document_folder_url", "notes", "hourly_rate", "sales_percent", "ndfl_rate",
-		"annual_leave_days", "passport_issue_date", "passport_issued_by", "passport_department_code",
+		"medical_exam_required", "document_folder_url", "notes",
+		"annual_leave_days", "passport_series", "passport_number", "passport_issue_date", "passport_issued_by", "passport_department_code",
 		"passport_main_file", "passport_registration_file", "salary_bank_name", "salary_bic",
 		"salary_correspondent_account", "salary_account", "salary_recipient_name",
 	):
