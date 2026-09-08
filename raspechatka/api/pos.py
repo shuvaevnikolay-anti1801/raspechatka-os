@@ -4,6 +4,7 @@ import frappe
 from frappe.utils import flt, get_datetime, getdate, now, nowdate
 
 from raspechatka.pricing import resolve_item_price
+from raspechatka.stock import get_average_rate, make_ledger_entry
 
 
 @frappe.whitelist()
@@ -351,42 +352,52 @@ def _apply_return(event_id, workplace, payload):
 
 
 def _create_stock_entries(workplace, voucher_no, voucher_type, lines, multiplier):
-	warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": workplace.business_point, "active": 1}, "name")
+	warehouse = frappe.db.get_value(
+		"Catalog Warehouse",
+		{"business_point": workplace.business_point, "active": 1},
+		"name",
+	)
 	if not warehouse:
 		return
+	document = frappe._dict(
+		doctype=voucher_type,
+		name=voucher_no,
+		warehouse=warehouse,
+		posting_datetime=now(),
+	)
 	for index, line in enumerate(lines, start=1):
 		item_name = line.get("productId")
-		item = frappe.db.get_value(
-			"Catalog Item", item_name,
-			["item_type", "track_inventory", "allow_negative_stock"], as_dict=True,
-		) if item_name else None
+		item = (
+			frappe.db.get_value(
+				"Catalog Item",
+				item_name,
+				["item_type", "track_inventory"],
+				as_dict=True,
+			)
+			if item_name
+			else None
+		)
 		if not item or item.item_type not in {"Product", "Variant"} or not item.track_inventory:
 			continue
 		quantity = multiplier * flt(line.get("quantity"))
-		if quantity < 0 and not item.allow_negative_stock:
-			balance = flt(frappe.db.sql(
-				"""select coalesce(sum(actual_qty), 0) from `tabStock Ledger Entry`
-				where item=%s and warehouse=%s""",
-				(item_name, warehouse),
-			)[0][0])
-			if balance + quantity < 0:
-				frappe.throw(
-					f"Недостаточно остатка «{frappe.db.get_value('Catalog Item', item_name, 'item_name') or item_name}»: доступно {balance:g}"
-				)
-		rate = _stock_rate(item_name, warehouse)
-		frappe.get_doc({
-			"doctype": "Stock Ledger Entry",
-			"posting_datetime": now(),
-			"item": item_name,
-			"warehouse": warehouse,
-			"actual_qty": quantity,
-			"incoming_rate": rate,
-			"stock_value_difference": quantity * rate,
-			"voucher_type": voucher_type,
-			"voucher_no": voucher_no,
-			"voucher_detail_no": f"{voucher_no}:{index}",
-			"is_reversal": 1 if multiplier > 0 else 0,
-		}).insert(ignore_permissions=True)
+		rate = get_average_rate(item_name, warehouse)
+		row = frappe._dict(
+			item=item_name,
+			name=f"{voucher_no}:{index}",
+			storage_location=frappe.db.get_value(
+				"Catalog Item Storage",
+				{"item": item_name, "warehouse": warehouse, "active": 1},
+				"storage_location",
+			),
+		)
+		make_ledger_entry(
+			document,
+			row,
+			quantity,
+			rate,
+			quantity * rate,
+			valuation_source="Warehouse weighted average",
+		)
 
 
 def _stock_rate(item_name, warehouse):
