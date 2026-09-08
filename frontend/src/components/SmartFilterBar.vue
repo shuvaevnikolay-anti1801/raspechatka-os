@@ -41,13 +41,17 @@ const operatorOptions = {
 };
 
 function defaults() { return fields.value.filter((field) => field.default !== false).map((field) => field.key); }
-function setValue(key, value) { emit("update:modelValue", { ...props.modelValue, [key]: value }); }
+function setValue(key, value) {
+  const next = { ...props.modelValue, [key]: value };
+  if (periodFieldPair.value && [periodFieldPair.value.from.key, periodFieldPair.value.to.key].includes(key)) next.__periodPreset = "";
+  emit("update:modelValue", next);
+}
 function formatDateValue(date) {
   const pad = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
-function setPeriod(preset) {
-  if (!periodFieldPair.value) return;
+function periodValues(preset) {
+  if (!periodFieldPair.value || !preset) return {};
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const from = new Date(today);
@@ -60,11 +64,17 @@ function setPeriod(preset) {
   } else if (preset === "month") {
     from.setDate(1);
   }
-  emit("update:modelValue", {
-    ...props.modelValue,
+  return {
     [periodFieldPair.value.from.key]: formatDateValue(from),
     [periodFieldPair.value.to.key]: formatDateValue(to),
-  });
+    __periodPreset: preset,
+  };
+}
+function resolvePeriodPreset(filters) {
+  return filters?.__periodPreset ? { ...filters, ...periodValues(filters.__periodPreset) } : filters;
+}
+function setPeriod(preset) {
+  emit("update:modelValue", { ...props.modelValue, ...periodValues(preset) });
 }
 function operatorKey(field) { return `${field.key}__operator`; }
 function defaultOperator(field) { return field.type === "select" ? "equals" : (["number", "date", "datetime-local", "time"].includes(field.type) ? "equals" : "contains"); }
@@ -99,7 +109,7 @@ async function loadPreference() {
     const valid = (preference.visible || []).filter((key) => fields.value.some((field) => field.key === key));
     if (valid.length) visible.value = valid;
     bookmarks.value = Array.isArray(preference.bookmarks) ? preference.bookmarks : [];
-    if (preference.lastFilters) { emit("update:modelValue", { ...props.modelValue, ...preference.lastFilters }); restored = true; }
+    if (preference.lastFilters) { emit("update:modelValue", { ...props.modelValue, ...resolvePeriodPreset(preference.lastFilters) }); restored = true; }
   } catch (_) {
     // The complete default field set remains available without saved preferences.
   } finally { ready.value = true; if (restored) { await nextTick(); await apply(); } }
@@ -120,7 +130,7 @@ async function apply() {
   await savePreference(); emit("apply");
 }
 async function reset() {
-  const empty = Object.fromEntries(fields.value.flatMap((field) => [[field.key, field.emptyValue ?? ""], [operatorKey(field), defaultOperator(field)]]));
+  const empty = { ...Object.fromEntries(fields.value.flatMap((field) => [[field.key, field.emptyValue ?? ""], [operatorKey(field), defaultOperator(field)]])), __periodPreset: "" };
   emit("update:modelValue", empty); setDocumentFilterMatches(props.viewKey, null);
   await savePreference({ lastFilters: empty }); emit("reset");
 }
@@ -132,8 +142,9 @@ async function createBookmark() {
 }
 async function useBookmark(bookmark) {
   visible.value = bookmark.visible?.filter((key) => fields.value.some((field) => field.key === key)) || defaults();
-  emit("update:modelValue", { ...props.modelValue, ...bookmark.filters });
-  await savePreference({ lastFilters: bookmark.filters }); await nextTick(); await apply();
+  const filters = resolvePeriodPreset(bookmark.filters);
+  emit("update:modelValue", { ...props.modelValue, ...filters });
+  await savePreference({ lastFilters: filters }); await nextTick(); await apply();
 }
 async function removeBookmark(id) { bookmarks.value = bookmarks.value.filter((item) => item.id !== id); await savePreference(); }
 
@@ -169,10 +180,10 @@ onMounted(loadPreference);
           <span v-else class="filter-no-value">Значение не требуется</span>
         </div>
         <div v-if="periodFieldPair && field.key === periodFieldPair.from.key" class="filter-period-presets" aria-label="Быстрый выбор периода">
-          <button type="button" @click="setPeriod('today')">Сегодня</button>
-          <button type="button" @click="setPeriod('yesterday')">Вчера</button>
-          <button type="button" @click="setPeriod('week')">Неделя</button>
-          <button type="button" @click="setPeriod('month')">Месяц</button>
+          <button type="button" :class="{ active: modelValue.__periodPreset === 'today' }" @click.prevent.stop="setPeriod('today')">Сегодня</button>
+          <button type="button" :class="{ active: modelValue.__periodPreset === 'yesterday' }" @click.prevent.stop="setPeriod('yesterday')">Вчера</button>
+          <button type="button" :class="{ active: modelValue.__periodPreset === 'week' }" @click.prevent.stop="setPeriod('week')">Неделя</button>
+          <button type="button" :class="{ active: modelValue.__periodPreset === 'month' }" @click.prevent.stop="setPeriod('month')">Месяц</button>
         </div>
       </label>
       <div class="smart-filter-submit"><button class="button button-primary" type="button" @click="apply">Найти</button><button class="button button-secondary" type="button" @click="reset">Очистить</button></div>
