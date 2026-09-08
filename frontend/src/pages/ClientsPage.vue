@@ -7,401 +7,383 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 
 const rows = ref([]),
-  loading = ref(true),
-  error = ref(""),
-  filters = ref({ search: "", status: "", point: "", channel: "" });
+	loading = ref(true),
+	error = ref(""),
+	filters = ref({ search: "", status: "", point: "", channel: "" });
 const detail = ref(null),
-  tab = ref("profile"),
-  saving = ref(false),
-  formError = ref("");
+	tab = ref("profile"),
+	saving = ref(false),
+	formError = ref("");
 const options = reactive({ points: [] }),
-  form = reactive({});
+	form = reactive({});
 const canEdit = canAccess("clients.base", "Edit");
 const columns = [
-  { key: "client_name", label: "Клиент", primary: true },
-  { key: "phone", label: "Телефон" },
-  { key: "registration_point", label: "Точка регистрации" },
-  { key: "club_status", label: "Статус клуба" },
-  { key: "discount_percent", label: "Скидка, %" },
-  { key: "active_channels", label: "Каналов" },
-  { key: "registered_at", label: "Регистрация" },
+	{ key: "client_name", label: "Клиент", primary: true },
+	{ key: "phone", label: "Телефон" },
+	{ key: "registration_point", label: "Точка регистрации" },
+	{ key: "club_status", label: "Статус клуба" },
+	{ key: "discount_percent", label: "Скидка, %" },
+	{ key: "active_channels", label: "Каналов" },
+	{ key: "registered_at", label: "Регистрация" },
 ];
 const filterFields = computed(() => [
-  {
-    key: "search",
-    label: "Поиск",
-    placeholder: "ФИО, телефон, email или ID",
-    wide: true,
-  },
-  {
-    key: "status",
-    label: "Статус клуба",
-    type: "select",
-    allLabel: "Все статусы",
-    options: [
-      "Регистрация",
-      "Ожидает мессенджер",
-      "Активен",
-      "Заблокирован",
-    ].map((value) => ({ value, label: value })),
-  },
-  {
-    key: "point",
-    label: "Точка регистрации",
-    type: "select",
-    allLabel: "Все точки",
-    options: options.points.map((p) => ({
-      value: p.name,
-      label: p.point_name,
-    })),
-  },
-  {
-    key: "channel",
-    label: "Канал",
-    type: "select",
-    allLabel: "Любой канал",
-    options: ["Telegram", "MAX", "VK"].map((value) => ({
-      value,
-      label: value,
-    })),
-  },
+	{
+		key: "search",
+		label: "Поиск",
+		placeholder: "ФИО, телефон, email или ID",
+		wide: true,
+	},
+	{
+		key: "status",
+		label: "Статус клуба",
+		type: "select",
+		allLabel: "Все статусы",
+		options: ["Регистрация", "Ожидает мессенджер", "Активен", "Заблокирован"].map((value) => ({
+			value,
+			label: value,
+		})),
+	},
+	{
+		key: "point",
+		label: "Точка регистрации",
+		type: "select",
+		allLabel: "Все точки",
+		options: options.points.map((p) => ({
+			value: p.name,
+			label: p.point_name,
+		})),
+	},
+	{
+		key: "channel",
+		label: "Канал",
+		type: "select",
+		allLabel: "Любой канал",
+		options: ["Telegram", "MAX", "VK"].map((value) => ({
+			value,
+			label: value,
+		})),
+	},
 ]);
 function reset(values = {}) {
-  Object.keys(form).forEach((k) => delete form[k]);
-  Object.assign(form, {
-    active: 1,
-    personal_data_consent: 0,
-    marketing_consent: 0,
-    club_rules_consent: 0,
-    messengers: [],
-    ...values,
-  });
+	Object.keys(form).forEach((k) => delete form[k]);
+	Object.assign(form, {
+		active: 1,
+		personal_data_consent: 0,
+		marketing_consent: 0,
+		club_rules_consent: 0,
+		messengers: [],
+		...values,
+	});
 }
 async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    rows.value = await call("raspechatka.api.clients.get_clients", {
-      search: filters.value.search,
-      club_status: filters.value.status,
-      business_point: filters.value.point,
-      channel: filters.value.channel,
-    });
-  } catch (e) {
-    error.value = e.message;
-  } finally {
-    loading.value = false;
-  }
+	loading.value = true;
+	error.value = "";
+	try {
+		rows.value = await call("raspechatka.api.clients.get_clients", {
+			search: filters.value.search,
+			club_status: filters.value.status,
+			business_point: filters.value.point,
+			channel: filters.value.channel,
+		});
+	} catch (e) {
+		error.value = e.message;
+	} finally {
+		loading.value = false;
+	}
 }
 async function loadOptions() {
-  try {
-    Object.assign(
-      options,
-      await call("raspechatka.api.clients.get_client_options")
-    );
-  } catch (e) {
-    error.value = e.message;
-  }
+	try {
+		Object.assign(options, await call("raspechatka.api.clients.get_client_options"));
+	} catch (e) {
+		error.value = e.message;
+	}
 }
 function create() {
-  reset();
-  detail.value = {};
-  tab.value = "profile";
-  formError.value = "";
+	reset();
+	detail.value = {};
+	tab.value = "profile";
+	formError.value = "";
 }
 async function open(row) {
-  try {
-    const data = await call("raspechatka.api.clients.get_client", {
-      name: row.name,
-    });
-    detail.value = data;
-    reset(JSON.parse(JSON.stringify(data)));
-    tab.value = "profile";
-  } catch (e) {
-    error.value = e.message;
-  }
+	try {
+		const data = await call("raspechatka.api.clients.get_client", {
+			name: row.name,
+		});
+		detail.value = data;
+		reset(JSON.parse(JSON.stringify(data)));
+		tab.value = "profile";
+	} catch (e) {
+		error.value = e.message;
+	}
 }
 function messenger(type) {
-  return (form.messengers || []).find((x) => x.messenger_type === type);
+	return (form.messengers || []).find((x) => x.messenger_type === type);
 }
 function toggleMessenger(type, enabled) {
-  let list = form.messengers || (form.messengers = []);
-  let row = list.find((x) => x.messenger_type === type);
-  if (!row && enabled)
-    list.push({ messenger_type: type, status: "Активен", health: "ACTIVE" });
-  else if (row) row.status = enabled ? "Активен" : "Отключен";
+	let list = form.messengers || (form.messengers = []);
+	let row = list.find((x) => x.messenger_type === type);
+	if (!row && enabled) list.push({ messenger_type: type, status: "Активен", health: "ACTIVE" });
+	else if (row) row.status = enabled ? "Активен" : "Отключен";
 }
 async function save() {
-  saving.value = true;
-  formError.value = "";
-  try {
-    const r = await call(
-      "raspechatka.api.clients.save_client",
-      { data: JSON.stringify(form) },
-      { method: "POST" }
-    );
-    await load();
-    await open({ name: r.name });
-  } catch (e) {
-    formError.value = e.message;
-  } finally {
-    saving.value = false;
-  }
+	saving.value = true;
+	formError.value = "";
+	try {
+		const r = await call(
+			"raspechatka.api.clients.save_client",
+			{ data: JSON.stringify(form) },
+			{ method: "POST" }
+		);
+		await load();
+		await open({ name: r.name });
+	} catch (e) {
+		formError.value = e.message;
+	} finally {
+		saving.value = false;
+	}
 }
 function formatDate(value) {
-  return value
-    ? new Intl.DateTimeFormat("ru-RU", {
-        dateStyle: "short",
-        timeStyle: value.includes?.(":") ? "short" : undefined,
-      }).format(new Date(value))
-    : "—";
+	return value
+		? new Intl.DateTimeFormat("ru-RU", {
+				dateStyle: "short",
+				timeStyle: value.includes?.(":") ? "short" : undefined,
+		  }).format(new Date(value))
+		: "—";
 }
 function money(value) {
-  return (
-    new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2 }).format(
-      Number(value || 0)
-    ) + " ₽"
-  );
+	return (
+		new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2 }).format(Number(value || 0)) +
+		" ₽"
+	);
 }
 onMounted(() => Promise.all([load(), loadOptions()]));
 </script>
 
 <template>
-  <section class="page clients-page">
-    <ListPageHeader title="Клиенты"
-      ><template #actions
-        ><button v-if="canEdit" class="button button-primary" @click="create">
-          ＋ Добавить клиента
-        </button></template
-      ></ListPageHeader
-    >
-    <SmartFilterBar
-      v-model="filters"
-      :fields="filterFields"
-      view-key="clients.base"
-      @apply="load"
-      @reset="load"
-    />
-    <ReferenceTable
-      :rows="rows"
-      :columns="columns"
-      view-key="clients.base"
-      :loading="loading"
-      :error="error"
-      @open="open"
-      @retry="load"
-    />
-    <AppModal
-      v-if="detail !== null"
-      :title="form.client_name || 'Новый клиент'"
-      wide
-      @close="detail = null"
-      ><div class="client-card-head">
-        <div>
-          <span class="client-code">{{ form.client_id || "Новый клиент" }}</span
-          ><strong>{{ form.club_status || "Регистрация" }}</strong>
-        </div>
-        <div class="client-discount">
-          <small>СКИДКА КЛУБА</small
-          ><b>{{ Number(form.discount_percent || 0) }}%</b>
-        </div>
-      </div>
-      <p v-if="form.legacy_club_id" class="empty-panel">
-        Параллельная копия Google ·
-        {{ form.legacy_club_synced_at || "ожидание синхронизации" }}. Изменения
-        пока вносятся в действующей системе клуба.
-      </p>
-      <div class="editor-tabs">
-        <button
-          v-for="item in [
-            { k: 'profile', l: 'Карточка' },
-            { k: 'club', l: 'Клуб и согласия' },
-            { k: 'purchases', l: 'История покупок' },
-            { k: 'events', l: 'События' },
-          ]"
-          :key="item.k"
-          :class="{ active: tab === item.k }"
-          @click="tab = item.k"
-        >
-          {{ item.l }}
-        </button>
-      </div>
-      <form v-if="tab === 'profile'" class="editor-form" @submit.prevent="save">
-        <div class="form-section">
-          <h3>Контактные данные</h3>
-          <div class="form-grid">
-            <label>Фамилия<input v-model="form.last_name" /></label
-            ><label>Имя<input v-model="form.first_name" required /></label
-            ><label>Отчество<input v-model="form.middle_name" /></label
-            ><label
-              >Телефон<input
-                v-model="form.phone"
-                placeholder="+7 999 000-00-00"
-                required /></label
-            ><label>Email<input v-model="form.email" type="email" /></label
-            ><label
-              >Дата рождения<input v-model="form.birth_date" type="date"
-            /></label>
-          </div>
-        </div>
-        <div class="form-section">
-          <h3>Регистрация</h3>
-          <div class="form-grid">
-            <label
-              >Точка регистрации<select
-                v-model="form.registration_point"
-                required
-              >
-                <option value="">Выберите точку</option>
-                <option
-                  v-for="p in options.points"
-                  :key="p.name"
-                  :value="p.name"
-                >
-                  {{ p.point_name }}
-                </option>
-              </select></label
-            ><label>Источник<input v-model="form.registration_source" /></label
-            ><label
-              >Дата регистрации<input
-                :value="formatDate(form.registered_at)"
-                disabled /></label
-            ><label class="check-field"
-              ><input
-                v-model="form.active"
-                type="checkbox"
-                :true-value="1"
-                :false-value="0"
-              />
-              Клиент активен</label
-            ><label class="span-3"
-              >Комментарий<textarea v-model="form.notes" rows="3"></textarea>
-            </label>
-          </div>
-        </div>
-      </form>
-      <div v-else-if="tab === 'club'" class="editor-form">
-        <div class="form-section">
-          <h3>Мессенджеры</h3>
-          <div class="messenger-grid">
-            <div
-              v-for="type in ['Telegram', 'MAX', 'VK']"
-              :key="type"
-              class="messenger-card"
-              :class="{ active: messenger(type)?.status === 'Активен' }"
-            >
-              <label class="check-field"
-                ><input
-                  type="checkbox"
-                  :checked="messenger(type)?.status === 'Активен'"
-                  @change="toggleMessenger(type, $event.target.checked)"
-                />
-                <b>{{ type }}</b></label
-              ><input
-                v-if="messenger(type)"
-                v-model="messenger(type).contact"
-                placeholder="Контакт или username"
-              /><small>{{
-                messenger(type)?.channel_role || "Не подключён"
-              }}</small>
-            </div>
-          </div>
-        </div>
-        <div class="form-section">
-          <h3>Согласия</h3>
-          <div class="consent-grid">
-            <label
-              ><input
-                v-model="form.personal_data_consent"
-                type="checkbox"
-                :true-value="1"
-                :false-value="0"
-              />
-              Обработка персональных данных<small>{{
-                formatDate(form.personal_data_consent_at)
-              }}</small></label
-            ><label
-              ><input
-                v-model="form.marketing_consent"
-                type="checkbox"
-                :true-value="1"
-                :false-value="0"
-              />
-              Рекламные сообщения<small>{{
-                formatDate(form.marketing_consent_at)
-              }}</small></label
-            ><label
-              ><input
-                v-model="form.club_rules_consent"
-                type="checkbox"
-                :true-value="1"
-                :false-value="0"
-              />
-              Правила клуба<small>{{
-                formatDate(form.club_rules_consent_at)
-              }}</small></label
-            >
-          </div>
-          <div v-if="detail?.consents?.length" class="audit-list">
-            <div v-for="c in detail.consents" :key="c.name">
-              <b>{{ c.consent_type }}</b
-              ><span
-                >{{ c.accepted ? "Принято" : "Отозвано" }} · версия
-                {{ c.document_version }}</span
-              ><time>{{ formatDate(c.recorded_at) }}</time>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-else-if="tab === 'purchases'" class="client-history">
-        <div v-if="detail?.purchases?.length" class="history-table">
-          <div class="history-row head">
-            <span>Дата</span><span>Точка</span><span>Документ</span
-            ><span>Промокод</span><span>Сумма</span>
-          </div>
-          <div v-for="p in detail.purchases" :key="p.name" class="history-row">
-            <span>{{ formatDate(p.purchase_datetime) }}</span
-            ><span>{{ p.business_point }}</span
-            ><span>{{ p.source_document || "—" }}</span
-            ><span>{{ p.promo_code || "—" }}</span
-            ><strong>{{ money(p.net_amount) }}</strong>
-          </div>
-        </div>
-        <div v-else class="empty-panel">
-          <b>Покупок пока нет</b
-          ><span>История начнёт заполняться после подключения кассы.</span>
-        </div>
-      </div>
-      <div v-else class="client-history">
-        <div v-if="detail?.events?.length" class="event-list">
-          <div v-for="e in detail.events" :key="e.name">
-            <time>{{ formatDate(e.event_datetime) }}</time
-            ><b>{{ e.event_type }}</b
-            ><span>{{ e.channel || e.source || "—" }}</span>
-          </div>
-        </div>
-        <div v-else class="empty-panel"><b>Событий пока нет</b></div>
-      </div>
-      <p v-if="formError" class="form-error">{{ formError }}</p>
-      <template #footer
-        ><div></div>
-        <div class="footer-actions">
-          <button class="button button-secondary" @click="detail = null">
-            Закрыть</button
-          ><button
-            v-if="
-              canEdit &&
-              !form.legacy_club_id &&
-              (tab === 'profile' || tab === 'club')
-            "
-            class="button button-primary"
-            :disabled="saving"
-            @click="save"
-          >
-            {{ saving ? "Сохраняем…" : "Сохранить" }}
-          </button>
-        </div></template
-      ></AppModal
-    >
-  </section>
+	<section class="page clients-page">
+		<ListPageHeader title="Клиенты"
+			><template #actions
+				><button v-if="canEdit" class="button button-primary" @click="create">
+					＋ Добавить клиента
+				</button></template
+			></ListPageHeader
+		>
+		<SmartFilterBar
+			v-model="filters"
+			:fields="filterFields"
+			view-key="clients.base"
+			@apply="load"
+			@reset="load"
+		/>
+		<ReferenceTable
+			:rows="rows"
+			:columns="columns"
+			view-key="clients.base"
+			:loading="loading"
+			:error="error"
+			@open="open"
+			@retry="load"
+		/>
+		<AppModal
+			v-if="detail !== null"
+			:title="form.client_name || 'Новый клиент'"
+			wide
+			@close="detail = null"
+			><div class="client-card-head">
+				<div>
+					<span class="client-code">{{ form.client_id || "Новый клиент" }}</span
+					><strong>{{ form.club_status || "Регистрация" }}</strong>
+				</div>
+				<div class="client-discount">
+					<small>СКИДКА КЛУБА</small><b>{{ Number(form.discount_percent || 0) }}%</b>
+				</div>
+			</div>
+			<p v-if="form.legacy_club_id" class="empty-panel">
+				Параллельная копия Google ·
+				{{ form.legacy_club_synced_at || "ожидание синхронизации" }}. Изменения пока
+				вносятся в действующей системе клуба.
+			</p>
+			<div class="editor-tabs">
+				<button
+					v-for="item in [
+						{ k: 'profile', l: 'Карточка' },
+						{ k: 'club', l: 'Клуб и согласия' },
+						{ k: 'purchases', l: 'История покупок' },
+						{ k: 'events', l: 'События' },
+					]"
+					:key="item.k"
+					:class="{ active: tab === item.k }"
+					@click="tab = item.k"
+				>
+					{{ item.l }}
+				</button>
+			</div>
+			<form v-if="tab === 'profile'" class="editor-form" @submit.prevent="save">
+				<div class="form-section">
+					<h3>Контактные данные</h3>
+					<div class="form-grid">
+						<label>Фамилия<input v-model="form.last_name" /></label
+						><label>Имя<input v-model="form.first_name" required /></label
+						><label>Отчество<input v-model="form.middle_name" /></label
+						><label
+							>Телефон<input
+								v-model="form.phone"
+								placeholder="+7 999 000-00-00"
+								required /></label
+						><label>Email<input v-model="form.email" type="email" /></label
+						><label
+							>Дата рождения<input v-model="form.birth_date" type="date"
+						/></label>
+					</div>
+				</div>
+				<div class="form-section">
+					<h3>Регистрация</h3>
+					<div class="form-grid">
+						<label
+							>Точка регистрации<select v-model="form.registration_point" required>
+								<option value="">Выберите точку</option>
+								<option v-for="p in options.points" :key="p.name" :value="p.name">
+									{{ p.point_name }}
+								</option>
+							</select></label
+						><label>Источник<input v-model="form.registration_source" /></label
+						><label
+							>Дата регистрации<input
+								:value="formatDate(form.registered_at)"
+								disabled /></label
+						><label class="check-field"
+							><input
+								v-model="form.active"
+								type="checkbox"
+								:true-value="1"
+								:false-value="0"
+							/>
+							Клиент активен</label
+						><label class="span-3"
+							>Комментарий<textarea v-model="form.notes" rows="3"></textarea>
+						</label>
+					</div>
+				</div>
+			</form>
+			<div v-else-if="tab === 'club'" class="editor-form">
+				<div class="form-section">
+					<h3>Мессенджеры</h3>
+					<div class="messenger-grid">
+						<div
+							v-for="type in ['Telegram', 'MAX', 'VK']"
+							:key="type"
+							class="messenger-card"
+							:class="{ active: messenger(type)?.status === 'Активен' }"
+						>
+							<label class="check-field"
+								><input
+									type="checkbox"
+									:checked="messenger(type)?.status === 'Активен'"
+									@change="toggleMessenger(type, $event.target.checked)"
+								/>
+								<b>{{ type }}</b></label
+							><input
+								v-if="messenger(type)"
+								v-model="messenger(type).contact"
+								placeholder="Контакт или username"
+							/><small>{{ messenger(type)?.channel_role || "Не подключён" }}</small>
+						</div>
+					</div>
+				</div>
+				<div class="form-section">
+					<h3>Согласия</h3>
+					<div class="consent-grid">
+						<label
+							><input
+								v-model="form.personal_data_consent"
+								type="checkbox"
+								:true-value="1"
+								:false-value="0"
+							/>
+							Обработка персональных данных<small>{{
+								formatDate(form.personal_data_consent_at)
+							}}</small></label
+						><label
+							><input
+								v-model="form.marketing_consent"
+								type="checkbox"
+								:true-value="1"
+								:false-value="0"
+							/>
+							Рекламные сообщения<small>{{
+								formatDate(form.marketing_consent_at)
+							}}</small></label
+						><label
+							><input
+								v-model="form.club_rules_consent"
+								type="checkbox"
+								:true-value="1"
+								:false-value="0"
+							/>
+							Правила клуба<small>{{
+								formatDate(form.club_rules_consent_at)
+							}}</small></label
+						>
+					</div>
+					<div v-if="detail?.consents?.length" class="audit-list">
+						<div v-for="c in detail.consents" :key="c.name">
+							<b>{{ c.consent_type }}</b
+							><span
+								>{{ c.accepted ? "Принято" : "Отозвано" }} · версия
+								{{ c.document_version }}</span
+							><time>{{ formatDate(c.recorded_at) }}</time>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div v-else-if="tab === 'purchases'" class="client-history">
+				<div v-if="detail?.purchases?.length" class="history-table">
+					<div class="history-row head">
+						<span>Дата</span><span>Точка</span><span>Документ</span
+						><span>Промокод</span><span>Сумма</span>
+					</div>
+					<div v-for="p in detail.purchases" :key="p.name" class="history-row">
+						<span>{{ formatDate(p.purchase_datetime) }}</span
+						><span>{{ p.business_point }}</span
+						><span>{{ p.source_document || "—" }}</span
+						><span>{{ p.promo_code || "—" }}</span
+						><strong>{{ money(p.net_amount) }}</strong>
+					</div>
+				</div>
+				<div v-else class="empty-panel">
+					<b>Покупок пока нет</b
+					><span>История начнёт заполняться после подключения кассы.</span>
+				</div>
+			</div>
+			<div v-else class="client-history">
+				<div v-if="detail?.events?.length" class="event-list">
+					<div v-for="e in detail.events" :key="e.name">
+						<time>{{ formatDate(e.event_datetime) }}</time
+						><b>{{ e.event_type }}</b
+						><span>{{ e.channel || e.source || "—" }}</span>
+					</div>
+				</div>
+				<div v-else class="empty-panel"><b>Событий пока нет</b></div>
+			</div>
+			<p v-if="formError" class="form-error">{{ formError }}</p>
+			<template #footer
+				><div></div>
+				<div class="footer-actions">
+					<button class="button button-secondary" @click="detail = null">Закрыть</button
+					><button
+						v-if="
+							canEdit &&
+							!form.legacy_club_id &&
+							(tab === 'profile' || tab === 'club')
+						"
+						class="button button-primary"
+						:disabled="saving"
+						@click="save"
+					>
+						{{ saving ? "Сохраняем…" : "Сохранить" }}
+					</button>
+				</div></template
+			></AppModal
+		>
+	</section>
 </template>

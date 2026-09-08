@@ -5,8 +5,8 @@ from datetime import date
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, date_diff, flt, getdate, now_datetime, today
-from raspechatka.access import get_scope, require_access
 
+from raspechatka.access import get_scope, require_access
 from raspechatka.raspechatka_os.doctype.client.client import CHANNELS, normalize_phone
 
 MARKETING_TYPES = {

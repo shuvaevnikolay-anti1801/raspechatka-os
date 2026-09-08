@@ -6,8 +6,8 @@ import time
 
 import frappe
 from frappe.utils import get_datetime, now_datetime
-from raspechatka.access import get_scope, require_access
 
+from raspechatka.access import get_scope, require_access
 from raspechatka.club_sync_protocol import digest, identifier, truth, verify
 from raspechatka.raspechatka_os.doctype.client.client import normalize_phone
 
