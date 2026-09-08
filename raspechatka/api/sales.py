@@ -236,8 +236,13 @@ def _shift_name(external_id, point):
 
 def _set_shift_scope(doc, connection, row):
 	doc.business_point, doc.business_entity = connection.business_point, connection.business_entity
-	doc.warehouse = row.get("warehouse") or frappe.db.get_value("Catalog Warehouse", {"business_point": connection.business_point, "active": 1}, "name")
-	if not doc.warehouse: frappe.throw(_("У точки нет активного склада"))
+	doc.warehouse = frappe.db.get_value(
+		"Catalog Warehouse",
+		{"business_point": connection.business_point, "active": 1},
+		"name",
+	)
+	if not doc.warehouse:
+		frappe.throw(_("У точки нет активного склада"))
 
 
 def _set_doc_scope(doc, connection, shift):
