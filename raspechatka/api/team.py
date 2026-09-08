@@ -448,3 +448,216 @@ def get_game_data(period=None, business_point=None):
 			"rewardEach": flt(doc.team_bonus_each),
 		},
 	}
+
+def _employee_name_map(employee_ids):
+	return {
+		row.name: row.employee_name
+		for row in frappe.get_all(
+			"Employee",
+			filters={"name": ["in", employee_ids or ["__none__"]]},
+			fields=["name", "employee_name"],
+			limit_page_length=1000,
+		)
+	}
+
+
+@frappe.whitelist()
+def save_schedule(business_point, month, entries=None, publish=0):
+	"""Create or update a monthly schedule. Entries are [{date, employee, shift_template}]."""
+	require_access("team.schedule", "write")
+	_scope_point(business_point)
+	month = getdate(month).replace(day=1)
+	entries = frappe.parse_json(entries) if isinstance(entries, str) else (entries or [])
+	name = frappe.db.get_value("Work Schedule", {"business_point": business_point, "month": month}, "name")
+	doc = frappe.get_doc("Work Schedule", name) if name else frappe.new_doc("Work Schedule")
+	doc.business_point = business_point
+	doc.business_entity = frappe.db.get_value("Business Point", business_point, "business_entity")
+	doc.month = month
+	doc.entries = []
+	seen = set()
+	for item in entries:
+		work_date = getdate(item.get("date") or item.get("work_date"))
+		if work_date.year != month.year or work_date.month != month.month:
+			frappe.throw(_("Дата смены должна входить в выбранный месяц"))
+		key = (str(work_date), item.get("employee"))
+		if key in seen:
+			frappe.throw(_("У сотрудника не может быть две плановые смены в один день"))
+		seen.add(key)
+		template = frappe.get_doc("Shift Template", item.get("shift_template"))
+		doc.append("entries", {
+			"work_date": work_date,
+			"employee": item.get("employee"),
+			"shift_template": template.name,
+			"start_time": template.start_time,
+			"end_time": template.end_time,
+			"planned_hours": template.planned_hours,
+			"notes": item.get("notes"),
+		})
+	if cint(publish):
+		doc.status = "Published"
+		doc.published_at = now_datetime()
+	elif not doc.status:
+		doc.status = "Draft"
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "status": doc.status, "entries": len(doc.entries)}
+
+
+def _payroll_period_defaults(period_start=None, period_end=None):
+	today = getdate()
+	if period_start and period_end:
+		return getdate(period_start), getdate(period_end)
+	if today.day <= 15:
+		return today.replace(day=1), today.replace(day=15)
+	return today.replace(day=16), today.replace(day=monthrange(today.year, today.month)[1])
+
+
+def _payroll_rows(business_point, period_start, period_end):
+	scope = _scope_point(business_point)
+	employees = frappe.get_all(
+		"Employee",
+		filters=_employee_filters(scope, business_point),
+		fields=[
+			"name", "employee_name", "hourly_rate", "sales_percent", "ndfl_rate",
+			"insurance_rate", "injury_rate", "bank_payment_share", "other_accruals_default",
+		],
+		order_by="employee_name asc",
+		limit_page_length=500,
+	)
+	by_employee = {row.name: row for row in employees}
+	metrics = {row.name: {"hours": 0.0, "sales": 0.0} for row in employees}
+	for shift in frappe.get_all(
+		"Sales Shift",
+		filters={
+			"business_point": business_point,
+			"opened_at": ["between", [f"{period_start} 00:00:00", f"{period_end} 23:59:59"]],
+			"status": "Closed",
+		},
+		fields=["cashier", "opened_at", "closed_at", "net_sales"],
+		limit_page_length=100000,
+	):
+		if shift.cashier not in metrics:
+			continue
+		metrics[shift.cashier]["hours"] += max(0, time_diff_in_hours(shift.closed_at, shift.opened_at))
+		metrics[shift.cashier]["sales"] += flt(shift.net_sales)
+	bonus_by_employee = {}
+	period_names = frappe.get_all(
+		"Motivation Period",
+		filters={
+			"business_point": business_point,
+			"start_date": ["<=", period_end],
+			"end_date": [">=", period_start],
+		},
+		pluck="name",
+		limit_page_length=100,
+	)
+	if period_names:
+		for result in frappe.get_all(
+			"Employee Motivation Result",
+			filters={"motivation_period": ["in", period_names]},
+			fields=["employee", "total_bonus"],
+			limit_page_length=5000,
+		):
+			bonus_by_employee[result.employee] = bonus_by_employee.get(result.employee, 0) + flt(result.total_bonus)
+	rows = []
+	for employee_id, metric in metrics.items():
+		employee = by_employee[employee_id]
+		hourly = metric["hours"] * flt(employee.hourly_rate)
+		piecework = metric["sales"] * flt(employee.sales_percent) / 100
+		bonus = bonus_by_employee.get(employee_id, 0)
+		other = flt(employee.other_accruals_default)
+		taxable = hourly + piecework
+		gross = taxable + bonus + other
+		ndfl = taxable * flt(employee.ndfl_rate) / 100
+		insurance = taxable * flt(employee.insurance_rate) / 100
+		injury = taxable * flt(employee.injury_rate) / 100
+		net = gross - ndfl
+		bank = net * flt(employee.bank_payment_share) / 100
+		rows.append({
+			"employee": employee_id,
+			"employee_name": employee.employee_name,
+			"hours": round(metric["hours"], 2),
+			"hourly_amount": round(hourly, 2),
+			"personal_sales": round(metric["sales"], 2),
+			"piecework_amount": round(piecework, 2),
+			"bonus": round(bonus, 2),
+			"other_accruals": round(other, 2),
+			"gross_amount": round(gross, 2),
+			"ndfl": round(ndfl, 2),
+			"insurance": round(insurance, 2),
+			"injury": round(injury, 2),
+			"bank_amount": round(bank, 2),
+			"cash_amount": round(net - bank, 2),
+			"net_amount": round(net, 2),
+			"total_cost": round(gross + insurance + injury, 2),
+		})
+	return rows
+
+
+@frappe.whitelist()
+def calculate_payroll(business_point, period_start=None, period_end=None, save=0):
+	require_access("team.payroll", "write" if cint(save) else "read")
+	period_start, period_end = _payroll_period_defaults(period_start, period_end)
+	if period_end < period_start:
+		frappe.throw(_("Дата окончания периода не может быть раньше даты начала"))
+	rows = _payroll_rows(business_point, period_start, period_end)
+	totals = {
+		"gross": round(sum(row["gross_amount"] for row in rows), 2),
+		"ndfl": round(sum(row["ndfl"] for row in rows), 2),
+		"net": round(sum(row["net_amount"] for row in rows), 2),
+		"cost": round(sum(row["total_cost"] for row in rows), 2),
+	}
+	run_name = None
+	if cint(save):
+		run_name = frappe.db.get_value("Payroll Run", {
+			"business_point": business_point,
+			"period_start": period_start,
+			"period_end": period_end,
+		}, "name")
+		doc = frappe.get_doc("Payroll Run", run_name) if run_name else frappe.new_doc("Payroll Run")
+		doc.business_point = business_point
+		doc.business_entity = frappe.db.get_value("Business Point", business_point, "business_entity")
+		doc.period_start = period_start
+		doc.period_end = period_end
+		doc.run_title = f"Зарплата {period_start:%d.%m.%Y}–{period_end:%d.%m.%Y}"
+		doc.status = "Calculated"
+		doc.calculated_at = now_datetime()
+		doc.lines = []
+		for row in rows:
+			doc.append("lines", {key: value for key, value in row.items() if key != "employee_name"})
+		doc.total_accrued = totals["gross"]
+		doc.total_ndfl = totals["ndfl"]
+		doc.total_net = totals["net"]
+		doc.total_cost = totals["cost"]
+		doc.save(ignore_permissions=True)
+		run_name = doc.name
+	return {
+		"name": run_name,
+		"period_start": str(period_start),
+		"period_end": str(period_end),
+		"rows": rows,
+		"totals": totals,
+	}
+
+
+@frappe.whitelist()
+def get_hr_overview(business_point=None):
+	require_access("team.hr", "read")
+	scope = _scope_point(business_point)
+	employee_filters = _employee_filters(scope, business_point)
+	employees = frappe.get_all(
+		"Employee",
+		filters=employee_filters,
+		fields=["name", "employee_name", "hire_date", "dismissal_date", "document_folder_url"],
+		order_by="employee_name asc",
+		limit_page_length=500,
+	)
+	names = [row.name for row in employees]
+	leaves = frappe.get_all(
+		"Employee Leave",
+		filters={"employee": ["in", names or ["__none__"]]},
+		fields=["name", "employee", "leave_type", "date_from", "date_to", "days", "status", "amount"],
+		order_by="date_from desc",
+		limit_page_length=500,
+	)
+	return {"employees": employees, "leaves": leaves, "employee_names": _employee_name_map(names)}
+
