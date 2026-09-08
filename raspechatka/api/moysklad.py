@@ -165,10 +165,10 @@ def _sync_catalog(settings):
 	# Historical receipts can reference archived assortment records. Import
 	# those cards as inactive Catalog Items so the full sales history remains
 	# reproducible without exposing retired products for current sale.
-	products = list(_iter_rows(settings, "entity/product"))
-	services = list(_iter_rows(settings, "entity/service"))
-	bundles = list(_iter_rows(settings, "entity/bundle"))
-	variants = list(_iter_rows(settings, "entity/variant"))
+	products = _assortment_rows(settings, "entity/product")
+	services = _assortment_rows(settings, "entity/service")
+	bundles = _assortment_rows(settings, "entity/bundle")
+	variants = _assortment_rows(settings, "entity/variant")
 	counterparties = {row.get("id"): row for row in _active_rows(_iter_rows(settings, "entity/counterparty"), stats)}
 
 	group_map = _sync_groups(groups, stats)
@@ -543,10 +543,24 @@ def _collect_preview(doc):
 	return {"mode": "preview", "writes": 0, "account_name": employee.get("name") or employee.get("email"), "read_at": str(now_datetime()), "sources": rows}
 
 
-def _iter_rows(doc, endpoint):
+def _assortment_rows(doc, endpoint):
+	"""Return active and archived assortment, de-duplicated by source ID."""
+	rows_by_id = {}
+	for filter_value in (None, "archived=true"):
+		for row in _iter_rows(doc, endpoint, filter_value=filter_value):
+			source_id = row.get("id")
+			if source_id:
+				rows_by_id[source_id] = row
+	return list(rows_by_id.values())
+
+
+def _iter_rows(doc, endpoint, filter_value=None):
 	offset = 0
 	while True:
-		payload = _request(doc, endpoint, params={"limit": PAGE_SIZE, "offset": offset})
+		params = {"limit": PAGE_SIZE, "offset": offset}
+		if filter_value:
+			params["filter"] = filter_value
+		payload = _request(doc, endpoint, params=params)
 		rows = payload.get("rows") or []
 		yield from rows
 		if len(rows) < PAGE_SIZE:
