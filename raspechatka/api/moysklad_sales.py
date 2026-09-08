@@ -196,6 +196,7 @@ def enqueue_sales_sync(full=False):
 
 
 def sync_enabled_sales():
+	"""Enqueue an incremental import when the configured interval has elapsed."""
 	settings = frappe.get_single("MoySklad Settings")
 	if not settings.sales_sync_enabled or settings.sales_sync_status in (
 		"Queued",
@@ -209,7 +210,17 @@ def sync_enabled_sales():
 		elapsed = now_datetime() - get_datetime(settings.last_sales_sync_at)
 		if elapsed.total_seconds() < interval * 60:
 			return
-	enqueue_sales_sync(full=False)
+	try:
+		enqueue_sales_sync(full=False)
+	except Exception as exc:
+		frappe.db.rollback()
+		settings = frappe.get_single("MoySklad Settings")
+		settings.sales_sync_status = "Error"
+		settings.sales_sync_error = _("Ошибка автоматической синхронизации: {0}").format(str(exc)[:1800])
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.log_error(frappe.get_traceback(), "MoySklad automatic sales sync")
+		raise
 
 
 def run_sales_sync(full=False):
