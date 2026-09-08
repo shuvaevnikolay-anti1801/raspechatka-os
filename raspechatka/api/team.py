@@ -913,6 +913,19 @@ def set_employee_access_active(employee, active):
 	return {"profile": profile.name, "active": profile.active}
 
 @frappe.whitelist()
+def get_payroll_settings_options():
+	require_access("team.payroll", "read")
+	scope = get_scope()
+	return frappe.get_all(
+		"Business Point",
+		filters=_point_filters(scope),
+		fields=["name", "point_name", "business_entity"],
+		order_by="point_name asc",
+		limit_page_length=500,
+	)
+
+
+@frappe.whitelist()
 def get_payroll_settings(business_point):
 	require_access("team.payroll", "read")
 	_scope_point(business_point)
