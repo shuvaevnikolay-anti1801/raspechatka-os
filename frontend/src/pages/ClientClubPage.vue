@@ -1,11 +1,233 @@
 <script setup>
-import { computed,onMounted,reactive,ref } from "vue";
-import { call,canAccess } from "../api";
-const stats=reactive({}),form=reactive({discount_rules:[]}),loading=ref(true),saving=ref(false),error=ref("");
-const canEdit=computed(()=>canAccess("clients.loyalty","Edit"));
-async function load(){loading.value=true;try{const [dashboard,settings]=await Promise.all([call("raspechatka.api.clients.get_club_dashboard"),call("raspechatka.api.clients.get_loyalty_settings")]);Object.assign(stats,dashboard);Object.assign(form,settings);}catch(e){error.value=e.message;}finally{loading.value=false;}}
-async function save(){saving.value=true;error.value="";try{await call("raspechatka.api.clients.save_loyalty_settings",{data:JSON.stringify(form)},{method:"POST"});await load();}catch(e){error.value=e.message;}finally{saving.value=false;}}
-function addRule(){form.discount_rules.push({active_channel_count:form.discount_rules.length,discount_percent:0,active:1});}
+import { computed, onMounted, reactive, ref } from "vue";
+import { call, canAccess } from "../api";
+import ClubShadowPanel from "../components/ClubShadowPanel.vue";
+const stats = reactive({}),
+	form = reactive({ discount_rules: [] }),
+	loading = ref(true),
+	saving = ref(false),
+	error = ref("");
+const canEdit = computed(() => canAccess("clients.loyalty", "Edit"));
+async function load() {
+	loading.value = true;
+	try {
+		const [dashboard, settings] = await Promise.all([
+			call("raspechatka.api.clients.get_club_dashboard"),
+			call("raspechatka.api.clients.get_loyalty_settings"),
+		]);
+		Object.assign(stats, dashboard);
+		Object.assign(form, settings);
+	} catch (e) {
+		error.value = e.message;
+	} finally {
+		loading.value = false;
+	}
+}
+async function save() {
+	saving.value = true;
+	error.value = "";
+	try {
+		await call(
+			"raspechatka.api.clients.save_loyalty_settings",
+			{ data: JSON.stringify(form) },
+			{ method: "POST" }
+		);
+		await load();
+	} catch (e) {
+		error.value = e.message;
+	} finally {
+		saving.value = false;
+	}
+}
+function addRule() {
+	form.discount_rules.push({
+		active_channel_count: form.discount_rules.length,
+		discount_percent: 0,
+		active: 1,
+	});
+}
 onMounted(load);
 </script>
-<template><section class="page club-page"><div class="page-heading"><div><div class="eyebrow">КЛИЕНТЫ / ЛОЯЛЬНОСТЬ</div><h1>Клуб Распечатка</h1><p>Регистрация, каналы связи, скидки и возврат клиентов</p></div><button v-if="canEdit" class="button button-primary" :disabled="saving" @click="save">{{saving?'Сохраняем…':'Сохранить настройки'}}</button></div><div v-if="loading" class="table-message"><span class="loader"></span><span>Загружаем клуб…</span></div><template v-else><div class="club-metrics"><article><small>КЛИЕНТСКАЯ БАЗА</small><b>{{stats.total_clients||0}}</b><span>клиентов во всей сети</span></article><article class="accent"><small>НОВЫХ В ЭТОМ МЕСЯЦЕ</small><b>+{{stats.new_this_month||0}}</b><span>активных {{stats.active_clients||0}}</span></article><article><small>ПРАЗДНИКОВ В МЕСЯЦЕ</small><b>{{stats.birthdays_this_month||0}}</b><span>можно включить в сегмент</span></article><article><small>РАССЫЛКИ → ПОКУПКИ</small><b>{{stats.purchases_from_campaigns||0}}</b><span>из {{stats.sent_total||0}} отправлений</span></article></div><div class="club-layout"><div class="settings-panel"><h2>Правила скидок</h2><p>Скидка на кассе пересчитывается по числу активных каналов.</p><div class="discount-rules"><div v-for="(rule,index) in form.discount_rules" :key="index"><input v-model.number="rule.active_channel_count" type="number" min="0" :disabled="!canEdit" /><span>активных каналов</span><input v-model.number="rule.discount_percent" type="number" min="0" :max="form.maximum_discount_percent" step="0.1" :disabled="!canEdit" /><b>%</b><label><input v-model="rule.active" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEdit" /> действует</label></div></div><button v-if="canEdit" class="text-button" @click="addRule">＋ Добавить правило</button><div class="form-grid settings-grid"><label>Максимум активных каналов<input v-model.number="form.max_active_channels" type="number" min="1" :disabled="!canEdit" /></label><label>Максимальная скидка, %<input v-model.number="form.maximum_discount_percent" type="number" min="0" max="100" :disabled="!canEdit" /></label><label>Срок сессии, дней<input v-model.number="form.session_lifetime_days" type="number" min="1" :disabled="!canEdit" /></label></div></div><div class="settings-panel"><h2>Согласия и документы</h2><p>Версия и ссылка сохраняются в аудите при каждом согласии.</p><div class="document-settings"><div><label><input v-model="form.personal_data_required" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEdit" /> Персональные данные</label><input v-model="form.personal_data_version" placeholder="Версия" :disabled="!canEdit" /><input v-model="form.personal_data_url" placeholder="URL документа" :disabled="!canEdit" /></div><div><label><input v-model="form.marketing_required" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEdit" /> Рекламные сообщения</label><input v-model="form.marketing_version" placeholder="Версия" :disabled="!canEdit" /><input v-model="form.marketing_url" placeholder="URL документа" :disabled="!canEdit" /></div><div><label><input v-model="form.club_rules_required" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEdit" /> Правила клуба</label><input v-model="form.club_rules_version" placeholder="Версия" :disabled="!canEdit" /><input v-model="form.club_rules_url" placeholder="URL документа" :disabled="!canEdit" /></div></div><h3 class="integration-title">Ссылки мессенджеров</h3><div class="form-grid"><label>Telegram<input v-model="form.telegram_connect_url" placeholder="https://..." :disabled="!canEdit" /></label><label>MAX<input v-model="form.max_connect_url" placeholder="https://..." :disabled="!canEdit" /></label><label>VK<input v-model="form.vk_connect_url" placeholder="https://..." :disabled="!canEdit" /></label></div></div></div></template><p v-if="error" class="form-error">{{error}}</p></section></template>
+<template>
+	<section class="page club-page">
+		<div class="page-heading">
+			<div>
+				<div class="eyebrow">КЛИЕНТЫ / ЛОЯЛЬНОСТЬ</div>
+				<h1>Клуб Распечатка</h1>
+				<p>Регистрация, каналы связи, скидки и возврат клиентов</p>
+			</div>
+			<button v-if="canEdit" class="button button-primary" :disabled="saving" @click="save">
+				{{ saving ? "Сохраняем…" : "Сохранить настройки" }}
+			</button>
+		</div>
+		<div v-if="loading" class="table-message">
+			<span class="loader"></span><span>Загружаем клуб…</span>
+		</div>
+		<template v-else
+			><div class="club-metrics">
+				<article>
+					<small>КЛИЕНТСКАЯ БАЗА</small><b>{{ stats.total_clients || 0 }}</b
+					><span>клиентов во всей сети</span>
+				</article>
+				<article class="accent">
+					<small>НОВЫХ В ЭТОМ МЕСЯЦЕ</small><b>+{{ stats.new_this_month || 0 }}</b
+					><span>активных {{ stats.active_clients || 0 }}</span>
+				</article>
+				<article>
+					<small>ПРАЗДНИКОВ В МЕСЯЦЕ</small><b>{{ stats.birthdays_this_month || 0 }}</b
+					><span>можно включить в сегмент</span>
+				</article>
+				<article>
+					<small>РАССЫЛКИ → ПОКУПКИ</small
+					><b>{{ stats.purchases_from_campaigns || 0 }}</b
+					><span>из {{ stats.sent_total || 0 }} отправлений</span>
+				</article>
+			</div>
+			<div class="club-layout">
+				<div class="settings-panel">
+					<h2>Правила скидок</h2>
+					<p>Скидка на кассе пересчитывается по числу активных каналов.</p>
+					<div class="discount-rules">
+						<div v-for="(rule, index) in form.discount_rules" :key="index">
+							<input
+								v-model.number="rule.active_channel_count"
+								type="number"
+								min="0"
+								:disabled="!canEdit"
+							/><span>активных каналов</span
+							><input
+								v-model.number="rule.discount_percent"
+								type="number"
+								min="0"
+								:max="form.maximum_discount_percent"
+								step="0.1"
+								:disabled="!canEdit"
+							/><b>%</b
+							><label
+								><input
+									v-model="rule.active"
+									type="checkbox"
+									:true-value="1"
+									:false-value="0"
+									:disabled="!canEdit"
+								/>
+								действует</label
+							>
+						</div>
+					</div>
+					<button v-if="canEdit" class="text-button" @click="addRule">
+						＋ Добавить правило
+					</button>
+					<div class="form-grid settings-grid">
+						<label
+							>Максимум активных каналов<input
+								v-model.number="form.max_active_channels"
+								type="number"
+								min="1"
+								:disabled="!canEdit" /></label
+						><label
+							>Максимальная скидка, %<input
+								v-model.number="form.maximum_discount_percent"
+								type="number"
+								min="0"
+								max="100"
+								:disabled="!canEdit" /></label
+						><label
+							>Срок сессии, дней<input
+								v-model.number="form.session_lifetime_days"
+								type="number"
+								min="1"
+								:disabled="!canEdit"
+						/></label>
+					</div>
+				</div>
+				<div class="settings-panel">
+					<h2>Согласия и документы</h2>
+					<p>Версия и ссылка сохраняются в аудите при каждом согласии.</p>
+					<div class="document-settings">
+						<div>
+							<label
+								><input
+									v-model="form.personal_data_required"
+									type="checkbox"
+									:true-value="1"
+									:false-value="0"
+									:disabled="!canEdit"
+								/>
+								Персональные данные</label
+							><input
+								v-model="form.personal_data_version"
+								placeholder="Версия"
+								:disabled="!canEdit"
+							/><input
+								v-model="form.personal_data_url"
+								placeholder="URL документа"
+								:disabled="!canEdit"
+							/>
+						</div>
+						<div>
+							<label
+								><input
+									v-model="form.marketing_required"
+									type="checkbox"
+									:true-value="1"
+									:false-value="0"
+									:disabled="!canEdit"
+								/>
+								Рекламные сообщения</label
+							><input
+								v-model="form.marketing_version"
+								placeholder="Версия"
+								:disabled="!canEdit"
+							/><input
+								v-model="form.marketing_url"
+								placeholder="URL документа"
+								:disabled="!canEdit"
+							/>
+						</div>
+						<div>
+							<label
+								><input
+									v-model="form.club_rules_required"
+									type="checkbox"
+									:true-value="1"
+									:false-value="0"
+									:disabled="!canEdit"
+								/>
+								Правила клуба</label
+							><input
+								v-model="form.club_rules_version"
+								placeholder="Версия"
+								:disabled="!canEdit"
+							/><input
+								v-model="form.club_rules_url"
+								placeholder="URL документа"
+								:disabled="!canEdit"
+							/>
+						</div>
+					</div>
+					<h3 class="integration-title">Ссылки мессенджеров</h3>
+					<div class="form-grid">
+						<label
+							>Telegram<input
+								v-model="form.telegram_connect_url"
+								placeholder="https://..."
+								:disabled="!canEdit" /></label
+						><label
+							>MAX<input
+								v-model="form.max_connect_url"
+								placeholder="https://..."
+								:disabled="!canEdit" /></label
+						><label
+							>VK<input
+								v-model="form.vk_connect_url"
+								placeholder="https://..."
+								:disabled="!canEdit"
+						/></label>
+					</div>
+				</div></div
+		></template>
+		<p v-if="error" class="form-error">{{ error }}</p>
+		<ClubShadowPanel v-if="canAccess('clients.loyalty', 'Admin')" />
+	</section>
+</template>

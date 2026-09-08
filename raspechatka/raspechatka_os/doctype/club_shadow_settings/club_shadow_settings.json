@@ -1,0 +1,55 @@
+{
+ "doctype": "DocType",
+ "name": "Club Shadow Settings",
+ "module": "Raspechatka OS",
+ "issingle": 1,
+ "field_order": [
+  "enabled",
+  "business_point",
+  "source_id",
+  "shared_secret",
+  "last_received_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Принимать данные Google"
+  },
+  {
+   "fieldname": "business_point",
+   "fieldtype": "Link",
+   "label": "Точка исторических клиентов",
+   "options": "Business Point"
+  },
+  {
+   "fieldname": "source_id",
+   "fieldtype": "Data",
+   "label": "ID Google-таблицы"
+  },
+  {
+   "fieldname": "shared_secret",
+   "fieldtype": "Password",
+   "label": "Ключ подписи"
+  },
+  {
+   "fieldname": "last_received_at",
+   "fieldtype": "Datetime",
+   "label": "Последний приём",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1
+  },
+  {
+   "role": "Raspechatka Network Admin",
+   "read": 1,
+   "write": 1
+  }
+ ]
+}
+
