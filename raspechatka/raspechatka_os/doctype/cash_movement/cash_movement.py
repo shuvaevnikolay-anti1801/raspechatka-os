@@ -21,6 +21,8 @@ class CashMovement(Document):
 			frappe.throw(_("Время операции должно находиться внутри смены"))
 		if self.movement_type == "Deposit":
 			self.from_cash, self.to_cash = "Касса ИП", "Касса точки"
+		elif self.withdrawal_purpose == "Expense":
+			self.from_cash, self.to_cash = "Касса точки", "Наличный расход"
 		else:
 			self.from_cash, self.to_cash = "Касса точки", "Касса ИП"
 
@@ -31,8 +33,15 @@ class CashMovement(Document):
 		from raspechatka.sales import log_cashier_action, update_shift_totals
 		log_cashier_action(self, "DEPOSIT" if self.movement_type == "Deposit" else "WITHDRAWAL")
 		update_shift_totals(self.shift)
+		if self.movement_type == "Withdrawal" and self.withdrawal_purpose == "Collection":
+			from raspechatka.api.finance import record_cash_collection
+
+			record_cash_collection(self)
 
 	def on_cancel(self):
 		from raspechatka.sales import log_cashier_action, update_shift_totals
 		log_cashier_action(self, "CANCEL_CASH_MOVEMENT")
 		update_shift_totals(self.shift)
+		transaction_name = frappe.db.get_value("Finance Transaction", {"cash_movement": self.name, "docstatus": 1}, "name")
+		if transaction_name:
+			frappe.get_doc("Finance Transaction", transaction_name).cancel()

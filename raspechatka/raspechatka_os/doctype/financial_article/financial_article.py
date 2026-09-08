@@ -16,6 +16,4 @@ class FinancialArticle(NestedSet):
 				frappe.throw(_("Родительская и дочерняя статьи должны иметь одинаковый тип"))
 
 	def on_trash(self):
-		if self.system_article:
-			frappe.throw(_("Системную финансовую статью нельзя удалить"))
-		super().on_trash()
+		frappe.throw(_("Финансовые статьи нельзя удалять. Перенесите статью в архив."))
