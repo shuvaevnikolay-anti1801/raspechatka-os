@@ -25,3 +25,4 @@ raspechatka.patches.v1_0.seed_financial_articles
 
 raspechatka.patches.v1_0.centralize_tochka_bank_settings
 raspechatka.patches.v1_0.complete_finance_payment_pipeline
+raspechatka.patches.v1_0.add_club_shadow_sync

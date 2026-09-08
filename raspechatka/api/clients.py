@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, date_diff, flt, getdate, now_datetime, today
 
-from raspechatka.access import require_access
+from raspechatka.access import get_scope, require_access
 from raspechatka.raspechatka_os.doctype.client.client import CHANNELS, normalize_phone
 
 
@@ -40,6 +40,22 @@ MARKETING_TYPES = {
 		"area": "clients.marketing",
 	},
 }
+
+
+def _visible_client_names():
+	scope = get_scope()
+	if scope.get("global"):
+		return None
+	points = scope.get("points") or ["__none__"]
+	names = set(frappe.get_all("Client", filters={"registration_point": ["in", points]}, pluck="name", limit_page_length=0))
+	names.update(frappe.get_all("Client Purchase", filters={"business_point": ["in", points]}, pluck="client", limit_page_length=0))
+	return list(names) or ["__none__"]
+
+
+def _require_client_visible(name):
+	names = _visible_client_names()
+	if names is not None and name not in names:
+		frappe.throw(_("Клиент недоступен для вашей точки"), frappe.PermissionError)
 
 
 def _log(client=None, event_type="", channel=None, source=None, status=None, external_id=None, details=None, error=None):
@@ -135,6 +151,9 @@ def club_gateway(data=None, **kwargs):
 def get_clients(search=None, club_status=None, business_point=None, channel=None):
 	require_access("clients.base", "read")
 	filters = {}
+	visible = _visible_client_names()
+	if visible is not None:
+		filters["name"] = ["in", visible]
 	if club_status:
 		filters["club_status"] = club_status
 	if business_point:
@@ -155,11 +174,18 @@ def get_clients(search=None, club_status=None, business_point=None, channel=None
 @frappe.whitelist()
 def get_client(name):
 	require_access("clients.base", "read")
+	_require_client_visible(name)
 	doc = frappe.get_doc("Client", name)
 	result = doc.as_dict(no_nulls=False)
+	for secret_field in ("link_token", "session_token", "channel_token"):
+		result.pop(secret_field, None)
 	result["consents"] = frappe.get_all("Client Consent", filters={"client": name}, fields=["name", "consent_type", "accepted", "recorded_at", "document_version", "document_url", "source", "revoked_at"], order_by="recorded_at desc", limit_page_length=200)
 	result["purchases"] = frappe.get_all("Client Purchase", filters={"client": name}, fields=["name", "purchase_datetime", "business_point", "source_document", "gross_amount", "discount_amount", "net_amount", "loyalty_discount_percent", "promo_code", "campaign", "cancelled"], order_by="purchase_datetime desc", limit_page_length=200)
 	result["events"] = frappe.get_all("Client Event Log", filters={"client": name}, fields=["name", "event_datetime", "event_type", "channel", "source", "status", "details", "error"], order_by="event_datetime desc", limit_page_length=200)
+	scope = get_scope()
+	if not scope.get("global"):
+		result["purchases"] = [row for row in result["purchases"] if row.business_point in scope.get("points", [])]
+		result["events"] = []
 	return result
 
 
@@ -168,6 +194,11 @@ def save_client(data):
 	require_access("clients.base", "write")
 	data = frappe.parse_json(data)
 	name = data.get("name")
+	if name:
+		_require_client_visible(name)
+	scope = get_scope()
+	if not scope.get("global") and data.get("registration_point") not in scope.get("points", []):
+		frappe.throw(_("Точка регистрации недоступна"), frappe.PermissionError)
 	doc = frappe.get_doc("Client", name) if name else frappe.new_doc("Client")
 	old = doc.as_dict() if name else {}
 	for fieldname in ("active", "last_name", "first_name", "middle_name", "birth_date", "phone", "email", "registration_point", "registration_source", "personal_data_consent", "marketing_consent", "club_rules_consent", "notes"):
@@ -249,6 +280,8 @@ def save_loyalty_settings(data):
 def recalculate_all_discounts():
 	for name in frappe.get_all("Client", pluck="name", limit_page_length=100000):
 		doc = frappe.get_doc("Client", name)
+		if doc.get("legacy_club_id"):
+			continue
 		doc.save(ignore_permissions=True)
 
 

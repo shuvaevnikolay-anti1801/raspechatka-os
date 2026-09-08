@@ -37,6 +37,8 @@ class Client(Document):
 		self.registration_source = self.registration_source or "Распечатка ОС"
 
 	def validate(self):
+		if self.get("legacy_club_id") and not self.flags.club_shadow_import:
+			frappe.throw(_("Клиент синхронизируется из Google. Измените данные в действующей системе клуба."))
 		self.phone = normalize_phone(self.phone)
 		if not self.phone:
 			frappe.throw(_("Введите российский номер телефона в формате +7XXXXXXXXXX"))
