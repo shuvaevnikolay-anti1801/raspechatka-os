@@ -520,15 +520,32 @@ def _payroll_period_defaults(period_start=None, period_end=None):
 	return today.replace(day=16), today.replace(day=monthrange(today.year, today.month)[1])
 
 
+def _effective_payroll_components(business_point):
+	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
+	rows = frappe.get_all(
+		"Payroll Accrual Type",
+		filters={"active": 1, "business_entity": entity, "business_point": ["in", ["", business_point]]},
+		fields=[
+			"name", "component_code", "component_name", "business_point", "calculation_basis",
+			"default_rate", "default_percent", "payment_method", "include_in_ndfl_base",
+			"include_in_insurance_base", "include_in_injury_base",
+		],
+		order_by="business_point asc, component_name asc",
+		limit_page_length=500,
+	)
+	by_code = {}
+	for row in rows:
+		if row.component_code not in by_code or row.business_point == business_point:
+			by_code[row.component_code] = row
+	return list(by_code.values())
+
+
 def _payroll_rows(business_point, period_start, period_end):
 	scope = _scope_point(business_point)
 	employees = frappe.get_all(
 		"Employee",
 		filters=_employee_filters(scope, business_point),
-		fields=[
-			"name", "employee_name", "hourly_rate", "sales_percent", "ndfl_rate",
-			"insurance_rate", "injury_rate", "bank_payment_share", "other_accruals_default",
-		],
+		fields=["name", "employee_name"],
 		order_by="employee_name asc",
 		limit_page_length=500,
 	)
@@ -551,11 +568,7 @@ def _payroll_rows(business_point, period_start, period_end):
 	bonus_by_employee = {}
 	period_names = frappe.get_all(
 		"Motivation Period",
-		filters={
-			"business_point": business_point,
-			"start_date": ["<=", period_end],
-			"end_date": [">=", period_start],
-		},
+		filters={"business_point": business_point, "start_date": ["<=", period_end], "end_date": [">=", period_start]},
 		pluck="name",
 		limit_page_length=100,
 	)
@@ -567,23 +580,44 @@ def _payroll_rows(business_point, period_start, period_end):
 			limit_page_length=5000,
 		):
 			bonus_by_employee[result.employee] = bonus_by_employee.get(result.employee, 0) + flt(result.total_bonus)
+	policy_name = frappe.db.get_value("Payroll Policy", {"business_point": business_point, "active": 1}, "name")
+	policy = frappe.get_doc("Payroll Policy", policy_name) if policy_name else frappe._dict(
+		ndfl_rate=13, insurance_rate=30, injury_rate=0.2
+	)
+	components = _effective_payroll_components(business_point)
 	rows = []
 	for employee_id, metric in metrics.items():
-		employee = by_employee[employee_id]
-		hourly = metric["hours"] * flt(employee.hourly_rate)
-		piecework = metric["sales"] * flt(employee.sales_percent) / 100
-		bonus = bonus_by_employee.get(employee_id, 0)
-		other = flt(employee.other_accruals_default)
-		taxable = hourly + piecework
-		gross = taxable + bonus + other
-		ndfl = taxable * flt(employee.ndfl_rate) / 100
-		insurance = taxable * flt(employee.insurance_rate) / 100
-		injury = taxable * flt(employee.injury_rate) / 100
+		amounts = []
+		for component in components:
+			basis = component.calculation_basis
+			if basis == "Hours":
+				amount = metric["hours"] * flt(component.default_rate)
+			elif basis == "Personal Sales":
+				amount = metric["sales"] * flt(component.default_percent) / 100
+			elif basis == "Fixed Amount":
+				amount = flt(component.default_rate)
+			elif basis == "External Result" and component.component_code in ("BONUS", "MOTIVATION"):
+				amount = bonus_by_employee.get(employee_id, 0)
+			else:
+				amount = 0
+			amounts.append((component, amount))
+		hourly = sum(value for item, value in amounts if item.calculation_basis == "Hours")
+		piecework = sum(value for item, value in amounts if item.calculation_basis == "Personal Sales")
+		bonus = sum(value for item, value in amounts if item.calculation_basis == "External Result")
+		other = sum(value for item, value in amounts if item.calculation_basis == "Fixed Amount")
+		gross = sum(value for _, value in amounts)
+		ndfl_base = sum(value for item, value in amounts if cint(item.include_in_ndfl_base))
+		insurance_base = sum(value for item, value in amounts if cint(item.include_in_insurance_base))
+		injury_base = sum(value for item, value in amounts if cint(item.include_in_injury_base))
+		ndfl = ndfl_base * flt(policy.ndfl_rate) / 100
+		insurance = insurance_base * flt(policy.insurance_rate) / 100
+		injury = injury_base * flt(policy.injury_rate) / 100
 		net = gross - ndfl
-		bank = net * flt(employee.bank_payment_share) / 100
+		bank_gross = sum(value for item, value in amounts if item.payment_method == "Bank Transfer")
+		bank = net * bank_gross / gross if gross else 0
 		rows.append({
 			"employee": employee_id,
-			"employee_name": employee.employee_name,
+			"employee_name": by_employee[employee_id].employee_name,
 			"hours": round(metric["hours"], 2),
 			"hourly_amount": round(hourly, 2),
 			"personal_sales": round(metric["sales"], 2),
@@ -786,7 +820,9 @@ def save_employee(data):
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
 		"registration_address", "disability", "hazardous_conditions",
 		"medical_exam_required", "document_folder_url", "notes", "hourly_rate", "sales_percent", "ndfl_rate",
-		"insurance_rate", "injury_rate", "annual_leave_days", "bank_payment_share", "other_accruals_default",
+		"annual_leave_days", "passport_issue_date", "passport_issued_by", "passport_department_code",
+		"passport_main_file", "passport_registration_file", "salary_bank_name", "salary_bic",
+		"salary_correspondent_account", "salary_account", "salary_recipient_name",
 	):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
@@ -875,4 +911,98 @@ def set_employee_access_active(employee, active):
 	if not profile.active and profile.system_user:
 		frappe.db.delete("Sessions", {"user": profile.system_user})
 	return {"profile": profile.name, "active": profile.active}
+
+@frappe.whitelist()
+def get_payroll_settings(business_point):
+	require_access("team.payroll", "read")
+	_scope_point(business_point)
+	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
+	policy_name = frappe.db.get_value("Payroll Policy", {"business_point": business_point}, "name")
+	policy = frappe.get_doc("Payroll Policy", policy_name).as_dict(no_nulls=False) if policy_name else {
+		"business_point": business_point, "business_entity": entity, "ndfl_rate": 13,
+		"insurance_rate": 30, "injury_rate": 0.2, "annual_leave_days": 28,
+		"first_half_pay_day": 20, "second_half_pay_day": 5, "active": 1,
+	}
+	components = frappe.get_all(
+		"Payroll Accrual Type",
+		filters={"business_entity": entity, "business_point": business_point},
+		fields=[
+			"name", "component_code", "component_name", "active", "calculation_basis",
+			"default_rate", "default_percent", "payment_method", "include_in_ndfl_base",
+			"include_in_insurance_base", "include_in_injury_base", "exemption_basis", "notes",
+		],
+		order_by="component_name asc",
+		limit_page_length=500,
+	)
+	return {"policy": policy, "components": components}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_payroll_policy(data):
+	require_access("team.payroll", "write")
+	data = frappe.parse_json(data)
+	point = data.get("business_point")
+	_scope_point(point)
+	name = frappe.db.get_value("Payroll Policy", {"business_point": point}, "name")
+	doc = frappe.get_doc("Payroll Policy", name) if name else frappe.new_doc("Payroll Policy")
+	doc.business_point = point
+	doc.business_entity = frappe.db.get_value("Business Point", point, "business_entity")
+	for fieldname in ("ndfl_rate", "insurance_rate", "injury_rate", "annual_leave_days", "first_half_pay_day", "second_half_pay_day", "active"):
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_payroll_component(data):
+	require_access("team.payroll", "write")
+	data = frappe.parse_json(data)
+	point = data.get("business_point")
+	_scope_point(point)
+	entity = frappe.db.get_value("Business Point", point, "business_entity")
+	name = data.get("name")
+	if name:
+		doc = frappe.get_doc("Payroll Accrual Type", name)
+		if doc.business_point != point:
+			frappe.throw(_("Нельзя изменить настройку другой точки"), frappe.PermissionError)
+	else:
+		doc = frappe.new_doc("Payroll Accrual Type")
+	doc.business_point = point
+	doc.business_entity = entity
+	for fieldname in (
+		"component_code", "component_name", "active", "calculation_basis", "default_rate",
+		"default_percent", "payment_method", "include_in_ndfl_base", "include_in_insurance_base",
+		"include_in_injury_base", "exemption_basis", "notes",
+	):
+		if fieldname in data:
+			doc.set(fieldname, data.get(fieldname))
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def create_default_payroll_components(business_point):
+	require_access("team.payroll", "write")
+	_scope_point(business_point)
+	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
+	defaults = [
+		("HOURLY", "Оплата за часы", "Hours", 200, 0, "Bank Transfer", 1, 1, 1),
+		("SALES_PERCENT", "Процент от личной выручки", "Personal Sales", 0, 5, "Bank Transfer", 1, 1, 1),
+		("MOTIVATION", "Премия за результаты", "External Result", 0, 0, "Cash", 1, 1, 1),
+		("OTHER", "Другие начисления", "Manual", 0, 0, "Cash", 1, 1, 1),
+	]
+	created = 0
+	for code, title, basis, rate, percent, payment, ndfl, insurance, injury in defaults:
+		if frappe.db.exists("Payroll Accrual Type", {"business_entity": entity, "business_point": business_point, "component_code": code}):
+			continue
+		frappe.get_doc({
+			"doctype": "Payroll Accrual Type", "component_code": code, "component_name": title,
+			"active": 1, "business_entity": entity, "business_point": business_point,
+			"calculation_basis": basis, "default_rate": rate, "default_percent": percent,
+			"payment_method": payment, "include_in_ndfl_base": ndfl,
+			"include_in_insurance_base": insurance, "include_in_injury_base": injury,
+		}).insert(ignore_permissions=True)
+		created += 1
+	return {"created": created}
 
