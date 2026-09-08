@@ -119,6 +119,14 @@ def get_team_overview(business_point=None, month=None):
 		limit_page_length=500,
 	)
 
+	shift_templates = frappe.get_all(
+		"Shift Template",
+		filters={"active": 1},
+		fields=["name", "shift_code", "shift_name", "start_time", "end_time", "paid_hours"],
+		order_by="start_time asc",
+		limit_page_length=100,
+	)
+
 	return {
 		"month": str(month),
 		"points": points,
@@ -126,6 +134,7 @@ def get_team_overview(business_point=None, month=None):
 		"schedules": schedules,
 		"motivation_periods": motivation,
 		"payroll_components": payroll_components,
+		"shift_templates": shift_templates,
 		"counters": {
 			"active_employees": len(employees),
 			"points": len(points),
