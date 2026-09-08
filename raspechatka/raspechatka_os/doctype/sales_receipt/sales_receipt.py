@@ -6,6 +6,8 @@ from frappe.model.document import Document
 from frappe.utils import flt, get_datetime, now_datetime
 from raspechatka.stock import (
 	get_average_rate,
+	make_ledger_entry,
+	validate_chronology,
 	validate_location,
 	validate_warehouse_header,
 )
@@ -108,11 +110,14 @@ class SalesReceipt(Document):
 			):
 				frappe.throw(_("Скидка в строке {0} превышает разрешённую для точки").format(row.idx))
 			row.line_total = flt(row.gross_amount) - flt(row.discount_amount)
-			row.valuation_rate = (
-				get_average_rate(row.item, self.warehouse, self.posting_datetime)
-				if item.item_type == "Product" and item.track_inventory
-				else 0
-			)
+			if item.item_type in {"Product", "Variant"} and item.track_inventory:
+				row.valuation_rate = (
+					self._get_original_rate(row.item)
+					if self.receipt_type == "Return" and self.original_receipt
+					else get_average_rate(row.item, self.warehouse, self.posting_datetime)
+				)
+			else:
+				row.valuation_rate = 0
 			row.cost_amount = flt(row.quantity) * flt(row.valuation_rate)
 			validate_location(row.storage_location, self.warehouse)
 			gross += flt(row.gross_amount)
@@ -172,6 +177,8 @@ class SalesReceipt(Document):
 				)
 
 	def before_submit(self):
+		if not self.mirror_only:
+			validate_chronology(self.warehouse, self.posting_datetime)
 		self.status = "Posted"
 
 	def on_submit(self):
@@ -209,28 +216,30 @@ class SalesReceipt(Document):
 			item = frappe.db.get_value(
 				"Catalog Item", row.item, ["item_type", "track_inventory"], as_dict=True
 			)
-			if not item or item.item_type != "Product" or not item.track_inventory:
+			if not item or item.item_type not in {"Product", "Variant"} or not item.track_inventory:
 				continue
 			sign = -1 if self.receipt_type == "Sale" else 1
-			if reversal:
-				sign *= -1
-			entry = frappe.new_doc("Stock Ledger Entry")
-			entry.posting_datetime = now_datetime() if reversal else self.posting_datetime
-			entry.item, entry.warehouse, entry.storage_location = (
-				row.item,
-				self.warehouse,
-				row.storage_location,
+			make_ledger_entry(
+				self,
+				row,
+				sign * flt(row.quantity),
+				flt(row.valuation_rate),
+				sign * flt(row.cost_amount),
+				reversal=reversal,
+				valuation_source=(
+					"Original sale cost" if self.receipt_type == "Return"
+					else "Warehouse weighted average"
+				),
 			)
-			entry.actual_qty = sign * flt(row.quantity)
-			entry.incoming_rate = flt(row.valuation_rate)
-			entry.stock_value_difference = sign * flt(row.cost_amount)
-			entry.voucher_type, entry.voucher_no, entry.voucher_detail_no = (
-				self.doctype,
-				self.name,
-				row.name,
-			)
-			entry.is_reversal = 1 if reversal else 0
-			entry.insert(ignore_permissions=True)
+
+	def _get_original_rate(self, item):
+		rows = frappe.get_all(
+			"Sales Receipt Item",
+			filters={"parent": self.original_receipt, "item": item},
+			fields=["quantity", "cost_amount"],
+		)
+		quantity = sum(flt(row.quantity) for row in rows)
+		return sum(flt(row.cost_amount) for row in rows) / quantity if quantity else 0
 
 	def _create_profitability(self, reversal):
 		factor = -1 if reversal else 1

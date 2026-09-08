@@ -3,7 +3,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, now_datetime
 
-from raspechatka.stock import get_balance, get_item, validate_chronology
+from raspechatka.stock import get_balance, get_item, make_ledger_entry, validate_chronology
 
 
 class StockReceipt(Document):
@@ -96,19 +96,15 @@ class StockReceipt(Document):
 
 	def _make_ledger_entries(self, reversal=False):
 		for row in self.items:
-			entry = frappe.new_doc("Stock Ledger Entry")
-			entry.posting_datetime = now_datetime() if reversal else self.posting_datetime
-			entry.item = row.item
-			entry.warehouse = self.warehouse
-			entry.storage_location = row.storage_location
-			entry.actual_qty = -flt(row.quantity) if reversal else flt(row.quantity)
-			entry.incoming_rate = flt(row.rate)
-			entry.stock_value_difference = -flt(row.amount) if reversal else flt(row.amount)
-			entry.voucher_type = self.doctype
-			entry.voucher_no = self.name
-			entry.voucher_detail_no = row.name
-			entry.is_reversal = 1 if reversal else 0
-			entry.insert(ignore_permissions=True)
+			make_ledger_entry(
+				self,
+				row,
+				flt(row.quantity),
+				flt(row.rate),
+				flt(row.amount),
+				reversal=reversal,
+				valuation_source="Purchase receipt" if self.receipt_type == "Приёмка" else "Stock receipt",
+			)
 
 	def _update_purchase_order(self):
 		if self.purchase_order:
