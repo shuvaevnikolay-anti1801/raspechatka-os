@@ -1,6 +1,5 @@
 import frappe
 
-
 no_cache = 1
 
 
@@ -15,11 +14,14 @@ def get_context():
 
 
 def get_boot():
-	from raspechatka.access import get_access_level, get_scope
+	from raspechatka.access import get_access_level, get_access_pages, get_scope
+
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	roles = frappe.get_roles(frappe.session.user)
-
-	areas = ("dashboard", "references.network", "references.storage", "references.clients", "references.suppliers", "references.employees", "references.catalog", "references.finance", "clients.base", "clients.loyalty", "clients.marketing", "warehouse.operations", "finance.operations", "finance.planning", "finance.reporting", "finance.bank", "sales.analytics", "sales.shifts", "sales.receipts", "sales.cash", "sales.audit", "sales.integration", "team.employees", "team.schedule", "team.payroll", "team.motivation", "team.hr", "settings.access")
+	pages = get_access_pages()
+	page_areas = [page["area"] for page in pages]
+	legacy_areas = [page.get("legacy_area") for page in pages if page.get("legacy_area")]
+	areas = tuple(dict.fromkeys(page_areas + legacy_areas))
 	try:
 		access = {area: get_access_level(area) for area in areas}
 		scope = get_scope()

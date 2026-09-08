@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { canAccess } from "./api";
+import accessSections from "./access-pages.json";
 import DashboardPage from "./pages/DashboardPage.vue";
 import CatalogPage from "./pages/CatalogPage.vue";
 import ReferencesPage from "./pages/ReferencesPage.vue";
@@ -76,9 +78,22 @@ const routes = [
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 
-export default createRouter({
-  history: createWebHistory("/raspechatka"),
-  routes,
-  scrollBehavior: () => ({ top: 0 }),
+const router = createRouter({
+	history: createWebHistory("/raspechatka"),
+	routes,
+	scrollBehavior: () => ({ top: 0 }),
 });
 
+const accessPages = accessSections.flatMap((section) => section.pages || []);
+const accessPageByRoute = new Map(accessPages.map((page) => [page.route, page]));
+
+router.beforeEach((to) => {
+	const page = accessPageByRoute.get(to.path);
+	if (!page || canAccess(page.area, page.minimum || "View")) return true;
+	const firstAvailable = accessPages.find((item) =>
+		canAccess(item.area, item.minimum || "View")
+	);
+	return firstAvailable && firstAvailable.route !== to.path ? firstAvailable.route : false;
+});
+
+export default router;
