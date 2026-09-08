@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { boot, call, canAccess } from "../api";
+import accessSections from "../access-pages.json";
 
 const emit = defineEmits(["navigate"]);
 const route = useRoute();
@@ -26,24 +27,17 @@ const icons = {
 	team: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.5-.5a3 3 0 1 0 0-6M3 20a6 6 0 0 1 12 0m1-6a5 5 0 0 1 5 5",
 };
 
-const modules = [
-	{ key: "dashboard", label: "Главная", to: "/", area: "dashboard" },
-	{ key: "sales", label: "Продажи", to: "/sales", area: "sales.analytics" },
-	{ key: "clients", label: "Клиенты", to: "/clients", area: "clients.base" },
-	{ key: "catalog", label: "Продукт", to: "/catalog", area: "references.catalog" },
-	{ key: "warehouse", label: "Склад", to: "/warehouse/receipts", area: "warehouse.operations" },
-	{ key: "finance", label: "Финансы", to: "/finance", area: "finance.reporting" },
-	{ key: "team", label: "Сотрудники", to: "/team", area: "team.employees" },
-	{ key: "references", label: "Справочники", to: "/references/entities", area: "references" },
-];
+const modules = accessSections
+	.slice()
+	.sort((left, right) => (left.order || 0) - (right.order || 0));
 
 const visibleModules = computed(() =>
-	modules.filter((item) => {
-		if (item.key === "references")
-			return Object.keys(boot.access || {}).some((area) => area.startsWith("references.") && canAccess(area));
-		if (item.key === "team")
-			return Object.keys(boot.access || {}).some((area) => area.startsWith("team.") && canAccess(area));
-		return !item.area || canAccess(item.area);
+	modules.flatMap((item) => {
+		const firstPage = (item.pages || [])
+			.slice()
+			.sort((left, right) => (left.order || 0) - (right.order || 0))
+			.find((page) => canAccess(page.area, page.minimum || "View"));
+		return firstPage ? [{ ...item, to: firstPage.route }] : [];
 	})
 );
 const currentModule = computed(() => route.meta.module || route.params.module || "dashboard");
