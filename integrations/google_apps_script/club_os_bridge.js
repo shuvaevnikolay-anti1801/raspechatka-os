@@ -1,3 +1,5 @@
+/* global LockService, PropertiesService, ScriptApp, SpreadsheetApp, UrlFetchApp, Utilities */
+
 /**
  * Add as a NEW .gs file in the existing Club Apps Script project.
  * Do not replace doGet/doPost or BotHelp/MoySklad code.
