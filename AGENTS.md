@@ -9,15 +9,19 @@ These instructions apply to the entire repository. Every coding agent must read 
 - The GitHub repository is the source of truth. Chat history from another account is not.
 - Read the current code and relevant files in `docs/` before making assumptions.
 
-## Branch and pull-request discipline
+## Branch, integration, and continuous-delivery discipline
+
+The repository owner grants coding agents in this Codex workspace standing authorization to complete the full delivery cycle for implementation tasks: create a task branch, open a PR, verify it, merge it into `version-16`, and let the production deployment workflow run. Do not ask for a separate “merge PR” or “start deployment” confirmation unless the user explicitly requested draft/review-only work.
 
 1. Fetch the latest `origin/version-16` before starting.
-2. Unless the user explicitly assigns an integration, merge, or release task, never commit, push, merge, force-push, or move `version-16` directly.
-3. Create one short-lived branch per bounded task from the latest `origin/version-16`. Name it `codex/<task-slug>`.
-4. Keep unrelated work out of the branch.
-5. Open a Pull Request into `version-16`. The coding agent is the integration agent for tasks assigned directly by the repository owner in this Codex workspace: after required checks pass, it may merge its own task PR into `version-16` and let the production deployment workflow run. Do not merge when checks fail, when there is an unresolved review or merge conflict, or when the user explicitly asks for a draft/review-only delivery.
-6. Before handoff, update the branch with the latest `version-16`, resolve conflicts, run the required checks, and describe the result.
-7. Integration branches must be named `codex/integration-<scope>`. Only an explicitly assigned integration agent may use them.
+2. Never commit, force-push, or move `version-16` directly. Create one short-lived branch per bounded task from the latest `origin/version-16`, named `codex/<task-slug>`.
+3. Keep unrelated work out of the branch and open a Pull Request into `version-16`.
+4. Before merging, update the branch with the latest `version-16`, resolve conflicts, and run the required checks.
+5. Merge automatically when CI and Quality Gate pass and there are no unresolved reviews or merge conflicts.
+6. A failure of the repository-wide `Linters` workflow may be treated as a known baseline exception only after inspecting its logs and confirming that the task's changed lines did not introduce the failure. Record that exception in the PR and final report. Never ignore failures in tests, build, security checks, migration checks, or lint errors caused by the task.
+7. After merging, monitor the automatic CI and production deployment for the merged `version-16` commit. If an expected run is missing and available GitHub permissions allow it, start or rerun the existing workflow without asking the user. Diagnose and fix ordinary code or workflow failures within the assigned scope.
+8. Stop and ask the user only for a genuine authorization or safety boundary: credentials or permissions are missing, production requires a destructive or irreversible operation, a data migration lacks a safe compatibility plan, requirements materially conflict, or the user explicitly requested review before release.
+9. Integration branches must be named `codex/integration-<scope>`. Only an explicitly assigned integration agent may use them.
 
 ## Ownership and conflict avoidance
 
