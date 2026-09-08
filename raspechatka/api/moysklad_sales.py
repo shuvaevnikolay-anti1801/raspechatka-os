@@ -271,13 +271,25 @@ def run_sales_sync(full=False):
 
 
 def _iter_rows(settings, endpoint, cursor=None):
+	"""Read a recent idempotent window for incremental runs.
+
+	MoySklad interprets a datetime without an explicit offset in the account
+	timezone, while the Frappe cursor is stored in the site/server timezone.
+	Using that cursor in the API filter could therefore put the lower bound in
+	the future and silently return zero rows.  A date-only rolling window avoids
+	the timezone ambiguity; all import operations are upserts and remain safe to
+	replay.
+	"""
 	offset = 0
-	from_moment = f"{HISTORY_START} 00:00:00"
 	if cursor:
-		cursor = cursor - timedelta(minutes=10)
-		filter_value = f"updated>={cursor.strftime('%Y-%m-%d %H:%M:%S')};moment>={from_moment}"
+		window_start = max(
+			get_datetime(HISTORY_START).date(),
+			(now_datetime() - timedelta(days=7)).date(),
+		)
+		from_moment = f"{window_start.isoformat()} 00:00:00"
 	else:
-		filter_value = f"moment>={from_moment}"
+		from_moment = f"{HISTORY_START} 00:00:00"
+	filter_value = f"moment>={from_moment}"
 
 	while True:
 		params = {
