@@ -166,6 +166,7 @@ scheduler_events = {
 	# Run the lightweight guard on every scheduler tick. The function itself
 	# observes the administrator-selected interval before enqueueing a sync.
 	"all": ["raspechatka.api.moysklad_sales.sync_enabled_sales"],
+	"daily": ["raspechatka.stock_reconciliation.reconcile_operational_balances"],
 	"cron": {
 		"*/5 * * * *": [
 			"raspechatka.api.tochka.sync_enabled_connections",
