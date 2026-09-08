@@ -23,6 +23,7 @@ import SalesPage from "./pages/SalesPage.vue";
 import TeamPage from "./pages/TeamPage.vue";
 import EmployeesPage from "./pages/EmployeesPage.vue";
 import UsersPage from "./pages/UsersPage.vue";
+import TeamSettingsPage from "./pages/TeamSettingsPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
@@ -76,6 +77,7 @@ const routes = [
   { path: "/team/payroll", name: "team-payroll", component: TeamPage, meta: { module: "team", section: "payroll" } },
   { path: "/team/bonuses", name: "team-bonuses", component: TeamPage, meta: { module: "team", section: "bonuses" } },
   { path: "/team/hr", name: "team-hr", component: TeamPage, meta: { module: "team", section: "hr" } },
+  { path: "/team/settings", name: "team-settings", component: TeamSettingsPage, meta: { module: "team", section: "settings" } },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 
