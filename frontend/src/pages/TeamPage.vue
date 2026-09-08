@@ -8,76 +8,127 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 
 const route = useRoute();
 const loading = ref(true);
+const saving = ref(false);
 const error = ref("");
 const point = ref("");
 const month = ref(new Date().toISOString().slice(0, 7));
-const data = ref({ counters: {}, employees: [], points: [], schedules: [], motivation_periods: [], payroll_components: [] });
-const schedule = ref({ entries: [], days: 0 });
+const data = ref({ counters: {}, employees: [], points: [], schedules: [], motivation_periods: [], payroll_components: [], shift_templates: [] });
+const schedule = ref({ entries: [], days: 0, status: "" });
+const draft = ref({});
+const payroll = ref(null);
+const payrollStart = ref("");
+const payrollEnd = ref("");
+const hr = ref({ employees: [], leaves: [], employee_names: {} });
 const recalculating = ref(false);
 
 const section = computed(() => route.meta.section || "employees");
 const title = computed(() => ({ employees: "Сотрудники", schedule: "График работы", payroll: "Зарплата", bonuses: "Премии и игра", hr: "Кадры и документы" })[section.value]);
 const pointNames = computed(() => Object.fromEntries(data.value.points.map((item) => [item.name, item.point_name])));
+const days = computed(() => Array.from({ length: schedule.value.days || new Date(Number(month.value.slice(0,4)), Number(month.value.slice(5,7)), 0).getDate() }, (_, i) => i + 1));
+const selectedPointEmployees = computed(() => point.value ? data.value.employees.filter((e) => (e.points || []).includes(point.value)) : data.value.employees);
 const filterModel = computed({ get: () => ({ business_point: point.value, month: month.value }), set: (value) => { point.value = value.business_point; month.value = value.month; } });
 const filterFields = computed(() => [
-  { key: "business_point", label: "Точка", type: "select", allLabel: "Все доступные точки", options: data.value.points.map((item) => ({ value: item.name, label: `${item.point_name} · ${item.city}` })) },
+  { key: "business_point", label: "Точка", type: "select", allLabel: "Все доступные точки", options: data.value.points.map((item) => ({ value: item.name, label: `${item.point_name} · ${item.city || ""}` })) },
   { key: "month", label: "Месяц", type: "month" },
 ]);
 const employeeColumns = computed(() => [
   { key: "employee_name", label: "Сотрудник", primary: true, width: 260 },
-  { key: "position", label: "Должность", width: 190 },
+  { key: "position", label: "Должность", width: 180 },
   { key: "business_entity", label: "Работодатель", width: 200 },
   { key: "default_point", label: "Основная точка", width: 220, format: (value) => pointNames.value[value] || "Не назначена" },
-  { key: "status", label: "Статус", width: 120, format: () => "Работает" },
+  { key: "hire_date", label: "Принят", width: 120 },
+]);
+const payrollColumns = [
+  { key: "employee_name", label: "Сотрудник", primary: true, width: 230 },
+  { key: "hours", label: "Часы", width: 80 },
+  { key: "hourly_amount", label: "Оклад", width: 120, format: money },
+  { key: "personal_sales", label: "Личная выручка", width: 145, format: money },
+  { key: "piecework_amount", label: "Сдельно", width: 115, format: money },
+  { key: "bonus", label: "Премия", width: 110, format: money },
+  { key: "gross_amount", label: "Начислено", width: 130, format: money },
+  { key: "ndfl", label: "НДФЛ", width: 110, format: money },
+  { key: "net_amount", label: "К выплате", width: 130, format: money },
+  { key: "total_cost", label: "Стоимость", width: 130, format: money },
+];
+const leaveColumns = computed(() => [
+  { key: "employee", label: "Сотрудник", primary: true, width: 230, format: (v) => hr.value.employee_names[v] || v },
+  { key: "leave_type", label: "Вид", width: 210 },
+  { key: "date_from", label: "С", width: 110 },
+  { key: "date_to", label: "По", width: 110 },
+  { key: "days", label: "Дней", width: 80 },
+  { key: "status", label: "Статус", width: 120 },
+  { key: "amount", label: "Сумма", width: 120, format: money },
 ]);
 
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    data.value = await call("raspechatka.api.team.get_team_overview", {
-      business_point: point.value,
-      month: `${month.value}-01`,
-    });
-    if (section.value === "schedule" && point.value) {
-      schedule.value = await call("raspechatka.api.team.get_schedule", {
-        business_point: point.value,
-        month: `${month.value}-01`,
-      });
-    } else {
-      schedule.value = { entries: [], days: 0 };
-    }
-  } catch (e) {
-    error.value = e.message;
-  } finally {
-    loading.value = false;
-  }
+function money(value) { return `${Number(value || 0).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`; }
+function isoDate(day) { return `${month.value}-${String(day).padStart(2, "0")}`; }
+function cellKey(employee, day) { return `${employee}|${isoDate(day)}`; }
+function shiftCode(name) { return data.value.shift_templates.find((x) => x.name === name)?.shift_code || "—"; }
+function setPayrollDates() {
+  const now = new Date();
+  const [year, mon] = month.value.split("-").map(Number);
+  const current = now.getFullYear() === year && now.getMonth() + 1 === mon ? now.getDate() : 16;
+  payrollStart.value = `${month.value}-${current <= 15 ? "01" : "16"}`;
+  payrollEnd.value = `${month.value}-${current <= 15 ? "15" : String(new Date(year, mon, 0).getDate()).padStart(2, "0")}`;
+}
+function hydrateDraft() {
+  const next = {};
+  for (const row of schedule.value.entries || []) next[`${row.employee}|${row.date}`] = row.shift_template;
+  draft.value = next;
 }
 
+async function load() {
+  loading.value = true; error.value = "";
+  try {
+    data.value = await call("raspechatka.api.team.get_team_overview", { business_point: point.value, month: `${month.value}-01` });
+    if (!point.value && data.value.points.length === 1) { point.value = data.value.points[0].name; return; }
+    if (section.value === "schedule" && point.value) {
+      schedule.value = await call("raspechatka.api.team.get_schedule", { business_point: point.value, month: `${month.value}-01` });
+      hydrateDraft();
+    }
+    if (section.value === "payroll") { if (!payrollStart.value) setPayrollDates(); payroll.value = null; }
+    if (section.value === "hr") hr.value = await call("raspechatka.api.team.get_hr_overview", { business_point: point.value });
+  } catch (e) { error.value = e.message; } finally { loading.value = false; }
+}
+async function saveSchedule(publish = false) {
+  if (!point.value) return;
+  saving.value = true; error.value = "";
+  const entries = Object.entries(draft.value).filter(([, shift]) => shift).map(([key, shift_template]) => {
+    const [employee, date] = key.split("|"); return { employee, date, shift_template };
+  });
+  try {
+    await call("raspechatka.api.team.save_schedule", { business_point: point.value, month: `${month.value}-01`, entries: JSON.stringify(entries), publish: publish ? 1 : 0 }, { method: "POST" });
+    await load();
+  } catch (e) { error.value = e.message; } finally { saving.value = false; }
+}
+async function calculatePayroll(save = false) {
+  if (!point.value) { error.value = "Выберите точку"; return; }
+  saving.value = true; error.value = "";
+  try { payroll.value = await call("raspechatka.api.team.calculate_payroll", { business_point: point.value, period_start: payrollStart.value, period_end: payrollEnd.value, save: save ? 1 : 0 }, { method: "POST" }); }
+  catch (e) { error.value = e.message; } finally { saving.value = false; }
+}
 async function recalculate(period) {
   recalculating.value = true;
-  error.value = "";
-  try {
-    await call("raspechatka.api.team.recalculate_motivation", { period }, { method: "POST" });
-    await load();
-  } catch (e) {
-    error.value = e.message;
-  } finally {
-    recalculating.value = false;
-  }
+  try { await call("raspechatka.api.team.recalculate_motivation", { period }, { method: "POST" }); await load(); }
+  catch (e) { error.value = e.message; } finally { recalculating.value = false; }
 }
-
 watch([point, month, section], load);
 onMounted(load);
 </script>
 
 <template>
   <section class="page team-page">
-    <ListPageHeader :title="title"><template v-if="section==='employees'" #actions><router-link class="button button-primary" to="/references/employees">Открыть карточки</router-link></template></ListPageHeader>
+    <ListPageHeader :title="title">
+      <template #actions>
+        <router-link v-if="section==='employees'" class="button button-primary" to="/references/employees">Добавить сотрудника</router-link>
+        <template v-if="section==='schedule'"><button class="button" :disabled="saving||!point" @click="saveSchedule(false)">Сохранить</button><button class="button button-primary" :disabled="saving||!point" @click="saveSchedule(true)">Опубликовать</button></template>
+        <template v-if="section==='payroll'"><button class="button" :disabled="saving" @click="calculatePayroll(false)">Рассчитать</button><button class="button button-primary" :disabled="saving||!payroll" @click="calculatePayroll(true)">Сохранить ведомость</button></template>
+        <a v-if="section==='hr'" class="button button-primary" href="/app/employee-leave">Оформить отпуск</a>
+      </template>
+    </ListPageHeader>
     <SmartFilterBar v-model="filterModel" :fields="filterFields" :view-key="`team.${section}`" @apply="load" @reset="load" />
-
     <div v-if="error" class="team-error">{{ error }} <button @click="load">Повторить</button></div>
-    <div v-else-if="loading" class="team-loading">Загружаем данные сотрудников…</div>
+    <div v-if="loading" class="team-loading">Загружаем данные сотрудников…</div>
     <template v-else>
       <div class="team-stats">
         <article><span>Активные сотрудники</span><b>{{ data.counters.active_employees || 0 }}</b></article>
@@ -86,37 +137,47 @@ onMounted(load);
         <article><span>Активные игры</span><b>{{ data.counters.active_games || 0 }}</b></article>
       </div>
 
-      <div v-if="section === 'employees'" class="team-panel">
-        <SmartDataTable :rows="data.employees" :columns="employeeColumns" view-key="team.employees" :selectable="false" empty-title="Сотрудников пока нет" empty-text="Создайте первую карточку в справочнике сотрудников." />
+      <div v-if="section==='employees'" class="team-panel">
+        <SmartDataTable :rows="data.employees" :columns="employeeColumns" view-key="team.employees" :selectable="false" empty-title="Сотрудников пока нет" empty-text="Создайте первую кадровую карточку." />
       </div>
 
-      <div v-else-if="section === 'schedule'" class="team-panel">
-        <div class="panel-title"><div><h2>План и факт смен</h2><p>Плановый график автоматически сопоставляется с фактическими кассовыми сменами.</p></div></div>
-        <div v-if="!point" class="team-empty"><b>Выберите точку</b><span>График составляется отдельно для каждой точки и месяца.</span></div>
-        <div v-else-if="!schedule.entries.length" class="team-empty"><b>На этот месяц графика пока нет</b><span>Структура уже готова; следующим шагом добавим визуальный редактор календаря.</span></div>
-        <div v-else class="schedule-list"><div v-for="entry in schedule.entries" :key="`${entry.date}-${entry.shift_template}-${entry.employee}`"><b>{{ entry.date }}</b><span>{{ entry.shift_template }}</span><span>{{ entry.employee }}</span><em>план {{ entry.planned_hours }} ч</em><em>факт {{ entry.actual_hours || 0 }} ч</em><b>{{ Number(entry.net_sales || 0).toLocaleString('ru-RU') }} ₽</b></div></div>
+      <div v-else-if="section==='schedule'" class="team-panel schedule-panel">
+        <div class="panel-title"><div><h2>План и факт смен</h2><p>Выберите смену в ячейке. Пустая ячейка — выходной. После публикации график становится доступен сотрудникам.</p></div><span class="status">{{ schedule.status || "Новый" }}</span></div>
+        <div v-if="!point" class="team-empty"><b>Выберите точку</b></div>
+        <div v-else class="schedule-scroll">
+          <table class="schedule-grid"><thead><tr><th class="employee-col">Сотрудник</th><th v-for="day in days" :key="day">{{ day }}</th><th>Часы</th></tr></thead>
+          <tbody><tr v-for="employee in selectedPointEmployees" :key="employee.name"><th class="employee-col">{{ employee.employee_name }}</th>
+            <td v-for="day in days" :key="day"><select v-model="draft[cellKey(employee.name, day)]" :title="isoDate(day)"><option value="">—</option><option v-for="shift in data.shift_templates" :key="shift.name" :value="shift.name">{{ shift.shift_code }}</option></select></td>
+            <td class="hours">{{ days.reduce((sum, day) => sum + Number(data.shift_templates.find(s => s.name === draft[cellKey(employee.name, day)])?.paid_hours || 0), 0) }}</td>
+          </tr></tbody></table>
+        </div>
+        <div class="legend"><span v-for="shift in data.shift_templates" :key="shift.name"><b>{{ shift.shift_code }}</b> {{ shift.shift_name }} · {{ shift.paid_hours }} ч</span></div>
       </div>
 
-      <div v-else-if="section === 'payroll'" class="team-panel">
-        <div class="panel-title"><div><h2>Настройки начислений</h2><p>Ставки, проценты, способы выплаты и налоговая база по ИП и точке.</p></div></div>
-        <div v-if="!data.payroll_components.length" class="team-empty"><b>Виды начислений пока не настроены</b><span>Добавьте оклад, почасовую ставку, процент или ручное начисление.</span></div>
-        <div v-else class="payroll-list"><article v-for="item in data.payroll_components" :key="item.name"><div><h3>{{ item.component_name }}</h3><p>{{ item.component_code }} · {{ item.business_entity }}</p></div><span>{{ item.calculation_basis }}</span><b>{{ item.default_rate || item.default_percent || 0 }}</b><em>{{ item.payment_method }}</em></article></div>
+      <div v-else-if="section==='payroll'" class="team-panel">
+        <div class="panel-title payroll-controls"><div><h2>Расчёт зарплаты</h2><p>Факт часов и личная выручка берутся из закрытых кассовых смен.</p></div><label>С <input v-model="payrollStart" type="date"></label><label>По <input v-model="payrollEnd" type="date"></label></div>
+        <div v-if="!payroll" class="team-empty"><b>Выберите точку и период, затем нажмите «Рассчитать»</b><span>Сохранение создаёт ведомость без проведения выплаты.</span></div>
+        <template v-else>
+          <SmartDataTable :rows="payroll.rows" :columns="payrollColumns" view-key="team.payroll" :selectable="false" empty-title="Нет данных за период" />
+          <div class="totals"><span>Начислено <b>{{ money(payroll.totals.gross) }}</b></span><span>НДФЛ <b>{{ money(payroll.totals.ndfl) }}</b></span><span>К выплате <b>{{ money(payroll.totals.net) }}</b></span><span>Полная стоимость <b>{{ money(payroll.totals.cost) }}</b></span></div>
+          <p v-if="payroll.name" class="saved">Ведомость сохранена: {{ payroll.name }}</p>
+        </template>
       </div>
 
-      <div v-else-if="section === 'bonuses'" class="team-panel">
-        <div class="panel-title"><div><h2>Мотивационные периоды</h2><p>Отзывы, клуб, подарки и средний чек рассчитываются из фактических данных продаж.</p></div></div>
-        <div v-if="!data.motivation_periods.length" class="team-empty"><b>Активной игры пока нет</b><span>После переноса настроек из вкладки «Премия» здесь появится текущий период.</span></div>
+      <div v-else-if="section==='bonuses'" class="team-panel">
+        <div class="panel-title"><div><h2>Премии и игра</h2><p>Отзывы, регистрации клуба, подарки и средний чек рассчитываются из кассовых данных.</p></div></div>
+        <div v-if="!data.motivation_periods.length" class="team-empty"><b>Активной игры пока нет</b></div>
         <div v-else class="game-list"><article v-for="game in data.motivation_periods" :key="game.name"><div><h3>{{ game.title }}</h3><p>{{ pointNames[game.business_point] }} · {{ game.start_date }} — {{ game.end_date }}</p></div><code>{{ game.rules_version }}</code><button class="button" :disabled="recalculating" @click="recalculate(game.name)">Пересчитать</button></article></div>
       </div>
 
       <div v-else class="team-panel">
-        <div class="panel-title"><div><h2>{{ title }}</h2><p>Карточка сотрудника хранит кадровые реквизиты и комплект документов с ограниченным доступом.</p></div></div>
-        <div class="team-empty"><b>Основа данных подготовлена</b><span>Расчётную логику подключим после подтверждения правил и исходных шаблонов.</span></div>
+        <div class="panel-title"><div><h2>Кадры и документы</h2><p>Трудоустройство, отпуска и кадровые документы сотрудников.</p></div><router-link class="button" to="/references/employees">Карточки сотрудников</router-link></div>
+        <SmartDataTable :rows="hr.leaves" :columns="leaveColumns" view-key="team.hr.leaves" :selectable="false" empty-title="Отпусков пока нет" empty-text="Оформите отпуск, компенсацию или больничный." />
       </div>
     </template>
   </section>
 </template>
 
 <style scoped>
-.team-page{display:grid;gap:20px}.team-heading{align-items:end}.team-filters{display:flex;gap:10px;flex-wrap:wrap}.team-filters select,.team-filters input{min-height:42px;border:1px solid #d8dfcf;border-radius:10px;background:#fff;padding:0 12px;color:#24311d}.team-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.team-stats article,.team-panel{border:1px solid #e1e6dc;border-radius:16px;background:#fff;box-shadow:0 8px 26px rgba(38,59,25,.06)}.team-stats article{padding:18px}.team-stats span{display:block;color:#71806a;font-size:13px}.team-stats b{display:block;margin-top:8px;font-size:28px;color:#284d1e}.team-panel{padding:22px}.panel-title{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}.panel-title h2{margin:0 0 5px}.panel-title p{margin:0;color:#74806f}.employee-list{display:grid;gap:8px}.employee-list article{display:grid;grid-template-columns:42px minmax(170px,1.2fr) minmax(140px,1fr) minmax(140px,1fr) auto;gap:14px;align-items:center;padding:12px;border:1px solid #edf0e9;border-radius:12px}.employee-avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#e9f6d8;color:#3f711d;font-weight:800}.employee-list h3,.game-list h3,.payroll-list h3{margin:0;font-size:15px}.employee-list p,.game-list p,.payroll-list p{margin:4px 0 0;color:#7a8576;font-size:13px}.employee-list article>div>span{display:block;color:#889184;font-size:11px}.employee-list article>div>b{font-size:13px}.employee-status{padding:6px 9px;border-radius:999px;background:#edf8e8;color:#3d7b28;font-size:12px;font-weight:700}.team-empty{display:grid;place-items:center;min-height:220px;text-align:center;color:#7a8575}.team-empty b{color:#35452e;font-size:18px}.team-empty span{max-width:520px}.team-error,.team-loading{padding:18px;border-radius:12px;background:#fff}.schedule-list,.payroll-list{display:grid;gap:7px}.schedule-list>div{display:grid;grid-template-columns:100px 100px minmax(140px,1fr) auto auto auto;gap:12px;padding:10px 12px;border-bottom:1px solid #edf0e9}.payroll-list article{display:grid;grid-template-columns:minmax(200px,1fr) 150px 100px 130px;gap:16px;align-items:center;padding:13px;border-bottom:1px solid #edf0e9}.game-list{display:grid;gap:10px}.game-list article{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px;border:1px solid #edf0e9;border-radius:12px}.game-list code{color:#67805b}@media(max-width:900px){.team-stats{grid-template-columns:repeat(2,1fr)}.employee-list article{grid-template-columns:42px 1fr}.employee-list article>div:nth-child(n+3),.employee-status{grid-column:2}.team-heading{display:block}.team-filters{margin-top:12px}.schedule-list>div,.payroll-list article{grid-template-columns:1fr 1fr}}@media(max-width:560px){.team-stats{grid-template-columns:1fr}.team-filters>*{width:100%}}
+.team-page{display:grid;gap:18px}.team-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.team-stats article,.team-panel{border:1px solid #e1e6dc;border-radius:16px;background:#fff;box-shadow:0 8px 26px rgba(38,59,25,.06)}.team-stats article{padding:16px}.team-stats span{display:block;color:#71806a;font-size:13px}.team-stats b{display:block;margin-top:7px;font-size:27px;color:#284d1e}.team-panel{padding:20px;min-width:0}.panel-title{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:16px}.panel-title h2,.game-list h3{margin:0 0 5px}.panel-title p,.game-list p{margin:0;color:#74806f}.team-empty{display:grid;place-items:center;min-height:190px;text-align:center;color:#7a8575}.team-empty b{color:#35452e;font-size:17px}.team-empty span{max-width:540px}.team-error,.team-loading{padding:16px;border-radius:12px;background:#fff}.status{padding:6px 10px;border-radius:999px;background:#eef6e8;color:#43772e}.schedule-scroll{overflow:auto;border:1px solid #e5e9e1;border-radius:12px}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:1100px;width:100%;font-size:12px}.schedule-grid th,.schedule-grid td{border-right:1px solid #edf0e9;border-bottom:1px solid #edf0e9;padding:4px;text-align:center}.schedule-grid thead th{position:sticky;top:0;background:#f6f8f3;z-index:2}.schedule-grid .employee-col{position:sticky;left:0;min-width:190px;text-align:left;background:#fff;z-index:1;padding-left:10px}.schedule-grid thead .employee-col{z-index:3;background:#f6f8f3}.schedule-grid select{width:42px;height:32px;border:1px solid #d9e0d3;border-radius:6px;background:#fff}.schedule-grid .hours{font-weight:700}.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;color:#6d7868;font-size:13px}.legend b{color:#355d23}.payroll-controls{justify-content:flex-start}.payroll-controls>div{margin-right:auto}.payroll-controls label{font-size:12px;color:#687462}.payroll-controls input{display:block;margin-top:4px;border:1px solid #dbe2d5;border-radius:8px;padding:8px}.totals{display:flex;justify-content:flex-end;gap:24px;flex-wrap:wrap;margin-top:15px;padding-top:15px;border-top:1px solid #e7ebe3}.totals span{color:#71806a}.totals b{display:block;color:#284d1e;font-size:18px}.saved{color:#397525;text-align:right}.game-list{display:grid;gap:10px}.game-list article{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px;border:1px solid #edf0e9;border-radius:12px}.game-list code{color:#67805b}@media(max-width:900px){.team-stats{grid-template-columns:repeat(2,1fr)}.panel-title{align-items:flex-start;flex-wrap:wrap}.payroll-controls>div{width:100%}}@media(max-width:560px){.team-stats{grid-template-columns:1fr}.team-panel{padding:14px}}
 </style>

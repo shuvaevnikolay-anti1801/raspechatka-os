@@ -6,50 +6,343 @@
  "title_field": "employee_name",
  "track_changes": 1,
  "field_order": [
-  "main_tab", "employee_name", "active", "last_name", "first_name", "middle_name", "birth_date", "gender", "phone", "email",
-  "employment_tab", "business_entity", "position", "employment_type", "hire_date", "dismissal_date", "system_user_profile",
-  "hr_tab", "inn", "snils", "passport_series", "passport_number", "registration_address", "disability", "hazardous_conditions", "medical_exam_required",
-  "documents_tab", "documents", "document_folder_url", "notes",
-  "legacy_section", "access_profile", "user", "assigned_points"
+  "main_tab",
+  "employee_name",
+  "active",
+  "last_name",
+  "first_name",
+  "middle_name",
+  "birth_date",
+  "gender",
+  "phone",
+  "email",
+  "employment_tab",
+  "business_entity",
+  "position",
+  "employment_type",
+  "hire_date",
+  "dismissal_date",
+  "system_user_profile",
+  "hr_tab",
+  "inn",
+  "snils",
+  "passport_series",
+  "passport_number",
+  "registration_address",
+  "disability",
+  "hazardous_conditions",
+  "medical_exam_required",
+  "payroll_tab",
+  "hourly_rate",
+  "sales_percent",
+  "ndfl_rate",
+  "insurance_rate",
+  "injury_rate",
+  "annual_leave_days",
+  "bank_payment_share",
+  "other_accruals_default",
+  "assigned_points",
+  "documents_tab",
+  "documents",
+  "document_folder_url",
+  "notes",
+  "legacy_section",
+  "access_profile",
+  "user"
  ],
  "fields": [
-  {"fieldname": "main_tab", "fieldtype": "Tab Break", "label": "Сотрудник"},
-  {"fieldname": "employee_name", "fieldtype": "Data", "label": "ФИО", "read_only": 1, "bold": 1, "in_list_view": 1, "in_global_search": 1},
-  {"fieldname": "active", "fieldtype": "Check", "label": "Работает", "default": "1", "in_list_view": 1, "in_standard_filter": 1},
-  {"fieldname": "last_name", "fieldtype": "Data", "label": "Фамилия", "reqd": 1},
-  {"fieldname": "first_name", "fieldtype": "Data", "label": "Имя", "reqd": 1},
-  {"fieldname": "middle_name", "fieldtype": "Data", "label": "Отчество"},
-  {"fieldname": "birth_date", "fieldtype": "Date", "label": "Дата рождения"},
-  {"fieldname": "gender", "fieldtype": "Select", "label": "Пол", "options": "Женский\nМужской"},
-  {"fieldname": "phone", "fieldtype": "Data", "label": "Телефон", "options": "Phone", "reqd": 1},
-  {"fieldname": "email", "fieldtype": "Data", "label": "Контактный email", "options": "Email"},
-  {"fieldname": "employment_tab", "fieldtype": "Tab Break", "label": "Трудоустройство"},
-  {"fieldname": "business_entity", "fieldtype": "Link", "label": "Работодатель-ИП", "options": "Business Entity", "reqd": 1, "in_list_view": 1, "in_standard_filter": 1},
-  {"fieldname": "position", "fieldtype": "Link", "label": "Должность", "options": "Position", "reqd": 1, "in_list_view": 1},
-  {"fieldname": "employment_type", "fieldtype": "Select", "label": "Тип оформления", "options": "Трудовой договор\nГПХ\nСамозанятый\nИП\nБез оформления", "default": "Трудовой договор", "reqd": 1},
-  {"fieldname": "hire_date", "fieldtype": "Date", "label": "Дата приёма", "in_list_view": 1},
-  {"fieldname": "dismissal_date", "fieldtype": "Date", "label": "Дата увольнения"},
-  {"fieldname": "system_user_profile", "fieldtype": "Link", "label": "Связанный пользователь", "options": "Raspechatka User Profile", "read_only": 1, "unique": 1},
-  {"fieldname": "hr_tab", "fieldtype": "Tab Break", "label": "Кадровые данные"},
-  {"fieldname": "inn", "fieldtype": "Data", "label": "ИНН", "permlevel": 1},
-  {"fieldname": "snils", "fieldtype": "Data", "label": "СНИЛС", "permlevel": 1},
-  {"fieldname": "passport_series", "fieldtype": "Password", "label": "Серия паспорта", "permlevel": 1},
-  {"fieldname": "passport_number", "fieldtype": "Password", "label": "Номер паспорта", "permlevel": 1},
-  {"fieldname": "registration_address", "fieldtype": "Small Text", "label": "Адрес регистрации", "permlevel": 1},
-  {"fieldname": "disability", "fieldtype": "Check", "label": "Инвалидность", "default": "0", "permlevel": 1},
-  {"fieldname": "hazardous_conditions", "fieldtype": "Check", "label": "Вредные условия труда", "default": "0", "permlevel": 1},
-  {"fieldname": "medical_exam_required", "fieldtype": "Check", "label": "Требуется медосмотр", "default": "0", "permlevel": 1},
-  {"fieldname": "documents_tab", "fieldtype": "Tab Break", "label": "Документы"},
-  {"fieldname": "documents", "fieldtype": "Table", "label": "Документы сотрудника", "options": "Employee Document", "permlevel": 1},
-  {"fieldname": "document_folder_url", "fieldtype": "Data", "label": "Папка документов", "options": "URL", "permlevel": 1},
-  {"fieldname": "notes", "fieldtype": "Small Text", "label": "Комментарий"},
-  {"fieldname": "legacy_section", "fieldtype": "Section Break", "label": "Служебные поля миграции", "hidden": 1},
-  {"fieldname": "access_profile", "fieldtype": "Select", "label": "Старый профиль доступа", "options": "Network Admin\nFranchise Owner\nPoint Manager\nCashier", "hidden": 1},
-  {"fieldname": "user", "fieldtype": "Link", "label": "Старая учётная запись", "options": "User", "hidden": 1},
-  {"fieldname": "assigned_points", "fieldtype": "Table", "label": "Старые доступные точки", "options": "Employee Point Assignment", "hidden": 1}
+  {
+   "fieldname": "main_tab",
+   "fieldtype": "Tab Break",
+   "label": "Сотрудник"
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "ФИО",
+   "read_only": 1,
+   "bold": 1,
+   "in_list_view": 1,
+   "in_global_search": 1
+  },
+  {
+   "fieldname": "active",
+   "fieldtype": "Check",
+   "label": "Работает",
+   "default": "1",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "last_name",
+   "fieldtype": "Data",
+   "label": "Фамилия",
+   "reqd": 1
+  },
+  {
+   "fieldname": "first_name",
+   "fieldtype": "Data",
+   "label": "Имя",
+   "reqd": 1
+  },
+  {
+   "fieldname": "middle_name",
+   "fieldtype": "Data",
+   "label": "Отчество"
+  },
+  {
+   "fieldname": "birth_date",
+   "fieldtype": "Date",
+   "label": "Дата рождения"
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Select",
+   "label": "Пол",
+   "options": "Женский\nМужской"
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Телефон",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Контактный email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "employment_tab",
+   "fieldtype": "Tab Break",
+   "label": "Трудоустройство"
+  },
+  {
+   "fieldname": "business_entity",
+   "fieldtype": "Link",
+   "label": "Работодатель-ИП",
+   "options": "Business Entity",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "position",
+   "fieldtype": "Link",
+   "label": "Должность",
+   "options": "Position",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "employment_type",
+   "fieldtype": "Select",
+   "label": "Тип оформления",
+   "options": "Трудовой договор\nГПХ\nСамозанятый\nИП\nБез оформления",
+   "default": "Трудовой договор",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hire_date",
+   "fieldtype": "Date",
+   "label": "Дата приёма",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "dismissal_date",
+   "fieldtype": "Date",
+   "label": "Дата увольнения"
+  },
+  {
+   "fieldname": "system_user_profile",
+   "fieldtype": "Link",
+   "label": "Связанный пользователь",
+   "options": "Raspechatka User Profile",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "hr_tab",
+   "fieldtype": "Tab Break",
+   "label": "Кадровые данные"
+  },
+  {
+   "fieldname": "inn",
+   "fieldtype": "Data",
+   "label": "ИНН",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "snils",
+   "fieldtype": "Data",
+   "label": "СНИЛС",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "passport_series",
+   "fieldtype": "Password",
+   "label": "Серия паспорта",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "passport_number",
+   "fieldtype": "Password",
+   "label": "Номер паспорта",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "registration_address",
+   "fieldtype": "Small Text",
+   "label": "Адрес регистрации",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "disability",
+   "fieldtype": "Check",
+   "label": "Инвалидность",
+   "default": "0",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "hazardous_conditions",
+   "fieldtype": "Check",
+   "label": "Вредные условия труда",
+   "default": "0",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "medical_exam_required",
+   "fieldtype": "Check",
+   "label": "Требуется медосмотр",
+   "default": "0",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "documents_tab",
+   "fieldtype": "Tab Break",
+   "label": "Документы"
+  },
+  {
+   "fieldname": "documents",
+   "fieldtype": "Table",
+   "label": "Документы сотрудника",
+   "options": "Employee Document",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "document_folder_url",
+   "fieldtype": "Data",
+   "label": "Папка документов",
+   "options": "URL",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Комментарий"
+  },
+  {
+   "fieldname": "legacy_section",
+   "fieldtype": "Section Break",
+   "label": "Служебные поля миграции",
+   "hidden": 1
+  },
+  {
+   "fieldname": "access_profile",
+   "fieldtype": "Select",
+   "label": "Старый профиль доступа",
+   "options": "Network Admin\nFranchise Owner\nPoint Manager\nCashier",
+   "hidden": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "Старая учётная запись",
+   "options": "User",
+   "hidden": 1
+  },
+  {
+   "fieldname": "payroll_tab",
+   "fieldtype": "Tab Break",
+   "label": "Оплата труда"
+  },
+  {
+   "fieldname": "hourly_rate",
+   "fieldtype": "Currency",
+   "label": "Ставка за час",
+   "default": "0"
+  },
+  {
+   "fieldname": "sales_percent",
+   "fieldtype": "Percent",
+   "label": "Процент от личной выручки",
+   "default": "0"
+  },
+  {
+   "fieldname": "ndfl_rate",
+   "fieldtype": "Percent",
+   "label": "Ставка НДФЛ",
+   "default": "13"
+  },
+  {
+   "fieldname": "insurance_rate",
+   "fieldtype": "Percent",
+   "label": "Страховые взносы",
+   "default": "30"
+  },
+  {
+   "fieldname": "injury_rate",
+   "fieldtype": "Percent",
+   "label": "Травматизм",
+   "default": "0.2"
+  },
+  {
+   "fieldname": "annual_leave_days",
+   "fieldtype": "Float",
+   "label": "Отпуск по договору, дней в год",
+   "default": "28"
+  },
+  {
+   "fieldname": "bank_payment_share",
+   "fieldtype": "Percent",
+   "label": "Доля выплаты безналично",
+   "default": "100"
+  },
+  {
+   "fieldname": "other_accruals_default",
+   "fieldtype": "Currency",
+   "label": "Другие начисления по умолчанию",
+   "default": "0"
+  },
+  {
+   "fieldname": "assigned_points",
+   "fieldtype": "Table",
+   "label": "Точки работы",
+   "options": "Employee Point Assignment"
+  }
  ],
  "permissions": [
-  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "report": 1, "export": 1, "import": 1},
-  {"role": "System Manager", "permlevel": 1, "read": 1, "write": 1, "create": 1, "report": 1, "export": 1, "import": 1}
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "import": 1
+  },
+  {
+   "role": "System Manager",
+   "permlevel": 1,
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "report": 1,
+   "export": 1,
+   "import": 1
+  }
  ]
 }
