@@ -3,7 +3,7 @@ from datetime import date
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, get_datetime, getdate, now_datetime, time_diff_in_hours
+from frappe.utils import cint, flt, get_datetime, get_url, getdate, now_datetime, time_diff_in_hours
 
 from raspechatka.access import get_scope, require_access
 
@@ -784,7 +784,7 @@ def save_employee(data):
 	for fieldname in (
 		"active", "last_name", "first_name", "middle_name", "birth_date", "gender", "phone", "email",
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
-		"passport_series", "passport_number", "registration_address", "disability", "hazardous_conditions",
+		"registration_address", "disability", "hazardous_conditions",
 		"medical_exam_required", "document_folder_url", "notes", "hourly_rate", "sales_percent", "ndfl_rate",
 		"insurance_rate", "injury_rate", "annual_leave_days", "bank_payment_share", "other_accruals_default",
 	):
@@ -858,7 +858,7 @@ def grant_employee_access(employee, access_profile="Cashier", assigned_points=No
 		"Логин: {1}\n"
 		"Чтобы установить пароль, перейдите по одноразовой ссылке: {2}\n"
 		"После установки пароля используйте номер телефона как логин."
-	).format(frappe.utils.get_url(), profile.phone, link)
+	).format(get_url(), profile.phone, link)
 	return {"profile": profile.name, "login": profile.phone, "link": link, "message": message}
 
 
