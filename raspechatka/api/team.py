@@ -520,23 +520,31 @@ def _payroll_period_defaults(period_start=None, period_end=None):
 	return today.replace(day=16), today.replace(day=monthrange(today.year, today.month)[1])
 
 
-def _effective_payroll_components(business_point):
+def _effective_payroll_components(business_point, position=None):
 	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
 	rows = frappe.get_all(
 		"Payroll Accrual Type",
-		filters={"active": 1, "business_entity": entity, "business_point": ["in", ["", business_point]]},
+		filters={
+			"active": 1,
+			"business_entity": entity,
+			"business_point": ["in", ["", business_point]],
+			"position": ["in", ["", position]] if position else "",
+		},
 		fields=[
-			"name", "component_code", "component_name", "business_point", "calculation_basis",
+			"name", "component_code", "component_name", "business_point", "position", "calculation_basis",
 			"default_rate", "default_percent", "payment_method", "include_in_ndfl_base",
 			"include_in_insurance_base", "include_in_injury_base",
 		],
-		order_by="business_point asc, component_name asc",
+		order_by="business_point asc, position asc, component_name asc",
 		limit_page_length=500,
 	)
 	by_code = {}
+	priorities = {}
 	for row in rows:
-		if row.component_code not in by_code or row.business_point == business_point:
+		priority = (2 if row.business_point == business_point else 0) + (1 if position and row.position == position else 0)
+		if row.component_code not in by_code or priority >= priorities[row.component_code]:
 			by_code[row.component_code] = row
+			priorities[row.component_code] = priority
 	return list(by_code.values())
 
 
@@ -545,7 +553,7 @@ def _payroll_rows(business_point, period_start, period_end):
 	employees = frappe.get_all(
 		"Employee",
 		filters=_employee_filters(scope, business_point),
-		fields=["name", "employee_name"],
+		fields=["name", "employee_name", "position"],
 		order_by="employee_name asc",
 		limit_page_length=500,
 	)
@@ -584,9 +592,9 @@ def _payroll_rows(business_point, period_start, period_end):
 	policy = frappe.get_doc("Payroll Policy", policy_name) if policy_name else frappe._dict(
 		ndfl_rate=13, insurance_rate=30, injury_rate=0.2
 	)
-	components = _effective_payroll_components(business_point)
 	rows = []
 	for employee_id, metric in metrics.items():
+		components = _effective_payroll_components(business_point, by_employee[employee_id].position)
 		amounts = []
 		for component in components:
 			basis = component.calculation_basis
@@ -926,7 +934,7 @@ def get_payroll_settings_options():
 
 
 @frappe.whitelist()
-def get_payroll_settings(business_point):
+def get_payroll_settings(business_point, position=None):
 	require_access("team.payroll", "read")
 	_scope_point(business_point)
 	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
@@ -936,18 +944,24 @@ def get_payroll_settings(business_point):
 		"insurance_rate": 30, "injury_rate": 0.2, "annual_leave_days": 28,
 		"first_half_pay_day": 20, "second_half_pay_day": 5, "active": 1,
 	}
+	positions = frappe.get_all(
+		"Position", fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500
+	)
+	component_filters = {"business_entity": entity, "business_point": business_point}
+	if position:
+		component_filters["position"] = position
 	components = frappe.get_all(
 		"Payroll Accrual Type",
-		filters={"business_entity": entity, "business_point": business_point},
+		filters=component_filters,
 		fields=[
-			"name", "component_code", "component_name", "active", "calculation_basis",
+			"name", "component_code", "component_name", "active", "position", "calculation_basis",
 			"default_rate", "default_percent", "payment_method", "include_in_ndfl_base",
 			"include_in_insurance_base", "include_in_injury_base", "exemption_basis", "notes",
 		],
 		order_by="component_name asc",
 		limit_page_length=500,
 	)
-	return {"policy": policy, "components": components}
+	return {"policy": policy, "components": components, "positions": positions}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -983,6 +997,9 @@ def save_payroll_component(data):
 		doc = frappe.new_doc("Payroll Accrual Type")
 	doc.business_point = point
 	doc.business_entity = entity
+	doc.position = data.get("position")
+	if not doc.position:
+		frappe.throw(_("Выберите должность для начисления"))
 	for fieldname in (
 		"component_code", "component_name", "active", "calculation_basis", "default_rate",
 		"default_percent", "payment_method", "include_in_ndfl_base", "include_in_insurance_base",
@@ -995,10 +1012,12 @@ def save_payroll_component(data):
 
 
 @frappe.whitelist(methods=["POST"])
-def create_default_payroll_components(business_point):
+def create_default_payroll_components(business_point, position):
 	require_access("team.payroll", "write")
 	_scope_point(business_point)
 	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
+	if not position or not frappe.db.exists("Position", position):
+		frappe.throw(_("Выберите существующую должность"))
 	defaults = [
 		("HOURLY", "Оплата за часы", "Hours", 200, 0, "Bank Transfer", 1, 1, 1),
 		("SALES_PERCENT", "Процент от личной выручки", "Personal Sales", 0, 5, "Bank Transfer", 1, 1, 1),
@@ -1007,11 +1026,11 @@ def create_default_payroll_components(business_point):
 	]
 	created = 0
 	for code, title, basis, rate, percent, payment, ndfl, insurance, injury in defaults:
-		if frappe.db.exists("Payroll Accrual Type", {"business_entity": entity, "business_point": business_point, "component_code": code}):
+		if frappe.db.exists("Payroll Accrual Type", {"business_entity": entity, "business_point": business_point, "position": position, "component_code": code}):
 			continue
 		frappe.get_doc({
 			"doctype": "Payroll Accrual Type", "component_code": code, "component_name": title,
-			"active": 1, "business_entity": entity, "business_point": business_point,
+			"active": 1, "business_entity": entity, "business_point": business_point, "position": position,
 			"calculation_basis": basis, "default_rate": rate, "default_percent": percent,
 			"payment_method": payment, "include_in_ndfl_base": ndfl,
 			"include_in_insurance_base": insurance, "include_in_injury_base": injury,
