@@ -123,7 +123,7 @@ onMounted(load);
         <router-link v-if="section==='employees'" class="button button-primary" to="/references/employees">Добавить сотрудника</router-link>
         <template v-if="section==='schedule'"><button class="button" :disabled="saving||!point" @click="saveSchedule(false)">Сохранить</button><button class="button button-primary" :disabled="saving||!point" @click="saveSchedule(true)">Опубликовать</button></template>
         <template v-if="section==='payroll'"><button class="button" :disabled="saving" @click="calculatePayroll(false)">Рассчитать</button><button class="button button-primary" :disabled="saving||!payroll" @click="calculatePayroll(true)">Сохранить ведомость</button></template>
-        <router-link v-if="section==='hr'" class="button button-primary" to="/app/employee-leave">Оформить отпуск</router-link>
+        <a v-if="section==='hr'" class="button button-primary" href="/app/employee-leave">Оформить отпуск</a>
       </template>
     </ListPageHeader>
     <SmartFilterBar v-model="filterModel" :fields="filterFields" :view-key="`team.${section}`" @apply="load" @reset="load" />
