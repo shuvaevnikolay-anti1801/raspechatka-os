@@ -185,6 +185,9 @@ a { color: inherit; text-decoration: none; }
 .filter-value { display:flex; min-width:0; }
 .filter-value>.filter-operator { width:112px; flex:0 0 112px; border-right:0; background:#f7f8f5; color:#61665e; font-size:9px; }
 .filter-value>input,.filter-value>select:not(.filter-operator) { min-width:0; flex:1; }
+.filter-period-presets { display:flex; flex-wrap:wrap; gap:3px; margin-top:1px; }
+.filter-period-presets button { min-height:20px; padding:1px 6px; border:1px solid #c7cbc3; background:#f7f8f5; color:#62675f; cursor:pointer; font-size:9px; font-weight:600; line-height:1.2; text-transform:none; }
+.filter-period-presets button:hover,.filter-period-presets button:focus-visible { border-color:#718f0b; background:#fff; color:#445900; outline:none; }
 .filter-no-value { display:flex; min-width:0; height:39px; flex:1; align-items:center; padding:0 10px; border:1px solid var(--line-dark); background:#f7f8f5; color:#8a8f87; font-size:10px; font-weight:400; letter-spacing:0; text-transform:none; }
 .filter-schema-state { align-self:center; color:#7b8078; font-size:9px; }
 .filter-schema-error { margin:0; padding:8px 12px; border-top:1px solid #e2bdb6; background:#fff4f1; color:#a34d3d; font-size:10px; }
