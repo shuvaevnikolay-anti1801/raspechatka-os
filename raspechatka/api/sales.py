@@ -52,7 +52,7 @@ def get_shifts(from_date=None, to_date=None, business_entity=None, business_poin
 	if status: filters["status"] = status
 	if cashier: filters["cashier"] = cashier
 	or_filters = {"name": ["like", f"%{search.strip()}%"], "external_id": ["like", f"%{search.strip()}%"]} if search else None
-	rows = frappe.get_all("Sales Shift", filters=filters, or_filters=or_filters, fields=["name", "external_id", "status", "shift_type", "opened_at", "closed_at", "business_entity", "business_point", "warehouse", "cashier", "opening_cash", "closing_cash", "expected_cash", "receipt_count", "return_count", "gross_sales", "returns_total", "net_sales", "sales_before_discount", "discounts_total", "review_discounts", "other_discounts", "discounted_receipt_count", "discount_conversion", "cash_sales", "card_sales", "qr_sales", "average_check", "reviews_count", "club_registrations", "gift_orders", "gift_orders_1", "gift_orders_2", "gift_orders_3", "card_commission_amount", "qr_commission_amount", "comment"], order_by="opened_at desc", limit_page_length=min(max(cint(limit_page_length), 1), 500))
+	rows = frappe.get_all("Sales Shift", filters=filters, or_filters=or_filters, fields=["name", "external_id", "status", "shift_type", "opened_at", "closed_at", "business_entity", "business_point", "warehouse", "cashier", "opening_cash", "closing_cash", "expected_cash", "receipt_count", "return_count", "gross_sales", "returns_total", "net_sales", "sales_before_discount", "discounts_total", "review_discounts", "other_discounts", "discounted_receipt_count", "discount_conversion", "cash_sales", "card_sales", "qr_sales", "average_check", "reviews_count", "club_registrations", "gift_orders", "gift_orders_1", "gift_orders_2", "gift_orders_3", "card_commission_amount", "qr_commission_amount", "comment"], order_by="opened_at desc", limit_page_length=min(max(cint(limit_page_length), 1), 10000))
 	return {"rows": rows, "totals": {"net_sales": sum(flt(r.net_sales) for r in rows), "receipts": sum(cint(r.receipt_count) for r in rows), "returns": sum(flt(r.returns_total) for r in rows), "discounts": sum(flt(r.discounts_total) for r in rows)}}
 
 
@@ -82,7 +82,7 @@ def get_receipts(receipt_type="Sale", from_date=None, to_date=None, business_ent
 		value = f"%{search.strip()}%"
 		or_filters = {"name": ["like", value], "external_id": ["like", value], "comment": ["like", value]}
 	else: or_filters = None
-	rows = _receipt_rows(filters, or_filters, min(max(cint(limit_page_length), 1), 500))
+	rows = _receipt_rows(filters, or_filters, min(max(cint(limit_page_length), 1), 10000))
 	return {"rows": rows, "totals": {"amount": sum(flt(r.total_amount) for r in rows), "discount": sum(flt(r.discount_amount) for r in rows), "profit": sum(flt(r.profit_amount) for r in rows)}}
 
 
@@ -101,7 +101,7 @@ def get_cash_movements(from_date=None, to_date=None, business_entity=None, busin
 	filters["docstatus"] = ["!=", 2]
 	if movement_type: filters["movement_type"] = movement_type
 	or_filters = {"name": ["like", f"%{search.strip()}%"], "reason": ["like", f"%{search.strip()}%"]} if search else None
-	rows = frappe.get_all("Cash Movement", filters=filters, or_filters=or_filters, fields=["name", "external_id", "movement_type", "posting_datetime", "shift", "business_entity", "business_point", "cashier", "amount", "from_cash", "to_cash", "reason", "docstatus"], order_by="posting_datetime desc", limit_page_length=min(max(cint(limit_page_length), 1), 500))
+	rows = frappe.get_all("Cash Movement", filters=filters, or_filters=or_filters, fields=["name", "external_id", "movement_type", "posting_datetime", "shift", "business_entity", "business_point", "cashier", "amount", "from_cash", "to_cash", "reason", "docstatus"], order_by="posting_datetime desc", limit_page_length=min(max(cint(limit_page_length), 1), 10000))
 	return {"rows": rows, "totals": {"deposits": sum(flt(r.amount) for r in rows if r.movement_type == "Deposit"), "withdrawals": sum(flt(r.amount) for r in rows if r.movement_type == "Withdrawal")}}
 
 

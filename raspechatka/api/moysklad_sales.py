@@ -20,9 +20,12 @@ from raspechatka.sales import update_shift_totals
 from raspechatka.api.moysklad import (
 	MoySkladCatalogImportError,
 	MoySkladRequestError,
+	_bundle_components,
+	_load_bundle_details,
 	_ref_id,
 	_request,
 	_sync_catalog,
+	_upsert_item,
 )
 
 HISTORY_START = "2026-07-01"
@@ -346,6 +349,62 @@ def _upsert_shift(row, context):
 	return doc.name
 
 
+
+def _resolve_catalog_item(position, context):
+	"""Recover a missing active or archived assortment card on demand."""
+
+	reference = position.get("assortment") or {}
+	source_id = _ref_id(reference)
+	if not source_id:
+		return None
+	item = frappe.db.get_value("Catalog Item", {"moysklad_id": source_id}, "name")
+	if item:
+		return item
+
+	meta = reference.get("meta") or {}
+	source_kind = str(meta.get("type") or "").lower()
+	if not source_kind:
+		href = str(meta.get("href") or "")
+		parts = href.split("?", 1)[0].rstrip("/").split("/")
+		if "entity" in parts and parts.index("entity") + 1 < len(parts):
+			source_kind = parts[parts.index("entity") + 1].lower()
+	if source_kind not in {"product", "service", "bundle", "variant"}:
+		return None
+
+	resolving = context.setdefault("catalog_recovery_in_progress", set())
+	if source_id in resolving:
+		return None
+	resolving.add(source_id)
+	try:
+		source_row = _request(context["settings"], f"entity/{source_kind}/{source_id}")
+		component_map = {}
+		if source_kind == "bundle":
+			source_row = _load_bundle_details(context["settings"], source_row)
+			for component in _bundle_components(source_row):
+				component_reference = component.get("assortment") or {}
+				component_id = _ref_id(component_reference)
+				component_item = _resolve_catalog_item({"assortment": component_reference}, context)
+				if component_id and component_item:
+					component_map[component_id] = component_item
+
+		item_type = {"service": "Service", "bundle": "Bundle"}.get(source_kind, "Product")
+		item = _upsert_item(
+			source_row,
+			item_type,
+			{},
+			{},
+			{},
+			{},
+			defaultdict(int),
+			component_map=component_map,
+		)
+		if item:
+			context["stats"]["catalog_items_recovered"] += 1
+		return item
+	finally:
+		resolving.discard(source_id)
+
+
 def _upsert_receipt(row, context, is_return=False):
 	stats = context["stats"]
 	source_id = _required_id(row)
@@ -369,6 +428,8 @@ def _upsert_receipt(row, context, is_return=False):
 	for position in positions:
 		moysklad_item_id = _ref_id(position.get("assortment"))
 		item = frappe.db.get_value("Catalog Item", {"moysklad_id": moysklad_item_id}, "name")
+		if not item:
+			item = _resolve_catalog_item(position, context)
 		if not item:
 			raise frappe.ValidationError(
 				_("Не сопоставлена позиция МойСклада {0}").format(
