@@ -91,7 +91,7 @@ def _sum_field(doctype, fieldname, filters=None):
 	rows = frappe.get_all(
 		doctype,
 		filters=filters or {},
-		fields=[f"sum({fieldname}) as total"],
+		fields=[{"SUM": fieldname, "as": "total"}],
 		limit_page_length=1,
 	)
 	return flt(rows[0].total) if rows and rows[0].total is not None else 0
