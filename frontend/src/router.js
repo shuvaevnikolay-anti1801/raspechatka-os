@@ -21,6 +21,7 @@ import FinanceBankSettingsPage from "./pages/FinanceBankSettingsPage.vue";
 import FinanceSettingsPage from "./pages/FinanceSettingsPage.vue";
 import SalesPage from "./pages/SalesPage.vue";
 import TeamPage from "./pages/TeamPage.vue";
+import EmployeesPage from "./pages/EmployeesPage.vue";
 import UsersPage from "./pages/UsersPage.vue";
 
 const routes = [
@@ -69,7 +70,7 @@ const routes = [
   { path: "/sales/actions", name: "sales-actions", component: SalesPage, meta: { module: "sales", kind: "actions" } },
   { path: "/sales/integration", name: "sales-integration", component: SalesPage, meta: { module: "sales", kind: "integration" } },
   { path: "/team", redirect: "/team/employees" },
-  { path: "/team/employees", name: "team-employees", component: MasterDataPage, meta: { module: "team", reference: "employees" } },
+  { path: "/team/employees", name: "team-employees", component: EmployeesPage, meta: { module: "team", section: "employees" } },
   { path: "/team/positions", name: "team-positions", component: MasterDataPage, meta: { module: "team", reference: "positions" } },
   { path: "/team/schedule", name: "team-schedule", component: TeamPage, meta: { module: "team", section: "schedule" } },
   { path: "/team/payroll", name: "team-payroll", component: TeamPage, meta: { module: "team", section: "payroll" } },
