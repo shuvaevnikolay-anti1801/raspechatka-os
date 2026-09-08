@@ -87,6 +87,16 @@ MARKETING_TYPES = {
 }
 
 
+def _sum_field(doctype, fieldname, filters=None):
+	rows = frappe.get_all(
+		doctype,
+		filters=filters or {},
+		fields=[f"sum({fieldname}) as total"],
+		limit_page_length=1,
+	)
+	return flt(rows[0].total) if rows and rows[0].total is not None else 0
+
+
 def _visible_client_names():
 	scope = get_scope()
 	if scope.get("global"):
@@ -472,7 +482,7 @@ def get_club_dashboard():
 		"marketing_allowed": sum(1 for row in rows if row.marketing_consent),
 		"birthdays_this_month": birthdays_month,
 		"campaigns_planned": frappe.db.count("Promo Campaign", {"status": "Запланирована"}),
-		"sent_total": frappe.db.sum("Promo Campaign", "sent_count") or 0,
+		"sent_total": _sum_field("Promo Campaign", "sent_count"),
 		"purchases_from_campaigns": frappe.db.count(
 			"Client Purchase", {"campaign": ["is", "set"], "cancelled": 0}
 		),
@@ -617,7 +627,7 @@ def get_marketing_records(kind, search=None, status=None):
 		for row in rows:
 			row["purchase_count"] = frappe.db.count("Client Purchase", {"campaign": row.name, "cancelled": 0})
 			row["revenue"] = (
-				frappe.db.sum("Client Purchase", "net_amount", {"campaign": row.name, "cancelled": 0}) or 0
+				_sum_field("Client Purchase", "net_amount", {"campaign": row.name, "cancelled": 0})
 			)
 	return rows
 
@@ -635,7 +645,7 @@ def get_marketing_record(kind, name):
 	elif kind == "campaigns":
 		result["purchase_count"] = frappe.db.count("Client Purchase", {"campaign": name, "cancelled": 0})
 		result["revenue"] = (
-			frappe.db.sum("Client Purchase", "net_amount", {"campaign": name, "cancelled": 0}) or 0
+			_sum_field("Client Purchase", "net_amount", {"campaign": name, "cancelled": 0})
 		)
 	return result
 
