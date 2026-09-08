@@ -176,8 +176,10 @@ class CatalogItem(Document):
 			component = frappe.db.get_value(
 				"Catalog Item", row.item, ["active", "item_type"], as_dict=True
 			)
-			if not component or not component.active:
-				frappe.throw(_("В комплект нельзя добавить архивную позицию."))
+			if not component:
+				frappe.throw(_("Не найдена позиция состава комплекта."))
+			if self.active and not component.active:
+				frappe.throw(_("В активный комплект нельзя добавить архивную позицию."))
 			if component.item_type not in {"Product", "Service", "Variant"}:
 				frappe.throw(_("Комплект может состоять только из товаров, услуг и модификаций."))
 			if self.name and self._bundle_reaches(row.item, self.name):
