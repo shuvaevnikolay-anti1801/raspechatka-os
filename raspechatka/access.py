@@ -5,7 +5,6 @@ from pathlib import Path
 import frappe
 from frappe import _
 
-
 LEVELS = {"None": 0, "View": 1, "Edit": 2, "Admin": 3}
 ACTION_LEVEL = {"read": 1, "create": 2, "write": 2, "delete": 3, "admin": 3}
 
@@ -164,11 +163,7 @@ def get_scope(user=None):
 				pluck="business_point",
 			)
 			entities = list(
-				{
-					frappe.db.get_value("Business Point", point, "business_entity")
-					for point in points
-				}
-				- {None}
+				{frappe.db.get_value("Business Point", point, "business_entity") for point in points} - {None}
 			)
 		return {
 			"global": False,
@@ -199,9 +194,7 @@ def get_scope(user=None):
 	)
 	return {
 		"global": False,
-		"organization": frappe.db.get_value(
-			"Business Entity", employee.business_entity, "organization"
-		),
+		"organization": frappe.db.get_value("Business Entity", employee.business_entity, "organization"),
 		"business_entity": employee.business_entity,
 		"business_entities": [employee.business_entity],
 		"points": points,
@@ -242,9 +235,9 @@ def synchronize_access_pages(copy_legacy_rules=True):
 		if frappe.db.exists("Access Area", page["area"]):
 			frappe.db.set_value("Access Area", page["area"], values, update_modified=False)
 		else:
-			frappe.get_doc(
-				{"doctype": "Access Area", "area_code": page["area"], **values}
-			).insert(ignore_permissions=True)
+			frappe.get_doc({"doctype": "Access Area", "area_code": page["area"], **values}).insert(
+				ignore_permissions=True
+			)
 
 	if copy_legacy_rules:
 		_sync_missing_page_rules(pages)
@@ -279,10 +272,13 @@ def _sync_missing_page_rules(pages):
 
 
 def _require_access_settings_admin():
-	if max(
-		(get_access_level(ACCESS_SETTINGS_AREA), get_access_level("settings.access")),
-		key=lambda value: LEVELS.get(value, 0),
-	) != "Admin":
+	if (
+		max(
+			(get_access_level(ACCESS_SETTINGS_AREA), get_access_level("settings.access")),
+			key=lambda value: LEVELS.get(value, 0),
+		)
+		!= "Admin"
+	):
 		frappe.throw(_("Недостаточно прав для настройки доступа"), frappe.PermissionError)
 
 
@@ -294,9 +290,7 @@ def get_access_settings():
 	rules = frappe.get_single("Raspechatka Access Settings").get("rules")
 	return {
 		"areas": pages,
-		"roles": [
-			{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()
-		],
+		"roles": [{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()],
 		"rules": [row.as_dict() for row in rules if row.access_area in visible_areas],
 	}
 
