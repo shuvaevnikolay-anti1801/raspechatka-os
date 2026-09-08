@@ -14,19 +14,23 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 	as_of = as_of or nowdate()
 	end = datetime.combine(getdate(as_of), time.max)
 	warehouses = _warehouses(business_point, warehouse)
-	entries = _ledger_entries(warehouses, end=end)
-	location_names = {row.name: row.full_address for row in frappe.get_all("Storage Location", fields=["name", "full_address"], limit_page_length=100000)}
-	aggregated = {}
-	for entry in entries:
-		key = (entry.item, entry.warehouse)
-		bucket = aggregated.setdefault(key, {"quantity": 0, "stock_value": 0, "locations": set()})
-		bucket["quantity"] += flt(entry.actual_qty)
-		bucket["stock_value"] += flt(entry.stock_value_difference)
-		if entry.storage_location:
-			bucket["locations"].add(entry.storage_location)
+	if getdate(as_of) >= getdate(nowdate()):
+		aggregated = _current_balances(warehouses)
+	else:
+		aggregated = _historical_balances(warehouses, end)
 	expected = _expected_quantities(warehouses)
-	for key in expected:
-		aggregated.setdefault(key, {"quantity": 0, "stock_value": 0, "locations": set()})
+	minimums = _minimum_stock_levels(warehouses)
+	for key in set(expected) | set(minimums):
+		aggregated.setdefault(
+			key,
+			{
+				"quantity": 0,
+				"reserved_quantity": 0,
+				"stock_value": 0,
+				"last_movement_at": None,
+				"locations": set(),
+			},
+		)
 	if int(show_zero):
 		stock_items = frappe.get_all(
 			"Catalog Item",
@@ -38,10 +42,17 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 			for warehouse_name in warehouses:
 				aggregated.setdefault(
 					(item, warehouse_name),
-					{"quantity": 0, "stock_value": 0, "locations": set()},
+					{
+						"quantity": 0,
+						"reserved_quantity": 0,
+						"stock_value": 0,
+						"last_movement_at": None,
+						"locations": set(),
+					},
 				)
 	metadata = _item_metadata({key[0] for key in aggregated})
 	warehouse_map = {row.name: row for row in frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"])}
+	location_names = {row.name: row.full_address for row in frappe.get_all("Storage Location", fields=["name", "full_address"], limit_page_length=0)}
 	rows = []
 	query = (search or "").strip().lower()
 	for (item, warehouse_name), values in aggregated.items():
@@ -51,7 +62,12 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 		if query and query not in " ".join((meta.item_name or "", meta.item_code or "", meta.article or "")).lower():
 			continue
 		qty = flt(values["quantity"])
-		if not int(show_zero) and abs(qty) < 0.000001 and not expected.get((item, warehouse_name)):
+		reserved = flt(values.get("reserved_quantity"))
+		available = qty - reserved
+		expected_qty = flt(expected.get((item, warehouse_name)))
+		minimum_stock = flt(minimums.get((item, warehouse_name)))
+		recommended = max(minimum_stock - available - expected_qty, 0)
+		if not int(show_zero) and abs(qty) < 0.000001 and not expected_qty and not recommended:
 			continue
 		value = flt(values["stock_value"])
 		wh = warehouse_map.get(warehouse_name)
@@ -59,11 +75,25 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 			"item": item, "item_code": meta.item_code, "item_name": meta.item_name, "article": meta.article,
 			"catalog_group": meta.catalog_group, "uom": meta.stock_uom, "business_point": wh.business_point if wh else None,
 			"warehouse": warehouse_name, "warehouse_name": wh.warehouse_name if wh else warehouse_name,
-			"storage_location": ", ".join(sorted(location_names.get(name, name) for name in values["locations"])) or None, "quantity": qty, "expected_quantity": expected.get((item, warehouse_name), 0),
+			"storage_location": ", ".join(sorted(location_names.get(name, name) for name in values["locations"])) or None,
+			"quantity": qty, "reserved_quantity": reserved, "available_quantity": available,
+			"expected_quantity": expected_qty, "minimum_stock": minimum_stock, "recommended_order_quantity": recommended,
 			"average_rate": flt(value / qty) if qty else 0, "stock_value": value,
+			"last_movement_at": values.get("last_movement_at"),
 		})
 	rows.sort(key=lambda row: (row["catalog_group"] or "", row["item_name"], row["warehouse_name"], row["storage_location"] or ""))
-	return {"rows": rows, "totals": {"quantity": sum(row["quantity"] for row in rows), "expected_quantity": sum(row["expected_quantity"] for row in rows), "stock_value": sum(row["stock_value"] for row in rows)}, "as_of": str(as_of)}
+	return {
+		"rows": rows,
+		"totals": {
+			"quantity": sum(row["quantity"] for row in rows),
+			"reserved_quantity": sum(row["reserved_quantity"] for row in rows),
+			"available_quantity": sum(row["available_quantity"] for row in rows),
+			"expected_quantity": sum(row["expected_quantity"] for row in rows),
+			"recommended_order_quantity": sum(row["recommended_order_quantity"] for row in rows),
+			"stock_value": sum(row["stock_value"] for row in rows),
+		},
+		"as_of": str(as_of),
+	}
 
 
 @frappe.whitelist()
@@ -167,3 +197,77 @@ def _expected_quantities(warehouses):
 		key = (row.item, warehouse_by_order[row.parent])
 		result[key] = result.get(key, 0) + max(flt(row.quantity) - flt(row.received_quantity), 0)
 	return result
+
+
+
+def _current_balances(warehouses):
+	rows = frappe.get_all(
+		"Stock Balance",
+		filters={"warehouse": ["in", warehouses or ["__none__"]]},
+		fields=["item", "warehouse", "actual_qty", "reserved_qty", "stock_value", "last_movement_at"],
+		limit_page_length=0,
+	)
+	locations = _stock_locations(warehouses)
+	return {
+		(row.item, row.warehouse): {
+			"quantity": flt(row.actual_qty),
+			"reserved_quantity": flt(row.reserved_qty),
+			"stock_value": flt(row.stock_value),
+			"last_movement_at": row.last_movement_at,
+			"locations": locations.get((row.item, row.warehouse), set()),
+		}
+		for row in rows
+	}
+
+
+def _historical_balances(warehouses, end):
+	aggregated = {}
+	for entry in _ledger_entries(warehouses, end=end):
+		key = (entry.item, entry.warehouse)
+		bucket = aggregated.setdefault(
+			key,
+			{
+				"quantity": 0,
+				"reserved_quantity": 0,
+				"stock_value": 0,
+				"last_movement_at": None,
+				"locations": set(),
+			},
+		)
+		bucket["quantity"] += flt(entry.actual_qty)
+		bucket["stock_value"] += flt(entry.stock_value_difference)
+		bucket["last_movement_at"] = entry.posting_datetime
+		if entry.storage_location:
+			bucket["locations"].add(entry.storage_location)
+	return aggregated
+
+
+def _stock_locations(warehouses):
+	if not warehouses:
+		return {}
+	placeholders = ", ".join(["%s"] * len(warehouses))
+	rows = frappe.db.sql(
+		f"""select item, warehouse, storage_location
+		from `tabStock Ledger Entry`
+		where warehouse in ({placeholders}) and storage_location is not null
+		group by item, warehouse, storage_location""",
+		tuple(warehouses),
+		as_dict=True,
+	)
+	result = {}
+	for row in rows:
+		result.setdefault((row.item, row.warehouse), set()).add(row.storage_location)
+	return result
+
+
+def _minimum_stock_levels(warehouses):
+	rows = frappe.get_all(
+		"Catalog Reorder Rule",
+		filters={
+			"warehouse": ["in", warehouses or ["__none__"]],
+			"parenttype": "Catalog Item",
+		},
+		fields=["parent", "warehouse", "minimum_stock"],
+		limit_page_length=0,
+	)
+	return {(row.parent, row.warehouse): flt(row.minimum_stock) for row in rows}

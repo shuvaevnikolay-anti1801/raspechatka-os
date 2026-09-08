@@ -16,7 +16,7 @@ const configs = {
   turnover: { title: "Обороты", description: "Приход, расход и изменение запасов за период" },
 };
 const config = computed(() => configs[report.value]);
-const balanceColumns = [c("item_name","Наименование",true),c("item_code","Код"),c("catalog_group","Группа"),c("warehouse_name","Склад"),c("storage_location","Адрес"),c("quantity","Остаток","qty"),c("expected_quantity","Ожидается","qty"),c("uom","Ед."),c("average_rate","Себестоимость","money"),c("stock_value","Стоимость остатка","money")];
+const balanceColumns = [c("item_name","Наименование",true),c("item_code","Код"),c("catalog_group","Группа"),c("warehouse_name","Склад"),c("storage_location","Адрес"),c("quantity","Физический остаток","qty"),c("reserved_quantity","Резерв","qty"),c("available_quantity","Доступно","qty"),c("expected_quantity","Ожидается","qty"),c("minimum_stock","Минимум","qty"),c("recommended_order_quantity","Рекомендуется заказать","qty"),c("uom","Ед."),c("average_rate","Средняя себестоимость","money"),c("stock_value","Стоимость запаса","money"),c("last_movement_at","Последнее движение")];
 const turnoverColumns = [c("item_name","Наименование",true),c("item_code","Код"),c("catalog_group","Группа"),c("warehouse_name","Склад"),c("opening_qty","Начальный остаток","qty"),c("incoming_qty","Приход","qty"),c("outgoing_qty","Расход","qty"),c("closing_qty","Конечный остаток","qty"),c("incoming_value","Приход, ₽","money"),c("outgoing_value","Расход, ₽","money"),c("closing_value","Стоимость остатка","money")];
 const columns = computed(() => report.value === "balances" ? balanceColumns : turnoverColumns);
 const visibleWarehouses = computed(() => options.warehouses.filter((row) => !filters.business_point || row.business_point === filters.business_point));
