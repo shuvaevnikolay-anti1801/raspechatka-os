@@ -201,7 +201,7 @@
    "fieldname": "opening_stock_status",
    "fieldtype": "Select",
    "label": "Статус начальных остатков",
-   "options": "Idle\\nPreviewed\\nImported\\nError",
+   "options": "Idle\nPreviewed\nImported\nError",
    "default": "Idle",
    "read_only": 1
   },
