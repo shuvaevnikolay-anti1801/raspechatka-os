@@ -27,6 +27,19 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 	expected = _expected_quantities(warehouses)
 	for key in expected:
 		aggregated.setdefault(key, {"quantity": 0, "stock_value": 0, "locations": set()})
+	if int(show_zero):
+		stock_items = frappe.get_all(
+			"Catalog Item",
+			filters={"active": 1, "track_inventory": 1, "item_type": ["in", ["Product", "Variant"]]},
+			pluck="name",
+			limit_page_length=0,
+		)
+		for item in stock_items:
+			for warehouse_name in warehouses:
+				aggregated.setdefault(
+					(item, warehouse_name),
+					{"quantity": 0, "stock_value": 0, "locations": set()},
+				)
 	metadata = _item_metadata({key[0] for key in aggregated})
 	warehouse_map = {row.name: row for row in frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"])}
 	rows = []
@@ -126,7 +139,18 @@ def _warehouses(business_point=None, warehouse=None):
 
 
 def _ledger_entries(warehouses, end):
-	return frappe.get_all("Stock Ledger Entry", filters={"warehouse": ["in", warehouses or ["__none__"]], "posting_datetime": ["<=", end]}, fields=["posting_datetime", "item", "warehouse", "storage_location", "actual_qty", "stock_value_difference"], order_by="posting_datetime asc, creation asc", limit_page_length=100000)
+	if not warehouses:
+		return []
+	placeholders = ", ".join(["%s"] * len(warehouses))
+	return frappe.db.sql(
+		f"""select posting_datetime, item, warehouse, storage_location,
+			actual_qty, stock_value_difference
+		from `tabStock Ledger Entry`
+		where warehouse in ({placeholders}) and posting_datetime<=%s
+		order by posting_datetime asc, creation asc""",
+		(*warehouses, end),
+		as_dict=True,
+	)
 
 
 def _item_metadata(items):
