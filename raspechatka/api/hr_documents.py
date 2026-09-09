@@ -1,10 +1,12 @@
 import html
+import json
 import re
 from datetime import date
+from pathlib import Path
 
 import frappe
 from frappe import _
-from frappe.utils import cint, formatdate, getdate, now_datetime
+from frappe.utils import cint, flt, formatdate, getdate, now_datetime
 from frappe.utils.file_manager import save_file
 from frappe.utils.pdf import get_pdf
 
@@ -32,14 +34,21 @@ VARIABLES = [
 	{"key": "EMPLOYER_INN", "label": "ИНН работодателя"},
 	{"key": "EMPLOYER_OGRNIP", "label": "ОГРНИП работодателя"},
 	{"key": "EMPLOYER_ADDRESS", "label": "Адрес работодателя"},
+	{"key": "EMPLOYER_SHORT", "label": "Краткая подпись работодателя"},
+	{"key": "EMPLOYER_PHONE", "label": "Телефон работодателя"},
 	{"key": "POSITION", "label": "Должность"},
 	{"key": "WORKPLACE_NAME", "label": "Точка продаж"},
 	{"key": "WORKPLACE_CITY", "label": "Город работы"},
 	{"key": "WORKPLACE_ADDRESS", "label": "Адрес места работы"},
 	{"key": "PAY_CONDITIONS", "label": "Условия оплаты труда"},
+	{"key": "ANNUAL_LEAVE_DAYS", "label": "Дней ежегодного отпуска"},
+	{"key": "FIRST_HALF_PAY_DAY", "label": "День выплаты аванса"},
+	{"key": "SECOND_HALF_PAY_DAY", "label": "День окончательной выплаты"},
 ]
 ALLOWED_VARIABLES = {row["key"] for row in VARIABLES}
 MARKER_RE = re.compile(r"{{\s*([A-Z0-9_]+)\s*}}")
+UNSAFE_HTML_RE = re.compile(r"<\s*(script|iframe|object|embed|link|meta)\b|\bon\w+\s*=", re.IGNORECASE)
+DEFAULT_TEMPLATES_FILE = Path(__file__).resolve().parents[1] / "hr_default_templates.json"
 
 
 def _require_network_admin():
@@ -67,6 +76,11 @@ def _date(value):
 	return formatdate(value, "dd.MM.yyyy") if value else ""
 
 
+def _person_short(last_name, first_name, middle_name=None):
+	initials = "".join(f"{part[0].upper()}." for part in (first_name, middle_name) if part)
+	return f"{last_name or ''} {initials}".strip()
+
+
 def _password(doc, fieldname):
 	try:
 		return doc.get_password(fieldname, raise_exception=False) or ""
@@ -80,25 +94,39 @@ def _employee_variables(employee):
 	assignment = next((row for row in employee.assigned_points if cint(row.is_default)), None)
 	assignment = assignment or (employee.assigned_points[0] if employee.assigned_points else None)
 	point = frappe.get_doc("Business Point", assignment.business_point) if assignment else None
-	components = frappe.get_all(
+	component_rows = frappe.get_all(
 		"Payroll Accrual Type",
 		filters={
 			"active": 1,
-			"business_point": point.name if point else "__none__",
-			"position": employee.position,
+			"business_entity": employee.business_entity,
+			"business_point": ["in", ["", point.name]] if point else "",
+			"position": ["in", ["", employee.position]],
 		},
-		fields=["component_name", "calculation_basis", "default_rate", "default_percent", "payment_method"],
+		fields=[
+			"component_code", "component_name", "business_point", "position",
+			"calculation_basis", "default_rate", "default_percent", "payment_method",
+		],
 		order_by="component_name asc",
-		limit_page_length=100,
+		limit_page_length=500,
 	)
+	components_by_code = {}
+	priorities = {}
+	for row in component_rows:
+		priority = (2 if point and row.business_point == point.name else 0) + (1 if row.position == employee.position else 0)
+		if row.component_code not in components_by_code or priority >= priorities[row.component_code]:
+			components_by_code[row.component_code] = row
+			priorities[row.component_code] = priority
+	components = list(components_by_code.values())
+	policy_name = frappe.db.get_value("Payroll Policy", {"business_point": point.name, "active": 1}, "name") if point else None
+	policy = frappe.get_doc("Payroll Policy", policy_name) if policy_name else frappe._dict(annual_leave_days=28, first_half_pay_day=20, second_half_pay_day=5)
 	conditions = []
 	for row in components:
 		if row.calculation_basis == "Hours":
-			value = f"{row.default_rate:g} руб. за час"
+			value = f"{flt(row.default_rate):g} руб. за час"
 		elif row.calculation_basis == "Personal Sales":
-			value = f"{row.default_percent:g}% от личной выручки"
+			value = f"{flt(row.default_percent):g}% от личной выручки"
 		elif row.calculation_basis == "Fixed Amount":
-			value = f"{row.default_rate:g} руб."
+			value = f"{flt(row.default_rate):g} руб."
 		else:
 			value = "по результатам расчётного периода"
 		conditions.append(f"{row.component_name}: {value}")
@@ -123,11 +151,16 @@ def _employee_variables(employee):
 		"EMPLOYER_INN": entity.inn or "",
 		"EMPLOYER_OGRNIP": entity.ogrnip or "",
 		"EMPLOYER_ADDRESS": entity.registration_address or "",
+		"EMPLOYER_SHORT": _person_short(entity.last_name, entity.first_name, entity.middle_name),
+		"EMPLOYER_PHONE": entity.phone or "",
 		"POSITION": position,
 		"WORKPLACE_NAME": point.point_name if point else "",
 		"WORKPLACE_CITY": point.city if point else "",
 		"WORKPLACE_ADDRESS": point.address if point else "",
 		"PAY_CONDITIONS": "; ".join(conditions),
+		"ANNUAL_LEAVE_DAYS": f"{flt(policy.annual_leave_days):g}",
+		"FIRST_HALF_PAY_DAY": str(cint(policy.first_half_pay_day)),
+		"SECOND_HALF_PAY_DAY": str(cint(policy.second_half_pay_day)),
 	}
 
 
@@ -185,27 +218,23 @@ def save_hr_template(data):
 @frappe.whitelist(methods=["POST"])
 def create_default_hr_templates():
 	_require_network_admin()
-	defaults = [
-		("1. Трудовой договор", "Трудовой договор", "<h1>Трудовой договор</h1><p>{{CONTRACT_DATE}}, {{WORKPLACE_CITY}}</p><p>{{EMPLOYER_NAME}}, ИНН {{EMPLOYER_INN}}, и {{CITIZEN_WORD}} {{FIO_FULL}}, паспорт {{PASSPORT_SERIES}} {{PASSPORT_NUMBER}}, заключили настоящий договор.</p><p>Должность: {{POSITION}}. Место работы: {{WORKPLACE_NAME}}, {{WORKPLACE_ADDRESS}}.</p><p>Условия оплаты: {{PAY_CONDITIONS}}.</p>"),
-		("2. Приложение 1 — Персональные данные", "Персональные данные", "<h1>Согласие на обработку персональных данных</h1><p>Я, {{FIO_FULL}}, дата рождения {{BIRTH_DATE}}, даю согласие работодателю {{EMPLOYER_NAME}} на обработку персональных данных.</p>"),
-		("3. Приложение 2 — Должностные обязанности", "Должностные обязанности", "<h1>Должностные обязанности</h1><p>Сотрудник: {{FIO_FULL}}. Должность: {{POSITION}}. Место работы: {{WORKPLACE_NAME}}.</p>"),
-		("4. Приложение 3 — Неразглашение", "Неразглашение", "<h1>Соглашение о неразглашении</h1><p>{{FIO_FULL}}, {{WORKER_NAMED}} далее Работник, обязуется не разглашать конфиденциальные сведения работодателя {{EMPLOYER_NAME}}.</p>"),
-	]
+	with DEFAULT_TEMPLATES_FILE.open(encoding="utf-8") as source:
+		defaults = json.load(source)
 	created = 0
-	for title, document_type, template_html in defaults:
-		if frappe.db.exists("HR Document Template", {"document_type": document_type, "active": 1}):
+	for template in defaults:
+		if frappe.db.exists("HR Document Template", {"document_type": template["document_type"], "active": 1}):
 			continue
 		frappe.get_doc({
 			"doctype": "HR Document Template",
-			"template_name": title,
-			"document_type": document_type,
+			"template_name": template["template_name"],
+			"document_type": template["document_type"],
 			"version": 1,
 			"active": 1,
-			"template_html": template_html,
+			"template_html": template["template_html"],
+			"notes": f"Перенесено из актуального Google Docs: {template['source_google_doc_id']}",
 		}).insert(ignore_permissions=True)
 		created += 1
 	return {"created": created}
-
 
 @frappe.whitelist()
 def lookup_employee_bank(bic):
