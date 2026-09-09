@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "field:allocation_key",
+ "autoname": "hash",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
