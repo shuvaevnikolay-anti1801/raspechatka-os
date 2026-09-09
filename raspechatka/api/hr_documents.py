@@ -150,7 +150,10 @@ def get_hr_template_settings():
 def save_hr_template(data):
 	_require_network_admin()
 	data = frappe.parse_json(data)
-	markers = set(MARKER_RE.findall(data.get("template_html") or ""))
+	template_html = data.get("template_html") or ""
+	if UNSAFE_HTML_RE.search(template_html):
+		frappe.throw(_("Шаблон содержит небезопасный HTML-код"))
+	markers = set(MARKER_RE.findall(template_html))
 	unknown = sorted(markers - ALLOWED_VARIABLES)
 	if unknown:
 		frappe.throw(_("Неизвестные переменные: {0}").format(", ".join(unknown)))
