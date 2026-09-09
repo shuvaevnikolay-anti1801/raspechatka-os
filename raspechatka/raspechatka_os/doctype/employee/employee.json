@@ -43,7 +43,6 @@
   "disability",
   "hazardous_conditions",
   "medical_exam_required",
-  "annual_leave_days",
   "assigned_points",
   "documents_tab",
   "documents",
@@ -265,12 +264,6 @@
    "label": "Старая учётная запись",
    "options": "User",
    "hidden": 1
-  },
-  {
-   "fieldname": "annual_leave_days",
-   "fieldtype": "Float",
-   "label": "Отпуск по договору, дней в год",
-   "default": "28"
   },
   {
    "fieldname": "assigned_points",

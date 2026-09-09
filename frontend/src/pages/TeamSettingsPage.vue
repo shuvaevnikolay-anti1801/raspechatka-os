@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import PayrollSettingsPanel from "../components/PayrollSettingsPanel.vue";
+import HrDocumentTemplatesPanel from "../components/HrDocumentTemplatesPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -48,6 +49,7 @@ onMounted(loadPoints);
       </div>
       <PayrollSettingsPanel v-if="point" :business-point="point" />
       <p v-else-if="!loading" class="muted-note">Нет доступных точек продаж.</p>
+      <HrDocumentTemplatesPanel />
       <p v-if="error" class="form-error">{{ error }}</p>
     </div>
   </section>
