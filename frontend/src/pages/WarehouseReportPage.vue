@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 
 const route = useRoute();
+const router = useRouter();
 const report = computed(() => route.meta.report);
 const rows = ref([]), totals = ref({}), loading = ref(true), error = ref("");
 const options = reactive({ points: [], warehouses: [], groups: [] });
@@ -32,10 +33,11 @@ const filterFields=computed(()=>[
 
 async function load(){loading.value=true;error.value="";try{const common={business_point:filters.business_point,warehouse:filters.warehouse,catalog_group:filters.catalog_group,search:filters.search};const isBalances=report.value==="balances";const method=isBalances?"get_stock_balances":"get_stock_turnover";const params=isBalances?{...common,as_of:filters.as_of}:{...common,from_date:filters.from_date,to_date:filters.to_date};const result=await call(`raspechatka.api.warehouse_reports.${method}`,params);rows.value=result.rows;totals.value=result.totals;}catch(e){error.value=e.message;}finally{loading.value=false;}}
 async function loadOptions(){try{Object.assign(options,await call("raspechatka.api.warehouse_reports.get_report_options"));}catch(e){error.value=e.message;}}
+function openMovements(row){router.push({path:"/warehouse/movements",query:{item:row.item,search:row.item_name,warehouse:row.warehouse}});}
 function exportCsv(){const header=columns.value.map(column=>column.label);const data=rows.value.map(row=>columns.value.map(column=>row[column.key]??""));const csv=[header,...data].map(line=>line.map(value=>`"${String(value).replaceAll('"','""')}"`).join(";")).join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=`${report.value}-${new Date().toISOString().slice(0,10)}.csv`;link.click();URL.revokeObjectURL(link.href);}
 watch(report,load);onMounted(()=>Promise.all([loadOptions(),load()]));
 </script>
 
 <template><section class="page report-page"><ListPageHeader :title="config.title"><template #actions><button class="button button-secondary" @click="exportCsv">Экспорт CSV</button></template></ListPageHeader>
 <SmartFilterBar :key="report" :model-value="filters" :fields="filterFields" :view-key="`warehouse.${report}`" @update:model-value="Object.assign(filters,$event)" @apply="load" @reset="load" />
-<SmartDataTable :rows="rows" :columns="columns" :totals="totals" :view-key="`warehouse.${report}`" :loading="loading" :error="error" empty-title="Движений пока нет" empty-text="Проведите складской документ или измените фильтры." @retry="load" /></section></template>
+<SmartDataTable :rows="rows" :columns="columns" :totals="totals" :view-key="`warehouse.${report}`" :loading="loading" :error="error" empty-title="Движений пока нет" empty-text="Проведите складской документ или измените фильтры." @retry="load" @open="openMovements" /></section></template>

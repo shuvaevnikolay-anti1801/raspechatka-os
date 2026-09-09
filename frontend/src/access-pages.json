@@ -52,7 +52,8 @@
       { "area": "page.warehouse.inventories", "label": "Инвентаризации", "route": "/warehouse/inventories", "legacy_area": "warehouse.operations", "order": 30 },
       { "area": "page.warehouse.purchase_orders", "label": "Заказы поставщикам", "route": "/warehouse/purchase-orders", "legacy_area": "warehouse.operations", "order": 40 },
       { "area": "page.warehouse.balances", "label": "Остатки", "route": "/warehouse/balances", "legacy_area": "warehouse.operations", "order": 50 },
-      { "area": "page.warehouse.turnover", "label": "Обороты", "route": "/warehouse/turnover", "legacy_area": "warehouse.operations", "order": 60 }
+      { "area": "page.warehouse.turnover", "label": "Обороты", "route": "/warehouse/turnover", "legacy_area": "warehouse.operations", "order": 60 },
+      { "area": "page.warehouse.movements", "label": "Движения товаров", "route": "/warehouse/movements", "legacy_area": "warehouse.operations", "order": 70 }
     ]
   },
   {
