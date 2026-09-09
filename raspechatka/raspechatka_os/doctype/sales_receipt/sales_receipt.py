@@ -70,6 +70,7 @@ class SalesReceipt(Document):
 			as_dict=True,
 		)
 		gross = discount = cost = 0
+		source_lines = self._source_lines()
 		for row in self.items:
 			item = frappe.db.get_value(
 				"Catalog Item",
@@ -88,9 +89,14 @@ class SalesReceipt(Document):
 				frappe.throw(_("В чеке есть неактивная или неизвестная позиция"))
 			if flt(row.quantity) <= 0 or flt(row.unit_price) < 0:
 				frappe.throw(_("Количество должно быть больше нуля, цена не может быть отрицательной"))
+			source_name = (
+				(source_lines[row.idx - 1].get("name") or "").strip()
+				if row.idx and row.idx <= len(source_lines)
+				else ""
+			)
 			row.item_code, row.item_name, row.uom = (
 				item.item_code,
-				item.item_name,
+				source_name or item.item_name,
 				row.uom or item.stock_uom,
 			)
 			row.gross_amount = flt(row.quantity) * flt(row.unit_price)
@@ -190,6 +196,8 @@ class SalesReceipt(Document):
 			self._create_stock_entries(False)
 			self._create_profitability(False)
 			self._create_client_purchase()
+			if self.receipt_type == "Return":
+				self._sync_client_purchase_return(include_self=True)
 		from raspechatka.sales import log_cashier_action, update_shift_totals
 
 		log_cashier_action(self, "SALE" if self.receipt_type == "Sale" else "RETURN")
@@ -210,6 +218,8 @@ class SalesReceipt(Document):
 				1,
 				update_modified=False,
 			)
+		else:
+			self._sync_client_purchase_return(include_self=False)
 		from raspechatka.sales import log_cashier_action, update_shift_totals
 
 		log_cashier_action(self, "CANCEL_RECEIPT")
@@ -449,5 +459,70 @@ class SalesReceipt(Document):
 			self.discount_amount,
 			self.total_amount,
 		)
+		payload = self._source_payload()
+		purchase.receipt_number = payload.get("fiscalNumber") or self.external_id or self.name
+		purchase.loyalty_discount_percent = flt(payload.get("receiptDiscountPercent"))
 		purchase.promo_code, purchase.campaign = self.promo_code, self.campaign
+		for row in self.items:
+			purchase.append(
+				"items",
+				{
+					"item": row.item,
+					"item_name": row.item_name,
+					"quantity": row.quantity,
+					"rate": row.unit_price,
+					"amount": row.line_total,
+				},
+			)
 		purchase.insert(ignore_permissions=True)
+
+	def _sync_client_purchase_return(self, include_self):
+		purchase_name = frappe.db.get_value(
+			"Client Purchase",
+			{"source_document": self.original_receipt},
+			"name",
+		)
+		if not purchase_name:
+			return
+		return_names = frappe.get_all(
+			"Sales Receipt",
+			filters={
+				"original_receipt": self.original_receipt,
+				"receipt_type": "Return",
+				"docstatus": 1,
+				"name": ["!=", self.name or ""],
+			},
+			pluck="name",
+		)
+		returned_amount = sum(
+			flt(value)
+			for value in frappe.get_all(
+				"Sales Receipt",
+				filters={"name": ["in", return_names or ["__none__"]]},
+				pluck="total_amount",
+			)
+		)
+		if include_self:
+			returned_amount += flt(self.total_amount)
+		purchase = frappe.get_doc("Client Purchase", purchase_name)
+		purchase.returned_amount = min(flt(purchase.net_amount), returned_amount)
+		purchase.status = (
+			"Returned"
+			if purchase.returned_amount >= flt(purchase.net_amount) - 0.01
+			else "Partially Returned"
+			if purchase.returned_amount > 0
+			else "Completed"
+		)
+		purchase.cancelled = 1 if purchase.status == "Returned" else 0
+		purchase.save(ignore_permissions=True)
+
+	def _source_payload(self):
+		if not self.source_payload_json:
+			return {}
+		try:
+			return frappe.parse_json(self.source_payload_json) or {}
+		except (TypeError, ValueError):
+			return {}
+
+	def _source_lines(self):
+		return self._source_payload().get("lines") or []

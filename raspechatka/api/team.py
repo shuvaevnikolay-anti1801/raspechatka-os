@@ -122,10 +122,10 @@ def get_team_overview(business_point=None, month=None):
 
 	shift_templates = frappe.get_all(
 		"Shift Template",
-		filters={"active": 1},
+		filters={"active": 1, "shift_code": ["in", ["U", "V"]]},
 		fields=["name", "shift_code", "shift_name", "start_time", "end_time", "paid_hours"],
 		order_by="start_time asc",
-		limit_page_length=100,
+		limit_page_length=2,
 	)
 
 	return {
@@ -156,7 +156,7 @@ def get_schedule(business_point, month=None):
 		"name",
 	)
 	if not name:
-		return {"name": None, "month": str(month), "days": monthrange(month.year, month.month)[1], "entries": []}
+		return {"name": None, "month": str(month), "today": str(getdate()), "days": monthrange(month.year, month.month)[1], "entries": []}
 	doc = frappe.get_doc("Work Schedule", name)
 	period_start = get_datetime(f"{month} 00:00:00")
 	period_end = get_datetime(f"{month.replace(day=monthrange(month.year, month.month)[1])} 23:59:59")
@@ -176,6 +176,7 @@ def get_schedule(business_point, month=None):
 		"business_point": doc.business_point,
 		"month": str(doc.month),
 		"status": doc.status,
+		"today": str(getdate()),
 		"days": monthrange(month.year, month.month)[1],
 		"entries": [
 			dict({
@@ -480,30 +481,98 @@ def save_schedule(business_point, month, entries=None, publish=0):
 	entries = frappe.parse_json(entries) if isinstance(entries, str) else (entries or [])
 	name = frappe.db.get_value("Work Schedule", {"business_point": business_point, "month": month}, "name")
 	doc = frappe.get_doc("Work Schedule", name) if name else frappe.new_doc("Work Schedule")
+	today = getdate()
+	month_end = month.replace(day=monthrange(month.year, month.month)[1])
+	if month_end < today:
+		frappe.throw(_("Прошедший график изменять нельзя"))
+
+	existing_past_entries = []
+	existing_past_assignments = set()
+	if name:
+		for row in doc.entries:
+			work_date = getdate(row.work_date)
+			if work_date < today:
+				existing_past_assignments.add((str(work_date), row.employee, row.shift_template))
+				existing_past_entries.append({
+					"work_date": work_date,
+					"employee": row.employee,
+					"shift_template": row.shift_template,
+					"start_time": row.start_time,
+					"end_time": row.end_time,
+					"planned_hours": row.planned_hours,
+					"notes": row.notes,
+				})
+
 	doc.business_point = business_point
 	doc.business_entity = frappe.db.get_value("Business Point", business_point, "business_entity")
 	doc.month = month
-	doc.entries = []
-	seen = set()
+	base_templates = frappe.get_all(
+		"Shift Template",
+		filters={"active": 1, "shift_code": ["in", ["U", "V"]]},
+		fields=["name", "shift_code", "start_time", "end_time", "paid_hours"],
+		order_by="start_time asc",
+		limit_page_length=2,
+	)
+	if len(base_templates) < 2:
+		frappe.throw(_("Для графика должны быть настроены две активные смены: утро и вечер"))
+	templates = {row.name: row for row in base_templates}
+	allowed_employees = set(frappe.get_all(
+		"Employee Point Assignment",
+		filters={"business_point": business_point},
+		pluck="parent",
+		limit_page_length=1000,
+	))
+	seen_slots = set()
+	requested_past_assignments = set()
+	editable_entries = []
 	for item in entries:
 		work_date = getdate(item.get("date") or item.get("work_date"))
 		if work_date.year != month.year or work_date.month != month.month:
 			frappe.throw(_("Дата смены должна входить в выбранный месяц"))
-		key = (str(work_date), item.get("employee"))
-		if key in seen:
-			frappe.throw(_("У сотрудника не может быть две плановые смены в один день"))
-		seen.add(key)
-		template = frappe.get_doc("Shift Template", item.get("shift_template"))
-		doc.append("entries", {
+		employee = item.get("employee")
+		template_name = item.get("shift_template")
+		if work_date < today:
+			key = (str(work_date), template_name)
+			if key in seen_slots:
+				frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
+			seen_slots.add(key)
+			requested_past_assignments.add((str(work_date), employee, template_name))
+			continue
+		if employee not in allowed_employees:
+			frappe.throw(_("Сотрудник не назначен на выбранную точку"))
+		template = templates.get(template_name)
+		if not template:
+			frappe.throw(_("В графике можно использовать только базовые смены «утро» и «вечер»"))
+		key = (str(work_date), template.name)
+		if key in seen_slots:
+			frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
+		seen_slots.add(key)
+		editable_entries.append({
 			"work_date": work_date,
-			"employee": item.get("employee"),
+			"employee": employee,
 			"shift_template": template.name,
 			"start_time": template.start_time,
 			"end_time": template.end_time,
 			"planned_hours": template.paid_hours,
 			"notes": item.get("notes"),
 		})
+
+	if requested_past_assignments != existing_past_assignments:
+		frappe.throw(_("Прошедшие смены изменять нельзя"))
+
+	doc.entries = []
+	for item in existing_past_entries + editable_entries:
+		doc.append("entries", item)
 	if cint(publish):
+		last_day = monthrange(month.year, month.month)[1]
+		missing = []
+		for day in range(1, last_day + 1):
+			work_date = month.replace(day=day)
+			for template in base_templates:
+				if (str(work_date), template.name) not in seen_slots:
+					missing.append(f"{day}: {template.shift_code}")
+		if missing:
+			frappe.throw(_("Нельзя опубликовать неполный график. Не назначены смены: {0}").format(", ".join(missing[:20])))
 		doc.status = "Published"
 		doc.published_at = now_datetime()
 	elif not doc.status:
@@ -1044,4 +1113,5 @@ def create_default_payroll_components(business_point, position):
 		}).insert(ignore_permissions=True)
 		created += 1
 	return {"created": created}
+
 
