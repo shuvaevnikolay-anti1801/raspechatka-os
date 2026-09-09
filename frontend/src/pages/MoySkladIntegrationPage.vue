@@ -10,6 +10,7 @@ const settings = ref({});
 const form = reactive({ access_token: "" });
 const preview = ref(null);
 const salesSync = ref({ points: [], stats: {} });
+const stockHistory = ref({ preview: null });
 const sourceStores = ref([]);
 const openingStock = ref({ warehouses: [], documents: [] });
 const stockSources = ref([]);
@@ -28,14 +29,16 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [base, sales, stock] = await Promise.all([
+    const [base, sales, stock, history] = await Promise.all([
       call("raspechatka.api.moysklad.get_settings"),
       call("raspechatka.api.moysklad_sales.get_sales_sync_settings"),
       call("raspechatka.api.moysklad_stock.get_opening_stock_settings"),
+      call("raspechatka.api.moysklad_stock_history.get_stock_history_settings"),
     ]);
     applySettings(base);
     salesSync.value = sales || { points: [], stats: {} };
     openingStock.value = stock || { warehouses: [], documents: [] };
+    stockHistory.value = history || { preview: null };
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -305,6 +308,30 @@ async function importOpeningStock() {
       ? "Начальные остатки уже были перенесены"
       : `Создано инвентаризаций: ${result.documents.length}`;
     await load();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function auditStockHistory() {
+  busy.value = "audit-stock-history";
+  error.value = "";
+  notice.value = "";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock_history.audit_stock_history",
+      {},
+      { method: "POST" }
+    );
+    stockHistory.value = {
+      ...stockHistory.value,
+      status: "Audited",
+      last_audit_at: result.audited_at,
+      preview: result,
+    };
+    notice.value = `Проверено складских документов: ${result.totals?.documents || 0}. Рабочие данные не изменялись.`;
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -630,6 +657,91 @@ onUnmounted(() => window.clearInterval(statusTimer));
         </section>
 
         <p v-if="salesSync.error" class="last-error">{{ salesSync.error }}</p>
+      </article>
+
+      <article class="preview-card sales-sync-card">
+        <div class="card-heading">
+          <div>
+            <h2>Складская история МоегоСклада</h2>
+            <p>
+              Проверка всех движений с 1 июля 2026 года перед переносом истории.
+            </p>
+          </div>
+          <span
+            class="connection-status"
+            :class="{
+              connected: stockHistory.status === 'Audited',
+              error: stockHistory.status === 'Error',
+            }"
+          >
+            <span></span>{{ stockHistory.status || "Idle" }}
+          </span>
+        </div>
+
+        <div class="button-row">
+          <button
+            class="button button-primary"
+            :disabled="Boolean(busy)"
+            @click="auditStockHistory"
+          >
+            {{
+              busy === "audit-stock-history"
+                ? "Проверяем документы…"
+                : "Проверить складскую историю"
+            }}
+          </button>
+        </div>
+        <p class="field-hint">
+          Проверка ничего не создаёт и не проводит. Она определяет фактический
+          состав истории и готовность сопоставлений.
+        </p>
+
+        <template v-if="stockHistory.preview">
+          <dl class="sync-summary">
+            <div>
+              <dt>Документов</dt>
+              <dd>{{ stockHistory.preview.totals?.documents || 0 }}</dd>
+            </div>
+            <div>
+              <dt>Товарных строк</dt>
+              <dd>{{ stockHistory.preview.totals?.positions || 0 }}</dd>
+            </div>
+            <div>
+              <dt>Сопоставлен склад</dt>
+              <dd>
+                {{ stockHistory.preview.totals?.mapped_store_documents || 0 }}
+              </dd>
+            </div>
+            <div>
+              <dt>Требуют сопоставления</dt>
+              <dd>
+                {{
+                  (stockHistory.preview.totals?.unmapped_store_documents ||
+                    0) +
+                  (stockHistory.preview.totals?.missing_store_documents || 0)
+                }}
+              </dd>
+            </div>
+          </dl>
+          <div class="source-list">
+            <div
+              v-for="source in stockHistory.preview.documents"
+              :key="source.key"
+              class="source-row"
+            >
+              <div>
+                <strong>{{ source.label }}</strong>
+                <small v-if="!source.available">{{ source.error }}</small>
+                <small v-else
+                  >{{ source.positions }} строк ·
+                  {{ source.not_applicable }} не проведено</small
+                >
+              </div>
+              <strong>{{ source.documents }}</strong>
+            </div>
+          </div>
+        </template>
+        <p v-if="stockHistory.error" class="last-error">{{ stockHistory.error }}</p>
       </article>
 
       <article class="preview-card sales-sync-card">
