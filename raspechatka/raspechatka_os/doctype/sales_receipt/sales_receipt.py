@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, get_datetime, now_datetime
+
 from raspechatka.stock import (
 	get_average_rate,
 	make_ledger_entry,
@@ -231,9 +232,7 @@ class SalesReceipt(Document):
 				rate = (
 					flt(material["valuation_rate"])
 					if material.get("valuation_rate") is not None
-					else get_average_rate(
-						material["material"], self.warehouse, self.posting_datetime
-					)
+					else get_average_rate(material["material"], self.warehouse, self.posting_datetime)
 				)
 				amount = flt(material["quantity"]) * rate
 				self.append(
@@ -289,9 +288,7 @@ class SalesReceipt(Document):
 					"source_type": "Original Sale",
 					"effective_from": source.effective_from,
 				}
-			result[key]["quantity"] += (
-				flt(source.quantity) / original_quantity * return_quantity
-			)
+			result[key]["quantity"] += flt(source.quantity) / original_quantity * return_quantity
 		return list(result.values())
 
 	def _bundle_materials(self, bundle, sale_quantity):
@@ -350,9 +347,7 @@ class SalesReceipt(Document):
 			result.append(
 				{
 					"material": recipe.material,
-					"quantity": sale_quantity
-					* flt(recipe.quantity)
-					* (1 + flt(recipe.loss_percent) / 100),
+					"quantity": sale_quantity * flt(recipe.quantity) * (1 + flt(recipe.loss_percent) / 100),
 					"uom": recipe.uom,
 					"source_type": "Recipe",
 					"effective_from": recipe.effective_from,
@@ -386,8 +381,7 @@ class SalesReceipt(Document):
 				sign * flt(row.cost_amount),
 				reversal=reversal,
 				valuation_source=(
-					"Original sale cost" if self.receipt_type == "Return"
-					else "Warehouse weighted average"
+					"Original sale cost" if self.receipt_type == "Return" else "Warehouse weighted average"
 				),
 			)
 		for row in self.consumed_materials:
