@@ -473,8 +473,8 @@ def _employee_name_map(employee_ids):
 
 
 @frappe.whitelist()
-def save_schedule(business_point, month, entries=None, publish=0):
-	"""Create or update a monthly schedule. Entries are [{date, employee, shift_template}]."""
+def save_schedule(business_point, month, entries=None, publish=0, allow_past=0):
+	"""Save the current monthly schedule. Entries are [{date, employee, shift_template}]."""
 	require_access("team.schedule", "write")
 	_scope_point(business_point)
 	month = getdate(month).replace(day=1)
@@ -483,12 +483,13 @@ def save_schedule(business_point, month, entries=None, publish=0):
 	doc = frappe.get_doc("Work Schedule", name) if name else frappe.new_doc("Work Schedule")
 	today = getdate()
 	month_end = month.replace(day=monthrange(month.year, month.month)[1])
-	if month_end < today:
+	allow_past = bool(cint(allow_past))
+	if month_end < today and not allow_past:
 		frappe.throw(_("Прошедший график изменять нельзя"))
 
 	existing_past_entries = []
 	existing_past_assignments = set()
-	if name:
+	if name and not allow_past:
 		for row in doc.entries:
 			work_date = getdate(row.work_date)
 			if work_date < today:
@@ -531,7 +532,7 @@ def save_schedule(business_point, month, entries=None, publish=0):
 			frappe.throw(_("Дата смены должна входить в выбранный месяц"))
 		employee = item.get("employee")
 		template_name = item.get("shift_template")
-		if work_date < today:
+		if work_date < today and not allow_past:
 			key = (str(work_date), template_name)
 			if key in seen_slots:
 				frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
@@ -557,26 +558,14 @@ def save_schedule(business_point, month, entries=None, publish=0):
 			"notes": item.get("notes"),
 		})
 
-	if requested_past_assignments != existing_past_assignments:
+	if not allow_past and requested_past_assignments != existing_past_assignments:
 		frappe.throw(_("Прошедшие смены изменять нельзя"))
 
 	doc.entries = []
 	for item in existing_past_entries + editable_entries:
 		doc.append("entries", item)
-	if cint(publish):
-		last_day = monthrange(month.year, month.month)[1]
-		missing = []
-		for day in range(1, last_day + 1):
-			work_date = month.replace(day=day)
-			for template in base_templates:
-				if (str(work_date), template.name) not in seen_slots:
-					missing.append(f"{day}: {template.shift_code}")
-		if missing:
-			frappe.throw(_("Нельзя опубликовать неполный график. Не назначены смены: {0}").format(", ".join(missing[:20])))
-		doc.status = "Published"
-		doc.published_at = now_datetime()
-	elif not doc.status:
-		doc.status = "Draft"
+	doc.status = "Published"
+	doc.published_at = now_datetime()
 	doc.save(ignore_permissions=True)
 	return {"name": doc.name, "status": doc.status, "entries": len(doc.entries)}
 
