@@ -56,6 +56,8 @@
   "barcodes",
   "bundle_tab",
   "bundle_components",
+  "recipe_tab",
+  "recipe_components",
   "packaging_tab",
   "packaging",
   "relations_tab",
@@ -397,6 +399,19 @@
    "fieldtype": "Table",
    "label": "Компоненты",
    "options": "Catalog Bundle Component"
+  },
+  {
+   "fieldname": "recipe_tab",
+   "fieldtype": "Tab Break",
+   "label": "Технологическая карта",
+   "depends_on": "eval:doc.item_type=='Service'"
+  },
+  {
+   "fieldname": "recipe_components",
+   "fieldtype": "Table",
+   "label": "Нормы расхода материалов",
+   "options": "Catalog Recipe Component",
+   "depends_on": "eval:doc.item_type=='Service'"
   },
   {
    "fieldname": "packaging_tab",
