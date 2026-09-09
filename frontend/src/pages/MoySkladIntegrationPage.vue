@@ -16,6 +16,44 @@ const openingStock = ref({ warehouses: [], documents: [] });
 const stockSources = ref([]);
 let statusTimer;
 
+const stockHistoryErrors = computed(() =>
+  (stockHistory.value.stats?.errors || []).slice(0, 50)
+);
+
+function stockHistoryErrorReason(message) {
+  const value = String(message || "Неизвестная ошибка");
+  if (/negative|отрицатель|недостаточ|остат/i.test(value)) {
+    return "Недостаточный или отрицательный остаток";
+  }
+  if (/не сопостав|not mapped|catalog item|позици.*мойсклад/i.test(value)) {
+    return "Не сопоставлен товар";
+  }
+  if (/склад|warehouse|store/i.test(value)) {
+    return "Не сопоставлен или недоступен склад";
+  }
+  if (/поставщик|supplier|counterparty/i.test(value)) {
+    return "Не сопоставлен поставщик";
+  }
+  if (/duplicate|unique|дубликат/i.test(value)) {
+    return "Конфликт дубликатов";
+  }
+  if (/mandatory|required|обязатель/i.test(value)) {
+    return "Не заполнено обязательное поле";
+  }
+  return value;
+}
+
+const stockHistoryFailureSummary = computed(() => {
+  const counts = new Map();
+  for (const row of stockHistoryErrors.value) {
+    const reason = stockHistoryErrorReason(row.error);
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((left, right) => right.count - left.count);
+});
+
 const status = computed(
   () =>
     ({
@@ -788,8 +826,39 @@ onUnmounted(() => window.clearInterval(statusTimer));
           <div><dt>Оприходований</dt><dd>{{ stockHistory.stats.enter_created || 0 }}</dd></div>
           <div><dt>Списаний</dt><dd>{{ stockHistory.stats.loss_created || 0 }}</dd></div>
           <div><dt>Движений продаж</dt><dd>{{ stockHistory.stats.sales_stock_created || 0 }}</dd></div>
+          <div><dt>Движений возвратов</dt><dd>{{ stockHistory.stats.return_stock_created || 0 }}</dd></div>
           <div><dt>Ошибок</dt><dd>{{ stockHistory.stats.failed || 0 }}</dd></div>
         </dl>
+        <section v-if="stockHistoryErrors.length" class="stock-history-errors">
+          <h3>Ошибки первоначального переноса</h3>
+          <p>
+            Показаны {{ stockHistoryErrors.length }} сохранённых примеров из
+            {{ stockHistory.stats.failed || stockHistoryErrors.length }} ошибок.
+            Повторный импорт для просмотра не запускается.
+          </p>
+          <div class="stock-history-error-summary">
+            <div
+              v-for="item in stockHistoryFailureSummary"
+              :key="item.reason"
+              class="stock-history-error-reason"
+            >
+              <span>{{ item.reason }}</span><strong>{{ item.count }}</strong>
+            </div>
+          </div>
+          <div class="stock-history-error-list">
+            <div
+              v-for="(item, index) in stockHistoryErrors"
+              :key="`${item.type}-${item.id}-${index}`"
+              class="stock-history-error-row"
+            >
+              <div>
+                <span class="stock-history-error-type">{{ item.type || "—" }}</span>
+                <code>{{ item.id || "—" }}</code>
+              </div>
+              <p>{{ item.error || "Неизвестная ошибка" }}</p>
+            </div>
+          </div>
+        </section>
         <p v-if="stockHistory.error" class="last-error">{{ stockHistory.error }}</p>
       </article>
 
@@ -1191,6 +1260,80 @@ input[type="text"] {
   padding: 4px 0;
   color: #746b57;
   font-size: 12px;
+}
+.stock-history-errors {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #efc9c1;
+  border-radius: 11px;
+  background: #fff8f6;
+}
+.stock-history-errors h3 {
+  margin: 0 0 5px;
+  font-size: 15px;
+}
+.stock-history-errors > p {
+  margin: 0;
+  color: #78615c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.stock-history-error-summary {
+  margin-top: 14px;
+  border-top: 1px solid #efd8d3;
+}
+.stock-history-error-reason {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid #efd8d3;
+  font-size: 13px;
+}
+.stock-history-error-reason strong {
+  color: #ad4937;
+}
+.stock-history-error-list {
+  max-height: 520px;
+  margin-top: 16px;
+  overflow: auto;
+  border: 1px solid #efd8d3;
+  border-radius: 9px;
+  background: #fff;
+}
+.stock-history-error-row {
+  padding: 11px 13px;
+  border-bottom: 1px solid #f2e3df;
+}
+.stock-history-error-row:last-child {
+  border-bottom: 0;
+}
+.stock-history-error-row > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.stock-history-error-type {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f8dfd9;
+  color: #9d3f2e;
+  font-size: 11px;
+  font-weight: 700;
+}
+.stock-history-error-row code {
+  color: #766b68;
+  font-size: 11px;
+  word-break: break-all;
+}
+.stock-history-error-row p {
+  margin: 7px 0 0;
+  color: #493f3c;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .preview-time {
