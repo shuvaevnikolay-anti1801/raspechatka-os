@@ -54,24 +54,42 @@ class PurchaseOrder(Document):
 			"Supplier Payment Allocation",
 			{"purchase_order": self.name},
 		):
-			frappe.throw(
-				_("Перед отменой заказа удалите связи с платежами.")
-			)
+			frappe.throw(_("Перед отменой заказа удалите связи с платежами."))
 
 
 def update_received_quantities(order_name):
 	if not frappe.db.exists("Purchase Order", order_name):
 		return
 	order = frappe.get_doc("Purchase Order", order_name)
-	receipts = frappe.get_all("Stock Receipt", filters={"purchase_order": order_name, "docstatus": 1}, pluck="name")
+	receipts = frappe.get_all(
+		"Stock Receipt", filters={"purchase_order": order_name, "docstatus": 1}, pluck="name"
+	)
 	received = {}
 	if receipts:
-		for row in frappe.get_all("Stock Receipt Item", filters={"parent": ["in", receipts]}, fields=["purchase_order_item", "quantity"], limit_page_length=100000):
+		for row in frappe.get_all(
+			"Stock Receipt Item",
+			filters={"parent": ["in", receipts]},
+			fields=["purchase_order_item", "quantity"],
+			limit_page_length=100000,
+		):
 			if row.purchase_order_item:
-				received[row.purchase_order_item] = received.get(row.purchase_order_item, 0) + flt(row.quantity)
+				received[row.purchase_order_item] = received.get(row.purchase_order_item, 0) + flt(
+					row.quantity
+				)
 	total = 0
 	for row in order.items:
 		row.db_set("received_quantity", received.get(row.name, 0), update_modified=False)
 		total += received.get(row.name, 0)
-	status = "Принято" if order.total_quantity and total >= flt(order.total_quantity) else "Частично принято" if total else "Ожидается"
-	frappe.db.set_value("Purchase Order", order_name, {"received_quantity": total, "order_status": status}, update_modified=False)
+	status = (
+		"Принято"
+		if order.total_quantity and total >= flt(order.total_quantity)
+		else "Частично принято"
+		if total
+		else "Ожидается"
+	)
+	frappe.db.set_value(
+		"Purchase Order",
+		order_name,
+		{"received_quantity": total, "order_status": status},
+		update_modified=False,
+	)
