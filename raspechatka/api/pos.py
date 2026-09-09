@@ -4,7 +4,6 @@ import frappe
 from frappe.utils import flt, get_datetime, getdate, now, nowdate
 
 from raspechatka.pricing import resolve_item_price
-from raspechatka.stock import get_average_rate, make_ledger_entry
 
 
 @frappe.whitelist()
@@ -306,107 +305,216 @@ def _apply_order_updated(event_id, workplace, payload):
 
 
 def _apply_sale(event_id, workplace, payload):
-	sale_id = payload.get("id") or event_id
+	sale_id = str(payload.get("id") or event_id)
+	if frappe.db.exists("Sales Receipt", {"external_id": sale_id}):
+		return
+
+	posting_datetime = get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
+	doc = frappe.new_doc("Sales Receipt")
+	doc.external_id = sale_id
+	doc.receipt_type = "Sale"
+	doc.naming_series = "SALE-.YYYY.-.#####"
+	doc.posting_datetime = posting_datetime
+	doc.shift = shift.name
+	doc.business_entity = shift.business_entity
+	doc.business_point = shift.business_point
+	doc.warehouse = shift.warehouse
+	doc.cashier = shift.cashier
 	client = payload.get("customerId")
-	lines = payload.get("lines") or []
-	total = flt(payload.get("totalMinor")) / 100
-	gross = sum(flt(line.get("quantity")) * flt(line.get("unitPriceMinor")) / 100 for line in lines)
-	if client and frappe.db.exists("Client", client) and not frappe.db.exists("Client Purchase", {"source_document": sale_id}):
-		frappe.get_doc({
-			"doctype": "Client Purchase",
-			"purchase_datetime": get_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
-			"client": client,
-			"business_point": workplace.business_point,
-			"source_doctype": "POS Event",
-			"source_document": sale_id,
-			"receipt_number": payload.get("fiscalNumber"),
-			"gross_amount": gross,
-			"discount_amount": max(0, gross - total),
-			"net_amount": total,
-			"loyalty_discount_percent": flt(payload.get("receiptDiscountPercent")),
-			"returned_amount": 0,
-			"status": "Completed",
-			"items": [{
-				"item": line.get("productId") if frappe.db.exists("Catalog Item", line.get("productId")) else None,
-				"item_name": line.get("name"),
-				"quantity": flt(line.get("quantity")),
-				"rate": flt(line.get("unitPriceMinor")) / 100,
-				"amount": flt(line.get("quantity")) * flt(line.get("unitPriceMinor")) / 100,
-			} for line in lines],
-		}).insert(ignore_permissions=True)
-	_create_stock_entries(workplace, sale_id, "POS Sale", lines, multiplier=-1)
+	if client and frappe.db.exists("Client", client):
+		doc.client = client
+	doc.source = "POS"
+	doc.source_payload_json = frappe.as_json(payload, indent=2)
+	doc.comment = _receipt_comment(payload)
+	_append_legacy_receipt_lines(doc, payload)
+	_append_legacy_payments(doc, payload)
+	doc.insert(ignore_permissions=True)
+	doc.submit()
 
 
 def _apply_return(event_id, workplace, payload):
-	return_id = payload.get("id") or event_id
-	sale_id = payload.get("saleId")
-	total = flt(payload.get("totalMinor")) / 100
-	purchase_name = frappe.db.get_value("Client Purchase", {"source_document": sale_id}, "name")
-	if purchase_name:
-		purchase = frappe.get_doc("Client Purchase", purchase_name)
-		purchase.returned_amount = min(flt(purchase.net_amount), flt(purchase.returned_amount) + total)
-		purchase.status = "Returned" if purchase.returned_amount >= flt(purchase.net_amount) else "Partially Returned"
-		purchase.cancelled = 1 if purchase.status == "Returned" else 0
-		purchase.save(ignore_permissions=True)
-	_create_stock_entries(workplace, return_id, "POS Return", payload.get("lines") or [], multiplier=1)
+	return_id = str(payload.get("id") or event_id)
+	if frappe.db.exists("Sales Receipt", {"external_id": return_id}):
+		return
+
+	sale_id = str(payload.get("saleId") or "").strip()
+	original_receipt = frappe.db.get_value(
+		"Sales Receipt",
+		{"external_id": sale_id, "receipt_type": "Sale", "docstatus": 1},
+		"name",
+	)
+	if not original_receipt:
+		frappe.throw(f"Исходная продажа {sale_id or 'не указана'} не найдена")
+
+	posting_datetime = get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
+	doc = frappe.new_doc("Sales Receipt")
+	doc.external_id = return_id
+	doc.receipt_type = "Return"
+	doc.naming_series = "RETURN-.YYYY.-.#####"
+	doc.original_receipt = original_receipt
+	doc.posting_datetime = posting_datetime
+	doc.shift = shift.name
+	doc.business_entity = shift.business_entity
+	doc.business_point = shift.business_point
+	doc.warehouse = shift.warehouse
+	doc.cashier = shift.cashier
+	doc.source = "POS"
+	doc.source_payload_json = frappe.as_json(payload, indent=2)
+	doc.comment = _receipt_comment(payload)
+	_append_legacy_receipt_lines(doc, payload)
+	_append_legacy_payments(doc, payload)
+	doc.insert(ignore_permissions=True)
+	doc.submit()
 
 
-def _create_stock_entries(workplace, voucher_no, voucher_type, lines, multiplier):
+def _get_or_create_legacy_shift(workplace, external_id, posting_datetime):
+	external_id = f"legacy-pos:{workplace.name}:{external_id or posting_datetime.date()}"
+	name = frappe.db.get_value("Sales Shift", {"external_id": external_id}, "name")
+	if name:
+		return frappe.get_doc("Sales Shift", name)
+
+	point = frappe.db.get_value(
+		"Business Point",
+		workplace.business_point,
+		["business_entity", "active"],
+		as_dict=True,
+	)
+	if not point or not point.active:
+		frappe.throw("Точка кассы не найдена или отключена")
 	warehouse = frappe.db.get_value(
 		"Catalog Warehouse",
 		{"business_point": workplace.business_point, "active": 1},
 		"name",
 	)
 	if not warehouse:
-		return
-	document = frappe._dict(
-		doctype=voucher_type,
-		name=voucher_no,
-		warehouse=warehouse,
-		posting_datetime=now(),
-	)
-	for index, line in enumerate(lines, start=1):
-		item_name = line.get("productId")
-		item = (
-			frappe.db.get_value(
-				"Catalog Item",
-				item_name,
-				["item_type", "track_inventory"],
-				as_dict=True,
-			)
-			if item_name
-			else None
-		)
-		if not item or item.item_type not in {"Product", "Variant"} or not item.track_inventory:
-			continue
-		quantity = multiplier * flt(line.get("quantity"))
-		rate = get_average_rate(item_name, warehouse)
-		row = frappe._dict(
-			item=item_name,
-			name=f"{voucher_no}:{index}",
-			storage_location=frappe.db.get_value(
-				"Catalog Item Storage",
-				{"item": item_name, "warehouse": warehouse, "active": 1},
-				"storage_location",
-			),
-		)
-		make_ledger_entry(
-			document,
-			row,
-			quantity,
-			rate,
-			quantity * rate,
-			valuation_source="Warehouse weighted average",
+		frappe.throw("У точки нет активного склада")
+
+	employee = _get_employee()
+	cashier = employee.name if frappe.db.exists("Employee", employee.name) else None
+	shift = frappe.new_doc("Sales Shift")
+	shift.external_id = external_id
+	shift.status = "Open"
+	shift.opened_at = posting_datetime
+	shift.business_entity = point.business_entity
+	shift.business_point = workplace.business_point
+	shift.warehouse = warehouse
+	shift.cashier = cashier
+	shift.source = "POS"
+	shift.comment = "Автоматически создана для старого POS API"
+	shift.insert(ignore_permissions=True)
+	return shift
+
+
+def _append_legacy_receipt_lines(doc, payload):
+	lines = payload.get("lines") or []
+	if not lines:
+		frappe.throw("В чеке отсутствуют позиции")
+
+	target_total_minor = int(round(flt(payload.get("totalMinor"))))
+	gross_minor = [int(round(flt(row.get("quantity")) * flt(row.get("unitPriceMinor")))) for row in lines]
+	weights = []
+	for index, row in enumerate(lines):
+		if doc.receipt_type == "Return" and row.get("lineTotalMinor") is not None:
+			weights.append(max(0, int(round(flt(row.get("lineTotalMinor"))))))
+		else:
+			discount = max(0, min(flt(row.get("discountPercent")), 100))
+			weights.append(max(0, int(round(gross_minor[index] * (1 - discount / 100)))))
+	targets = _allocate_minor_amount(target_total_minor, weights)
+
+	for index, row in enumerate(lines):
+		quantity = flt(row.get("quantity"))
+		if quantity <= 0:
+			frappe.throw("Количество в строке чека должно быть больше нуля")
+		item = _resolve_legacy_pos_item(row)
+		line_total_minor = targets[index]
+		discount_minor = gross_minor[index] - line_total_minor
+		if discount_minor < 0:
+			frappe.throw("Сумма строки чека превышает её стоимость до скидки")
+		doc.append(
+			"items",
+			{
+				"item": item,
+				"quantity": quantity,
+				"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
+				"unit_price": flt(row.get("unitPriceMinor")) / 100,
+				"discount_amount": discount_minor / 100,
+				"storage_location": frappe.db.get_value(
+					"Catalog Item Storage",
+					{"item": item, "warehouse": doc.warehouse, "active": 1},
+					"storage_location",
+				),
+			},
 		)
 
 
-def _stock_rate(item_name, warehouse):
-	return flt(frappe.db.get_value(
-		"Stock Ledger Entry",
-		{"item": item_name, "warehouse": warehouse, "incoming_rate": [">", 0]},
-		"incoming_rate",
-		order_by="posting_datetime desc, creation desc",
-	) or 0)
+def _allocate_minor_amount(total, weights):
+	if total < 0:
+		frappe.throw("Сумма чека не может быть отрицательной")
+	weight_total = sum(weights)
+	if not weight_total:
+		if total:
+			frappe.throw("Нельзя распределить сумму чека по нулевым строкам")
+		return [0 for _weight in weights]
+	result = []
+	allocated = 0
+	for index, weight in enumerate(weights):
+		amount = total - allocated if index == len(weights) - 1 else int(round(total * weight / weight_total))
+		result.append(amount)
+		allocated += amount
+	return result
+
+
+def _resolve_legacy_pos_item(row):
+	item = str(row.get("productId") or "").strip()
+	if item and frappe.db.exists("Catalog Item", item):
+		return item
+	if not item.startswith("free-"):
+		frappe.throw(f"Позиция кассы {item or row.get('name') or 'без ID'} не найдена в каталоге")
+
+	generic = "POS-FREE-PRICE"
+	if frappe.db.exists("Catalog Item", generic):
+		return generic
+	if not frappe.db.exists("Catalog Unit", "шт"):
+		frappe.throw("Для свободной позиции требуется активная единица измерения «шт»")
+	frappe.get_doc(
+		{
+			"doctype": "Catalog Item",
+			"item_code": generic,
+			"item_name": "Свободная позиция POS",
+			"item_type": "Service",
+			"stock_uom": "шт",
+			"active": 1,
+			"external_code": "legacy-pos-free-price",
+		}
+	).insert(ignore_permissions=True)
+	return generic
+
+
+def _append_legacy_payments(doc, payload):
+	payments = payload.get("payments") or []
+	if not payments:
+		method = payload.get("paymentMethod")
+		payments = [{"method": method, "amountMinor": payload.get("totalMinor")}]
+	channels = {"cash": "Cash", "card": "Card", "qr": "QR"}
+	for payment in payments:
+		channel = channels.get(str(payment.get("method") or "").lower())
+		if not channel:
+			frappe.throw(f"Неизвестный способ оплаты {payment.get('method')}")
+		doc.append(
+			"payments",
+			{
+				"payment_channel": channel,
+				"amount": flt(payment.get("amountMinor")) / 100,
+				"external_payment_id": payment.get("transactionId"),
+			},
+		)
+
+
+def _receipt_comment(payload):
+	fiscal_number = str(payload.get("fiscalNumber") or "").strip()
+	return f"Фискальный чек: {fiscal_number}" if fiscal_number else None
 
 
 def _get_workplace_data(employee, point, workplace):
