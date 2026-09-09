@@ -22,7 +22,10 @@ const stockHistoryErrors = computed(() =>
 
 function stockHistoryErrorReason(message) {
   const value = String(message || "Неизвестная ошибка");
-  if (/negative|отрицатель|недостаточ|остат/i.test(value)) {
+  if (/складской документ можно добавить только/i.test(value)) {
+    return "Товар неактивен или не ведёт складской учёт";
+  }
+  if (/negative|отрицатель|недостаточ/i.test(value)) {
     return "Недостаточный или отрицательный остаток";
   }
   if (/не сопостав|not mapped|catalog item|позици.*мойсклад/i.test(value)) {
