@@ -6,7 +6,7 @@ from raspechatka.access import get_scope, require_access
 
 
 @frappe.whitelist()
-def get_receipts(search=None, receipt_type=None, status=None, business_point=None):
+def get_receipts(\n\tsearch=None,\n\treceipt_type=None,\n\tstatus=None,\n\tbusiness_point=None,\n\tlimit_start=0,\n\tlimit_page_length=25,\n):
 	require_access("page.warehouse.receipts", "read")
 	filters = _receipt_scope_filters()
 	if receipt_type:
@@ -20,14 +20,20 @@ def get_receipts(search=None, receipt_type=None, status=None, business_point=Non
 	if search:
 		value = f"%{search.strip()}%"
 		or_filters = {"name": ["like", value], "supplier": ["like", value], "supplier_document_number": ["like", value]}
-	return frappe.get_all(
-		"Stock Receipt",
-		filters=filters,
-		or_filters=or_filters,
-		fields=["name", "receipt_type", "posting_datetime", "business_entity", "business_point", "warehouse", "supplier", "total_quantity", "total_amount", "docstatus", "modified"],
-		order_by="posting_datetime desc",
-		limit_page_length=500,
-	)
+	page_length = min(max(cint(limit_page_length or 25), 1), 100)
+	start = max(cint(limit_start or 0), 0)
+	return {
+		"rows": frappe.get_all(
+			"Stock Receipt",
+			filters=filters,
+			or_filters=or_filters,
+			fields=["name", "receipt_type", "posting_datetime", "business_entity", "business_point", "warehouse", "supplier", "total_quantity", "total_amount", "docstatus", "modified"],
+			order_by="posting_datetime desc, creation desc",
+			limit_start=start,
+			limit_page_length=page_length,
+		),
+		"total": frappe.db.count("Stock Receipt", filters=filters, or_filters=or_filters),
+	}
 
 
 @frappe.whitelist()
