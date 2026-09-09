@@ -328,7 +328,6 @@ class SalesReceipt(Document):
 				"material",
 				"quantity",
 				"uom",
-				"loss_percent",
 				"effective_from",
 				"business_point",
 			],
@@ -347,7 +346,7 @@ class SalesReceipt(Document):
 			result.append(
 				{
 					"material": recipe.material,
-					"quantity": sale_quantity * flt(recipe.quantity) * (1 + flt(recipe.loss_percent) / 100),
+					"quantity": sale_quantity * flt(recipe.quantity),
 					"uom": recipe.uom,
 					"source_type": "Recipe",
 					"effective_from": recipe.effective_from,
