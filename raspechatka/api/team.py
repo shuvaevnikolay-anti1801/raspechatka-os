@@ -484,19 +484,40 @@ def save_schedule(business_point, month, entries=None, publish=0):
 	doc.business_entity = frappe.db.get_value("Business Point", business_point, "business_entity")
 	doc.month = month
 	doc.entries = []
-	seen = set()
+	base_templates = frappe.get_all(
+		"Shift Template",
+		filters={"active": 1},
+		fields=["name", "shift_code", "start_time", "end_time", "paid_hours"],
+		order_by="start_time asc",
+		limit_page_length=2,
+	)
+	if len(base_templates) < 2:
+		frappe.throw(_("Для графика должны быть настроены две активные смены: утро и вечер"))
+	templates = {row.name: row for row in base_templates}
+	allowed_employees = set(frappe.get_all(
+		"Employee Point Assignment",
+		filters={"business_point": business_point},
+		pluck="parent",
+		limit_page_length=1000,
+	))
+	seen_slots = set()
 	for item in entries:
 		work_date = getdate(item.get("date") or item.get("work_date"))
 		if work_date.year != month.year or work_date.month != month.month:
 			frappe.throw(_("Дата смены должна входить в выбранный месяц"))
-		key = (str(work_date), item.get("employee"))
-		if key in seen:
-			frappe.throw(_("У сотрудника не может быть две плановые смены в один день"))
-		seen.add(key)
-		template = frappe.get_doc("Shift Template", item.get("shift_template"))
+		employee = item.get("employee")
+		if employee not in allowed_employees:
+			frappe.throw(_("Сотрудник не назначен на выбранную точку"))
+		template = templates.get(item.get("shift_template"))
+		if not template:
+			frappe.throw(_("В графике можно использовать только базовые смены «утро» и «вечер»"))
+		key = (str(work_date), template.name)
+		if key in seen_slots:
+			frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
+		seen_slots.add(key)
 		doc.append("entries", {
 			"work_date": work_date,
-			"employee": item.get("employee"),
+			"employee": employee,
 			"shift_template": template.name,
 			"start_time": template.start_time,
 			"end_time": template.end_time,
@@ -504,6 +525,15 @@ def save_schedule(business_point, month, entries=None, publish=0):
 			"notes": item.get("notes"),
 		})
 	if cint(publish):
+		last_day = monthrange(month.year, month.month)[1]
+		missing = []
+		for day in range(1, last_day + 1):
+			work_date = month.replace(day=day)
+			for template in base_templates:
+				if (str(work_date), template.name) not in seen_slots:
+					missing.append(f"{day}: {template.shift_code}")
+		if missing:
+			frappe.throw(_("Нельзя опубликовать неполный график. Не назначены смены: {0}").format(", ".join(missing[:20])))
 		doc.status = "Published"
 		doc.published_at = now_datetime()
 	elif not doc.status:
