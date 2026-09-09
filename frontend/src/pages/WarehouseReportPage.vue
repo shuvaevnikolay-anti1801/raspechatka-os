@@ -11,6 +11,9 @@ const router = useRouter();
 const report = computed(() => route.meta.report);
 const rows = ref([]),
 	totals = ref({}),
+	totalRows = ref(0),
+	currentPage = ref(1),
+	pageSize = ref(25),
 	loading = ref(true),
 	error = ref(""),
 	proposalLoading = ref(false);
@@ -129,7 +132,9 @@ const filterFields = computed(() => [
 	},
 ]);
 
-async function load() {
+async function load(page = 1, size = pageSize.value) {
+	currentPage.value = page;
+	pageSize.value = size;
 	loading.value = true;
 	error.value = "";
 	try {
@@ -138,6 +143,8 @@ async function load() {
 			warehouse: filters.warehouse,
 			catalog_group: filters.catalog_group,
 			search: filters.search,
+			limit_start: (page - 1) * size,
+			limit_page_length: size,
 		};
 		const isBalances = report.value === "balances";
 		const method = isBalances ? "get_stock_balances" : "get_stock_turnover";
@@ -145,7 +152,8 @@ async function load() {
 			? { ...common, as_of: filters.as_of }
 			: { ...common, from_date: filters.from_date, to_date: filters.to_date };
 		const result = await call(`raspechatka.api.warehouse_reports.${method}`, params);
-		rows.value = result.rows;
+		rows.value = result.rows || [];
+		totalRows.value = Number(result.total || 0);
 		totals.value = result.totals;
 	} catch (e) {
 		error.value = e.message;
@@ -224,7 +232,7 @@ function exportCsv() {
 	link.click();
 	URL.revokeObjectURL(link.href);
 }
-watch(report, load);
+watch(report, () => load(1));
 onMounted(() => Promise.all([loadOptions(), load()]));
 </script>
 
@@ -250,8 +258,8 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			:fields="filterFields"
 			:view-key="`warehouse.${report}`"
 			@update:model-value="Object.assign(filters, $event)"
-			@apply="load"
-			@reset="load"
+			@apply="load(1)"
+			@reset="load(1)"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -260,9 +268,14 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			:view-key="`warehouse.${report}`"
 			:loading="loading"
 			:error="error"
+			:server-pagination="true"
+			:total-rows="totalRows"
+			:current-page="currentPage"
 			empty-title="Движений пока нет"
 			empty-text="Проведите складской документ или измените фильтры."
-			@retry="load"
+			@retry="load(currentPage)"
+			@page-change="load"
+			@page-size-change="load(1, $event)"
 			@open="openMovements"
 		/>
 	</section>
