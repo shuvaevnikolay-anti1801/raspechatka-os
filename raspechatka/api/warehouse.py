@@ -6,7 +6,14 @@ from raspechatka.access import get_scope, require_access
 
 
 @frappe.whitelist()
-def get_receipts(\n\tsearch=None,\n\treceipt_type=None,\n\tstatus=None,\n\tbusiness_point=None,\n\tlimit_start=0,\n\tlimit_page_length=25,\n):
+def get_receipts(
+\tsearch=None,
+\treceipt_type=None,
+\tstatus=None,
+\tbusiness_point=None,
+\tlimit_start=0,
+\tlimit_page_length=25,
+):
 	require_access("page.warehouse.receipts", "read")
 	filters = _receipt_scope_filters()
 	if receipt_type:
@@ -32,7 +39,13 @@ def get_receipts(\n\tsearch=None,\n\treceipt_type=None,\n\tstatus=None,\n\tbusin
 			limit_start=start,
 			limit_page_length=page_length,
 		),
-		"total": frappe.get_all(\n			"Stock Receipt",\n			filters=filters,\n			or_filters=or_filters,\n			fields=["count(*) as total"],\n			limit_page_length=1,\n		)[0].total,
+		"total": frappe.get_all(
+			"Stock Receipt",
+			filters=filters,
+			or_filters=or_filters,
+			fields=["count(*) as total"],
+			limit_page_length=1,
+		)[0].total,
 	}
 
 
