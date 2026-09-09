@@ -59,7 +59,7 @@ def get_receipts(
 			"Stock Receipt",
 			filters=filters,
 			or_filters=or_filters,
-			fields=["count(*) as total"],
+			fields=[{"COUNT": "*", "as": "total"}],
 			limit_page_length=1,
 		)[0].total,
 	}
