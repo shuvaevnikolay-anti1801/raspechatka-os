@@ -15,7 +15,7 @@ const configs = {
   "purchase-orders": { title: "Заказы поставщикам", description: "Планирование поставок и контроль приёмки", create: "Создать заказ", singular: "Заказ поставщику", date: "order_date" },
 };
 const config = computed(() => configs[kind.value]);
-const rows = ref([]), loading = ref(true), error = ref(""), editorOpen = ref(false), saving = ref(false), formError = ref(""), paymentName = ref(""), paymentAmount = ref(0), linkingPayment = ref(false);
+const rows = ref([]), totalRows = ref(0), currentPage = ref(1), pageSize = ref(25), loading = ref(true), error = ref(""), editorOpen = ref(false), saving = ref(false), formError = ref(""), paymentName = ref(""), paymentAmount = ref(0), linkingPayment = ref(false);
 const filters = ref({ search: "", status: "", business_point: "" });
 const options = reactive({ entities: [], points: [], warehouses: [], suppliers: [], items: [], locations: [], storage_defaults: [] });
 const form = reactive({});
@@ -56,9 +56,10 @@ function statusLabel(value) { return value === 1 ? "Проведён" : value ==
 function pointLabel(name) { return options.points.find((row) => row.name === name)?.point_name || name; }
 function supplierLabel(name) { return options.suppliers.find((row) => row.name === name)?.supplier_name || name || "—"; }
 
-async function load() {
+async function load(page = 1, size = pageSize.value) {
+  currentPage.value = page; pageSize.value = size;
   loading.value = true; error.value = "";
-  try { rows.value = await call("raspechatka.api.warehouse_documents.get_documents", { kind: kind.value, ...filters.value }); }
+  try { const result = await call("raspechatka.api.warehouse_documents.get_documents", { kind: kind.value, ...filters.value, limit_start: (page - 1) * size, limit_page_length: size }); rows.value = result.rows || []; totalRows.value = Number(result.total || 0); }
   catch (e) { error.value = e.message; }
   finally { loading.value = false; }
 }
@@ -130,13 +131,13 @@ async function unlinkPayment(allocation) {
   } catch (e) { formError.value = e.message; }
   finally { linkingPayment.value = false; }
 }
-function resetPage() { editorOpen.value = false; filters.value = {search:"",status:"",business_point:""}; Promise.all([load(), loadOptions()]); }
+function resetPage() { editorOpen.value = false; filters.value = {search:"",status:"",business_point:""}; currentPage.value = 1; Promise.all([load(1), loadOptions()]); }
 watch(kind, resetPage); onMounted(() => Promise.all([load(), loadOptions()]));
 </script>
 
 <template><section class="page warehouse-page"><ListPageHeader :title="config.title"><template #actions><button v-if="canEdit" class="button button-primary" @click="openDocument()">＋ {{ config.create }}</button></template></ListPageHeader>
-<SmartFilterBar v-model="filters" :key="kind" :fields="filterFields" :view-key="`warehouse.${kind}`" @apply="load" @reset="load" />
-<SmartDataTable :rows="rows" :columns="listColumns" :totals="listTotals" :view-key="`warehouse.${kind}`" :loading="loading" :error="error" empty-title="Документов пока нет" :empty-text="config.create" @open="openDocument($event.name)" @retry="load"><template #cell-docstatus="{row}"><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></template></SmartDataTable>
+<SmartFilterBar v-model="filters" :key="kind" :fields="filterFields" :view-key="`warehouse.${kind}`" @apply="load(1)" @reset="load(1)" />
+<SmartDataTable :rows="rows" :columns="listColumns" :totals="listTotals" :view-key="`warehouse.${kind}`" :loading="loading" :error="error" :server-pagination="true" :total-rows="totalRows" :current-page="currentPage" @page-change="load" @page-size-change="load(1, $event)" empty-title="Документов пока нет" :empty-text="config.create" @open="openDocument($event.name)" @retry="load(currentPage)"><template #cell-docstatus="{row}"><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></template></SmartDataTable>
 <AppModal v-if="editorOpen" :title="`${config.singular}${form.name?' № '+form.name:''}`" wide @close="editorOpen=false"><form class="receipt-form" @submit.prevent="save()"><div class="document-strip"><span class="document-state" :class="`state-${form.docstatus}`">{{statusLabel(form.docstatus)}}</span><span>{{form.name||'Новый документ'}}</span><span v-if="kind==='purchase-orders'&&form.order_status">{{form.order_status}}</span></div><div class="form-section"><h3>Основное</h3><div class="form-grid">
 <label v-if="kind==='purchase-orders'">Дата заказа<input v-model="form.order_date" type="date" :disabled="form.docstatus!==0" required /></label><label v-else>Дата и время<input v-model="form.posting_datetime" type="datetime-local" :disabled="form.docstatus!==0" required /></label><label v-if="kind==='purchase-orders'">Ожидаемая дата<input v-model="form.expected_date" type="date" :disabled="form.docstatus!==0" /></label>
 <label>Юридическое лицо<select v-model="form.business_entity" :disabled="form.docstatus!==0" required @change="onEntityChange"><option value="">Не выбрано</option><option v-for="entity in options.entities" :key="entity.name" :value="entity.name">{{entity.short_name}}</option></select></label><label>Точка продаж<select v-model="form.business_point" :disabled="form.docstatus!==0" required @change="onPointChange"><option value="">Не выбрано</option><option v-for="point in visiblePoints" :key="point.name" :value="point.name">{{point.point_name}}</option></select></label><label>Склад<select v-model="form.warehouse" :disabled="form.docstatus!==0" required @change="refreshAddresses"><option value="">Не выбрано</option><option v-for="warehouse in visibleWarehouses" :key="warehouse.name" :value="warehouse.name">{{warehouse.warehouse_name}}</option></select></label>
