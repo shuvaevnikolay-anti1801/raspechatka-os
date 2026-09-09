@@ -764,8 +764,15 @@ def _inventory_value(as_of, business_entity=None, business_point=None):
 	if not warehouses:
 		return 0
 	end = datetime.combine(getdate(as_of), time.max)
-	values = frappe.get_all("Stock Ledger Entry", filters={"warehouse": ["in", warehouses], "posting_datetime": ["<=", end]}, pluck="stock_value_difference", limit_page_length=100000)
-	return sum(flt(value) for value in values)
+	placeholders = ", ".join(["%s"] * len(warehouses))
+	row = frappe.db.sql(
+		f"""select coalesce(sum(stock_value_difference), 0) as stock_value
+		from `tabStock Ledger Entry`
+		where warehouse in ({placeholders}) and posting_datetime <= %s""",
+		(*warehouses, end),
+		as_dict=True,
+	)[0]
+	return flt(row.stock_value)
 
 
 def _link_plan(transaction):
