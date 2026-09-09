@@ -57,7 +57,17 @@ class FinanceTransaction(Document):
 
 	def on_cancel(self):
 		self.db_set("status", "Cancelled")
+		from raspechatka.raspechatka_os.doctype.supplier_payment_allocation.supplier_payment_allocation import (
+			update_orders_for_payment,
+		)
+
+		update_orders_for_payment(self.name)
 
 	def on_trash(self):
 		if self.source in ("Tochka Bank", "Cash"):
 			frappe.throw(_("Платежи из банка и кассы нельзя удалять"))
+		if frappe.db.exists(
+			"Supplier Payment Allocation",
+			{"finance_transaction": self.name},
+		):
+			frappe.throw(_("Перед удалением платежа удалите его связи с заказами."))  # noqa: RUF001
