@@ -33,6 +33,13 @@ def get_finance_options():
 		"accounts": frappe.get_all("Business Bank Account", filters=account_filters, fields=["name", "bank_name", "settlement_account", "business_entity"], order_by="bank_name asc"),
 		"articles": frappe.get_all("Financial Article", filters={"active": 1, "is_group": 0}, fields=["name", "article_name", "article_type", "cash_flow_type", "include_in_pnl", "include_in_cash_flow"], order_by="article_type asc, article_name asc"),
 		"payment_methods": _get_payment_method_options(),
+		"suppliers": frappe.get_all(
+			"Catalog Supplier",
+			filters={"active": 1},
+			fields=["name", "supplier_name"],
+			order_by="supplier_name asc",
+			limit_page_length=0,
+		),
 		"cash_registers": frappe.get_all(
 			"Cash Register",
 			filters={"active": 1, "business_point": ["in", point_names or ["__none__"]]},
@@ -175,6 +182,17 @@ def create_cash_expense(data):
 	).insert(ignore_permissions=True)
 	movement.submit()
 	payment_method = frappe.db.get_value("Payment Method", {"method_name": ["like", "%налич%"], "active": 1}, "name")
+	supplier = data.get("supplier")
+	if supplier and not frappe.db.exists(
+		"Catalog Supplier",
+		{"name": supplier, "active": 1},
+	):
+		frappe.throw(_("Выберите активного поставщика"))  # noqa: RUF001
+	counterparty_name = (
+		frappe.db.get_value("Catalog Supplier", supplier, "supplier_name")
+		if supplier
+		else (data.get("counterparty_name") or "").strip()
+	)
 	transaction = frappe.get_doc(
 		{
 			"doctype": "Finance Transaction",
@@ -189,8 +207,9 @@ def create_cash_expense(data):
 			"business_point": point,
 			"financial_article": article_name,
 			"cash_flow_type": article.cash_flow_type or "Operating",
-			"counterparty_type": "Other",
-			"counterparty_name": (data.get("counterparty_name") or "").strip(),
+			"counterparty_type": "Supplier" if supplier else "Other",
+			"supplier": supplier,
+			"counterparty_name": counterparty_name,
 			"purpose": purpose,
 			"payment_method": payment_method,
 			"source": "Cash",
