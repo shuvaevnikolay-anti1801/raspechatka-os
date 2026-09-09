@@ -7,7 +7,6 @@ from raspechatka.access import get_scope, require_access
 from raspechatka.api.warehouse import _ensure_point, _ensure_supplier, _options
 from raspechatka.stock import get_average_rate, get_balance
 
-
 DOCUMENTS = {
 	"write-offs": {
 		"doctype": "Stock Write Off",
@@ -21,13 +20,29 @@ DOCUMENTS = {
 		"access_area": "page.warehouse.inventories",
 		"date_field": "posting_datetime",
 		"fields": ("posting_datetime", "business_entity", "business_point", "warehouse", "reason", "remarks"),
-		"item_fields": ("item", "uom", "storage_location", "book_quantity", "counted_quantity", "valuation_rate"),
+		"item_fields": (
+			"item",
+			"uom",
+			"storage_location",
+			"book_quantity",
+			"counted_quantity",
+			"valuation_rate",
+		),
 	},
 	"purchase-orders": {
 		"doctype": "Purchase Order",
 		"access_area": "page.warehouse.purchase_orders",
 		"date_field": "order_date",
-		"fields": ("order_date", "expected_date", "payment_due_date", "business_entity", "business_point", "warehouse", "supplier", "remarks"),
+		"fields": (
+			"order_date",
+			"expected_date",
+			"payment_due_date",
+			"business_entity",
+			"business_point",
+			"warehouse",
+			"supplier",
+			"remarks",
+		),
 		"item_fields": ("item", "uom", "quantity", "rate"),
 	},
 }
@@ -57,7 +72,18 @@ def get_documents(kind, search=None, status=None, business_point=None, limit_sta
 	elif kind == "inventories":
 		fields += ["reason", "total_lines", "surplus_amount", "shortage_amount"]
 	else:
-		fields += ["supplier", "expected_date", "payment_due_date", "order_status", "payment_status", "total_quantity", "received_quantity", "total_amount", "paid_amount", "outstanding_amount"]
+		fields += [
+			"supplier",
+			"expected_date",
+			"payment_due_date",
+			"order_status",
+			"payment_status",
+			"total_quantity",
+			"received_quantity",
+			"total_amount",
+			"paid_amount",
+			"outstanding_amount",
+		]
 	page_length = min(max(cint(limit_page_length or 25), 1), 100)
 	start = max(cint(limit_start or 0), 0)
 	return {
@@ -91,13 +117,23 @@ def get_document(kind, name=None):
 		if kind == "purchase-orders":
 			from raspechatka.api.supplier_settlements import get_payment_context
 
-			doc["related_receipts"] = frappe.get_all("Stock Receipt", filters={"purchase_order": name}, fields=["name", "posting_datetime", "total_quantity", "total_amount", "docstatus"], order_by="posting_datetime desc")
+			doc["related_receipts"] = frappe.get_all(
+				"Stock Receipt",
+				filters={"purchase_order": name},
+				fields=["name", "posting_datetime", "total_quantity", "total_amount", "docstatus"],
+				order_by="posting_datetime desc",
+			)
 			doc.update(get_payment_context(name))
 	else:
 		doc = {"docstatus": 0, "items": []}
 		if kind == "purchase-orders":
 			doc.update(
-				{"order_date": nowdate(), "payment_status": "Не оплачено", "paid_amount": 0, "outstanding_amount": 0}
+				{
+					"order_date": nowdate(),
+					"payment_status": "Не оплачено",
+					"paid_amount": 0,
+					"outstanding_amount": 0,
+				}
 			)
 		else:
 			doc["posting_datetime"] = now_datetime().strftime("%Y-%m-%dT%H:%M")
@@ -107,7 +143,9 @@ def get_document(kind, name=None):
 	if not name and options["points"]:
 		point = options["points"][0]
 		doc.update({"business_entity": point.business_entity, "business_point": point.name})
-		doc["warehouse"] = next((row.name for row in options["warehouses"] if row.business_point == point.name), None)
+		doc["warehouse"] = next(
+			(row.name for row in options["warehouses"] if row.business_point == point.name), None
+		)
 	return {"doc": doc, "options": options}
 
 
