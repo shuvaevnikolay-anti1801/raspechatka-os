@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -32,7 +33,7 @@ class PurchaseOrder(Document):
 		self.received_quantity = sum(flt(row.received_quantity) for row in self.items)
 		self.total_amount = sum(flt(row.amount) for row in self.items)
 		if self.payment_due_date and self.payment_due_date < self.order_date:
-			frappe.throw(_("Срок оплаты не может быть раньше даты заказа."))  # noqa: RUF001
+			frappe.throw(_("Срок оплаты не может быть раньше даты заказа."))
 		if self.docstatus == 0:
 			self.paid_amount = 0
 			self.outstanding_amount = self.total_amount
@@ -52,7 +53,7 @@ class PurchaseOrder(Document):
 			{"purchase_order": self.name},
 		):
 			frappe.throw(
-				_("Перед отменой заказа удалите связи с платежами.")  # noqa: RUF001
+				_("Перед отменой заказа удалите связи с платежами.")
 			)
 
 
