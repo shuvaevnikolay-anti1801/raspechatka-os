@@ -389,7 +389,7 @@ def _get_or_create_legacy_shift(workplace, external_id, posting_datetime):
 		"name",
 	)
 	if not warehouse:
-		frappe.throw("У точки нет активного склада")
+		frappe.throw("У точки нет активного склада")  # noqa: RUF001
 
 	employee = _get_employee()
 	cashier = employee.name if frappe.db.exists("Employee", employee.name) else None
@@ -410,17 +410,17 @@ def _get_or_create_legacy_shift(workplace, external_id, posting_datetime):
 def _append_legacy_receipt_lines(doc, payload):
 	lines = payload.get("lines") or []
 	if not lines:
-		frappe.throw("В чеке отсутствуют позиции")
+		frappe.throw("В чеке отсутствуют позиции")  # noqa: RUF001
 
-	target_total_minor = int(round(flt(payload.get("totalMinor"))))
-	gross_minor = [int(round(flt(row.get("quantity")) * flt(row.get("unitPriceMinor")))) for row in lines]
+	target_total_minor = round(flt(payload.get("totalMinor")))
+	gross_minor = [round(flt(row.get("quantity")) * flt(row.get("unitPriceMinor"))) for row in lines]
 	weights = []
 	for index, row in enumerate(lines):
 		if doc.receipt_type == "Return" and row.get("lineTotalMinor") is not None:
-			weights.append(max(0, int(round(flt(row.get("lineTotalMinor"))))))
+			weights.append(max(0, round(flt(row.get("lineTotalMinor")))))
 		else:
 			discount = max(0, min(flt(row.get("discountPercent")), 100))
-			weights.append(max(0, int(round(gross_minor[index] * (1 - discount / 100)))))
+			weights.append(max(0, round(gross_minor[index] * (1 - discount / 100))))
 	targets = _allocate_minor_amount(target_total_minor, weights)
 
 	for index, row in enumerate(lines):
@@ -460,7 +460,7 @@ def _allocate_minor_amount(total, weights):
 	result = []
 	allocated = 0
 	for index, weight in enumerate(weights):
-		amount = total - allocated if index == len(weights) - 1 else int(round(total * weight / weight_total))
+		amount = total - allocated if index == len(weights) - 1 else round(total * weight / weight_total)
 		result.append(amount)
 		allocated += amount
 	return result
