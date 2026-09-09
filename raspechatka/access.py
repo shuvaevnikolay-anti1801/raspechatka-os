@@ -106,7 +106,6 @@ def require_access(area_code, action="read"):
 	return level
 
 
-
 def require_any_access(area_codes, action="read"):
 	required = ACTION_LEVEL.get(action, 1)
 	if max((LEVELS.get(get_access_level(area), 0) for area in area_codes), default=0) < required:
