@@ -312,6 +312,7 @@ onMounted(async () => {
 			:current-page="currentPage"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
+			@ready="load(1, $event)"
 			empty-title="Документов пока нет"
 			empty-text="Создайте первую приёмку или оприходование"
 			@open="openReceipt($event.name)"
