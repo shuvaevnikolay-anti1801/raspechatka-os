@@ -26,7 +26,7 @@ DOCUMENTS = {
 		"doctype": "Purchase Order",
 		"access_area": "page.warehouse.purchase_orders",
 		"date_field": "order_date",
-		"fields": ("order_date", "expected_date", "business_entity", "business_point", "warehouse", "supplier", "payment_status", "remarks"),
+		"fields": ("order_date", "expected_date", "payment_due_date", "business_entity", "business_point", "warehouse", "supplier", "remarks"),
 		"item_fields": ("item", "uom", "quantity", "rate"),
 	},
 }
@@ -56,7 +56,7 @@ def get_documents(kind, search=None, status=None, business_point=None):
 	elif kind == "inventories":
 		fields += ["reason", "total_lines", "surplus_amount", "shortage_amount"]
 	else:
-		fields += ["supplier", "expected_date", "order_status", "payment_status", "total_quantity", "received_quantity", "total_amount"]
+		fields += ["supplier", "expected_date", "payment_due_date", "order_status", "payment_status", "total_quantity", "received_quantity", "total_amount", "paid_amount", "outstanding_amount"]
 	return frappe.get_all(config["doctype"], filters=filters, or_filters=or_filters, fields=fields, order_by=f"{config['date_field']} desc", limit_page_length=500)
 
 
@@ -69,11 +69,14 @@ def get_document(kind, name=None):
 			frappe.throw(_("Документ недоступен"), frappe.PermissionError)
 		doc = frappe.get_doc(config["doctype"], name).as_dict(no_nulls=False)
 		if kind == "purchase-orders":
+			from raspechatka.api.supplier_settlements import get_payment_context
+
 			doc["related_receipts"] = frappe.get_all("Stock Receipt", filters={"purchase_order": name}, fields=["name", "posting_datetime", "total_quantity", "total_amount", "docstatus"], order_by="posting_datetime desc")
+			doc.update(get_payment_context(name))
 	else:
 		doc = {"docstatus": 0, "items": []}
 		if kind == "purchase-orders":
-			doc.update({"order_date": nowdate(), "payment_status": "Не оплачено"})
+			doc.update({"order_date": nowdate(), "payment_status": "Не оплачено", "paid_amount": 0, "outstanding_amount": 0})
 		else:
 			doc["posting_datetime"] = now_datetime().strftime("%Y-%m-%dT%H:%M")
 		if kind == "inventories":
