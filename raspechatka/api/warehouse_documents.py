@@ -76,7 +76,9 @@ def get_document(kind, name=None):
 	else:
 		doc = {"docstatus": 0, "items": []}
 		if kind == "purchase-orders":
-			doc.update({"order_date": nowdate(), "payment_status": "Не оплачено", "paid_amount": 0, "outstanding_amount": 0})
+			doc.update(  # noqa: RUF001
+				{"order_date": nowdate(), "payment_status": "Не оплачено", "paid_amount": 0, "outstanding_amount": 0}
+			)
 		else:
 			doc["posting_datetime"] = now_datetime().strftime("%Y-%m-%dT%H:%M")
 		if kind == "inventories":
