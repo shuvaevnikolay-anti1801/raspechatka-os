@@ -213,9 +213,9 @@ class CatalogItem(Document):
 				frappe.throw(_("В технологической карте можно использовать только активный складской материал."))
 			if row.uom != material.stock_uom:
 				frappe.throw(_("Единица материала в технологической карте должна совпадать с его складской единицей."))
-			if not row.quantity or row.quantity <= 0:
+			if flt(row.quantity) <= 0:
 				frappe.throw(_("Норма расхода материала должна быть больше нуля."))
-			if row.loss_percent < 0 or row.loss_percent > 100:
+			if flt(row.loss_percent) < 0 or flt(row.loss_percent) > 100:
 				frappe.throw(_("Допустимые потери должны быть от 0 до 100%."))
 			if row.business_point and not frappe.db.exists(
 				"Business Point", {"name": row.business_point, "active": 1}
