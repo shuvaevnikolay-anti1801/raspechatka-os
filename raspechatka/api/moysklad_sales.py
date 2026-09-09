@@ -15,8 +15,6 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, now_datetime
 from raspechatka.access import require_access
-from raspechatka.sales import update_shift_totals
-
 from raspechatka.api.moysklad import (
 	MoySkladCatalogImportError,
 	MoySkladRequestError,
@@ -27,6 +25,7 @@ from raspechatka.api.moysklad import (
 	_sync_catalog,
 	_upsert_item,
 )
+from raspechatka.sales import update_shift_totals
 
 HISTORY_START = "2026-07-01"
 JOB_NAME = "raspechatka-moysklad-sales-sync"
@@ -125,6 +124,7 @@ def save_sales_sync_settings(data):
 def start_sales_sync(full=0):
 	require_access("settings.access", "admin")
 	return enqueue_sales_sync(full=bool(cint(full)))
+
 
 @frappe.whitelist(methods=["POST"])
 def start_sales_recovery():
@@ -413,7 +413,6 @@ def _upsert_shift(row, context):
 	doc.save(ignore_permissions=True)
 	stats["shifts_updated" if name else "shifts_created"] += 1
 	return doc.name
-
 
 
 def _resolve_catalog_item(position, context):
@@ -778,9 +777,7 @@ def _failure_summary(stats):
 			details = (stats or {}).get("other_failure_reasons") or {}
 			row["details"] = [
 				{"label": message, "count": detail_count}
-				for message, detail_count in sorted(
-					details.items(), key=lambda item: (-item[1], item[0])
-				)
+				for message, detail_count in sorted(details.items(), key=lambda item: (-item[1], item[0]))
 				if detail_count
 			]
 		summary.append(row)
