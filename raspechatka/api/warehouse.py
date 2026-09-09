@@ -7,7 +7,7 @@ from raspechatka.access import get_scope, require_access
 
 @frappe.whitelist()
 def get_receipts(search=None, receipt_type=None, status=None, business_point=None):
-	require_access("warehouse.operations", "read")
+	require_access("page.warehouse.receipts", "read")
 	filters = _receipt_scope_filters()
 	if receipt_type:
 		filters["receipt_type"] = receipt_type
@@ -32,7 +32,7 @@ def get_receipts(search=None, receipt_type=None, status=None, business_point=Non
 
 @frappe.whitelist()
 def get_receipt(name=None, receipt_type="Приёмка", purchase_order=None):
-	require_access("warehouse.operations", "read")
+	require_access("page.warehouse.receipts", "read")
 	options = _options()
 	if name:
 		if not frappe.db.exists("Stock Receipt", {"name": name, **_receipt_scope_filters()}):
@@ -62,7 +62,7 @@ def get_receipt(name=None, receipt_type="Приёмка", purchase_order=None):
 def save_receipt(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("warehouse.operations", "write" if name else "create")
+	require_access("page.warehouse.receipts", "write" if name else "create")
 	if name:
 		if not frappe.db.exists("Stock Receipt", {"name": name, "docstatus": 0, **_receipt_scope_filters()}):
 			frappe.throw(_("Изменять можно только доступный черновик."))
@@ -85,7 +85,7 @@ def save_receipt(data):
 
 @frappe.whitelist(methods=["POST"])
 def submit_receipt(name):
-	require_access("warehouse.operations", "write")
+	require_access("page.warehouse.receipts", "write")
 	_ensure_receipt(name, 0)
 	doc = frappe.get_doc("Stock Receipt", name)
 	doc.flags.ignore_permissions = True
@@ -95,7 +95,7 @@ def submit_receipt(name):
 
 @frappe.whitelist(methods=["POST"])
 def cancel_receipt(name):
-	require_access("warehouse.operations", "write")
+	require_access("page.warehouse.receipts", "write")
 	_ensure_receipt(name, 1)
 	doc = frappe.get_doc("Stock Receipt", name)
 	doc.flags.ignore_permissions = True
