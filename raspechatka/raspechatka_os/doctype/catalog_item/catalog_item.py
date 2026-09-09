@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+from frappe.utils import flt
 
 
 class CatalogItem(Document):
@@ -191,6 +192,34 @@ class CatalogItem(Document):
 				frappe.throw(_("Комплект не может включать сам себя."))
 			if not row.quantity or row.quantity <= 0:
 				frappe.throw(_("Количество компонента комплекта должно быть больше нуля."))
+
+
+		recipe_keys = set()
+		for row in self.recipe_components:
+			material = frappe.db.get_value(
+				"Catalog Item",
+				row.material,
+				["active", "item_type", "track_inventory", "stock_uom"],
+				as_dict=True,
+			)
+			if not material or not material.active:
+				frappe.throw(_("В технологической карте есть неизвестный или архивный материал."))
+			if material.item_type not in {"Product", "Variant"} or not material.track_inventory:
+				frappe.throw(_("Технологическая карта может расходовать только складские товары."))
+			if row.uom != material.stock_uom:
+				frappe.throw(_("Единица материала должна совпадать с его складской единицей."))
+			if flt(row.quantity) <= 0:
+				frappe.throw(_("Количество материала должно быть больше нуля."))
+			if flt(row.loss_percent) < 0 or flt(row.loss_percent) > 100:
+				frappe.throw(_("Допустимые потери должны быть от 0 до 100%."))
+			if row.business_point and not frappe.db.exists(
+				"Business Point", {"name": row.business_point, "active": 1}
+			):
+				frappe.throw(_("В технологической карте выбрана неактивная точка."))
+			key = (row.material, row.business_point or "", row.effective_from)
+			if key in recipe_keys:
+				frappe.throw(_("Одинаковую норму материала нельзя указывать дважды."))
+			recipe_keys.add(key)
 
 
 		recipe_keys = set()
