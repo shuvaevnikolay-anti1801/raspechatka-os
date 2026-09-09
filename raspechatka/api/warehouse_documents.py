@@ -193,11 +193,12 @@ def fill_inventory(warehouse, posting_datetime=None):
 		configured_locations.setdefault(row.item, set()).add(row.storage_location or "")
 
 	inventory_keys = set(quantities)
+	items_with_locations = {item for item, _location in inventory_keys}
 	for item in items:
 		locations = configured_locations.get(item)
 		if locations:
 			inventory_keys.update((item, location) for location in locations)
-		elif not any(key[0] == item for key in inventory_keys):
+		elif item not in items_with_locations:
 			inventory_keys.add((item, ""))
 
 	return [
