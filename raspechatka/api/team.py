@@ -122,10 +122,10 @@ def get_team_overview(business_point=None, month=None):
 
 	shift_templates = frappe.get_all(
 		"Shift Template",
-		filters={"active": 1},
+		filters={"active": 1, "shift_code": ["in", ["U", "V"]]},
 		fields=["name", "shift_code", "shift_name", "start_time", "end_time", "paid_hours"],
 		order_by="start_time asc",
-		limit_page_length=100,
+		limit_page_length=2,
 	)
 
 	return {
@@ -508,7 +508,7 @@ def save_schedule(business_point, month, entries=None, publish=0):
 	doc.month = month
 	base_templates = frappe.get_all(
 		"Shift Template",
-		filters={"active": 1},
+		filters={"active": 1, "shift_code": ["in", ["U", "V"]]},
 		fields=["name", "shift_code", "start_time", "end_time", "paid_hours"],
 		order_by="start_time asc",
 		limit_page_length=2,
@@ -1113,4 +1113,5 @@ def create_default_payroll_components(business_point, position):
 		}).insert(ignore_permissions=True)
 		created += 1
 	return {"created": created}
+
 
