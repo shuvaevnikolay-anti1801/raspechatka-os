@@ -32,7 +32,7 @@ def get_receipts(\n\tsearch=None,\n\treceipt_type=None,\n\tstatus=None,\n\tbusin
 			limit_start=start,
 			limit_page_length=page_length,
 		),
-		"total": frappe.db.count("Stock Receipt", filters=filters, or_filters=or_filters),
+		"total": frappe.get_all(\n			"Stock Receipt",\n			filters=filters,\n			or_filters=or_filters,\n			fields=["count(*) as total"],\n			limit_page_length=1,\n		)[0].total,
 	}
 
 
