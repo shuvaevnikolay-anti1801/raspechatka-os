@@ -7,12 +7,12 @@ from raspechatka.access import get_scope, require_access
 
 @frappe.whitelist()
 def get_receipts(
-\tsearch=None,
-\treceipt_type=None,
-\tstatus=None,
-\tbusiness_point=None,
-\tlimit_start=0,
-\tlimit_page_length=25,
+	search=None,
+	receipt_type=None,
+	status=None,
+	business_point=None,
+	limit_start=0,
+	limit_page_length=25,
 ):
 	require_access("page.warehouse.receipts", "read")
 	filters = _receipt_scope_filters()
