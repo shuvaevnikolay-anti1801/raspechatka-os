@@ -12,23 +12,23 @@ const kind = computed(() => route.meta.kind || "report");
 const money = (value) => `${new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0))} ₽`;
 const percent = (value) => `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(Number(value || 0))}%`;
 const points = computed(() => options.points.filter((item) => !filters.value.business_entity || item.business_entity === filters.value.business_entity));
-const heading = computed(() => ({ overview: "Финансовый обзор", report: "Финансовый отчёт", settlements: "Взаиморасчёты", profitability: "Прибыльность" }[kind.value]));
+const heading = computed(() => ({ overview: "Финансовый обзор", report: "Финансовый отчёт", settlements: "Задолженность поставщикам", profitability: "Прибыльность" }[kind.value]));
 const filterFields = computed(() => [
   ...(kind.value === "report" || kind.value === "overview"
     ? [{ key: "month", label: "Месяц", type: "month" }]
-    : [{ key: "search", label: "Поиск", placeholder: "Контрагент, товар или код", wide: true }, { key: "from_date", label: "Период с", type: "date" }, { key: "to_date", label: "Период по", type: "date" }]),
+    : [{ key: "search", label: "Поиск", placeholder: kind.value === "settlements" ? "Поставщик" : "Товар или код", wide: true }, { key: "from_date", label: "Период с", type: "date" }, { key: "to_date", label: "Период по", type: "date" }]),
   { key: "business_entity", label: "Юридическое лицо", type: "select", allLabel: "Все ИП", options: options.entities.map((item) => ({ value: item.name, label: item.short_name })) },
   { key: "business_point", label: "Точка", type: "select", allLabel: "Все точки", options: points.value.map((item) => ({ value: item.name, label: item.point_name })) },
   ...(kind.value === "profitability" ? [{ key: "catalog_group", label: "Группа", type: "select", allLabel: "Все группы", options: options.groups.map((item) => ({ value: item.name, label: item.group_name })) }] : []),
 ]);
 const columns = computed(() => kind.value === "settlements" ? [
-  { key: "counterparty", label: "Контрагент", primary: true, width: 260 },
-  { key: "counterparty_type", label: "Тип", width: 140 },
-  { key: "income", label: "Приход", number: true, format: money },
-  { key: "expense", label: "Расход", number: true, format: money },
-  { key: "balance", label: "Баланс", number: true, format: money },
-  { key: "receivable", label: "К получению", number: true, format: money },
-  { key: "payable", label: "К оплате", number: true, format: money },
+  { key: "supplier_name", label: "Поставщик", primary: true, width: 260 },
+  { key: "orders_count", label: "Заказов", number: true },
+  { key: "order_total", label: "Сумма заказов", number: true, format: money },
+  { key: "paid_amount", label: "Оплачено", number: true, format: money },
+  { key: "outstanding_amount", label: "Задолженность", number: true, format: money },
+  { key: "overdue_amount", label: "Просрочено", number: true, format: money },
+  { key: "nearest_due_date", label: "Ближайший срок", format: value => value ? new Intl.DateTimeFormat("ru-RU").format(new Date(`${value}T00:00:00`)) : "—" },
 ] : [
   { key: "item_name", label: "Наименование", primary: true, width: 260 },
   { key: "documents", label: "Документы", number: true },
@@ -45,7 +45,7 @@ async function load() {
   loading.value = true; error.value = "";
   try {
     let method = "get_financial_report", params = { month: `${filters.value.month}-01`, business_entity: filters.value.business_entity, business_point: filters.value.business_point };
-    if (kind.value === "settlements") { method = "get_settlements"; params = { from_date: filters.value.from_date, to_date: filters.value.to_date, business_entity: filters.value.business_entity, business_point: filters.value.business_point, search: filters.value.search }; }
+    if (kind.value === "settlements") { Object.assign(data, await call("raspechatka.api.supplier_settlements.get_supplier_debt", { from_date: filters.value.from_date, to_date: filters.value.to_date, business_entity: filters.value.business_entity, business_point: filters.value.business_point, search: filters.value.search })); return; }
     if (kind.value === "profitability") { method = "get_profitability"; params = { from_date: filters.value.from_date, to_date: filters.value.to_date, business_entity: filters.value.business_entity, business_point: filters.value.business_point, catalog_group: filters.value.catalog_group, search: filters.value.search }; }
     Object.assign(data, await call(`raspechatka.api.finance.${method}`, params));
   } catch (exception) { error.value = exception.message; }
@@ -67,7 +67,7 @@ watch(kind, load); onMounted(init);
     </template>
     <template v-else>
       <div v-if="kind==='profitability'&&!data.source_ready" class="integration-note"><b>Отчёт готов к данным кассы</b><span>Строки появятся после подключения продаж: выручка − возвраты − скидки − себестоимость.</span></div>
-      <SmartDataTable :rows="data.rows||[]" :columns="columns" :row-key="kind==='settlements'?'counterparty':'item'" :view-key="`finance.${kind}`" :loading="loading" :error="error" :selectable="false" empty-text="Измените период или добавьте связанные операции." @retry="load" />
+      <SmartDataTable :rows="data.rows||[]" :columns="columns" :row-key="kind==='settlements'?'supplier':'item'" :totals="kind==='settlements'?data.totals:undefined" :view-key="`finance.${kind}`" :loading="loading" :error="error" :selectable="false" empty-text="Измените период или добавьте связанные операции." @retry="load" />
     </template>
   </section>
 </template>
