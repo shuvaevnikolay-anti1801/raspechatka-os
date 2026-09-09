@@ -16,7 +16,9 @@ const heading = computed(() => ({ overview: "Финансовый обзор", r
 const filterFields = computed(() => [
   ...(kind.value === "report" || kind.value === "overview"
     ? [{ key: "month", label: "Месяц", type: "month" }]
-    : [{ key: "search", label: "Поиск", placeholder: kind.value === "settlements" ? "Поставщик" : "Товар или код", wide: true }, { key: "from_date", label: "Период с", type: "date" }, { key: "to_date", label: "Период по", type: "date" }]),
+    : kind.value === "settlements"
+      ? [{ key: "search", label: "Поиск", placeholder: "Поставщик", wide: true }]
+      : [{ key: "search", label: "Поиск", placeholder: "Товар или код", wide: true }, { key: "from_date", label: "Период с", type: "date" }, { key: "to_date", label: "Период по", type: "date" }]),
   { key: "business_entity", label: "Юридическое лицо", type: "select", allLabel: "Все ИП", options: options.entities.map((item) => ({ value: item.name, label: item.short_name })) },
   { key: "business_point", label: "Точка", type: "select", allLabel: "Все точки", options: points.value.map((item) => ({ value: item.name, label: item.point_name })) },
   ...(kind.value === "profitability" ? [{ key: "catalog_group", label: "Группа", type: "select", allLabel: "Все группы", options: options.groups.map((item) => ({ value: item.name, label: item.group_name })) }] : []),
@@ -45,7 +47,7 @@ async function load() {
   loading.value = true; error.value = "";
   try {
     let method = "get_financial_report", params = { month: `${filters.value.month}-01`, business_entity: filters.value.business_entity, business_point: filters.value.business_point };
-    if (kind.value === "settlements") { Object.assign(data, await call("raspechatka.api.supplier_settlements.get_supplier_debt", { from_date: filters.value.from_date, to_date: filters.value.to_date, business_entity: filters.value.business_entity, business_point: filters.value.business_point, search: filters.value.search })); return; }
+    if (kind.value === "settlements") { Object.assign(data, await call("raspechatka.api.supplier_settlements.get_supplier_debt", { business_entity: filters.value.business_entity, business_point: filters.value.business_point, search: filters.value.search })); return; }
     if (kind.value === "profitability") { method = "get_profitability"; params = { from_date: filters.value.from_date, to_date: filters.value.to_date, business_entity: filters.value.business_entity, business_point: filters.value.business_point, catalog_group: filters.value.catalog_group, search: filters.value.search }; }
     Object.assign(data, await call(`raspechatka.api.finance.${method}`, params));
   } catch (exception) { error.value = exception.message; }
