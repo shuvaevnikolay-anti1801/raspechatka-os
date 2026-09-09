@@ -1,8 +1,8 @@
 import html
 import json
 import re
-from pathlib import Path
 from datetime import date
+from pathlib import Path
 
 import frappe
 from frappe import _
@@ -47,6 +47,8 @@ VARIABLES = [
 ]
 ALLOWED_VARIABLES = {row["key"] for row in VARIABLES}
 MARKER_RE = re.compile(r"{{\s*([A-Z0-9_]+)\s*}}")
+UNSAFE_HTML_RE = re.compile(r"<\s*(script|iframe|object|embed|link|meta)\b|\bon\w+\s*=", re.IGNORECASE)
+DEFAULT_TEMPLATES_FILE = Path(__file__).resolve().parents[1] / "hr_default_templates.json"
 
 
 def _require_network_admin():
