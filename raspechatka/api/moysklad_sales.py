@@ -313,7 +313,6 @@ def _touch_sales_sync_heartbeat():
 	)
 
 
-
 def _iter_rows(settings, endpoint, cursor=None):
 	"""Read a recent idempotent window for incremental runs.
 
