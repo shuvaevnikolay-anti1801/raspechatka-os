@@ -156,7 +156,7 @@ def get_schedule(business_point, month=None):
 		"name",
 	)
 	if not name:
-		return {"name": None, "month": str(month), "days": monthrange(month.year, month.month)[1], "entries": []}
+		return {"name": None, "month": str(month), "today": str(getdate()), "days": monthrange(month.year, month.month)[1], "entries": []}
 	doc = frappe.get_doc("Work Schedule", name)
 	period_start = get_datetime(f"{month} 00:00:00")
 	period_end = get_datetime(f"{month.replace(day=monthrange(month.year, month.month)[1])} 23:59:59")
@@ -176,6 +176,7 @@ def get_schedule(business_point, month=None):
 		"business_point": doc.business_point,
 		"month": str(doc.month),
 		"status": doc.status,
+		"today": str(getdate()),
 		"days": monthrange(month.year, month.month)[1],
 		"entries": [
 			dict({
@@ -480,10 +481,31 @@ def save_schedule(business_point, month, entries=None, publish=0):
 	entries = frappe.parse_json(entries) if isinstance(entries, str) else (entries or [])
 	name = frappe.db.get_value("Work Schedule", {"business_point": business_point, "month": month}, "name")
 	doc = frappe.get_doc("Work Schedule", name) if name else frappe.new_doc("Work Schedule")
+	today = getdate()
+	month_end = month.replace(day=monthrange(month.year, month.month)[1])
+	if month_end < today:
+		frappe.throw(_("Прошедший график изменять нельзя"))
+
+	existing_past_entries = []
+	existing_past_assignments = set()
+	if name:
+		for row in doc.entries:
+			work_date = getdate(row.work_date)
+			if work_date < today:
+				existing_past_assignments.add((str(work_date), row.employee, row.shift_template))
+				existing_past_entries.append({
+					"work_date": work_date,
+					"employee": row.employee,
+					"shift_template": row.shift_template,
+					"start_time": row.start_time,
+					"end_time": row.end_time,
+					"planned_hours": row.planned_hours,
+					"notes": row.notes,
+				})
+
 	doc.business_point = business_point
 	doc.business_entity = frappe.db.get_value("Business Point", business_point, "business_entity")
 	doc.month = month
-	doc.entries = []
 	base_templates = frappe.get_all(
 		"Shift Template",
 		filters={"active": 1},
@@ -501,6 +523,8 @@ def save_schedule(business_point, month, entries=None, publish=0):
 		limit_page_length=1000,
 	))
 	seen_slots = set()
+	requested_past_assignments = set()
+	editable_entries = []
 	for item in entries:
 		work_date = getdate(item.get("date") or item.get("work_date"))
 		if work_date.year != month.year or work_date.month != month.month:
@@ -515,7 +539,10 @@ def save_schedule(business_point, month, entries=None, publish=0):
 		if key in seen_slots:
 			frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
 		seen_slots.add(key)
-		doc.append("entries", {
+		if work_date < today:
+			requested_past_assignments.add((str(work_date), employee, template.name))
+			continue
+		editable_entries.append({
 			"work_date": work_date,
 			"employee": employee,
 			"shift_template": template.name,
@@ -524,6 +551,13 @@ def save_schedule(business_point, month, entries=None, publish=0):
 			"planned_hours": template.paid_hours,
 			"notes": item.get("notes"),
 		})
+
+	if requested_past_assignments != existing_past_assignments:
+		frappe.throw(_("Прошедшие смены изменять нельзя"))
+
+	doc.entries = []
+	for item in existing_past_entries + editable_entries:
+		doc.append("entries", item)
 	if cint(publish):
 		last_day = monthrange(month.year, month.month)[1]
 		missing = []
