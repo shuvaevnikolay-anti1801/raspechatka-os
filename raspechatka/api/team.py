@@ -828,7 +828,7 @@ def save_employee(data):
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
 		"registration_address", "disability", "hazardous_conditions",
 		"medical_exam_required", "document_folder_url", "notes",
-		"annual_leave_days", "passport_series", "passport_number", "passport_issue_date", "passport_issued_by", "passport_department_code",
+		"passport_series", "passport_number", "passport_issue_date", "passport_issued_by", "passport_department_code",
 		"passport_main_file", "passport_registration_file", "salary_bank_name", "salary_bic",
 		"salary_correspondent_account", "salary_account", "salary_recipient_name",
 	):
