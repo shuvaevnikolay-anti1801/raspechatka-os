@@ -4,7 +4,13 @@
     "label": "Главная",
     "order": 10,
     "pages": [
-      { "area": "page.dashboard", "label": "Обзор", "route": "/", "legacy_area": "dashboard", "order": 10 }
+      {
+        "area": "page.dashboard",
+        "label": "Обзор",
+        "route": "/",
+        "legacy_area": "dashboard",
+        "order": 10
+      }
     ]
   },
   {
@@ -12,13 +18,55 @@
     "label": "Продажи",
     "order": 20,
     "pages": [
-      { "area": "page.sales.overview", "label": "Точки продаж", "route": "/sales", "legacy_area": "sales.analytics", "order": 10 },
-      { "area": "page.sales.shifts", "label": "Смены", "route": "/sales/shifts", "legacy_area": "sales.shifts", "order": 20 },
-      { "area": "page.sales.receipts", "label": "Продажи", "route": "/sales/receipts", "legacy_area": "sales.receipts", "order": 30 },
-      { "area": "page.sales.returns", "label": "Возвраты", "route": "/sales/returns", "legacy_area": "sales.receipts", "order": 40 },
-      { "area": "page.sales.cash", "label": "Внесения и выплаты", "route": "/sales/cash", "legacy_area": "sales.cash", "order": 50 },
-      { "area": "page.sales.audit", "label": "Действия кассира", "route": "/sales/actions", "legacy_area": "sales.audit", "order": 60 },
-      { "area": "page.sales.integration", "label": "Подключение кассы", "route": "/sales/integration", "legacy_area": "sales.integration", "order": 70 }
+      {
+        "area": "page.sales.overview",
+        "label": "Точки продаж",
+        "route": "/sales",
+        "legacy_area": "sales.analytics",
+        "order": 10
+      },
+      {
+        "area": "page.sales.shifts",
+        "label": "Смены",
+        "route": "/sales/shifts",
+        "legacy_area": "sales.shifts",
+        "order": 20
+      },
+      {
+        "area": "page.sales.receipts",
+        "label": "Продажи",
+        "route": "/sales/receipts",
+        "legacy_area": "sales.receipts",
+        "order": 30
+      },
+      {
+        "area": "page.sales.returns",
+        "label": "Возвраты",
+        "route": "/sales/returns",
+        "legacy_area": "sales.receipts",
+        "order": 40
+      },
+      {
+        "area": "page.sales.cash",
+        "label": "Внесения и выплаты",
+        "route": "/sales/cash",
+        "legacy_area": "sales.cash",
+        "order": 50
+      },
+      {
+        "area": "page.sales.audit",
+        "label": "Действия кассира",
+        "route": "/sales/actions",
+        "legacy_area": "sales.audit",
+        "order": 60
+      },
+      {
+        "area": "page.sales.integration",
+        "label": "Подключение кассы",
+        "route": "/sales/integration",
+        "legacy_area": "sales.integration",
+        "order": 70
+      }
     ]
   },
   {
@@ -26,12 +74,48 @@
     "label": "Клиенты",
     "order": 30,
     "pages": [
-      { "area": "page.clients.list", "label": "Клиенты", "route": "/clients", "legacy_area": "clients.base", "order": 10 },
-      { "area": "page.clients.club", "label": "Клуб Распечатка", "route": "/clients/club", "legacy_area": "clients.loyalty", "order": 20 },
-      { "area": "page.clients.segments", "label": "Сегменты", "route": "/clients/segments", "legacy_area": "clients.marketing", "order": 30 },
-      { "area": "page.clients.campaigns", "label": "Рассылки", "route": "/clients/campaigns", "legacy_area": "clients.marketing", "order": 40 },
-      { "area": "page.clients.promo_codes", "label": "Промокоды", "route": "/clients/promo-codes", "legacy_area": "clients.loyalty", "order": 50 },
-      { "area": "page.clients.calendar", "label": "Календарь", "route": "/clients/calendar", "legacy_area": "clients.marketing", "order": 60 }
+      {
+        "area": "page.clients.list",
+        "label": "Клиенты",
+        "route": "/clients",
+        "legacy_area": "clients.base",
+        "order": 10
+      },
+      {
+        "area": "page.clients.club",
+        "label": "Клуб Распечатка",
+        "route": "/clients/club",
+        "legacy_area": "clients.loyalty",
+        "order": 20
+      },
+      {
+        "area": "page.clients.segments",
+        "label": "Сегменты",
+        "route": "/clients/segments",
+        "legacy_area": "clients.marketing",
+        "order": 30
+      },
+      {
+        "area": "page.clients.campaigns",
+        "label": "Рассылки",
+        "route": "/clients/campaigns",
+        "legacy_area": "clients.marketing",
+        "order": 40
+      },
+      {
+        "area": "page.clients.promo_codes",
+        "label": "Промокоды",
+        "route": "/clients/promo-codes",
+        "legacy_area": "clients.loyalty",
+        "order": 50
+      },
+      {
+        "area": "page.clients.calendar",
+        "label": "Календарь",
+        "route": "/clients/calendar",
+        "legacy_area": "clients.marketing",
+        "order": 60
+      }
     ]
   },
   {
@@ -39,7 +123,13 @@
     "label": "Продукт",
     "order": 40,
     "pages": [
-      { "area": "page.catalog", "label": "Товары и Цены", "route": "/catalog", "legacy_area": "references.catalog", "order": 10 }
+      {
+        "area": "page.catalog",
+        "label": "Товары и Цены",
+        "route": "/catalog",
+        "legacy_area": "references.catalog",
+        "order": 10
+      }
     ]
   },
   {
@@ -47,12 +137,55 @@
     "label": "Склад",
     "order": 50,
     "pages": [
-      { "area": "page.warehouse.receipts", "label": "Приёмки и оприходования", "route": "/warehouse/receipts", "legacy_area": "warehouse.operations", "order": 10 },
-      { "area": "page.warehouse.write_offs", "label": "Списания", "route": "/warehouse/write-offs", "legacy_area": "warehouse.operations", "order": 20 },
-      { "area": "page.warehouse.inventories", "label": "Инвентаризации", "route": "/warehouse/inventories", "legacy_area": "warehouse.operations", "order": 30 },
-      { "area": "page.warehouse.purchase_orders", "label": "Заказы поставщикам", "route": "/warehouse/purchase-orders", "legacy_area": "warehouse.operations", "order": 40 },
-      { "area": "page.warehouse.balances", "label": "Остатки", "route": "/warehouse/balances", "legacy_area": "warehouse.operations", "order": 50 },
-      { "area": "page.warehouse.turnover", "label": "Обороты", "route": "/warehouse/turnover", "legacy_area": "warehouse.operations", "order": 60 }
+      {
+        "area": "page.warehouse.receipts",
+        "label": "Приёмки и оприходования",
+        "route": "/warehouse/receipts",
+        "legacy_area": "warehouse.operations",
+        "order": 10
+      },
+      {
+        "area": "page.warehouse.write_offs",
+        "label": "Списания",
+        "route": "/warehouse/write-offs",
+        "legacy_area": "warehouse.operations",
+        "order": 20
+      },
+      {
+        "area": "page.warehouse.inventories",
+        "label": "Инвентаризации",
+        "route": "/warehouse/inventories",
+        "legacy_area": "warehouse.operations",
+        "order": 30
+      },
+      {
+        "area": "page.warehouse.purchase_orders",
+        "label": "Заказы поставщикам",
+        "route": "/warehouse/purchase-orders",
+        "legacy_area": "warehouse.operations",
+        "order": 40
+      },
+      {
+        "area": "page.warehouse.balances",
+        "label": "Остатки",
+        "route": "/warehouse/balances",
+        "legacy_area": "warehouse.operations",
+        "order": 50
+      },
+      {
+        "area": "page.warehouse.turnover",
+        "label": "Обороты",
+        "route": "/warehouse/turnover",
+        "legacy_area": "warehouse.operations",
+        "order": 60
+      },
+      {
+        "area": "page.warehouse.movements",
+        "label": "Движения товаров",
+        "route": "/warehouse/movements",
+        "legacy_area": "warehouse.operations",
+        "order": 70
+      }
     ]
   },
   {
@@ -60,15 +193,72 @@
     "label": "Финансы",
     "order": 60,
     "pages": [
-      { "area": "page.finance.overview", "label": "Обзор", "route": "/finance", "legacy_area": "finance.reporting", "order": 10 },
-      { "area": "page.finance.payments", "label": "Платежи", "route": "/finance/payments", "legacy_area": "finance.operations", "order": 20 },
-      { "area": "page.finance.calendar", "label": "Платёжный календарь", "route": "/finance/calendar", "legacy_area": "finance.planning", "order": 30 },
-      { "area": "page.finance.report", "label": "Финансовый отчёт", "route": "/finance/report", "legacy_area": "finance.reporting", "order": 40 },
-      { "area": "page.finance.planning", "label": "План и модель", "route": "/finance/planning", "legacy_area": "finance.planning", "order": 50 },
-      { "area": "page.finance.settlements", "label": "Взаиморасчёты", "route": "/finance/settlements", "legacy_area": "finance.reporting", "order": 60 },
-      { "area": "page.finance.profitability", "label": "Прибыльность", "route": "/finance/profitability", "legacy_area": "finance.reporting", "order": 70 },
-      { "area": "page.finance.settings", "label": "Настройки", "route": "/finance/settings", "legacy_area": "finance.operations", "minimum": "Admin", "order": 80 },
-      { "area": "page.finance.bank", "label": "Настройки — Точка Банк", "route": "/finance/settings/tochka", "legacy_area": "finance.bank", "minimum": "Admin", "submenu": false, "order": 90 }
+      {
+        "area": "page.finance.overview",
+        "label": "Обзор",
+        "route": "/finance",
+        "legacy_area": "finance.reporting",
+        "order": 10
+      },
+      {
+        "area": "page.finance.payments",
+        "label": "Платежи",
+        "route": "/finance/payments",
+        "legacy_area": "finance.operations",
+        "order": 20
+      },
+      {
+        "area": "page.finance.calendar",
+        "label": "Платёжный календарь",
+        "route": "/finance/calendar",
+        "legacy_area": "finance.planning",
+        "order": 30
+      },
+      {
+        "area": "page.finance.report",
+        "label": "Финансовый отчёт",
+        "route": "/finance/report",
+        "legacy_area": "finance.reporting",
+        "order": 40
+      },
+      {
+        "area": "page.finance.planning",
+        "label": "План и модель",
+        "route": "/finance/planning",
+        "legacy_area": "finance.planning",
+        "order": 50
+      },
+      {
+        "area": "page.finance.settlements",
+        "label": "Взаиморасчёты",
+        "route": "/finance/settlements",
+        "legacy_area": "finance.reporting",
+        "order": 60
+      },
+      {
+        "area": "page.finance.profitability",
+        "label": "Прибыльность",
+        "route": "/finance/profitability",
+        "legacy_area": "finance.reporting",
+        "order": 70
+      },
+      {
+        "area": "page.finance.settings",
+        "label": "Настройки",
+        "route": "/finance/settings",
+        "legacy_area": "finance.operations",
+        "minimum": "Admin",
+        "order": 80
+      },
+      {
+        "area": "page.finance.bank",
+        "label": "Настройки — Точка Банк",
+        "route": "/finance/settings/tochka",
+        "legacy_area": "finance.bank",
+        "minimum": "Admin",
+        "submenu": false,
+        "order": 90
+      }
     ]
   },
   {
@@ -76,13 +266,55 @@
     "label": "Сотрудники",
     "order": 70,
     "pages": [
-      { "area": "page.team.employees", "label": "Сотрудники", "route": "/team/employees", "legacy_area": "team.employees", "order": 10 },
-      { "area": "page.team.positions", "label": "Должности", "route": "/team/positions", "legacy_area": "team.employees", "order": 20 },
-      { "area": "page.team.schedule", "label": "График", "route": "/team/schedule", "legacy_area": "team.schedule", "order": 30 },
-      { "area": "page.team.payroll", "label": "Зарплата", "route": "/team/payroll", "legacy_area": "team.payroll", "order": 40 },
-      { "area": "page.team.bonuses", "label": "Премии и игра", "route": "/team/bonuses", "legacy_area": "team.motivation", "order": 50 },
-      { "area": "page.team.hr", "label": "Кадры и документы", "route": "/team/hr", "legacy_area": "team.hr", "order": 60 },
-      { "area": "page.team.settings", "label": "Настройки", "route": "/team/settings", "legacy_area": "team.payroll", "order": 70 }
+      {
+        "area": "page.team.employees",
+        "label": "Сотрудники",
+        "route": "/team/employees",
+        "legacy_area": "team.employees",
+        "order": 10
+      },
+      {
+        "area": "page.team.positions",
+        "label": "Должности",
+        "route": "/team/positions",
+        "legacy_area": "team.employees",
+        "order": 20
+      },
+      {
+        "area": "page.team.schedule",
+        "label": "График",
+        "route": "/team/schedule",
+        "legacy_area": "team.schedule",
+        "order": 30
+      },
+      {
+        "area": "page.team.payroll",
+        "label": "Зарплата",
+        "route": "/team/payroll",
+        "legacy_area": "team.payroll",
+        "order": 40
+      },
+      {
+        "area": "page.team.bonuses",
+        "label": "Премии и игра",
+        "route": "/team/bonuses",
+        "legacy_area": "team.motivation",
+        "order": 50
+      },
+      {
+        "area": "page.team.hr",
+        "label": "Кадры и документы",
+        "route": "/team/hr",
+        "legacy_area": "team.hr",
+        "order": 60
+      },
+      {
+        "area": "page.team.settings",
+        "label": "Настройки",
+        "route": "/team/settings",
+        "legacy_area": "team.payroll",
+        "order": 70
+      }
     ]
   },
   {
@@ -90,14 +322,65 @@
     "label": "Справочники",
     "order": 80,
     "pages": [
-      { "area": "page.references.organizations", "label": "Партнёры", "route": "/references/organizations", "legacy_area": "references.network", "order": 10 },
-      { "area": "page.references.entities", "label": "Юридические лица", "route": "/references/entities", "legacy_area": "references.network", "order": 20 },
-      { "area": "page.references.points", "label": "Точки продаж", "route": "/references/points", "legacy_area": "references.network", "order": 30 },
-      { "area": "page.references.warehouses", "label": "Склады", "route": "/references/warehouses", "legacy_area": "references.storage", "order": 40 },
-      { "area": "page.references.suppliers", "label": "Поставщики", "route": "/references/suppliers", "legacy_area": "references.suppliers", "order": 50 },
-      { "area": "page.references.users", "label": "Пользователи", "route": "/references/users", "legacy_area": "settings.access", "minimum": "Admin", "order": 60 },
-      { "area": "page.references.moysklad", "label": "МойСклад", "route": "/settings/moysklad", "legacy_area": "settings.access", "minimum": "Admin", "order": 70 },
-      { "area": "page.references.access", "label": "Права доступа", "route": "/settings/access", "legacy_area": "settings.access", "minimum": "Admin", "order": 80 }
+      {
+        "area": "page.references.organizations",
+        "label": "Партнёры",
+        "route": "/references/organizations",
+        "legacy_area": "references.network",
+        "order": 10
+      },
+      {
+        "area": "page.references.entities",
+        "label": "Юридические лица",
+        "route": "/references/entities",
+        "legacy_area": "references.network",
+        "order": 20
+      },
+      {
+        "area": "page.references.points",
+        "label": "Точки продаж",
+        "route": "/references/points",
+        "legacy_area": "references.network",
+        "order": 30
+      },
+      {
+        "area": "page.references.warehouses",
+        "label": "Склады",
+        "route": "/references/warehouses",
+        "legacy_area": "references.storage",
+        "order": 40
+      },
+      {
+        "area": "page.references.suppliers",
+        "label": "Поставщики",
+        "route": "/references/suppliers",
+        "legacy_area": "references.suppliers",
+        "order": 50
+      },
+      {
+        "area": "page.references.users",
+        "label": "Пользователи",
+        "route": "/references/users",
+        "legacy_area": "settings.access",
+        "minimum": "Admin",
+        "order": 60
+      },
+      {
+        "area": "page.references.moysklad",
+        "label": "МойСклад",
+        "route": "/settings/moysklad",
+        "legacy_area": "settings.access",
+        "minimum": "Admin",
+        "order": 70
+      },
+      {
+        "area": "page.references.access",
+        "label": "Права доступа",
+        "route": "/settings/access",
+        "legacy_area": "settings.access",
+        "minimum": "Admin",
+        "order": 80
+      }
     ]
   }
 ]
