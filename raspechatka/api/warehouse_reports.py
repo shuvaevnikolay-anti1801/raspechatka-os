@@ -60,15 +60,29 @@ def get_stock_balances(
 					},
 				)
 	metadata = _item_metadata({key[0] for key in aggregated})
-	warehouse_map = {row.name: row for row in frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"])}
-	location_names = {row.name: row.full_address for row in frappe.get_all("Storage Location", fields=["name", "full_address"], limit_page_length=0)}
+	warehouse_map = {
+		row.name: row
+		for row in frappe.get_all(
+			"Catalog Warehouse",
+			filters={"name": ["in", warehouses or ["__none__"]]},
+			fields=["name", "warehouse_name", "business_point"],
+		)
+	}
+	location_names = {
+		row.name: row.full_address
+		for row in frappe.get_all("Storage Location", fields=["name", "full_address"], limit_page_length=0)
+	}
 	rows = []
 	query = (search or "").strip().lower()
 	for (item, warehouse_name), values in aggregated.items():
 		meta = metadata.get(item)
 		if not meta or (catalog_group and meta.catalog_group != catalog_group):
 			continue
-		if query and query not in " ".join((meta.item_name or "", meta.item_code or "", meta.article or "")).lower():
+		if (
+			query
+			and query
+			not in " ".join((meta.item_name or "", meta.item_code or "", meta.article or "")).lower()
+		):
 			continue
 		qty = flt(values["quantity"])
 		reserved = flt(values.get("reserved_quantity"))
@@ -80,17 +94,40 @@ def get_stock_balances(
 			continue
 		value = flt(values["stock_value"])
 		wh = warehouse_map.get(warehouse_name)
-		rows.append({
-			"item": item, "item_code": meta.item_code, "item_name": meta.item_name, "article": meta.article,
-			"catalog_group": meta.catalog_group, "uom": meta.stock_uom, "business_point": wh.business_point if wh else None,
-			"warehouse": warehouse_name, "warehouse_name": wh.warehouse_name if wh else warehouse_name,
-			"storage_location": ", ".join(sorted(location_names.get(name, name) for name in values["locations"])) or None,
-			"quantity": qty, "reserved_quantity": reserved, "available_quantity": available,
-			"expected_quantity": expected_qty, "minimum_stock": minimum_stock, "recommended_order_quantity": recommended,
-			"average_rate": flt(value / qty) if qty else 0, "stock_value": value,
-			"last_movement_at": values.get("last_movement_at"),
-		})
-	rows.sort(key=lambda row: (row["catalog_group"] or "", row["item_name"], row["warehouse_name"], row["storage_location"] or ""))
+		rows.append(
+			{
+				"item": item,
+				"item_code": meta.item_code,
+				"item_name": meta.item_name,
+				"article": meta.article,
+				"catalog_group": meta.catalog_group,
+				"uom": meta.stock_uom,
+				"business_point": wh.business_point if wh else None,
+				"warehouse": warehouse_name,
+				"warehouse_name": wh.warehouse_name if wh else warehouse_name,
+				"storage_location": ", ".join(
+					sorted(location_names.get(name, name) for name in values["locations"])
+				)
+				or None,
+				"quantity": qty,
+				"reserved_quantity": reserved,
+				"available_quantity": available,
+				"expected_quantity": expected_qty,
+				"minimum_stock": minimum_stock,
+				"recommended_order_quantity": recommended,
+				"average_rate": flt(value / qty) if qty else 0,
+				"stock_value": value,
+				"last_movement_at": values.get("last_movement_at"),
+			}
+		)
+	rows.sort(
+		key=lambda row: (
+			row["catalog_group"] or "",
+			row["item_name"],
+			row["warehouse_name"],
+			row["storage_location"] or "",
+		)
+	)
 	return {
 		"rows": _paginate_rows(rows, limit_start, limit_page_length),
 		"total": len(rows),
@@ -128,7 +165,17 @@ def get_stock_turnover(
 	aggregated = {}
 	for entry in entries:
 		key = (entry.item, entry.warehouse)
-		bucket = aggregated.setdefault(key, {"opening_qty": 0, "opening_value": 0, "incoming_qty": 0, "incoming_value": 0, "outgoing_qty": 0, "outgoing_value": 0})
+		bucket = aggregated.setdefault(
+			key,
+			{
+				"opening_qty": 0,
+				"opening_value": 0,
+				"incoming_qty": 0,
+				"incoming_value": 0,
+				"outgoing_qty": 0,
+				"outgoing_value": 0,
+			},
+		)
 		qty, value = flt(entry.actual_qty), flt(entry.stock_value_difference)
 		if entry.posting_datetime < start:
 			bucket["opening_qty"] += qty
@@ -140,21 +187,55 @@ def get_stock_turnover(
 			bucket["outgoing_qty"] += abs(qty)
 			bucket["outgoing_value"] += abs(value)
 	metadata = _item_metadata({key[0] for key in aggregated})
-	warehouse_map = {row.name: row for row in frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"])}
+	warehouse_map = {
+		row.name: row
+		for row in frappe.get_all(
+			"Catalog Warehouse",
+			filters={"name": ["in", warehouses or ["__none__"]]},
+			fields=["name", "warehouse_name", "business_point"],
+		)
+	}
 	query = (search or "").strip().lower()
 	rows = []
 	for (item, warehouse_name), values in aggregated.items():
 		meta = metadata.get(item)
 		if not meta or (catalog_group and meta.catalog_group != catalog_group):
 			continue
-		if query and query not in " ".join((meta.item_name or "", meta.item_code or "", meta.article or "")).lower():
+		if (
+			query
+			and query
+			not in " ".join((meta.item_name or "", meta.item_code or "", meta.article or "")).lower()
+		):
 			continue
 		closing_qty = values["opening_qty"] + values["incoming_qty"] - values["outgoing_qty"]
 		closing_value = values["opening_value"] + values["incoming_value"] - values["outgoing_value"]
 		wh = warehouse_map.get(warehouse_name)
-		rows.append({"item": item, "item_code": meta.item_code, "item_name": meta.item_name, "catalog_group": meta.catalog_group, "uom": meta.stock_uom, "business_point": wh.business_point if wh else None, "warehouse": warehouse_name, "warehouse_name": wh.warehouse_name if wh else warehouse_name, **values, "closing_qty": closing_qty, "closing_value": closing_value})
+		rows.append(
+			{
+				"item": item,
+				"item_code": meta.item_code,
+				"item_name": meta.item_name,
+				"catalog_group": meta.catalog_group,
+				"uom": meta.stock_uom,
+				"business_point": wh.business_point if wh else None,
+				"warehouse": warehouse_name,
+				"warehouse_name": wh.warehouse_name if wh else warehouse_name,
+				**values,
+				"closing_qty": closing_qty,
+				"closing_value": closing_value,
+			}
+		)
 	rows.sort(key=lambda row: (row["catalog_group"] or "", row["item_name"], row["warehouse_name"]))
-	keys = ("opening_qty", "opening_value", "incoming_qty", "incoming_value", "outgoing_qty", "outgoing_value", "closing_qty", "closing_value")
+	keys = (
+		"opening_qty",
+		"opening_value",
+		"incoming_qty",
+		"incoming_value",
+		"outgoing_qty",
+		"outgoing_value",
+		"closing_qty",
+		"closing_value",
+	)
 	return {
 		"rows": _paginate_rows(rows, limit_start, limit_page_length),
 		"total": len(rows),
@@ -268,12 +349,24 @@ def get_report_options():
 		("page.warehouse.balances", "page.warehouse.turnover", "page.warehouse.movements"), "read"
 	)
 	warehouses = _warehouses()
-	warehouse_rows = frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"], order_by="warehouse_name asc")
+	warehouse_rows = frappe.get_all(
+		"Catalog Warehouse",
+		filters={"name": ["in", warehouses or ["__none__"]]},
+		fields=["name", "warehouse_name", "business_point"],
+		order_by="warehouse_name asc",
+	)
 	point_names = list({row.business_point for row in warehouse_rows})
 	return {
-		"points": frappe.get_all("Business Point", filters={"name": ["in", point_names or ["__none__"]]}, fields=["name", "point_name"], order_by="point_name asc"),
+		"points": frappe.get_all(
+			"Business Point",
+			filters={"name": ["in", point_names or ["__none__"]]},
+			fields=["name", "point_name"],
+			order_by="point_name asc",
+		),
 		"warehouses": warehouse_rows,
-		"groups": frappe.get_all("Catalog Group", filters={"active": 1}, fields=["name", "group_name"], order_by="group_name asc"),
+		"groups": frappe.get_all(
+			"Catalog Group", filters={"active": 1}, fields=["name", "group_name"], order_by="group_name asc"
+		),
 	}
 
 
@@ -309,20 +402,41 @@ def _ledger_entries(warehouses, end):
 
 
 def _item_metadata(items):
-	return {row.name: row for row in frappe.get_all("Catalog Item", filters={"name": ["in", list(items) or ["__none__"]]}, fields=["name", "item_code", "item_name", "article", "catalog_group", "stock_uom"], limit_page_length=100000)}
+	return {
+		row.name: row
+		for row in frappe.get_all(
+			"Catalog Item",
+			filters={"name": ["in", list(items) or ["__none__"]]},
+			fields=["name", "item_code", "item_name", "article", "catalog_group", "stock_uom"],
+			limit_page_length=100000,
+		)
+	}
 
 
 def _expected_quantities(warehouses):
-	orders = frappe.get_all("Purchase Order", filters={"docstatus": 1, "order_status": ["!=", "Принято"], "warehouse": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse"], limit_page_length=100000)
+	orders = frappe.get_all(
+		"Purchase Order",
+		filters={
+			"docstatus": 1,
+			"order_status": ["!=", "Принято"],
+			"warehouse": ["in", warehouses or ["__none__"]],
+		},
+		fields=["name", "warehouse"],
+		limit_page_length=100000,
+	)
 	warehouse_by_order = {row.name: row.warehouse for row in orders}
 	result = {}
 	if not orders:
 		return result
-	for row in frappe.get_all("Purchase Order Item", filters={"parent": ["in", list(warehouse_by_order)]}, fields=["parent", "item", "quantity", "received_quantity"], limit_page_length=100000):
+	for row in frappe.get_all(
+		"Purchase Order Item",
+		filters={"parent": ["in", list(warehouse_by_order)]},
+		fields=["parent", "item", "quantity", "received_quantity"],
+		limit_page_length=100000,
+	):
 		key = (row.item, warehouse_by_order[row.parent])
 		result[key] = result.get(key, 0) + max(flt(row.quantity) - flt(row.received_quantity), 0)
 	return result
-
 
 
 def _current_balances(warehouses):
