@@ -2,14 +2,23 @@ from datetime import datetime, time
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, nowdate
+from frappe.utils import cint, flt, getdate, nowdate
 
 from raspechatka.access import get_scope, require_access, require_any_access
 from raspechatka.api.warehouse import _ensure_point
 
 
 @frappe.whitelist()
-def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_group=None, search=None, show_zero=0):
+def get_stock_balances(
+	as_of=None,
+	business_point=None,
+	warehouse=None,
+	catalog_group=None,
+	search=None,
+	show_zero=0,
+	limit_start=0,
+	limit_page_length=25,
+):
 	require_access("page.warehouse.balances", "read")
 	as_of = as_of or nowdate()
 	end = datetime.combine(getdate(as_of), time.max)
@@ -83,7 +92,8 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 		})
 	rows.sort(key=lambda row: (row["catalog_group"] or "", row["item_name"], row["warehouse_name"], row["storage_location"] or ""))
 	return {
-		"rows": rows,
+		"rows": _paginate_rows(rows, limit_start, limit_page_length),
+		"total": len(rows),
 		"totals": {
 			"quantity": sum(row["quantity"] for row in rows),
 			"reserved_quantity": sum(row["reserved_quantity"] for row in rows),
@@ -97,7 +107,16 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 
 
 @frappe.whitelist()
-def get_stock_turnover(from_date=None, to_date=None, business_point=None, warehouse=None, catalog_group=None, search=None):
+def get_stock_turnover(
+	from_date=None,
+	to_date=None,
+	business_point=None,
+	warehouse=None,
+	catalog_group=None,
+	search=None,
+	limit_start=0,
+	limit_page_length=25,
+):
 	require_access("page.warehouse.turnover", "read")
 	from_date, to_date = from_date or nowdate(), to_date or nowdate()
 	if getdate(from_date) > getdate(to_date):
@@ -136,7 +155,13 @@ def get_stock_turnover(from_date=None, to_date=None, business_point=None, wareho
 		rows.append({"item": item, "item_code": meta.item_code, "item_name": meta.item_name, "catalog_group": meta.catalog_group, "uom": meta.stock_uom, "business_point": wh.business_point if wh else None, "warehouse": warehouse_name, "warehouse_name": wh.warehouse_name if wh else warehouse_name, **values, "closing_qty": closing_qty, "closing_value": closing_value})
 	rows.sort(key=lambda row: (row["catalog_group"] or "", row["item_name"], row["warehouse_name"]))
 	keys = ("opening_qty", "opening_value", "incoming_qty", "incoming_value", "outgoing_qty", "outgoing_value", "closing_qty", "closing_value")
-	return {"rows": rows, "totals": {key: sum(row[key] for row in rows) for key in keys}, "from_date": str(from_date), "to_date": str(to_date)}
+	return {
+		"rows": _paginate_rows(rows, limit_start, limit_page_length),
+		"total": len(rows),
+		"totals": {key: sum(row[key] for row in rows) for key in keys},
+		"from_date": str(from_date),
+		"to_date": str(to_date),
+	}
 
 
 @frappe.whitelist()
@@ -371,3 +396,12 @@ def _minimum_stock_levels(warehouses):
 		limit_page_length=0,
 	)
 	return {(row.parent, row.warehouse): flt(row.minimum_stock) for row in rows}
+
+
+def _paginate_rows(rows, limit_start=0, limit_page_length=25):
+	page_length = cint(limit_page_length)
+	if page_length == 0:
+		return rows
+	page_length = min(max(page_length or 25, 1), 100)
+	start = max(cint(limit_start or 0), 0)
+	return rows[start : start + page_length]
