@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_url, getdate, now_datetime, time_diff_in_hours
 
 from raspechatka.access import get_scope, require_access
+from raspechatka.requisites import digits
 
 
 def _scope_point(business_point=None):
@@ -828,12 +829,18 @@ def save_employee(data):
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
 		"registration_address", "disability", "hazardous_conditions",
 		"medical_exam_required", "document_folder_url", "notes",
-		"passport_series", "passport_number", "passport_issue_date", "passport_issued_by", "passport_department_code",
+		"passport_issue_date", "passport_issued_by", "passport_department_code",
 		"passport_main_file", "passport_registration_file", "salary_bank_name", "salary_bic",
 		"salary_correspondent_account", "salary_account", "salary_recipient_name",
 	):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
+	# Password fields are masked when the card is loaded. Never overwrite the
+	# encrypted value with asterisks during an unrelated edit.
+	for fieldname in ("passport_series", "passport_number"):
+		value = data.get(fieldname)
+		if value is not None and str(value).strip() and set(str(value).strip()) != {"*"}:
+			doc.set(fieldname, digits(value))
 	scope = get_scope()
 	allowed_points = None if scope["global"] else set(scope.get("points") or [])
 	doc.set("assigned_points", [])
