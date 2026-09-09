@@ -34,7 +34,7 @@ DOCUMENTS = {
 
 
 @frappe.whitelist()
-def get_documents(kind, search=None, status=None, business_point=None):
+def get_documents(kind, search=None, status=None, business_point=None, limit_start=0, limit_page_length=25):
 	config = _config(kind)
 	require_access(config["access_area"], "read")
 	filters = _scope_filters()
@@ -58,7 +58,26 @@ def get_documents(kind, search=None, status=None, business_point=None):
 		fields += ["reason", "total_lines", "surplus_amount", "shortage_amount"]
 	else:
 		fields += ["supplier", "expected_date", "payment_due_date", "order_status", "payment_status", "total_quantity", "received_quantity", "total_amount", "paid_amount", "outstanding_amount"]
-	return frappe.get_all(config["doctype"], filters=filters, or_filters=or_filters, fields=fields, order_by=f"{config['date_field']} desc", limit_page_length=500)
+	page_length = min(max(cint(limit_page_length or 25), 1), 100)
+	start = max(cint(limit_start or 0), 0)
+	return {
+		"rows": frappe.get_all(
+			config["doctype"],
+			filters=filters,
+			or_filters=or_filters,
+			fields=fields,
+			order_by=f"{config['date_field']} desc, creation desc",
+			limit_start=start,
+			limit_page_length=page_length,
+		),
+		"total": frappe.get_all(
+			config["doctype"],
+			filters=filters,
+			or_filters=or_filters,
+			fields=["count(*) as total"],
+			limit_page_length=1,
+		)[0].total,
+	}
 
 
 @frappe.whitelist()
