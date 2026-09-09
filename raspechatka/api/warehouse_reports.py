@@ -140,8 +140,106 @@ def get_stock_turnover(from_date=None, to_date=None, business_point=None, wareho
 
 
 @frappe.whitelist()
+def get_stock_movements(
+	from_date=None,
+	to_date=None,
+	business_point=None,
+	warehouse=None,
+	item=None,
+	search=None,
+	limit_start=0,
+	limit_page_length=25,
+):
+	require_access("page.warehouse.movements", "read")
+	from_date, to_date = from_date or nowdate(), to_date or nowdate()
+	if getdate(from_date) > getdate(to_date):
+		frappe.throw(_("Дата начала не может быть позже даты окончания."))
+	warehouses = _warehouses(business_point, warehouse)
+	filters = {
+		"warehouse": ["in", warehouses or ["__none__"]],
+		"posting_datetime": [
+			"between",
+			[
+				datetime.combine(getdate(from_date), time.min),
+				datetime.combine(getdate(to_date), time.max),
+			],
+		],
+	}
+	if item:
+		filters["item"] = item
+	elif (search or "").strip():
+		query = f"%{(search or '').strip()}%"
+		items = frappe.get_all(
+			"Catalog Item",
+			or_filters={
+				"item_name": ["like", query],
+				"item_code": ["like", query],
+				"article": ["like", query],
+			},
+			pluck="name",
+			limit_page_length=0,
+		)
+		filters["item"] = ["in", items or ["__none__"]]
+	page_length = min(max(int(limit_page_length or 25), 1), 100)
+	start = max(int(limit_start or 0), 0)
+	rows = frappe.get_all(
+		"Stock Ledger Entry",
+		filters=filters,
+		fields=[
+			"name",
+			"posting_datetime",
+			"item",
+			"warehouse",
+			"storage_location",
+			"actual_qty",
+			"incoming_rate",
+			"stock_value_difference",
+			"quantity_before",
+			"quantity_after",
+			"stock_value_after",
+			"valuation_source",
+			"voucher_type",
+			"voucher_no",
+			"voucher_detail_no",
+			"is_reversal",
+		],
+		order_by="posting_datetime desc, creation desc",
+		limit_start=start,
+		limit_page_length=page_length,
+	)
+	metadata = _item_metadata({row.item for row in rows})
+	warehouse_map = {
+		row.name: row
+		for row in frappe.get_all(
+			"Catalog Warehouse",
+			filters={"name": ["in", warehouses or ["__none__"]]},
+			fields=["name", "warehouse_name", "business_point"],
+		)
+	}
+	for row in rows:
+		meta = metadata.get(row.item)
+		warehouse_row = warehouse_map.get(row.warehouse)
+		row.update(
+			{
+				"item_name": meta.item_name if meta else row.item,
+				"item_code": meta.item_code if meta else None,
+				"article": meta.article if meta else None,
+				"uom": meta.stock_uom if meta else None,
+				"warehouse_name": warehouse_row.warehouse_name if warehouse_row else row.warehouse,
+				"business_point": warehouse_row.business_point if warehouse_row else None,
+			}
+		)
+	return {
+		"rows": rows,
+		"total": frappe.db.count("Stock Ledger Entry", filters=filters),
+		"from_date": str(from_date),
+		"to_date": str(to_date),
+	}
+
+
+@frappe.whitelist()
 def get_report_options():
-	require_any_access(("page.warehouse.balances", "page.warehouse.turnover"), "read")
+	require_any_access(("page.warehouse.balances", "page.warehouse.turnover", "page.warehouse.movements"), "read")
 	warehouses = _warehouses()
 	warehouse_rows = frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"], order_by="warehouse_name asc")
 	point_names = list({row.business_point for row in warehouse_rows})
