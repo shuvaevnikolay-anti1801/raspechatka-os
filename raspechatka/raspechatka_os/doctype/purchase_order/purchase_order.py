@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -31,9 +32,29 @@ class PurchaseOrder(Document):
 		self.total_quantity = sum(flt(row.quantity) for row in self.items)
 		self.received_quantity = sum(flt(row.received_quantity) for row in self.items)
 		self.total_amount = sum(flt(row.amount) for row in self.items)
+		if self.payment_due_date and self.payment_due_date < self.order_date:
+			frappe.throw(_("Срок оплаты не может быть раньше даты заказа."))
+		if self.docstatus == 0:
+			self.paid_amount = 0
+			self.outstanding_amount = self.total_amount
+			self.payment_status = "Не оплачено"
 
 	def on_submit(self):
 		self.db_set("order_status", "Ожидается", update_modified=False)
+		from raspechatka.raspechatka_os.doctype.supplier_payment_allocation.supplier_payment_allocation import (
+			update_purchase_order_payment_totals,
+		)
+
+		update_purchase_order_payment_totals(self.name)
+
+	def before_cancel(self):
+		if frappe.db.exists(
+			"Supplier Payment Allocation",
+			{"purchase_order": self.name},
+		):
+			frappe.throw(
+				_("Перед отменой заказа удалите связи с платежами.")
+			)
 
 
 def update_received_quantities(order_name):

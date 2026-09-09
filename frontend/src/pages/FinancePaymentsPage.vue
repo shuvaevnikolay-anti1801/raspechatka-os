@@ -13,7 +13,7 @@ const editorOpen = ref(false);
 const cashExpenseOpen = ref(false);
 const saving = ref(false);
 const formError = ref("");
-const options = reactive({ entities: [], points: [], accounts: [], articles: [], payment_methods: [], cash_registers: [] });
+const options = reactive({ entities: [], points: [], accounts: [], articles: [], payment_methods: [], cash_registers: [], suppliers: [] });
 const filters = reactive({
 	from_date: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
 	to_date: new Date().toISOString().slice(0, 10),
@@ -179,7 +179,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 						<label>Точка<select v-model="form.business_point" required><option value="">Не выбрана</option><option v-for="item in pointsFor(form.business_entity)" :key="item.name" :value="item.name">{{ item.point_name }}</option></select></label>
 						<label>Сумма<input v-model.number="form.amount" type="number" min="0.01" step="0.01" required /></label>
 						<label>Статья<select v-model="form.financial_article" required><option value="">Не выбрана</option><option v-for="item in expenseArticles" :key="item.name" :value="item.name">{{ item.article_name }}</option></select></label>
-						<label class="span-2">Контрагент<input v-model="form.counterparty_name" placeholder="При необходимости" /></label>
+						<label>Поставщик<select v-model="form.supplier"><option value="">Другой контрагент</option><option v-for="item in options.suppliers" :key="item.name" :value="item.name">{{ item.supplier_name }}</option></select></label><label>Контрагент<input v-model="form.counterparty_name" :disabled="Boolean(form.supplier)" placeholder="При необходимости" /></label>
 						<label class="span-2">Назначение<textarea v-model="form.purpose" rows="2" required /></label>
 						<label class="span-2">Комментарий<textarea v-model="form.comment" rows="2" /></label>
 					</div>
