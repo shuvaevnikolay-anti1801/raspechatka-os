@@ -16,6 +16,19 @@ def is_valid_inn(value):
 	return False
 
 
+def is_valid_snils(value):
+	snils = digits(value)
+	if len(snils) != 11:
+		return False
+	number = int(snils[:9])
+	control = int(snils[9:])
+	if number < 1001998:
+		return True
+	total = sum(int(digit) * weight for digit, weight in zip(snils[:9], range(9, 0, -1), strict=True))
+	calculated = 0 if total in (100, 101) else total % 101
+	return (0 if calculated == 100 else calculated) == control
+
+
 def is_valid_ogrnip(value):
 	ogrnip = digits(value)
 	return len(ogrnip) == 15 and int(ogrnip[-1]) == int(ogrnip[:-1]) % 13 % 10
