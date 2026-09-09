@@ -22,11 +22,12 @@ class PayrollAccrualType(Document):
 		filters = {
 			"business_entity": self.business_entity,
 			"business_point": self.business_point or "",
+			"position": self.position or "",
 			"component_code": self.component_code,
 			"name": ["!=", self.name or ""],
 		}
 		if frappe.db.exists("Payroll Accrual Type", filters):
-			frappe.throw(_("Для этого юридического лица и точки уже есть начисление с кодом {0}").format(self.component_code))
+			frappe.throw(_("Для этой точки и должности уже есть начисление с кодом {0}").format(self.component_code))
 
 	def _validate_exemption_basis(self):
 		all_taxable = all((
