@@ -8,7 +8,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 
 const route = useRoute();
-const rows = ref([]), loading = ref(true), error = ref("");
+const rows = ref([]), totalRows = ref(0), currentPage = ref(1), pageSize = ref(25), loading = ref(true), error = ref("");
 const editorOpen = ref(false), saving = ref(false), formError = ref("");
 const filters = ref({ search:"", receipt_type:"", status:"", business_point:"" });
 const options = reactive({ entities: [], points: [], warehouses: [], suppliers: [], items: [], locations: [], storage_defaults: [] });
@@ -37,9 +37,10 @@ function statusLabel(value) { return value === 1 ? "Проведён" : value ==
 function pointLabel(name) { return options.points.find((row) => row.name === name)?.point_name || name; }
 function supplierLabel(name) { return options.suppliers.find((row) => row.name === name)?.supplier_name || name || "—"; }
 
-async function load() {
+async function load(page = 1, size = pageSize.value) {
+  currentPage.value = page; pageSize.value = size;
   loading.value = true; error.value = "";
-  try { rows.value = await call("raspechatka.api.warehouse.get_receipts", filters.value); }
+  try { const result = await call("raspechatka.api.warehouse.get_receipts", { ...filters.value, limit_start: (page - 1) * size, limit_page_length: size }); rows.value = result.rows || []; totalRows.value = Number(result.total || 0); }
   catch (e) { error.value = e.message; }
   finally { loading.value = false; }
 }
@@ -119,8 +120,8 @@ onMounted(async () => { await Promise.all([load(), loadOptions()]); if (route.qu
         <button class="button button-primary" @click="openReceipt(null, 'Приёмка')">＋ Приёмка</button>
       </div>
     </template></ListPageHeader>
-    <SmartFilterBar v-model="filters" :fields="filterFields" view-key="warehouse.receipts" @apply="load" @reset="load" />
-    <SmartDataTable :rows="rows" :columns="listColumns" :totals="listTotals" view-key="warehouse.receipts" :loading="loading" :error="error" empty-title="Документов пока нет" empty-text="Создайте первую приёмку или оприходование" @open="openReceipt($event.name)" @retry="load"><template #cell-receipt_type="{row}"><span class="type-chip" :class="{service:row.receipt_type==='Оприходование'}">{{row.receipt_type}}</span></template><template #cell-docstatus="{row}"><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></template></SmartDataTable>
+    <SmartFilterBar v-model="filters" :fields="filterFields" view-key="warehouse.receipts" @apply="load(1)" @reset="load(1)" />
+    <SmartDataTable :rows="rows" :columns="listColumns" :totals="listTotals" view-key="warehouse.receipts" :loading="loading" :error="error" :server-pagination="true" :total-rows="totalRows" :current-page="currentPage" @page-change="load" @page-size-change="load(1, $event)" empty-title="Документов пока нет" empty-text="Создайте первую приёмку или оприходование" @open="openReceipt($event.name)" @retry="load(currentPage)"><template #cell-receipt_type="{row}"><span class="type-chip" :class="{service:row.receipt_type==='Оприходование'}">{{row.receipt_type}}</span></template><template #cell-docstatus="{row}"><span class="document-state" :class="`state-${row.docstatus}`">{{statusLabel(row.docstatus)}}</span></template></SmartDataTable>
 
     <AppModal v-if="editorOpen" :title="title" wide @close="editorOpen=false">
       <form class="receipt-form" @submit.prevent="save(false)">
