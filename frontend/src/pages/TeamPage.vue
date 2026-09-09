@@ -26,6 +26,28 @@ const title = computed(() => ({ employees: "Сотрудники", schedule: "Г
 const pointNames = computed(() => Object.fromEntries(data.value.points.map((item) => [item.name, item.point_name])));
 const days = computed(() => Array.from({ length: schedule.value.days || new Date(Number(month.value.slice(0,4)), Number(month.value.slice(5,7)), 0).getDate() }, (_, i) => i + 1));
 const selectedPointEmployees = computed(() => point.value ? data.value.employees.filter((e) => (e.points || []).includes(point.value)) : data.value.employees);
+const baseShifts = computed(() => data.value.shift_templates.slice(0, 2));
+const morningShift = computed(() => baseShifts.value[0]);
+const eveningShift = computed(() => baseShifts.value[1]);
+const BOTH = "__BOTH__";
+const dayCoverage = computed(() => Object.fromEntries(days.value.map((day) => {
+  let morning = 0; let evening = 0;
+  for (const employee of selectedPointEmployees.value) {
+    const value = draft.value[cellKey(employee.name, day)];
+    if (value === BOTH || value === morningShift.value?.name) morning += 1;
+    if (value === BOTH || value === eveningShift.value?.name) evening += 1;
+  }
+  return [day, { morning, evening, ok: morning === 1 && evening === 1 }];
+})));
+const completeDays = computed(() => Object.values(dayCoverage.value).filter((item) => item.ok).length);
+const plannedHours = computed(() => Object.fromEntries(selectedPointEmployees.value.map((employee) => [
+  employee.name,
+  days.value.reduce((sum, day) => {
+    const value = draft.value[cellKey(employee.name, day)];
+    if (value === BOTH) return sum + baseShifts.value.reduce((total, shift) => total + Number(shift?.paid_hours || 0), 0);
+    return sum + Number(data.value.shift_templates.find((shift) => shift.name === value)?.paid_hours || 0);
+  }, 0),
+])));
 const filterModel = computed({ get: () => ({ business_point: point.value, month: month.value }), set: (value) => { point.value = value.business_point; month.value = value.month; } });
 const filterFields = computed(() => [
   { key: "business_point", label: "Точка", type: "select", allLabel: "Все доступные точки", options: data.value.points.map((item) => ({ value: item.name, label: `${item.point_name} · ${item.city || ""}` })) },
@@ -73,7 +95,11 @@ function setPayrollDates() {
 }
 function hydrateDraft() {
   const next = {};
-  for (const row of schedule.value.entries || []) next[`${row.employee}|${row.date}`] = row.shift_template;
+  for (const row of schedule.value.entries || []) {
+    const key = `${row.employee}|${row.date}`;
+    const current = next[key];
+    next[key] = current && current !== row.shift_template ? BOTH : row.shift_template;
+  }
   draft.value = next;
 }
 
@@ -93,9 +119,13 @@ async function load() {
 async function saveSchedule(publish = false) {
   if (!point.value) return;
   saving.value = true; error.value = "";
-  const entries = Object.entries(draft.value).filter(([, shift]) => shift).map(([key, shift_template]) => {
-    const [employee, date] = key.split("|"); return { employee, date, shift_template };
-  });
+  const entries = [];
+  for (const [key, value] of Object.entries(draft.value)) {
+    if (!value) continue;
+    const [employee, date] = key.split("|");
+    const shifts = value === BOTH ? baseShifts.value : data.value.shift_templates.filter((shift) => shift.name === value);
+    for (const shift of shifts) entries.push({ employee, date, shift_template: shift.name });
+  }
   try {
     await call("raspechatka.api.team.save_schedule", { business_point: point.value, month: `${month.value}-01`, entries: JSON.stringify(entries), publish: publish ? 1 : 0 }, { method: "POST" });
     await load();
@@ -142,16 +172,20 @@ onMounted(load);
       </div>
 
       <div v-else-if="section==='schedule'" class="team-panel schedule-panel">
-        <div class="panel-title"><div><h2>План и факт смен</h2><p>Выберите смену в ячейке. Пустая ячейка — выходной. После публикации график становится доступен сотрудникам.</p></div><span class="status">{{ schedule.status || "Новый" }}</span></div>
+        <div class="panel-title"><div><h2>План и факт смен</h2><p>На каждый день назначьте ровно одну утреннюю и одну вечернюю смену. «У/В» назначает обе смены одному сотруднику.</p></div><span class="status">{{ schedule.status || "Новый" }}</span></div>
         <div v-if="!point" class="team-empty"><b>Выберите точку</b></div>
-        <div v-else class="schedule-scroll">
-          <table class="schedule-grid"><thead><tr><th class="employee-col">Сотрудник</th><th v-for="day in days" :key="day">{{ day }}</th><th>Часы</th></tr></thead>
-          <tbody><tr v-for="employee in selectedPointEmployees" :key="employee.name"><th class="employee-col">{{ employee.employee_name }}</th>
-            <td v-for="day in days" :key="day"><select v-model="draft[cellKey(employee.name, day)]" :title="isoDate(day)"><option value="">—</option><option v-for="shift in data.shift_templates" :key="shift.name" :value="shift.name">{{ shift.shift_code }}</option></select></td>
-            <td class="hours">{{ days.reduce((sum, day) => sum + Number(data.shift_templates.find(s => s.name === draft[cellKey(employee.name, day)])?.paid_hours || 0), 0) }}</td>
-          </tr></tbody></table>
-        </div>
-        <div class="legend"><span v-for="shift in data.shift_templates" :key="shift.name"><b>{{ shift.shift_code }}</b> {{ shift.shift_name }} · {{ shift.paid_hours }} ч</span></div>
+        <template v-else>
+          <div class="coverage-summary" :class="{ warning: completeDays !== days.length }"><b>Заполнено {{ completeDays }} из {{ days.length }} дней</b><span v-if="completeDays !== days.length">Красным отмечены дни без полного покрытия.</span><span v-else>График заполнен полностью.</span></div>
+          <div class="schedule-scroll">
+            <table class="schedule-grid"><thead><tr><th class="employee-col">Сотрудник</th><th v-for="day in days" :key="day" :class="{ 'coverage-bad': !dayCoverage[day]?.ok }">{{ day }}</th><th>Часы</th></tr></thead>
+            <tbody><tr v-for="employee in selectedPointEmployees" :key="employee.name"><th class="employee-col">{{ employee.employee_name }}</th>
+              <td v-for="day in days" :key="day" :class="{ 'coverage-bad-soft': !dayCoverage[day]?.ok }"><select v-model="draft[cellKey(employee.name, day)]" :title="isoDate(day)"><option value="">—</option><option v-for="shift in baseShifts" :key="shift.name" :value="shift.name">{{ shift.shift_code }}</option><option v-if="baseShifts.length === 2" :value="BOTH">У/В</option></select></td>
+              <td class="hours">{{ plannedHours[employee.name] || 0 }}</td>
+            </tr></tbody>
+            <tfoot><tr><th class="employee-col">Проверка дня</th><td v-for="day in days" :key="day" :class="{ 'coverage-ok': dayCoverage[day]?.ok, 'coverage-bad': !dayCoverage[day]?.ok }"><b>{{ dayCoverage[day]?.ok ? "✓" : "!" }}</b><small v-if="!dayCoverage[day]?.ok">У {{ dayCoverage[day]?.morning || 0 }} · В {{ dayCoverage[day]?.evening || 0 }}</small></td><td>{{ completeDays }}/{{ days.length }}</td></tr></tfoot></table>
+          </div>
+        </template>
+        <div class="legend"><span v-for="shift in baseShifts" :key="shift.name"><b>{{ shift.shift_code }}</b> {{ shift.shift_name }} · {{ shift.paid_hours }} ч</span><span><b>У/В</b> обе смены у одного сотрудника</span></div>
       </div>
 
       <div v-else-if="section==='payroll'" class="team-panel">
@@ -179,5 +213,5 @@ onMounted(load);
 </template>
 
 <style scoped>
-.team-page{display:grid;gap:18px}.team-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.team-stats article,.team-panel{border:1px solid #e1e6dc;border-radius:16px;background:#fff;box-shadow:0 8px 26px rgba(38,59,25,.06)}.team-stats article{padding:16px}.team-stats span{display:block;color:#71806a;font-size:13px}.team-stats b{display:block;margin-top:7px;font-size:27px;color:#284d1e}.team-panel{padding:20px;min-width:0}.panel-title{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:16px}.panel-title h2,.game-list h3{margin:0 0 5px}.panel-title p,.game-list p{margin:0;color:#74806f}.team-empty{display:grid;place-items:center;min-height:190px;text-align:center;color:#7a8575}.team-empty b{color:#35452e;font-size:17px}.team-empty span{max-width:540px}.team-error,.team-loading{padding:16px;border-radius:12px;background:#fff}.status{padding:6px 10px;border-radius:999px;background:#eef6e8;color:#43772e}.schedule-scroll{overflow:auto;border:1px solid #e5e9e1;border-radius:12px}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:1100px;width:100%;font-size:12px}.schedule-grid th,.schedule-grid td{border-right:1px solid #edf0e9;border-bottom:1px solid #edf0e9;padding:4px;text-align:center}.schedule-grid thead th{position:sticky;top:0;background:#f6f8f3;z-index:2}.schedule-grid .employee-col{position:sticky;left:0;min-width:190px;text-align:left;background:#fff;z-index:1;padding-left:10px}.schedule-grid thead .employee-col{z-index:3;background:#f6f8f3}.schedule-grid select{width:42px;height:32px;border:1px solid #d9e0d3;border-radius:6px;background:#fff}.schedule-grid .hours{font-weight:700}.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;color:#6d7868;font-size:13px}.legend b{color:#355d23}.payroll-controls{justify-content:flex-start}.payroll-controls>div{margin-right:auto}.payroll-controls label{font-size:12px;color:#687462}.payroll-controls input{display:block;margin-top:4px;border:1px solid #dbe2d5;border-radius:8px;padding:8px}.totals{display:flex;justify-content:flex-end;gap:24px;flex-wrap:wrap;margin-top:15px;padding-top:15px;border-top:1px solid #e7ebe3}.totals span{color:#71806a}.totals b{display:block;color:#284d1e;font-size:18px}.saved{color:#397525;text-align:right}.game-list{display:grid;gap:10px}.game-list article{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px;border:1px solid #edf0e9;border-radius:12px}.game-list code{color:#67805b}@media(max-width:900px){.team-stats{grid-template-columns:repeat(2,1fr)}.panel-title{align-items:flex-start;flex-wrap:wrap}.payroll-controls>div{width:100%}}@media(max-width:560px){.team-stats{grid-template-columns:1fr}.team-panel{padding:14px}}
+.team-page{display:grid;gap:18px}.team-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.team-stats article,.team-panel{border:1px solid #e1e6dc;border-radius:16px;background:#fff;box-shadow:0 8px 26px rgba(38,59,25,.06)}.team-stats article{padding:16px}.team-stats span{display:block;color:#71806a;font-size:13px}.team-stats b{display:block;margin-top:7px;font-size:27px;color:#284d1e}.team-panel{padding:20px;min-width:0}.panel-title{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:16px}.panel-title h2,.game-list h3{margin:0 0 5px}.panel-title p,.game-list p{margin:0;color:#74806f}.team-empty{display:grid;place-items:center;min-height:190px;text-align:center;color:#7a8575}.team-empty b{color:#35452e;font-size:17px}.team-empty span{max-width:540px}.team-error,.team-loading{padding:16px;border-radius:12px;background:#fff}.status{padding:6px 10px;border-radius:999px;background:#eef6e8;color:#43772e}.schedule-scroll{overflow:auto;border:1px solid #e5e9e1;border-radius:12px}.schedule-grid{border-collapse:separate;border-spacing:0;min-width:1100px;width:100%;font-size:12px}.schedule-grid th,.schedule-grid td{border-right:1px solid #edf0e9;border-bottom:1px solid #edf0e9;padding:4px;text-align:center}.schedule-grid thead th{position:sticky;top:0;background:#f6f8f3;z-index:2}.schedule-grid .employee-col{position:sticky;left:0;min-width:190px;text-align:left;background:#fff;z-index:1;padding-left:10px}.schedule-grid thead .employee-col{z-index:3;background:#f6f8f3}.schedule-grid select{width:42px;height:32px;border:1px solid #d9e0d3;border-radius:6px;background:#fff}.schedule-grid .hours{font-weight:700}.schedule-grid tfoot th,.schedule-grid tfoot td{position:sticky;bottom:0;background:#f6f8f3;z-index:2}.schedule-grid tfoot .employee-col{z-index:3}.schedule-grid tfoot small{display:block;white-space:nowrap;font-size:9px}.coverage-bad{background:#ffe4e1!important;color:#a52b21}.coverage-bad-soft{background:#fff8f7}.coverage-ok{background:#eaf6e4!important;color:#357422}.coverage-summary{display:flex;gap:12px;align-items:center;margin:-4px 0 12px;padding:10px 12px;border-radius:10px;background:#edf7e8;color:#3d6f2a;font-size:13px}.coverage-summary.warning{background:#fff0ee;color:#9b3329}.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;color:#6d7868;font-size:13px}.legend b{color:#355d23}.payroll-controls{justify-content:flex-start}.payroll-controls>div{margin-right:auto}.payroll-controls label{font-size:12px;color:#687462}.payroll-controls input{display:block;margin-top:4px;border:1px solid #dbe2d5;border-radius:8px;padding:8px}.totals{display:flex;justify-content:flex-end;gap:24px;flex-wrap:wrap;margin-top:15px;padding-top:15px;border-top:1px solid #e7ebe3}.totals span{color:#71806a}.totals b{display:block;color:#284d1e;font-size:18px}.saved{color:#397525;text-align:right}.game-list{display:grid;gap:10px}.game-list article{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px;border:1px solid #edf0e9;border-radius:12px}.game-list code{color:#67805b}@media(max-width:900px){.team-stats{grid-template-columns:repeat(2,1fr)}.panel-title{align-items:flex-start;flex-wrap:wrap}.payroll-controls>div{width:100%}}@media(max-width:560px){.team-stats{grid-template-columns:1fr}.team-panel{padding:14px}}
 </style>
