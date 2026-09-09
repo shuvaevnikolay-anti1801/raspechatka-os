@@ -54,6 +54,11 @@ class FinanceTransaction(Document):
 	def before_cancel(self):
 		if self.source == "Tochka Bank":
 			frappe.throw(_("Банковский платёж нельзя отменить вручную: исправьте правило обработки исходной операции"))
+		if frappe.db.exists(
+			"Supplier Payment Allocation",
+			{"finance_transaction": self.name},
+		):
+			frappe.throw(_("Перед отменой платежа удалите его связи с заказами."))  # noqa: RUF001
 
 	def on_cancel(self):
 		self.db_set("status", "Cancelled")
