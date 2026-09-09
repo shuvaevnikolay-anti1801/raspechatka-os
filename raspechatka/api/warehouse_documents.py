@@ -100,7 +100,7 @@ def get_documents(kind, search=None, status=None, business_point=None, limit_sta
 			config["doctype"],
 			filters=filters,
 			or_filters=or_filters,
-			fields=["count(*) as total"],
+			fields=[{"COUNT": "*", "as": "total"}],
 			limit_page_length=1,
 		)[0].total,
 	}
