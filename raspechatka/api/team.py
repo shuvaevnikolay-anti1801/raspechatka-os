@@ -530,18 +530,23 @@ def save_schedule(business_point, month, entries=None, publish=0):
 		if work_date.year != month.year or work_date.month != month.month:
 			frappe.throw(_("Дата смены должна входить в выбранный месяц"))
 		employee = item.get("employee")
+		template_name = item.get("shift_template")
+		if work_date < today:
+			key = (str(work_date), template_name)
+			if key in seen_slots:
+				frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
+			seen_slots.add(key)
+			requested_past_assignments.add((str(work_date), employee, template_name))
+			continue
 		if employee not in allowed_employees:
 			frappe.throw(_("Сотрудник не назначен на выбранную точку"))
-		template = templates.get(item.get("shift_template"))
+		template = templates.get(template_name)
 		if not template:
 			frappe.throw(_("В графике можно использовать только базовые смены «утро» и «вечер»"))
 		key = (str(work_date), template.name)
 		if key in seen_slots:
 			frappe.throw(_("На одну смену в один день можно назначить только одного сотрудника"))
 		seen_slots.add(key)
-		if work_date < today:
-			requested_past_assignments.add((str(work_date), employee, template.name))
-			continue
 		editable_entries.append({
 			"work_date": work_date,
 			"employee": employee,
