@@ -11,6 +11,8 @@ const form = reactive({ access_token: "" });
 const preview = ref(null);
 const salesSync = ref({ points: [], stats: {} });
 const sourceStores = ref([]);
+const openingStock = ref({ warehouses: [], documents: [] });
+const stockSources = ref([]);
 let statusTimer;
 
 const status = computed(
@@ -26,12 +28,14 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const [base, sales] = await Promise.all([
+    const [base, sales, stock] = await Promise.all([
       call("raspechatka.api.moysklad.get_settings"),
       call("raspechatka.api.moysklad_sales.get_sales_sync_settings"),
+      call("raspechatka.api.moysklad_stock.get_opening_stock_settings"),
     ]);
     applySettings(base);
     salesSync.value = sales || { points: [], stats: {} };
+    openingStock.value = stock || { warehouses: [], documents: [] };
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -202,6 +206,104 @@ async function startSalesRecovery() {
     }
     notice.value =
       "Каталог и вся история с 1 июля поставлены в очередь. Чеки переносить вручную не потребуется.";
+    await load();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function discoverStockSources() {
+  busy.value = "discover-stock";
+  error.value = "";
+  notice.value = "";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock.discover_stock_sources",
+      {},
+      { method: "POST" }
+    );
+    stockSources.value = result.stores || [];
+    notice.value = `Найдено складов МоегоСклада: ${stockSources.value.length}`;
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function saveStockMappings() {
+  busy.value = "save-stock";
+  error.value = "";
+  notice.value = "";
+  try {
+    const sources = Object.fromEntries(
+      stockSources.value.map((item) => [item.id, item])
+    );
+    openingStock.value = await call(
+      "raspechatka.api.moysklad_stock.save_stock_mappings",
+      {
+        data: JSON.stringify({
+          mappings: (openingStock.value.warehouses || []).map((warehouse) => ({
+            warehouse: warehouse.name,
+            source_id: warehouse.moysklad_store_id || "",
+            source_name:
+              sources[warehouse.moysklad_store_id]?.name ||
+              warehouse.moysklad_store_name ||
+              "",
+          })),
+        }),
+      },
+      { method: "POST" }
+    );
+    notice.value = "Сопоставление складов сохранено";
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function previewOpeningStock() {
+  await saveStockMappings();
+  if (error.value) return;
+  busy.value = "preview-stock";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock.preview_opening_stock",
+      {},
+      { method: "POST" }
+    );
+    openingStock.value = {
+      ...openingStock.value,
+      status: "Previewed",
+      preview_token: result.preview_token,
+      preview: result,
+    };
+    notice.value = `Проверено позиций: ${result.line_count}. Данные ещё не записаны.`;
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function importOpeningStock() {
+  if (!openingStock.value.preview_token) return;
+  if (!window.confirm("Провести проверенные начальные остатки? Повторный импорт будет запрещён.")) return;
+  busy.value = "import-stock";
+  error.value = "";
+  notice.value = "";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock.import_opening_stock",
+      { preview_token: openingStock.value.preview_token },
+      { method: "POST" }
+    );
+    notice.value = result.duplicate
+      ? "Начальные остатки уже были перенесены"
+      : `Создано инвентаризаций: ${result.documents.length}`;
     await load();
   } catch (e) {
     error.value = e.message;
@@ -528,6 +630,73 @@ onUnmounted(() => window.clearInterval(statusTimer));
         </section>
 
         <p v-if="salesSync.error" class="last-error">{{ salesSync.error }}</p>
+      </article>
+
+      <article class="preview-card sales-sync-card">
+        <div class="card-heading">
+          <div>
+            <h2>Начальные остатки</h2>
+            <p>
+              Одноразовый перенос фактического количества и себестоимости.
+              Сначала выполняется проверка, затем отдельное подтверждение.
+            </p>
+          </div>
+          <span class="connection-status" :class="{ connected: openingStock.status === 'Imported', error: openingStock.status === 'Error' }">
+            <span></span>{{ openingStock.status || "Idle" }}
+          </span>
+        </div>
+
+        <div class="mapping-heading">
+          <div>
+            <strong>Сопоставление складов</strong>
+            <small>Каждый склад ОС должен соответствовать одному складу МоегоСклада.</small>
+          </div>
+          <button class="button" :disabled="Boolean(busy) || openingStock.status === 'Imported'" @click="discoverStockSources">
+            {{ busy === "discover-stock" ? "Получаем…" : "Получить склады МоегоСклада" }}
+          </button>
+        </div>
+        <div class="mapping-list">
+          <div v-for="warehouse in openingStock.warehouses" :key="warehouse.name" class="mapping-row">
+            <div>
+              <strong>{{ warehouse.warehouse_name }}</strong>
+              <small>{{ warehouse.business_point }}</small>
+            </div>
+            <span>→</span>
+            <select v-model="warehouse.moysklad_store_id" :disabled="openingStock.status === 'Imported'">
+              <option value="">Не сопоставлен</option>
+              <option
+                v-if="warehouse.moysklad_store_id && !stockSources.some((item) => item.id === warehouse.moysklad_store_id)"
+                :value="warehouse.moysklad_store_id"
+              >
+                {{ warehouse.moysklad_store_name }}
+              </option>
+              <option v-for="store in stockSources" :key="store.id" :value="store.id" :disabled="store.archived">
+                {{ store.name }}{{ store.archived ? " — архив" : "" }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button class="button" :disabled="Boolean(busy) || openingStock.status === 'Imported'" @click="saveStockMappings">
+            Сохранить сопоставление
+          </button>
+          <button class="button" :disabled="Boolean(busy) || openingStock.status === 'Imported'" @click="previewOpeningStock">
+            {{ busy === "preview-stock" ? "Проверяем…" : "Проверить остатки" }}
+          </button>
+          <button class="button button-primary" :disabled="Boolean(busy) || openingStock.status !== 'Previewed'" @click="importOpeningStock">
+            {{ busy === "import-stock" ? "Проводим…" : "Перенести проверенные остатки" }}
+          </button>
+        </div>
+
+        <dl v-if="openingStock.preview" class="sync-summary">
+          <div><dt>Складов</dt><dd>{{ openingStock.preview.warehouse_count || 0 }}</dd></div>
+          <div><dt>Позиций</dt><dd>{{ openingStock.preview.line_count || 0 }}</dd></div>
+          <div><dt>Количество</dt><dd>{{ openingStock.preview.total_quantity || 0 }}</dd></div>
+          <div><dt>Стоимость</dt><dd>{{ openingStock.preview.total_value || 0 }} ₽</dd></div>
+        </dl>
+        <p v-if="openingStock.imported_at" class="field-hint">Перенесено: {{ openingStock.imported_at }}</p>
+        <p v-if="openingStock.error" class="last-error">{{ openingStock.error }}</p>
       </article>
 
       <article v-if="preview?.sources?.length" class="preview-card">
