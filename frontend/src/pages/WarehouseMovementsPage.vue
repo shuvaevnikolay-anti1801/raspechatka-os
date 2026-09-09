@@ -64,13 +64,16 @@ const filterFields = computed(() => [
 const quantity = (value) =>
 	new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(Number(value || 0));
 const money = (value) =>
-	`${new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0))} ₽`;
+	`${new Intl.NumberFormat("ru-RU", {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(Number(value || 0))} ₽`;
 const date = (value) =>
 	value
 		? new Intl.DateTimeFormat("ru-RU", {
 				dateStyle: "short",
 				timeStyle: "short",
-			}).format(new Date(String(value).replace(" ", "T")))
+		  }).format(new Date(String(value).replace(" ", "T")))
 		: "—";
 const columns = [
 	{ key: "posting_datetime", label: "Дата", format: date },
