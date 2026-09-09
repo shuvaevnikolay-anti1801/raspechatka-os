@@ -10,6 +10,7 @@ import MoySkladIntegrationPage from "./pages/MoySkladIntegrationPage.vue";
 import WarehouseReceiptsPage from "./pages/WarehouseReceiptsPage.vue";
 import WarehouseDocumentsPage from "./pages/WarehouseDocumentsPage.vue";
 import WarehouseReportPage from "./pages/WarehouseReportPage.vue";
+import WarehouseMovementsPage from "./pages/WarehouseMovementsPage.vue";
 import ClientsPage from "./pages/ClientsPage.vue";
 import ClientClubPage from "./pages/ClientClubPage.vue";
 import ClientMarketingPage from "./pages/ClientMarketingPage.vue";
@@ -46,6 +47,7 @@ const routes = [
   { path: "/warehouse/purchase-orders", name: "warehouse-purchase-orders", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "purchase-orders" } },
   { path: "/warehouse/balances", name: "warehouse-balances", component: WarehouseReportPage, meta: { module: "warehouse", report: "balances" } },
   { path: "/warehouse/turnover", name: "warehouse-turnover", component: WarehouseReportPage, meta: { module: "warehouse", report: "turnover" } },
+  { path: "/warehouse/movements", name: "warehouse-movements", component: WarehouseMovementsPage, meta: { module: "warehouse" } },
   { path: "/clients", name: "clients", component: ClientsPage, meta: { module: "clients" } },
   { path: "/clients/club", name: "client-club", component: ClientClubPage, meta: { module: "clients" } },
   { path: "/clients/segments", name: "client-segments", component: ClientMarketingPage, meta: { module: "clients", kind: "segments" } },
