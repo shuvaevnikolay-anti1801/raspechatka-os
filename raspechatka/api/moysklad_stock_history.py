@@ -16,7 +16,13 @@ from frappe import _
 from frappe.utils import flt, get_datetime, now_datetime
 
 from raspechatka.access import require_access
-from raspechatka.api.moysklad import API_BASE, MoySkladRequestError, _ref_id, _request
+from raspechatka.api.moysklad import (
+	API_BASE,
+	MoySkladRequestError,
+	_find_existing_catalog_item,
+	_ref_id,
+	_request,
+)
 
 HISTORY_START = "2026-07-01"
 PAGE_SIZE = 100
@@ -176,12 +182,12 @@ def _create_opening_documents(settings, stats):
 			quantity = flt(source.get("stock"))
 			if quantity <= 0:
 				continue
-			source_item_id = _ref_id(source.get("assortment") or source.get("meta"))
-			item = frappe.db.get_value("Catalog Item", {"moysklad_id": source_item_id}, "name")
+			item = _resolve_catalog_item(settings, source, stats)
 			if not item:
 				raise frappe.ValidationError(
 					_("Не сопоставлен товар начального остатка: {0}").format(
-						source.get("name") or source_item_id
+						source.get("name")
+						or _ref_id(source.get("assortment") or source.get("meta"))
 					)
 				)
 			rate = _money(source.get("price") or source.get("buyPrice"))
@@ -308,7 +314,12 @@ def _import_stock_document(event, stats):
 		stats["document_duplicates"] += 1
 		return
 	warehouse = _mapped_warehouse(row.get("store"))
-	items = _document_items(row, incoming=event["kind"] == "receipt")
+	items = _document_items(
+		frappe.get_single("MoySklad Settings"),
+		row,
+		stats,
+		incoming=event["kind"] == "receipt",
+	)
 	if not items:
 		stats["empty_documents"] += 1
 		return
@@ -347,11 +358,11 @@ def _mapped_warehouse(reference):
 	return warehouse
 
 
-def _document_items(row, incoming):
+def _document_items(settings, row, stats, incoming):
 	items = []
 	for position in row.get("_positions") or []:
 		source_item_id = _ref_id(position.get("assortment"))
-		item = frappe.db.get_value("Catalog Item", {"moysklad_id": source_item_id}, "name")
+		item = _resolve_catalog_item(settings, position, stats)
 		if not item:
 			raise frappe.ValidationError(
 				_("Не сопоставлена позиция МоегоСклада {0}").format(
@@ -369,6 +380,46 @@ def _document_items(row, incoming):
 			item_row["rate"] = rate * (1 - discount / 100) if rate > 0 else _catalog_buy_rate(item) or 0.01
 		items.append(item_row)
 	return items
+
+
+def _resolve_catalog_item(settings, source, stats):
+	"""Resolve and permanently bind one unlinked catalog card without guessing."""
+	reference = source.get("assortment") or source.get("meta") or {}
+	source_id = _ref_id(reference)
+	if not source_id:
+		return None
+	item = frappe.db.get_value("Catalog Item", {"moysklad_id": source_id}, "name")
+	if item:
+		return item
+
+	meta = reference.get("meta") if isinstance(reference.get("meta"), dict) else reference
+	source_kind = str(meta.get("type") or "").lower()
+	if not source_kind:
+		href = str(meta.get("href") or "").split("?", 1)[0].rstrip("/")
+		parts = href.split("/")
+		if "entity" in parts and parts.index("entity") + 1 < len(parts):
+			source_kind = parts[parts.index("entity") + 1].lower()
+	if source_kind not in {"product", "variant"}:
+		return None
+
+	source_row = _request(settings, f"entity/{source_kind}/{source_id}")
+	item = _find_existing_catalog_item(source_row, "Product")
+	if not item:
+		item = _find_existing_catalog_item(source_row, "Variant")
+	if not item:
+		return None
+	frappe.db.set_value(
+		"Catalog Item",
+		item,
+		{
+			"moysklad_id": source_id,
+			"moysklad_updated_at": source_row.get("updated"),
+			"moysklad_payload_json": json.dumps(source_row, ensure_ascii=False, default=str),
+		},
+		update_modified=False,
+	)
+	stats["catalog_links_recovered"] += 1
+	return item
 
 
 def _supplier(reference):
@@ -603,3 +654,4 @@ def _load_json(value):
 		return json.loads(value)
 	except (TypeError, ValueError):
 		return None
+
