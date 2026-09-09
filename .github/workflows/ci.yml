@@ -78,8 +78,12 @@ jobs:
 
       - name: Install MariaDB Client
         run: |
-          sudo apt update
-          sudo apt-get install mariadb-client
+          # The hosted runner occasionally exposes a stale Google Chrome index.
+          # Chrome is not used by this job, so do not let that external feed
+          # prevent the MariaDB client (and therefore all tests) from installing.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y mariadb-client
 
       - name: Setup
         run: |
