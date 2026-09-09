@@ -67,7 +67,7 @@
    "fieldname": "source",
    "fieldtype": "Select",
    "label": "Источник",
-   "options": "Manual\\nMoySklad Opening Balance",
+   "options": "Manual\nMoySklad Opening Balance",
    "default": "Manual",
    "read_only": 1
   },
