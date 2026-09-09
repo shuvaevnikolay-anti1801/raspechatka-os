@@ -239,7 +239,9 @@ def get_stock_movements(
 
 @frappe.whitelist()
 def get_report_options():
-	require_any_access(("page.warehouse.balances", "page.warehouse.turnover", "page.warehouse.movements"), "read")
+	require_any_access(
+		("page.warehouse.balances", "page.warehouse.turnover", "page.warehouse.movements"), "read"
+	)
 	warehouses = _warehouses()
 	warehouse_rows = frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"], order_by="warehouse_name asc")
 	point_names = list({row.business_point for row in warehouse_rows})
