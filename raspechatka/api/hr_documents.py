@@ -94,17 +94,29 @@ def _employee_variables(employee):
 	assignment = next((row for row in employee.assigned_points if cint(row.is_default)), None)
 	assignment = assignment or (employee.assigned_points[0] if employee.assigned_points else None)
 	point = frappe.get_doc("Business Point", assignment.business_point) if assignment else None
-	components = frappe.get_all(
+	component_rows = frappe.get_all(
 		"Payroll Accrual Type",
 		filters={
 			"active": 1,
-			"business_point": point.name if point else "__none__",
-			"position": employee.position,
+			"business_entity": employee.business_entity,
+			"business_point": ["in", ["", point.name]] if point else "",
+			"position": ["in", ["", employee.position]],
 		},
-		fields=["component_name", "calculation_basis", "default_rate", "default_percent", "payment_method"],
+		fields=[
+			"component_code", "component_name", "business_point", "position",
+			"calculation_basis", "default_rate", "default_percent", "payment_method",
+		],
 		order_by="component_name asc",
-		limit_page_length=100,
+		limit_page_length=500,
 	)
+	components_by_code = {}
+	priorities = {}
+	for row in component_rows:
+		priority = (2 if point and row.business_point == point.name else 0) + (1 if row.position == employee.position else 0)
+		if row.component_code not in components_by_code or priority >= priorities[row.component_code]:
+			components_by_code[row.component_code] = row
+			priorities[row.component_code] = priority
+	components = list(components_by_code.values())
 	policy_name = frappe.db.get_value("Payroll Policy", {"business_point": point.name, "active": 1}, "name") if point else None
 	policy = frappe.get_doc("Payroll Policy", policy_name) if policy_name else frappe._dict(annual_leave_days=28, first_half_pay_day=20, second_half_pay_day=5)
 	conditions = []
