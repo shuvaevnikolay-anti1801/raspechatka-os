@@ -28,5 +28,6 @@ raspechatka.patches.v1_0.complete_finance_payment_pipeline
 raspechatka.patches.v1_0.add_club_shadow_sync
 raspechatka.patches.v1_0.enable_dynamic_access_matrix
 raspechatka.patches.v1_0.build_operational_stock_balances
+raspechatka.patches.v1_0.add_stock_performance_indexes
 raspechatka.patches.v1_0.seed_employment_document_templates
 raspechatka.patches.v1_0.initialize_supplier_settlements

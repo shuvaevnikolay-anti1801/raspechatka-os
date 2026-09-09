@@ -161,31 +161,7 @@ def get_stock_turnover(
 	start = datetime.combine(getdate(from_date), time.min)
 	end = datetime.combine(getdate(to_date), time.max)
 	warehouses = _warehouses(business_point, warehouse)
-	entries = _ledger_entries(warehouses, end=end)
-	aggregated = {}
-	for entry in entries:
-		key = (entry.item, entry.warehouse)
-		bucket = aggregated.setdefault(
-			key,
-			{
-				"opening_qty": 0,
-				"opening_value": 0,
-				"incoming_qty": 0,
-				"incoming_value": 0,
-				"outgoing_qty": 0,
-				"outgoing_value": 0,
-			},
-		)
-		qty, value = flt(entry.actual_qty), flt(entry.stock_value_difference)
-		if entry.posting_datetime < start:
-			bucket["opening_qty"] += qty
-			bucket["opening_value"] += value
-		elif qty >= 0:
-			bucket["incoming_qty"] += qty
-			bucket["incoming_value"] += value
-		else:
-			bucket["outgoing_qty"] += abs(qty)
-			bucket["outgoing_value"] += abs(value)
+	aggregated = _turnover_totals(warehouses, start, end)
 	metadata = _item_metadata({key[0] for key in aggregated})
 	warehouse_map = {
 		row.name: row
@@ -386,19 +362,35 @@ def _warehouses(business_point=None, warehouse=None):
 	return result
 
 
-def _ledger_entries(warehouses, end):
+def _turnover_totals(warehouses, start, end):
 	if not warehouses:
-		return []
+		return {}
 	placeholders = ", ".join(["%s"] * len(warehouses))
-	return frappe.db.sql(
-		f"""select posting_datetime, item, warehouse, storage_location,
-			actual_qty, stock_value_difference
+	rows = frappe.db.sql(
+		f"""select item, warehouse,
+			coalesce(sum(case when posting_datetime < %s then actual_qty else 0 end), 0) as opening_qty,
+			coalesce(sum(case when posting_datetime < %s then stock_value_difference else 0 end), 0) as opening_value,
+			coalesce(sum(case when posting_datetime >= %s and actual_qty >= 0 then actual_qty else 0 end), 0) as incoming_qty,
+			coalesce(sum(case when posting_datetime >= %s and actual_qty >= 0 then stock_value_difference else 0 end), 0) as incoming_value,
+			coalesce(sum(case when posting_datetime >= %s and actual_qty < 0 then abs(actual_qty) else 0 end), 0) as outgoing_qty,
+			coalesce(sum(case when posting_datetime >= %s and actual_qty < 0 then abs(stock_value_difference) else 0 end), 0) as outgoing_value
 		from `tabStock Ledger Entry`
 		where warehouse in ({placeholders}) and posting_datetime<=%s
-		order by posting_datetime asc, creation asc""",
-		(*warehouses, end),
+		group by item, warehouse""",
+		(start, start, start, start, start, start, *warehouses, end),
 		as_dict=True,
 	)
+	return {
+		(row.item, row.warehouse): {
+			"opening_qty": flt(row.opening_qty),
+			"opening_value": flt(row.opening_value),
+			"incoming_qty": flt(row.incoming_qty),
+			"incoming_value": flt(row.incoming_value),
+			"outgoing_qty": flt(row.outgoing_qty),
+			"outgoing_value": flt(row.outgoing_value),
+		}
+		for row in rows
+	}
 
 
 def _item_metadata(items):
@@ -460,37 +452,45 @@ def _current_balances(warehouses):
 
 
 def _historical_balances(warehouses, end):
-	aggregated = {}
-	for entry in _ledger_entries(warehouses, end=end):
-		key = (entry.item, entry.warehouse)
-		bucket = aggregated.setdefault(
-			key,
-			{
-				"quantity": 0,
-				"reserved_quantity": 0,
-				"stock_value": 0,
-				"last_movement_at": None,
-				"locations": set(),
-			},
-		)
-		bucket["quantity"] += flt(entry.actual_qty)
-		bucket["stock_value"] += flt(entry.stock_value_difference)
-		bucket["last_movement_at"] = entry.posting_datetime
-		if entry.storage_location:
-			bucket["locations"].add(entry.storage_location)
-	return aggregated
-
-
-def _stock_locations(warehouses):
 	if not warehouses:
 		return {}
 	placeholders = ", ".join(["%s"] * len(warehouses))
 	rows = frappe.db.sql(
+		f"""select item, warehouse,
+			coalesce(sum(actual_qty), 0) as quantity,
+			coalesce(sum(stock_value_difference), 0) as stock_value,
+			max(posting_datetime) as last_movement_at
+		from `tabStock Ledger Entry`
+		where warehouse in ({placeholders}) and posting_datetime <= %s
+		group by item, warehouse""",
+		(*warehouses, end),
+		as_dict=True,
+	)
+	locations = _stock_locations(warehouses, end=end)
+	return {
+		(row.item, row.warehouse): {
+			"quantity": flt(row.quantity),
+			"reserved_quantity": 0,
+			"stock_value": flt(row.stock_value),
+			"last_movement_at": row.last_movement_at,
+			"locations": locations.get((row.item, row.warehouse), set()),
+		}
+		for row in rows
+	}
+
+
+def _stock_locations(warehouses, end=None):
+	if not warehouses:
+		return {}
+	placeholders = ", ".join(["%s"] * len(warehouses))
+	date_condition = " and posting_datetime <= %s" if end else ""
+	values = (*warehouses, end) if end else tuple(warehouses)
+	rows = frappe.db.sql(
 		f"""select item, warehouse, storage_location
 		from `tabStock Ledger Entry`
-		where warehouse in ({placeholders}) and storage_location is not null
+		where warehouse in ({placeholders}) and storage_location is not null{date_condition}
 		group by item, warehouse, storage_location""",
-		tuple(warehouses),
+		values,
 		as_dict=True,
 	)
 	result = {}

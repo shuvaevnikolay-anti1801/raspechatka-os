@@ -137,12 +137,19 @@ def _get_products(point_name):
 		return []
 
 	warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": point_name, "active": 1}, "name")
-	balances = dict(frappe.db.sql(
-		"""select item, coalesce(sum(actual_qty), 0)
-		from `tabStock Ledger Entry` where warehouse=%s group by item""",
-		(warehouse,),
-		as_list=True,
-	)) if warehouse else {}
+	balances = (
+		{
+			row.item: flt(row.actual_qty)
+			for row in frappe.get_all(
+				"Stock Balance",
+				filters={"warehouse": warehouse},
+				fields=["item", "actual_qty"],
+				limit_page_length=0,
+			)
+		}
+		if warehouse
+		else {}
+	)
 	storage = {
 		row.item: row.full_address
 		for row in frappe.get_all(
@@ -670,4 +677,3 @@ def _apply_cash_count(event_id, workplace, payload):
 		"difference": flt(payload.get("differenceMinor")) / 100, "source_pos_event": event_id,
 		"lines": [{"denomination": flt(row.get("denominationMinor")) / 100, "quantity": row.get("quantity")} for row in payload.get("lines") or []],
 	}).insert(ignore_permissions=True)
-
