@@ -34,8 +34,8 @@ const dayCoverage = computed(() => Object.fromEntries(days.value.map((day) => {
   let morning = 0; let evening = 0;
   for (const employee of selectedPointEmployees.value) {
     const value = draft.value[cellKey(employee.name, day)];
-    if (value === BOTH || value === morningShift.value?.name) morning += 1;
-    if (value === BOTH || value === eveningShift.value?.name) evening += 1;
+    if (value === BOTH || (morningShift.value?.name && value === morningShift.value.name)) morning += 1;
+    if (value === BOTH || (eveningShift.value?.name && value === eveningShift.value.name)) evening += 1;
   }
   return [day, { morning, evening, ok: morning === 1 && evening === 1 }];
 })));
