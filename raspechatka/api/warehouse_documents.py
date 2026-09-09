@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.utils import cint, now_datetime, nowdate
@@ -76,7 +77,7 @@ def get_document(kind, name=None):
 	else:
 		doc = {"docstatus": 0, "items": []}
 		if kind == "purchase-orders":
-			doc.update(  # noqa: RUF001
+			doc.update(
 				{"order_date": nowdate(), "payment_status": "Не оплачено", "paid_amount": 0, "outstanding_amount": 0}
 			)
 		else:
