@@ -155,16 +155,27 @@ def save_hr_template(data):
 	if unknown:
 		frappe.throw(_("Неизвестные переменные: {0}").format(", ".join(unknown)))
 	name = data.get("name")
-	doc = frappe.get_doc("HR Document Template", name) if name else frappe.new_doc("HR Document Template")
-	old_html = doc.template_html if name else None
+	previous = frappe.get_doc("HR Document Template", name) if name else None
+	new_version = bool(previous and previous.template_html != data.get("template_html"))
+	if new_version:
+		previous.active = 0
+		previous.save(ignore_permissions=True)
+		doc = frappe.new_doc("HR Document Template")
+		doc.version = cint(previous.version) + 1
+	else:
+		doc = previous or frappe.new_doc("HR Document Template")
+		doc.version = cint(doc.version) or 1
 	for fieldname in ("template_name", "document_type", "active", "template_html", "notes"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
-	if name and old_html != doc.template_html:
-		doc.version = cint(doc.version) + 1
-	elif not name:
-		doc.version = 1
 	doc.save(ignore_permissions=True)
+	if cint(doc.active):
+		for other in frappe.get_all(
+			"HR Document Template",
+			filters={"document_type": doc.document_type, "active": 1, "name": ["!=", doc.name]},
+			pluck="name",
+		):
+			frappe.db.set_value("HR Document Template", other, "active", 0, update_modified=False)
 	return {"name": doc.name, "version": doc.version}
 
 
