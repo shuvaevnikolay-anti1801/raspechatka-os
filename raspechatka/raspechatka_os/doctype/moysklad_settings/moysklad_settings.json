@@ -25,6 +25,8 @@
   "sales_sync_from",
   "sales_sync_interval_minutes",
   "sales_sync_status",
+  "sales_sync_started_at",
+  "sales_sync_heartbeat_at",
   "sales_sync_cursor",
   "last_sales_sync_at",
   "sales_sync_error",
@@ -165,6 +167,20 @@
    "options": "Idle\nQueued\nRunning\nCompleted\nError",
    "default": "Idle",
    "read_only": 1
+  },
+  {
+   "fieldname": "sales_sync_started_at",
+   "fieldtype": "Datetime",
+   "label": "Начало текущей синхронизации",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "sales_sync_heartbeat_at",
+   "fieldtype": "Datetime",
+   "label": "Активность текущей синхронизации",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "sales_sync_cursor",
