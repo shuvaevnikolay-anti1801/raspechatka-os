@@ -31,6 +31,7 @@ from raspechatka.api.moysklad import (
 HISTORY_START = "2026-07-01"
 JOB_NAME = "raspechatka-moysklad-sales-sync"
 PAGE_SIZE = 100
+STALE_JOB_MINUTES = 20
 ENDPOINTS = (
 	("shifts", "entity/retailshift"),
 	("sales", "entity/retaildemand"),
@@ -133,10 +134,14 @@ def start_sales_recovery():
 	if not settings.get_password("access_token", raise_exception=False):
 		return {"queued": False, "reason": "token_missing"}
 	if settings.sales_sync_status in ("Queued", "Running"):
-		return {"queued": False, "reason": "already_running"}
+		if not _sales_sync_is_stale(settings):
+			return {"queued": False, "reason": "already_running"}
+		_reset_stale_sales_sync(settings)
 	if not frappe.db.exists("Business Point", {"moysklad_retail_store_id": ["!=", ""], "active": 1}):
 		return {"queued": False, "reason": "point_mapping_missing"}
 	settings.sales_sync_status = "Queued"
+	settings.sales_sync_started_at = now_datetime()
+	settings.sales_sync_heartbeat_at = settings.sales_sync_started_at
 	settings.sales_sync_error = None
 	settings.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -198,11 +203,12 @@ def enqueue_sales_sync(full=False):
 def sync_enabled_sales():
 	"""Enqueue an incremental import when the configured interval has elapsed."""
 	settings = frappe.get_single("MoySklad Settings")
-	if not settings.sales_sync_enabled or settings.sales_sync_status in (
-		"Queued",
-		"Running",
-	):
+	if not settings.sales_sync_enabled:
 		return
+	if settings.sales_sync_status in ("Queued", "Running"):
+		if not _sales_sync_is_stale(settings):
+			return
+		_reset_stale_sales_sync(settings)
 	if not settings.get_password("access_token", raise_exception=False):
 		return
 	interval = cint(settings.sales_sync_interval_minutes or 5)
@@ -226,6 +232,8 @@ def sync_enabled_sales():
 def run_sales_sync(full=False):
 	settings = frappe.get_single("MoySklad Settings")
 	settings.sales_sync_status = "Running"
+	settings.sales_sync_started_at = settings.sales_sync_started_at or now_datetime()
+	settings.sales_sync_heartbeat_at = now_datetime()
 	settings.sales_sync_error = None
 	settings.save(ignore_permissions=True)
 	frappe.db.commit()
@@ -245,14 +253,18 @@ def run_sales_sync(full=False):
 	try:
 		cursor = None if stats["mode"] == "full" else get_datetime(settings.sales_sync_cursor)
 		for kind, endpoint in ENDPOINTS:
+			_touch_sales_sync_heartbeat()
 			for row in _iter_rows(settings, endpoint, cursor):
 				_apply_safely(kind, row, context)
 				if stats["processed"] and stats["processed"] % 50 == 0:
+					_touch_sales_sync_heartbeat()
 					frappe.db.commit()
 		settings.reload()
 		settings.sales_sync_status = "Completed"
 		settings.sales_sync_cursor = started_at
 		settings.last_sales_sync_at = now_datetime()
+		settings.sales_sync_started_at = None
+		settings.sales_sync_heartbeat_at = None
 		settings.sales_sync_error = None
 		settings.sales_sync_stats_json = json.dumps(dict(stats), ensure_ascii=False)
 		settings.save(ignore_permissions=True)
@@ -262,12 +274,44 @@ def run_sales_sync(full=False):
 		frappe.db.rollback()
 		settings = frappe.get_single("MoySklad Settings")
 		settings.sales_sync_status = "Error"
+		settings.sales_sync_started_at = None
+		settings.sales_sync_heartbeat_at = None
 		settings.sales_sync_error = str(exc)[:2000]
 		settings.sales_sync_stats_json = json.dumps(dict(stats), ensure_ascii=False)
 		settings.save(ignore_permissions=True)
 		frappe.db.commit()
 		frappe.log_error(frappe.get_traceback(), "MoySklad sales sync")
 		raise
+
+
+def _sales_sync_is_stale(settings):
+	"""Return true when no worker has refreshed the persistent lease in time."""
+	heartbeat = settings.sales_sync_heartbeat_at or settings.sales_sync_started_at
+	if not heartbeat:
+		# Legacy Queued/Running values have no lease and cannot represent a live job.
+		return True
+	return (now_datetime() - get_datetime(heartbeat)).total_seconds() >= STALE_JOB_MINUTES * 60
+
+
+def _reset_stale_sales_sync(settings):
+	settings.sales_sync_status = "Error"
+	settings.sales_sync_started_at = None
+	settings.sales_sync_heartbeat_at = None
+	settings.sales_sync_error = _(
+		"Предыдущая синхронизация была прервана. Автоматический запуск восстановлен."
+	)
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _touch_sales_sync_heartbeat():
+	frappe.db.set_single_value(
+		"MoySklad Settings",
+		"sales_sync_heartbeat_at",
+		now_datetime(),
+		update_modified=False,
+	)
+
 
 
 def _iter_rows(settings, endpoint, cursor=None):
