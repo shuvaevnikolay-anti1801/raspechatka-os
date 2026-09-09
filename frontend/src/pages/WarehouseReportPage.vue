@@ -22,7 +22,6 @@ const turnoverColumns = [c("item_name","Наименование",true),c("item_
 const columns = computed(() => report.value === "balances" ? balanceColumns : turnoverColumns);
 const visibleWarehouses = computed(() => options.warehouses.filter((row) => !filters.business_point || row.business_point === filters.business_point));
 const canCreatePurchase = computed(() => report.value === "balances" && canAccess("page.warehouse.purchase_orders", "Create"));
-const canCreatePurchase = computed(() => report.value === "balances" && canAccess("page.warehouse.purchase_orders", "Create"));
 function c(key,label,primaryOrFormat=false,formatType=null){const primary=primaryOrFormat===true;const type=typeof primaryOrFormat==="string"?primaryOrFormat:formatType;return {key,label,primary,number:!!type,formatType:type,format:value=>formatValue(value,type)};}
 function formatValue(value,type){ if(type==="money") return `${new Intl.NumberFormat("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(value||0))} ₽`; if(type==="qty") return new Intl.NumberFormat("ru-RU",{maximumFractionDigits:3}).format(Number(value||0)); return value||"—"; }
 const filterFields=computed(()=>[
@@ -52,23 +51,6 @@ async function createPurchaseDrafts(){
     const names=result.created.map(row=>row.name).join(", ");
     window.alert(`Создано черновиков: ${result.created_count}.${names?`\n${names}`:""}`);
     if(result.created_count)router.push("/warehouse/purchase-orders");
-  }catch(e){error.value=e.message;}finally{proposalLoading.value=false;}
-}
-async function createPurchaseDrafts(){
-  proposalLoading.value=true;error.value="";
-  const params={business_point:filters.business_point,warehouse:filters.warehouse,catalog_group:filters.catalog_group,search:filters.search};
-  try{
-    const proposal=await call("raspechatka.api.procurement.get_purchase_proposal",params);
-    if(!proposal.groups_count){
-      const unresolved=proposal.unresolved?.length?` Не настроено товаров: ${proposal.unresolved.length}.`:"";
-      error.value=`Нет рекомендаций, из которых можно создать заказ.${unresolved}`;return;
-    }
-    const unresolved=proposal.unresolved?.length?` Без основного поставщика: ${proposal.unresolved.length}.`:"";
-    if(!window.confirm(`Создать черновиков: ${proposal.groups_count}; позиций: ${proposal.items_count}; количество: ${formatValue(proposal.total_quantity,"qty")}.${unresolved}`)) return;
-    const result=await call("raspechatka.api.procurement.create_purchase_order_drafts",params,{method:"POST"});
-    if(!result.created_count){error.value="Рекомендации уже учтены в существующих черновиках.";return;}
-    window.alert(`Создано черновиков заказов: ${result.created_count}.`);
-    router.push("/warehouse/purchase-orders");
   }catch(e){error.value=e.message;}finally{proposalLoading.value=false;}
 }
 function exportCsv(){const header=columns.value.map(column=>column.label);const data=rows.value.map(row=>columns.value.map(column=>row[column.key]??""));const csv=[header,...data].map(line=>line.map(value=>`"${String(value).replaceAll('"','""')}"`).join(";")).join("\n");const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=`${report.value}-${new Date().toISOString().slice(0,10)}.csv`;link.click();URL.revokeObjectURL(link.href);}
