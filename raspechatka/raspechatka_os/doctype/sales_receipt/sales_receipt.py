@@ -218,7 +218,9 @@ class SalesReceipt(Document):
 		self.set("consumed_materials", [])
 		for row in self.items:
 			item_type = frappe.db.get_value("Catalog Item", row.item, "item_type")
-			if item_type == "Bundle":
+			if self.receipt_type == "Return":
+				materials = self._returned_materials(row.item, flt(row.quantity))
+			elif item_type == "Bundle":
 				materials = self._bundle_materials(row.item, flt(row.quantity))
 			elif item_type == "Service":
 				materials = self._service_materials(row.item, flt(row.quantity))
@@ -226,8 +228,12 @@ class SalesReceipt(Document):
 				continue
 			row_cost = 0
 			for material in materials:
-				rate = get_average_rate(
-					material["material"], self.warehouse, self.posting_datetime
+				rate = (
+					flt(material["valuation_rate"])
+					if material.get("valuation_rate") is not None
+					else get_average_rate(
+						material["material"], self.warehouse, self.posting_datetime
+					)
 				)
 				amount = flt(material["quantity"]) * rate
 				self.append(
@@ -248,6 +254,45 @@ class SalesReceipt(Document):
 				row_cost += amount
 			row.cost_amount = row_cost
 			row.valuation_rate = row_cost / flt(row.quantity) if flt(row.quantity) else 0
+
+	def _returned_materials(self, sold_item, return_quantity):
+		original_quantity = sum(
+			flt(row.quantity)
+			for row in frappe.get_all(
+				"Sales Receipt Item",
+				filters={"parent": self.original_receipt, "item": sold_item},
+				fields=["quantity"],
+			)
+		)
+		if not original_quantity:
+			return []
+		rows = frappe.get_all(
+			"Sales Receipt Material",
+			filters={"parent": self.original_receipt, "sold_item": sold_item},
+			fields=[
+				"material",
+				"quantity",
+				"uom",
+				"valuation_rate",
+				"effective_from",
+			],
+		)
+		result = {}
+		for source in rows:
+			key = (source.material, source.uom, source.valuation_rate, source.effective_from)
+			if key not in result:
+				result[key] = {
+					"material": source.material,
+					"quantity": 0,
+					"uom": source.uom,
+					"valuation_rate": source.valuation_rate,
+					"source_type": "Original Sale",
+					"effective_from": source.effective_from,
+				}
+			result[key]["quantity"] += (
+				flt(source.quantity) / original_quantity * return_quantity
+			)
+		return list(result.values())
 
 	def _bundle_materials(self, bundle, sale_quantity):
 		result = []
