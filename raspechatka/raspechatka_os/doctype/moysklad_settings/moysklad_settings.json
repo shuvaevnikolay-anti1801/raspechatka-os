@@ -31,6 +31,11 @@
   "last_sales_sync_at",
   "sales_sync_error",
   "sales_sync_stats_json",
+  "stock_history_section",
+  "stock_history_status",
+  "stock_history_last_audit_at",
+  "stock_history_error",
+  "stock_history_preview_json",
   "opening_stock_section",
   "opening_stock_status",
   "opening_stock_preview_token",
@@ -207,6 +212,38 @@
    "label": "Статистика синхронизации продаж",
    "read_only": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "stock_history_section",
+   "fieldtype": "Section Break",
+   "label": "Временная синхронизация складской истории"
+  },
+  {
+   "default": "Idle",
+   "fieldname": "stock_history_status",
+   "fieldtype": "Select",
+   "label": "Статус аудита складской истории",
+   "options": "Idle\nRunning\nAudited\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_history_last_audit_at",
+   "fieldtype": "Datetime",
+   "label": "Последний аудит складской истории",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_history_error",
+   "fieldtype": "Long Text",
+   "label": "Ошибка аудита складской истории",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_history_preview_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Результат аудита складской истории",
+   "read_only": 1
   },
   {
    "fieldname": "opening_stock_section",
