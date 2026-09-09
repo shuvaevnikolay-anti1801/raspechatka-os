@@ -168,6 +168,7 @@ onMounted(init);
 			@retry="load(currentPage)"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
+			@ready="load(1, $event)"
 		>
 			<template #cell-voucher_no="{ row }">
 				<a
