@@ -1,4 +1,3 @@
- 1 file changed, 44 insertions(+), 2 deletions(-)
 # ruff: noqa: RUF001
 
 """Temporary MoySklad audit and stock-history migration boundary.
