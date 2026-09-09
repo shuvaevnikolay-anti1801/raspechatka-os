@@ -137,20 +137,83 @@ def cancel_document(kind, name):
 @frappe.whitelist()
 def fill_inventory(warehouse, posting_datetime=None):
 	require_access("page.warehouse.inventories", "read")
-	point = frappe.db.get_value("Catalog Warehouse", warehouse, "business_point")
+	point = frappe.db.get_value(
+		"Catalog Warehouse",
+		{"name": warehouse, "active": 1},
+		"business_point",
+	)
+	if not point:
+		frappe.throw(_("Склад не найден или отключён"))
 	_ensure_point(point)
-	filters = {"warehouse": warehouse}
+
+	items = {
+		row.name: row
+		for row in frappe.get_all(
+			"Catalog Item",
+			filters={
+				"active": 1,
+				"track_inventory": 1,
+				"item_type": ["in", ["Product", "Variant"]],
+			},
+			fields=["name", "item_code", "stock_uom"],
+			limit_page_length=0,
+		)
+	}
+	if not items:
+		return []
+
+	filters = {
+		"warehouse": warehouse,
+		"item": ["in", list(items)],
+	}
 	if posting_datetime:
 		filters["posting_datetime"] = ["<=", posting_datetime]
-	entries = frappe.get_all("Stock Ledger Entry", filters=filters, fields=["item", "storage_location", "actual_qty"], limit_page_length=100000)
+	entries = frappe.get_all(
+		"Stock Ledger Entry",
+		filters=filters,
+		fields=["item", "storage_location", "actual_qty"],
+		limit_page_length=0,
+	)
 	quantities = {}
 	for entry in entries:
 		key = (entry.item, entry.storage_location or "")
 		quantities[key] = quantities.get(key, 0) + float(entry.actual_qty or 0)
-	items = {row.name: row for row in frappe.get_all("Catalog Item", filters={"name": ["in", list({key[0] for key in quantities}) or ["__none__"]]}, fields=["name", "stock_uom"])}
+
+	configured_locations = {}
+	for row in frappe.get_all(
+		"Catalog Item Storage",
+		filters={
+			"warehouse": warehouse,
+			"active": 1,
+			"item": ["in", list(items)],
+		},
+		fields=["item", "storage_location"],
+		limit_page_length=0,
+	):
+		configured_locations.setdefault(row.item, set()).add(row.storage_location or "")
+
+	inventory_keys = set(quantities)
+	for item in items:
+		locations = configured_locations.get(item)
+		if locations:
+			inventory_keys.update((item, location) for location in locations)
+		elif not any(key[0] == item for key in inventory_keys):
+			inventory_keys.add((item, ""))
+
 	return [
-		{"item": item, "uom": items[item].stock_uom, "storage_location": location or None, "book_quantity": qty, "counted_quantity": qty, "valuation_rate": get_average_rate(item, warehouse, posting_datetime)}
-		for (item, location), qty in sorted(quantities.items()) if items.get(item) and qty
+		{
+			"item": item,
+			"item_code": items[item].item_code,
+			"uom": items[item].stock_uom,
+			"storage_location": location or None,
+			"book_quantity": quantities.get((item, location), 0),
+			"counted_quantity": quantities.get((item, location), 0),
+			"valuation_rate": get_average_rate(item, warehouse, posting_datetime),
+		}
+		for item, location in sorted(
+			inventory_keys,
+			key=lambda key: (items[key[0]].item_code or "", key[0], key[1]),
+		)
 	]
 
 
