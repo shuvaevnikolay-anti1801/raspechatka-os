@@ -47,6 +47,7 @@ def link_payment(order_name, payment_name, allocated_amount):
 		}
 	)
 	allocation.insert(ignore_permissions=True)
+	order.reload()
 	return _payment_context(order)
 
 
@@ -64,6 +65,7 @@ def unlink_payment(order_name, allocation_name):
 		allocation_name,
 		ignore_permissions=True,
 	)
+	order.reload()
 	return _payment_context(order)
 
 
@@ -201,19 +203,22 @@ def _payment_context(order):
 		order_by="posting_date desc, creation desc",
 		limit_page_length=500,
 	)
-	allocated_by_payment = {
-		row.finance_transaction: flt(row.allocated_amount)
-		for row in frappe.db.sql(
-			"""
-			select finance_transaction, sum(allocated_amount) as allocated_amount
-			from `tabSupplier Payment Allocation`
-			where finance_transaction in %s
-			group by finance_transaction
-			""",
-			([row.name for row in payments] or ["__none__"],),
-			as_dict=True,
+	allocated_by_payment = {}
+	for allocation in frappe.get_all(
+		"Supplier Payment Allocation",
+		filters={
+			"finance_transaction": [
+				"in",
+				[row.name for row in payments] or ["__none__"],
+			]
+		},
+		fields=["finance_transaction", "allocated_amount"],
+		limit_page_length=0,
+	):
+		allocated_by_payment[allocation.finance_transaction] = (
+			allocated_by_payment.get(allocation.finance_transaction, 0)
+			+ flt(allocation.allocated_amount)
 		)
-	}
 	available = []
 	for payment in payments:
 		payment["available_amount"] = max(
