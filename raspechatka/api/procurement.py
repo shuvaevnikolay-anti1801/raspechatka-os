@@ -56,9 +56,7 @@ def create_purchase_order_drafts(
 				"business_point": group["business_point"],
 				"warehouse": group["warehouse"],
 				"supplier": group["supplier"],
-				"remarks": _("Автоматический черновик по рекомендации пополнения от {0}.").format(
-					nowdate()
-				),
+				"remarks": _("Автоматический черновик по рекомендации пополнения от {0}.").format(nowdate()),
 			}
 		)
 		for row in group["items"]:
