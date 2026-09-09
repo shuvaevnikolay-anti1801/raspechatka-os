@@ -26,8 +26,10 @@ class PurchaseOrder(Document):
 				frappe.throw(_("Товар {0} указан в заказе дважды.").format(item.item_name))
 			seen.add(row.item)
 			row.item_code, row.uom = item.item_code, row.uom or item.stock_uom
-			if flt(row.quantity) <= 0 or flt(row.rate) <= 0:
-				frappe.throw(_("Количество и закупочная цена должны быть больше нуля."))
+			if flt(row.quantity) <= 0 or flt(row.rate) < 0:
+				frappe.throw(_("Количество должно быть больше нуля, цена не может быть отрицательной."))
+			if self.docstatus == 1 and flt(row.rate) <= 0:
+				frappe.throw(_("Перед проведением укажите закупочную цену для каждого товара."))
 			row.amount = flt(row.quantity) * flt(row.rate)
 		self.total_quantity = sum(flt(row.quantity) for row in self.items)
 		self.received_quantity = sum(flt(row.received_quantity) for row in self.items)
