@@ -4,13 +4,13 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
-from raspechatka.access import get_scope, require_access
+from raspechatka.access import get_scope, require_access, require_any_access
 from raspechatka.api.warehouse import _ensure_point
 
 
 @frappe.whitelist()
 def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_group=None, search=None, show_zero=0):
-	require_access("warehouse.operations", "read")
+	require_access("page.warehouse.balances", "read")
 	as_of = as_of or nowdate()
 	end = datetime.combine(getdate(as_of), time.max)
 	warehouses = _warehouses(business_point, warehouse)
@@ -98,7 +98,7 @@ def get_stock_balances(as_of=None, business_point=None, warehouse=None, catalog_
 
 @frappe.whitelist()
 def get_stock_turnover(from_date=None, to_date=None, business_point=None, warehouse=None, catalog_group=None, search=None):
-	require_access("warehouse.operations", "read")
+	require_access("page.warehouse.turnover", "read")
 	from_date, to_date = from_date or nowdate(), to_date or nowdate()
 	if getdate(from_date) > getdate(to_date):
 		frappe.throw(_("Дата начала не может быть позже даты окончания."))
@@ -141,7 +141,7 @@ def get_stock_turnover(from_date=None, to_date=None, business_point=None, wareho
 
 @frappe.whitelist()
 def get_report_options():
-	require_access("warehouse.operations", "read")
+	require_any_access(("page.warehouse.balances", "page.warehouse.turnover"), "read")
 	warehouses = _warehouses()
 	warehouse_rows = frappe.get_all("Catalog Warehouse", filters={"name": ["in", warehouses or ["__none__"]]}, fields=["name", "warehouse_name", "business_point"], order_by="warehouse_name asc")
 	point_names = list({row.business_point for row in warehouse_rows})

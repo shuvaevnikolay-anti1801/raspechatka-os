@@ -10,18 +10,21 @@ from raspechatka.stock import get_average_rate, get_balance
 DOCUMENTS = {
 	"write-offs": {
 		"doctype": "Stock Write Off",
+		"access_area": "page.warehouse.write_offs",
 		"date_field": "posting_datetime",
 		"fields": ("posting_datetime", "business_entity", "business_point", "warehouse", "reason", "remarks"),
 		"item_fields": ("item", "uom", "storage_location", "quantity"),
 	},
 	"inventories": {
 		"doctype": "Stock Inventory",
+		"access_area": "page.warehouse.inventories",
 		"date_field": "posting_datetime",
 		"fields": ("posting_datetime", "business_entity", "business_point", "warehouse", "reason", "remarks"),
 		"item_fields": ("item", "uom", "storage_location", "book_quantity", "counted_quantity", "valuation_rate"),
 	},
 	"purchase-orders": {
 		"doctype": "Purchase Order",
+		"access_area": "page.warehouse.purchase_orders",
 		"date_field": "order_date",
 		"fields": ("order_date", "expected_date", "business_entity", "business_point", "warehouse", "supplier", "payment_status", "remarks"),
 		"item_fields": ("item", "uom", "quantity", "rate"),
@@ -32,7 +35,7 @@ DOCUMENTS = {
 @frappe.whitelist()
 def get_documents(kind, search=None, status=None, business_point=None):
 	config = _config(kind)
-	require_access("warehouse.operations", "read")
+	require_access(config["access_area"], "read")
 	filters = _scope_filters()
 	if status not in (None, ""):
 		filters["docstatus"] = cint(status)
@@ -60,7 +63,7 @@ def get_documents(kind, search=None, status=None, business_point=None):
 @frappe.whitelist()
 def get_document(kind, name=None):
 	config = _config(kind)
-	require_access("warehouse.operations", "read")
+	require_access(config["access_area"], "read")
 	if name:
 		if not frappe.db.exists(config["doctype"], {"name": name, **_scope_filters()}):
 			frappe.throw(_("Документ недоступен"), frappe.PermissionError)
@@ -88,7 +91,7 @@ def save_document(kind, data):
 	config = _config(kind)
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("warehouse.operations", "write" if name else "create")
+	require_access(config["access_area"], "write" if name else "create")
 	if name:
 		if not frappe.db.exists(config["doctype"], {"name": name, "docstatus": 0, **_scope_filters()}):
 			frappe.throw(_("Изменять можно только доступный черновик."))
@@ -112,7 +115,7 @@ def save_document(kind, data):
 @frappe.whitelist(methods=["POST"])
 def submit_document(kind, name):
 	config = _config(kind)
-	require_access("warehouse.operations", "write")
+	require_access(config["access_area"], "write")
 	_ensure_document(config["doctype"], name, 0)
 	doc = frappe.get_doc(config["doctype"], name)
 	doc.flags.ignore_permissions = True
@@ -123,7 +126,7 @@ def submit_document(kind, name):
 @frappe.whitelist(methods=["POST"])
 def cancel_document(kind, name):
 	config = _config(kind)
-	require_access("warehouse.operations", "write")
+	require_access(config["access_area"], "write")
 	_ensure_document(config["doctype"], name, 1)
 	doc = frappe.get_doc(config["doctype"], name)
 	doc.flags.ignore_permissions = True
@@ -133,7 +136,7 @@ def cancel_document(kind, name):
 
 @frappe.whitelist()
 def fill_inventory(warehouse, posting_datetime=None):
-	require_access("warehouse.operations", "read")
+	require_access("page.warehouse.inventories", "read")
 	point = frappe.db.get_value("Catalog Warehouse", warehouse, "business_point")
 	_ensure_point(point)
 	filters = {"warehouse": warehouse}

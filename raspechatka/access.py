@@ -106,6 +106,12 @@ def require_access(area_code, action="read"):
 	return level
 
 
+def require_any_access(area_codes, action="read"):
+	required = ACTION_LEVEL.get(action, 1)
+	if max((LEVELS.get(get_access_level(area), 0) for area in area_codes), default=0) < required:
+		frappe.throw(_("Недостаточно прав для этого раздела"), frappe.PermissionError)
+
+
 def get_scope(user=None):
 	user = user or frappe.session.user
 	roles = set(frappe.get_roles(user))
