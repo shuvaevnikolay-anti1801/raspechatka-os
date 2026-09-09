@@ -276,6 +276,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			@retry="load(currentPage)"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
+			@ready="load(1, $event)"
 			@open="openMovements"
 		/>
 	</section>
