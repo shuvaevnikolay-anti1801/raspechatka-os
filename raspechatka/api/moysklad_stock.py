@@ -1,3 +1,5 @@
+# ruff: noqa: RUF001
+# fmt: off
 import hashlib
 import json
 from urllib.parse import urljoin
@@ -374,3 +376,4 @@ def _loads(value):
         return json.loads(value) if value else None
     except (TypeError, ValueError):
         return None
+# fmt: on
