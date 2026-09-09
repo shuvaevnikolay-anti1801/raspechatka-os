@@ -501,6 +501,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:current-page="currentPage"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
+			@ready="load(1, $event)"
 			empty-title="Документов пока нет"
 			:empty-text="config.create"
 			@open="openDocument($event.name)"
