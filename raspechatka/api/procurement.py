@@ -235,7 +235,7 @@ def _draft_quantities(warehouses):
 
 
 def _item_settings(items):
-	return {
+	result = {
 		row.name: row
 		for row in frappe.get_all(
 			"Catalog Item",
@@ -244,6 +244,19 @@ def _item_settings(items):
 			limit_page_length=0,
 		)
 	}
+	for relation in frappe.get_all(
+		"Catalog Item Supplier",
+		filters={
+			"item": ["in", items or ["__none__"]],
+			"is_primary": 1,
+			"active": 1,
+		},
+		fields=["item", "supplier"],
+		limit_page_length=0,
+	):
+		if relation.item in result and not result[relation.item].default_supplier:
+			result[relation.item].default_supplier = relation.supplier
+	return result
 
 
 def _allowed_suppliers():
