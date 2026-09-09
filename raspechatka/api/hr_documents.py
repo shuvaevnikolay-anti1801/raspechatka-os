@@ -10,7 +10,7 @@ from frappe.utils.pdf import get_pdf
 
 from raspechatka.access import get_scope, require_access
 from raspechatka.dadata import find_bank
-from raspechatka.requisites import digits, is_valid_bank_account, is_valid_bic, is_valid_inn
+from raspechatka.requisites import digits, is_valid_bank_account, is_valid_bic, is_valid_inn, is_valid_snils
 
 
 VARIABLES = [
@@ -46,6 +46,15 @@ def _require_network_admin():
 	require_access("team.hr", "write")
 	if not get_scope()["global"]:
 		frappe.throw(_("Шаблоны кадровых документов изменяет только администратор сети"), frappe.PermissionError)
+
+
+def _assert_employee_access(employee):
+	scope = get_scope()
+	if scope["global"]:
+		return
+	allowed_entities = scope.get("business_entities") or [scope.get("business_entity")]
+	if employee.business_entity not in allowed_entities:
+		frappe.throw(_("Сотрудник недоступен"), frappe.PermissionError)
 
 
 def _short_name(employee):
@@ -207,6 +216,8 @@ def validate_employee_requisites(data):
 	errors = []
 	if data.get("inn") and not is_valid_inn(data.get("inn")):
 		errors.append(_("Некорректный ИНН"))
+	if data.get("snils") and not is_valid_snils(data.get("snils")):
+		errors.append(_("Некорректный СНИЛС"))
 	if data.get("salary_bic") and not is_valid_bic(data.get("salary_bic")):
 		errors.append(_("Некорректный БИК"))
 	if data.get("salary_account") and not is_valid_bank_account(data.get("salary_account"), data.get("salary_bic")):
@@ -222,6 +233,7 @@ def validate_employee_requisites(data):
 def generate_employment_documents(employee, force=0):
 	require_access("team.hr", "write")
 	doc = frappe.get_doc("Employee", employee)
+	_assert_employee_access(doc)
 	variables = _employee_variables(doc)
 	templates = frappe.get_all(
 		"HR Document Template",
@@ -252,7 +264,8 @@ def generate_employment_documents(employee, force=0):
 			h1 {{ text-align: center; font-size: 16pt; }} p {{ text-align: justify; }}
 		</style></head><body>{rendered}</body></html>"""
 		pdf = get_pdf(page)
-		filename = f"{template.template_name} — {doc.employee_name} — {_date(doc.hire_date) or date.today():}.pdf"
+		file_date = _date(doc.hire_date) or date.today().strftime("%d.%m.%Y")
+		filename = f"{template.template_name} — {doc.employee_name} — {file_date}.pdf"
 		file_doc = save_file(filename, pdf, "Employee", doc.name, is_private=1)
 		doc.append("documents", {
 			"document_type": template.document_type,
