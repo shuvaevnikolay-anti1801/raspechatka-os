@@ -48,6 +48,9 @@ class CatalogItem(Document):
 		if self.item_type in {"Product", "Variant"}:
 			self.set("bundle_components", [])
 
+		if self.item_type != "Service":
+			self.set("recipe_components", [])
+
 		if self.item_type == "Bundle" and not self.bundle_components:
 			frappe.throw(_("Добавьте хотя бы один товар в состав комплекта."))
 
@@ -188,3 +191,34 @@ class CatalogItem(Document):
 				frappe.throw(_("Комплект не может включать сам себя."))
 			if not row.quantity or row.quantity <= 0:
 				frappe.throw(_("Количество компонента комплекта должно быть больше нуля."))
+
+
+		recipe_keys = set()
+		for row in self.recipe_components:
+			material = frappe.db.get_value(
+				"Catalog Item",
+				row.material,
+				["active", "item_type", "stock_uom", "track_inventory"],
+				as_dict=True,
+			)
+			if (
+				not material
+				or not material.active
+				or material.item_type not in {"Product", "Variant"}
+				or not material.track_inventory
+			):
+				frappe.throw(_("В технологической карте можно использовать только активный складской материал."))
+			if row.uom != material.stock_uom:
+				frappe.throw(_("Единица материала в технологической карте должна совпадать с его складской единицей."))
+			if not row.quantity or row.quantity <= 0:
+				frappe.throw(_("Норма расхода материала должна быть больше нуля."))
+			if row.loss_percent < 0 or row.loss_percent > 100:
+				frappe.throw(_("Допустимые потери должны быть от 0 до 100%."))
+			if row.business_point and not frappe.db.exists(
+				"Business Point", {"name": row.business_point, "active": 1}
+			):
+				frappe.throw(_("В технологической карте указана неактивная точка продаж."))
+			key = (row.material, row.business_point or "", row.effective_from)
+			if key in recipe_keys:
+				frappe.throw(_("Одинаковую норму материала, точки и даты нельзя указывать дважды."))
+			recipe_keys.add(key)
