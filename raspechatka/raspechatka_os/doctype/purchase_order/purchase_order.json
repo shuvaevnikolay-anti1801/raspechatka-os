@@ -1,28 +1,213 @@
 {
- "actions":[],"autoname":"PO-.YYYY.-.#####","doctype":"DocType","engine":"InnoDB","is_submittable":1,
- "field_order":["order_date","expected_date","business_entity","business_point","warehouse","supplier","order_status","payment_status","delivery_section","delivery_company","delivery_code","delivery_note","items_section","items","totals_section","total_quantity","received_quantity","total_amount","remarks","amended_from"],
- "fields":[
-  {"fieldname":"order_date","fieldtype":"Date","label":"Дата заказа","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"expected_date","fieldtype":"Date","label":"Ожидаемая дата поставки","in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"business_entity","fieldtype":"Link","label":"Юридическое лицо","options":"Business Entity","reqd":1,"in_standard_filter":1},
-  {"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"in_standard_filter":1},
-  {"fieldname":"supplier","fieldtype":"Link","label":"Поставщик","options":"Catalog Supplier","reqd":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"order_status","fieldtype":"Select","label":"Статус поставки","options":"Ожидается\nЧастично принято\nПринято","default":"Ожидается","read_only":1,"in_list_view":1,"in_standard_filter":1},
-  {"fieldname":"payment_status","fieldtype":"Select","label":"Статус оплаты","options":"Не оплачено\nЧастично оплачено\nОплачено","default":"Не оплачено","reqd":1,"in_list_view":1},
-  {"fieldname":"delivery_section","fieldtype":"Section Break","label":"Передать сотруднику для приёмки"},
-  {"fieldname":"delivery_company","fieldtype":"Data","label":"Служба доставки"},
-  {"fieldname":"delivery_code","fieldtype":"Data","label":"Код получения"},
-  {"fieldname":"delivery_note","fieldtype":"Small Text","label":"Что нужно знать при приёмке"},
-  {"fieldname":"items_section","fieldtype":"Section Break","label":"Товары"},
-  {"fieldname":"items","fieldtype":"Table","label":"Товары","options":"Purchase Order Item","reqd":1},
-  {"fieldname":"totals_section","fieldtype":"Section Break","label":"Итоги"},
-  {"fieldname":"total_quantity","fieldtype":"Float","label":"Заказано","read_only":1},
-  {"fieldname":"received_quantity","fieldtype":"Float","label":"Принято","read_only":1},
-  {"fieldname":"total_amount","fieldtype":"Currency","label":"Сумма заказа","read_only":1},
-  {"fieldname":"remarks","fieldtype":"Small Text","label":"Комментарий"},
-  {"fieldname":"amended_from","fieldtype":"Link","label":"Исправляет","options":"Purchase Order","read_only":1,"no_copy":1}
+ "actions": [],
+ "autoname": "PO-.YYYY.-.#####",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "is_submittable": 1,
+ "field_order": [
+  "order_date",
+  "expected_date",
+  "business_entity",
+  "business_point",
+  "warehouse",
+  "supplier",
+  "order_status",
+  "payment_status",
+  "payment_due_date",
+  "paid_amount",
+  "outstanding_amount",
+  "delivery_section",
+  "delivery_company",
+  "delivery_code",
+  "delivery_note",
+  "items_section",
+  "items",
+  "totals_section",
+  "total_quantity",
+  "received_quantity",
+  "total_amount",
+  "remarks",
+  "amended_from"
  ],
- "module":"Raspechatka OS","name":"Purchase Order","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"submit":1,"cancel":1,"amend":1,"report":1,"export":1,"print":1}],
- "search_fields":"supplier,delivery_company,delivery_code","sort_field":"order_date","sort_order":"DESC","states":[],"track_changes":1
+ "fields": [
+  {
+   "fieldname": "order_date",
+   "fieldtype": "Date",
+   "label": "Дата заказа",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "expected_date",
+   "fieldtype": "Date",
+   "label": "Ожидаемая дата поставки",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_entity",
+   "fieldtype": "Link",
+   "label": "Юридическое лицо",
+   "options": "Business Entity",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_point",
+   "fieldtype": "Link",
+   "label": "Точка продаж",
+   "options": "Business Point",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Склад",
+   "options": "Catalog Warehouse",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Поставщик",
+   "options": "Catalog Supplier",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "order_status",
+   "fieldtype": "Select",
+   "label": "Статус поставки",
+   "options": "Ожидается\nЧастично принято\nПринято",
+   "default": "Ожидается",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "label": "Статус оплаты",
+   "options": "Не оплачено\nЧастично оплачено\nОплачено",
+   "default": "Не оплачено",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_due_date",
+   "fieldtype": "Date",
+   "label": "Срок оплаты",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "paid_amount",
+   "fieldtype": "Currency",
+   "label": "Оплачено",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "outstanding_amount",
+   "fieldtype": "Currency",
+   "label": "Задолженность",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "delivery_section",
+   "fieldtype": "Section Break",
+   "label": "Передать сотруднику для приёмки"
+  },
+  {
+   "fieldname": "delivery_company",
+   "fieldtype": "Data",
+   "label": "Служба доставки"
+  },
+  {
+   "fieldname": "delivery_code",
+   "fieldtype": "Data",
+   "label": "Код получения"
+  },
+  {
+   "fieldname": "delivery_note",
+   "fieldtype": "Small Text",
+   "label": "Что нужно знать при приёмке"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Товары"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Товары",
+   "options": "Purchase Order Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Итоги"
+  },
+  {
+   "fieldname": "total_quantity",
+   "fieldtype": "Float",
+   "label": "Заказано",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_quantity",
+   "fieldtype": "Float",
+   "label": "Принято",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Сумма заказа",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Комментарий"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Исправляет",
+   "options": "Purchase Order",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "module": "Raspechatka OS",
+ "name": "Purchase Order",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1
+  }
+ ],
+ "search_fields": "supplier,delivery_company,delivery_code",
+ "sort_field": "order_date",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
 }
