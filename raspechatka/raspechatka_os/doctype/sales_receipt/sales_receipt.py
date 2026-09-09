@@ -123,6 +123,9 @@ class SalesReceipt(Document):
 			gross += flt(row.gross_amount)
 			discount += flt(row.discount_amount)
 			cost += flt(row.cost_amount)
+		if not mirror_only:
+			self._prepare_consumed_materials()
+			cost = sum(flt(row.cost_amount) for row in self.items)
 		self.gross_amount, self.discount_amount, self.total_amount, self.cost_amount = (
 			gross,
 			discount,
@@ -211,6 +214,117 @@ class SalesReceipt(Document):
 		log_cashier_action(self, "CANCEL_RECEIPT")
 		update_shift_totals(self.shift)
 
+	def _prepare_consumed_materials(self):
+		self.set("consumed_materials", [])
+		for row in self.items:
+			item_type = frappe.db.get_value("Catalog Item", row.item, "item_type")
+			if item_type == "Bundle":
+				materials = self._bundle_materials(row.item, flt(row.quantity))
+			elif item_type == "Service":
+				materials = self._service_materials(row.item, flt(row.quantity))
+			else:
+				continue
+			row_cost = 0
+			for material in materials:
+				rate = get_average_rate(
+					material["material"], self.warehouse, self.posting_datetime
+				)
+				amount = flt(material["quantity"]) * rate
+				self.append(
+					"consumed_materials",
+					{
+						"sales_item_idx": row.idx,
+						"sold_item": row.item,
+						"material": material["material"],
+						"quantity": material["quantity"],
+						"uom": material["uom"],
+						"storage_location": row.storage_location,
+						"valuation_rate": rate,
+						"cost_amount": amount,
+						"source_type": material["source_type"],
+						"effective_from": material.get("effective_from"),
+					},
+				)
+				row_cost += amount
+			row.cost_amount = row_cost
+			row.valuation_rate = row_cost / flt(row.quantity) if flt(row.quantity) else 0
+
+	def _bundle_materials(self, bundle, sale_quantity):
+		result = []
+		for component in frappe.get_all(
+			"Catalog Bundle Component",
+			filters={"parent": bundle, "parenttype": "Catalog Item"},
+			fields=["item", "quantity", "uom"],
+			order_by="idx asc",
+		):
+			component_type = frappe.db.get_value("Catalog Item", component.item, "item_type")
+			quantity = sale_quantity * flt(component.quantity)
+			if component_type == "Service":
+				result.extend(self._service_materials(component.item, quantity))
+			else:
+				result.append(
+					{
+						"material": component.item,
+						"quantity": quantity,
+						"uom": component.uom
+						or frappe.db.get_value("Catalog Item", component.item, "stock_uom"),
+						"source_type": "Bundle",
+					}
+				)
+		return self._merge_materials(result)
+
+	def _service_materials(self, service, sale_quantity):
+		posting_date = get_datetime(self.posting_datetime).date()
+		rows = frappe.get_all(
+			"Catalog Recipe Component",
+			filters={
+				"parent": service,
+				"parenttype": "Catalog Item",
+				"effective_from": ["<=", posting_date],
+			},
+			fields=[
+				"material",
+				"quantity",
+				"uom",
+				"loss_percent",
+				"effective_from",
+				"business_point",
+			],
+			order_by="effective_from desc, idx desc",
+		)
+		selected = {}
+		for recipe in rows:
+			if recipe.business_point not in (None, "", self.business_point):
+				continue
+			current = selected.get(recipe.material)
+			if current and (current.business_point == self.business_point or not recipe.business_point):
+				continue
+			selected[recipe.material] = recipe
+		result = []
+		for recipe in selected.values():
+			result.append(
+				{
+					"material": recipe.material,
+					"quantity": sale_quantity
+					* flt(recipe.quantity)
+					* (1 + flt(recipe.loss_percent) / 100),
+					"uom": recipe.uom,
+					"source_type": "Recipe",
+					"effective_from": recipe.effective_from,
+				}
+			)
+		return result
+
+	def _merge_materials(self, rows):
+		merged = {}
+		for row in rows:
+			key = (row["material"], row["uom"], row["source_type"], row.get("effective_from"))
+			if key not in merged:
+				merged[key] = dict(row)
+			else:
+				merged[key]["quantity"] += flt(row["quantity"])
+		return list(merged.values())
+
 	def _create_stock_entries(self, reversal):
 		for row in self.items:
 			item = frappe.db.get_value(
@@ -230,6 +344,22 @@ class SalesReceipt(Document):
 					"Original sale cost" if self.receipt_type == "Return"
 					else "Warehouse weighted average"
 				),
+			)
+		for row in self.consumed_materials:
+			proxy = frappe._dict(
+				name=row.name,
+				item=row.material,
+				storage_location=row.storage_location,
+			)
+			sign = -1 if self.receipt_type == "Sale" else 1
+			make_ledger_entry(
+				self,
+				proxy,
+				sign * flt(row.quantity),
+				flt(row.valuation_rate),
+				sign * flt(row.cost_amount),
+				reversal=reversal,
+				valuation_source="Frozen receipt composition",
 			)
 
 	def _get_original_rate(self, item):
