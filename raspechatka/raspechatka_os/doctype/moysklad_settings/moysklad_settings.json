@@ -36,6 +36,9 @@
   "stock_history_last_audit_at",
   "stock_history_error",
   "stock_history_preview_json",
+  "stock_history_initialized",
+  "stock_history_last_sync_at",
+  "stock_history_stats_json",
   "opening_stock_section",
   "opening_stock_status",
   "opening_stock_preview_token",
@@ -223,7 +226,7 @@
    "fieldname": "stock_history_status",
    "fieldtype": "Select",
    "label": "Статус аудита складской истории",
-   "options": "Idle\nRunning\nAudited\nError",
+   "options": "Idle\nRunning\nAudited\nCompleted\nError",
    "read_only": 1
   },
   {
@@ -243,6 +246,27 @@
    "fieldtype": "Long Text",
    "hidden": 1,
    "label": "Результат аудита складской истории",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "stock_history_initialized",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Историческая точка создана",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_history_last_sync_at",
+   "fieldtype": "Datetime",
+   "label": "Последний перенос складской истории",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_history_stats_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Статистика переноса складской истории",
    "read_only": 1
   },
   {

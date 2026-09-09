@@ -20,7 +20,7 @@ def validate_warehouse_header(business_entity, business_point, warehouse):
         frappe.throw(_("Склад не относится к выбранной точке продаж."))
 
 
-def get_item(item_name):
+def get_item(item_name, allow_inactive=False):
     item = frappe.db.get_value(
         "Catalog Item",
         item_name,
@@ -39,7 +39,7 @@ def get_item(item_name):
         not item
         or item.item_type not in {"Product", "Variant"}
         or not item.track_inventory
-        or not item.active
+        or (not item.active and not allow_inactive)
     ):
         frappe.throw(
             _(

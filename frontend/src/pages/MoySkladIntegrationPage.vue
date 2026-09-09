@@ -339,12 +339,41 @@ async function auditStockHistory() {
   }
 }
 
-async function refreshRunningSync() {
-  if (!["Queued", "Running"].includes(salesSync.value.status)) return;
+async function startStockHistoryImport() {
+  if (!window.confirm("Перенести складскую историю с 1 июля и создать движения для уже загруженных продаж?")) return;
+  busy.value = "import-stock-history";
+  error.value = "";
+  notice.value = "";
   try {
-    salesSync.value = await call(
-      "raspechatka.api.moysklad_sales.get_sales_sync_settings"
-    );
+    const result = await call("raspechatka.api.moysklad_stock_history.start_stock_history_import", {}, { method: "POST" });
+    if (!result.queued) {
+      const reasons = {
+        token_missing: "Сначала сохраните токен МоегоСклада",
+        already_running: "Перенос уже выполняется",
+      };
+      throw new Error(reasons[result.reason] || "Не удалось запустить перенос");
+    }
+    stockHistory.value.status = "Running";
+    notice.value = "Складская история поставлена в очередь";
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
+async function refreshRunningSync() {
+  try {
+    if (["Queued", "Running"].includes(salesSync.value.status)) {
+      salesSync.value = await call(
+        "raspechatka.api.moysklad_sales.get_sales_sync_settings"
+      );
+    }
+    if (stockHistory.value.status === "Running") {
+      stockHistory.value = await call(
+        "raspechatka.api.moysklad_stock_history.get_stock_history_settings"
+      );
+    }
   } catch (e) {
     error.value = e.message;
   }
@@ -690,6 +719,18 @@ onUnmounted(() => window.clearInterval(statusTimer));
                 : "Проверить складскую историю"
             }}
           </button>
+          <button
+            v-if="stockHistory.preview"
+            class="button"
+            :disabled="Boolean(busy) || stockHistory.status === 'Running'"
+            @click="startStockHistoryImport"
+          >
+            {{
+              stockHistory.status === "Running"
+                ? "Перенос выполняется…"
+                : "Перенести историю и движения продаж"
+            }}
+          </button>
         </div>
         <p class="field-hint">
           Проверка ничего не создаёт и не проводит. Она определяет фактический
@@ -741,6 +782,14 @@ onUnmounted(() => window.clearInterval(statusTimer));
             </div>
           </div>
         </template>
+        <dl v-if="stockHistory.stats?.processed" class="sync-summary">
+          <div><dt>Обработано</dt><dd>{{ stockHistory.stats.processed || 0 }}</dd></div>
+          <div><dt>Приёмок</dt><dd>{{ stockHistory.stats.supply_created || 0 }}</dd></div>
+          <div><dt>Оприходований</dt><dd>{{ stockHistory.stats.enter_created || 0 }}</dd></div>
+          <div><dt>Списаний</dt><dd>{{ stockHistory.stats.loss_created || 0 }}</dd></div>
+          <div><dt>Движений продаж</dt><dd>{{ stockHistory.stats.sales_stock_created || 0 }}</dd></div>
+          <div><dt>Ошибок</dt><dd>{{ stockHistory.stats.failed || 0 }}</dd></div>
+        </dl>
         <p v-if="stockHistory.error" class="last-error">{{ stockHistory.error }}</p>
       </article>
 

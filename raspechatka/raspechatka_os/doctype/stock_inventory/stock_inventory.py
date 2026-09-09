@@ -17,7 +17,7 @@ class StockInventory(Document):
 		seen = set()
 		locations_by_item = {}
 		for row in self.items:
-			item = get_item(row.item)
+			item = get_item(row.item, allow_inactive=self.source == "MoySklad Opening Balance")
 			row.item_code, row.uom = item.item_code, row.uom or item.stock_uom
 			validate_location(row.storage_location, self.warehouse)
 			key = (row.item, row.storage_location or "")

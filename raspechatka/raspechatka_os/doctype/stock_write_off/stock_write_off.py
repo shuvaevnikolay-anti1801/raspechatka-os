@@ -19,7 +19,7 @@ class StockWriteOff(Document):
 		requested = {}
 		requested_total = {}
 		for row in self.items:
-			item = get_item(row.item)
+			item = get_item(row.item, allow_inactive=self.source == "MoySklad")
 			row.item_code, row.uom = item.item_code, row.uom or item.stock_uom
 			validate_location(row.storage_location, self.warehouse)
 			if flt(row.quantity) <= 0:

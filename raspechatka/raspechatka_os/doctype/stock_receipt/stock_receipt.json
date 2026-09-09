@@ -6,7 +6,7 @@
  "is_submittable": 1,
  "field_order": [
   "receipt_type", "posting_datetime", "business_entity", "business_point", "warehouse", "purchase_order",
-  "supplier_section", "supplier", "supplier_document_number", "supplier_document_date", "reason",
+  "supplier_section", "supplier", "supplier_document_number", "supplier_document_date", "reason", "source", "external_id", "source_updated_at", "source_payload_json",
   "items_section", "items", "totals_section", "total_quantity", "total_amount", "remarks", "amended_from"
  ],
  "fields": [
@@ -21,6 +21,10 @@
   {"fieldname":"supplier_document_number","fieldtype":"Data","label":"Номер документа поставщика","depends_on":"eval:doc.receipt_type=='Приёмка'"},
   {"fieldname":"supplier_document_date","fieldtype":"Date","label":"Дата документа поставщика","depends_on":"eval:doc.receipt_type=='Приёмка'"},
   {"fieldname":"reason","fieldtype":"Data","label":"Основание оприходования","depends_on":"eval:doc.receipt_type=='Оприходование'"},
+  {"fieldname":"source","fieldtype":"Select","label":"Источник","options":"Manual\nMoySklad","default":"Manual","read_only":1},
+  {"fieldname":"external_id","fieldtype":"Data","label":"Внешний ID","unique":1,"read_only":1,"hidden":1},
+  {"fieldname":"source_updated_at","fieldtype":"Datetime","label":"Изменено в источнике","read_only":1,"hidden":1},
+  {"fieldname":"source_payload_json","fieldtype":"Long Text","label":"Исходные данные","read_only":1,"hidden":1},
   {"fieldname":"items_section","fieldtype":"Section Break","label":"Товары"},
   {"fieldname":"items","fieldtype":"Table","label":"Товары","options":"Stock Receipt Item","reqd":1},
   {"fieldname":"totals_section","fieldtype":"Section Break","label":"Итоги"},

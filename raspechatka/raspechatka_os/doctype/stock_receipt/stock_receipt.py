@@ -59,7 +59,12 @@ class StockReceipt(Document):
 			item = frappe.db.get_value(
 				"Catalog Item", row.item, ["item_code", "item_type", "stock_uom", "track_inventory", "active"], as_dict=True
 			)
-			if not item or item.item_type != "Product" or not item.track_inventory or not item.active:
+			if (
+				not item
+				or item.item_type not in {"Product", "Variant"}
+				or not item.track_inventory
+				or (not item.active and self.source != "MoySklad")
+			):
 				frappe.throw(_("В складской документ можно добавить только активный товар с учётом остатков."))
 			row.item_code = item.item_code
 			row.uom = row.uom or item.stock_uom
