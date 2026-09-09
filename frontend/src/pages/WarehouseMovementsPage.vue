@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 
+const route = useRoute();
 const rows = ref([]);
 const totalRows = ref(0);
 const currentPage = ref(1);
@@ -14,7 +16,8 @@ const error = ref("");
 const options = reactive({ points: [], warehouses: [], groups: [] });
 const today = new Date().toISOString().slice(0, 10);
 const month = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
-const filters = reactive({ from_date: month, to_date: today, business_point: "", warehouse: "", search: "" });
+const filters = reactive({ from_date: month, to_date: today, business_point: "", warehouse: String(route.query.warehouse || ""), search: String(route.query.search || "") });
+const selectedItem = ref(String(route.query.item || ""));
 const visibleWarehouses = computed(() => options.warehouses.filter((row) => !filters.business_point || row.business_point === filters.business_point));
 const filterFields = computed(() => [
 	{ key: "search", label: "Товар", placeholder: "Название, код или артикул", wide: true },
@@ -53,6 +56,7 @@ async function load(page = 1, size = pageSize.value) {
 	try {
 		const result = await call("raspechatka.api.warehouse_reports.get_stock_movements", {
 			...filters,
+			item: selectedItem.value,
 			limit_start: (page - 1) * size,
 			limit_page_length: size,
 		});
@@ -79,7 +83,7 @@ onMounted(init);
 <template>
 	<section class="page report-page">
 		<ListPageHeader title="Движения товаров" />
-		<SmartFilterBar :model-value="filters" :fields="filterFields" view-key="warehouse.movements" @update:model-value="Object.assign(filters, $event)" @apply="load(1)" @reset="load(1)" />
+		<SmartFilterBar :model-value="filters" :fields="filterFields" view-key="warehouse.movements" @update:model-value="Object.assign(filters, $event); selectedItem = ''" @apply="load(1)" @reset="load(1)" />
 		<SmartDataTable
 			:rows="rows"
 			:columns="columns"
