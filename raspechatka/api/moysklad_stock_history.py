@@ -389,9 +389,6 @@ def _resolve_catalog_item(settings, source, stats):
 	source_id = _ref_id(reference)
 	if not source_id:
 		return None
-	item = frappe.db.get_value("Catalog Item", {"moysklad_id": source_id}, "name")
-	if item:
-		return item
 
 	meta = reference.get("meta") if isinstance(reference.get("meta"), dict) else reference
 	source_kind = str(meta.get("type") or "").lower()
@@ -402,6 +399,11 @@ def _resolve_catalog_item(settings, source, stats):
 			source_kind = parts[parts.index("entity") + 1].lower()
 	if source_kind not in {"product", "variant", "consignment"}:
 		return None
+
+	item = frappe.db.get_value("Catalog Item", {"moysklad_id": source_id}, "name")
+	if item:
+		_repair_stock_item_flags(item, source_kind, stats)
+		return item
 
 	source_row = _request(settings, f"entity/{source_kind}/{source_id}")
 	if source_kind == "consignment":
@@ -432,7 +434,32 @@ def _resolve_catalog_item(settings, source, stats):
 		update_modified=False,
 	)
 	stats["catalog_links_recovered"] += 1
+	_repair_stock_item_flags(item, source_kind, stats)
 	return item
+
+
+def _repair_stock_item_flags(item, source_kind, stats):
+	"""Restore stock flags when an authoritative MoySklad product link is stale."""
+	if source_kind not in {"product", "variant"}:
+		return
+	row = frappe.db.get_value(
+		"Catalog Item",
+		item,
+		["item_type", "track_inventory"],
+		as_dict=True,
+	)
+	if not row:
+		return
+	expected_type = "Variant" if source_kind == "variant" else "Product"
+	if row.item_type == expected_type and row.track_inventory:
+		return
+	frappe.db.set_value(
+		"Catalog Item",
+		item,
+		{"item_type": expected_type, "track_inventory": 1},
+		update_modified=False,
+	)
+	stats["catalog_stock_flags_recovered"] += 1
 
 
 def _find_catalog_alias(source_row):
