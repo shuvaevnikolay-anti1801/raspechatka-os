@@ -8,6 +8,7 @@ integration can later be disabled without changing warehouse accounting.
 """
 
 import json
+import unicodedata
 from collections import defaultdict
 from urllib.parse import urljoin
 
@@ -399,15 +400,27 @@ def _resolve_catalog_item(settings, source, stats):
 		parts = href.split("/")
 		if "entity" in parts and parts.index("entity") + 1 < len(parts):
 			source_kind = parts[parts.index("entity") + 1].lower()
-	if source_kind not in {"product", "variant"}:
+	if source_kind not in {"product", "variant", "consignment"}:
 		return None
 
 	source_row = _request(settings, f"entity/{source_kind}/{source_id}")
+	if source_kind == "consignment":
+		return _resolve_catalog_item(
+			settings,
+			{"assortment": source_row.get("assortment") or source_row.get("product") or {}},
+			stats,
+		)
 	item = _find_existing_catalog_item(source_row, "Product")
 	if not item:
 		item = _find_existing_catalog_item(source_row, "Variant")
 	if not item:
+		item = _find_catalog_alias(source_row)
+	if not item:
 		return None
+	existing_source_id = frappe.db.get_value("Catalog Item", item, "moysklad_id")
+	if existing_source_id and existing_source_id != source_id:
+		stats["catalog_aliases_reused"] += 1
+		return item
 	frappe.db.set_value(
 		"Catalog Item",
 		item,
@@ -420,6 +433,36 @@ def _resolve_catalog_item(settings, source, stats):
 	)
 	stats["catalog_links_recovered"] += 1
 	return item
+
+
+def _find_catalog_alias(source_row):
+	"""Use one normalized catalog match, including cards carrying a legacy source ID."""
+	checks = (
+		("external_code", source_row.get("externalCode")),
+		("article", source_row.get("article")),
+		("item_code", source_row.get("code")),
+		("item_name", source_row.get("name")),
+	)
+	for fieldname, source_value in checks:
+		needle = _normalized_catalog_value(source_value)
+		if not needle:
+			continue
+		rows = frappe.get_all(
+			"Catalog Item",
+			filters={"item_type": ["in", ["Product", "Variant"]]},
+			fields=["name", fieldname],
+			limit_page_length=0,
+		)
+		matches = [row.name for row in rows if _normalized_catalog_value(row.get(fieldname)) == needle]
+		if len(matches) == 1:
+			return matches[0]
+	return None
+
+
+def _normalized_catalog_value(value):
+	value = unicodedata.normalize("NFKC", str(value or ""))
+	value = value.translate(str.maketrans({"«": '"', "»": '"', "“": '"', "”": '"', "„": '"'}))
+	return " ".join(value.casefold().split())
 
 
 def _supplier(reference):
@@ -654,4 +697,3 @@ def _load_json(value):
 		return json.loads(value)
 	except (TypeError, ValueError):
 		return None
-
