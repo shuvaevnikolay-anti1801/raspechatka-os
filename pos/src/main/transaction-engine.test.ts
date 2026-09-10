@@ -82,6 +82,14 @@ describe('PosTransactionEngine safety',()=>{
     expect(engine.listUnresolved()).toHaveLength(0)
   })
 
+  it('does not accept remote payment without explicit cashier confirmation',async()=>{
+    await expect(engine.completeSale(request([{method:'remote_payment',amountMinor:2000}],'remote-unconfirmed'),shiftId))
+      .rejects.toThrow(/не подтверждена/)
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
   it('persists unknown bank state and recovers without a second charge',async()=>{
     payment.throwOnCharge=true
     await expect(engine.completeSale(request([{method:'card',amountMinor:2000}]),shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
@@ -99,6 +107,21 @@ describe('PosTransactionEngine safety',()=>{
     expect(payment.statusCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('treats an explicitly declined card payment as terminal without blocking the next sale',async()=>{
+    payment.nextCharge={status:'declined',message:'Недостаточно средств'}
+    await expect(engine.completeSale(request([{method:'card',amountMinor:2000}],'declined-card'),shiftId)).rejects.toThrow(/Недостаточно средств/)
+    expect(payment.chargeCalls).toBe(1)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(engine.listUnresolved()).toHaveLength(0)
+    expect(engine.hasBlockingOperation()).toBe(false)
+
+    payment.nextCharge={status:'approved',transactionId:'bank-next'}
+    const next=await engine.completeSale(request([{method:'card',amountMinor:2000}],'next-card'),shiftId)
+    expect(next.saleId).toBeTruthy()
+    expect(payment.chargeCalls).toBe(2)
+    expect(fiscal.saleCalls).toBe(1)
   })
 
   it('keeps confirmed first part of mixed payment during recovery',async()=>{
