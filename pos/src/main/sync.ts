@@ -9,8 +9,8 @@ export function buildBootState(database:PosDatabase):BootState{
   return {
     pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
     workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
-    cashierName:remote.cashierName??'Администратор',online:Boolean(remote.online),
-    pendingSync:database.pendingSyncCount(),lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
+    cashierId:remote.cashierId,cashierName:remote.cashierName??'Выберите сотрудника',employees:remote.employees??[],
+    online:Boolean(remote.online),pendingSync:database.pendingSyncCount(),lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
     shift:database.currentShift(),rules:remote.rules??{
       allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,
       acceptsCash:true,acceptsCard:true,acceptsQr:false,acceptsRemotePayment:true
@@ -20,27 +20,40 @@ export function buildBootState(database:PosDatabase):BootState{
 
 export async function performSync(database:PosDatabase,connectionStore:ConnectionStore):Promise<BootState>{
   const config=connectionStore.load()
-  if(!config)throw new Error('Сначала заполните подключение к Распечатка OS')
+  if(!config)throw new Error('Сначала подключите кассу к Распечатка OS по Device ID и Token')
   try{
-    let guard=0
-    while(database.pendingSyncCount()>0&&guard<100){
-      const events=database.pendingEvents(100)
-      if(!events.length)break
-      const accepted=await pushEvents(config,events)
-      if(!accepted.length)break
-      database.markEventsSent(accepted)
-      guard++
-    }
-    const remote=await loadBootstrap(config)
+    // Bootstrap first: the server itself resolves the point from Device ID.
+    // A Windows register can never choose or override another business point.
+    let remote=await loadBootstrap(config)
     database.replaceProducts(remote.products)
     database.replaceCustomers(remote.customers)
     database.setWorkplaceData(remote.workplaceData)
-    const lastSyncAt=new Date().toISOString()
-    database.setState('bootstrap',JSON.stringify({
+    const cache=(online:boolean,lastSyncAt?:string)=>database.setState('bootstrap',JSON.stringify({
       pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
-      workstationName:remote.workplace.name,cashierName:remote.employee.name,online:true,
-      lastSyncAt,source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
+      workstationName:remote.workplace.name,cashierId:remote.employee?.id,cashierName:remote.employee?.name||'Выберите сотрудника',
+      employees:remote.employees||[],online,lastSyncAt,source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
     }))
+    cache(true,buildBootState(database).lastSyncAt)
+
+    // Money and shift events are only sent after a cashier attached to this point is selected.
+    if(config.cashierId){
+      let guard=0
+      while(database.pendingSyncCount()>0&&guard<100){
+        const events=database.pendingEvents(100)
+        if(!events.length)break
+        const accepted=await pushEvents(config,events)
+        if(!accepted.length)break
+        database.markEventsSent(accepted)
+        guard++
+      }
+      // Refresh again because the push may have changed point data, orders or shift state in OS.
+      remote=await loadBootstrap(config)
+      database.replaceProducts(remote.products)
+      database.replaceCustomers(remote.customers)
+      database.setWorkplaceData(remote.workplaceData)
+    }
+    const lastSyncAt=new Date().toISOString()
+    cache(true,lastSyncAt)
     database.setState('sync_error','')
     return buildBootState(database)
   }catch(error){
