@@ -50,7 +50,11 @@ const api: ExtendedPosApi = {
   listOrders: () => ipcRenderer.invoke('pos:list-orders'),
   createUnpaidOrder: (request:CreateUnpaidOrderRequest) => ipcRenderer.invoke('pos:create-unpaid-order',request),
   updateOrder: (request:UpdateOrderRequest) => ipcRenderer.invoke('pos:update-order',request),
-  completeSale: (request: CompleteSaleRequest) => ipcRenderer.invoke('pos:complete-sale', request),
+  completeSale: async(request: CompleteSaleRequest) => {
+    const result=await ipcRenderer.invoke('pos:complete-sale',request)
+    window.postMessage({source:'raspechatka-pos',type:'sale-completed',result,payments:request.payments},'*')
+    return result
+  },
   getConnectionStatus: () => ipcRenderer.invoke('pos:get-connection-status'),
   saveConnection: (config:ConnectionConfig) => ipcRenderer.invoke('pos:save-connection',config),
   syncNow: () => ipcRenderer.invoke('pos:sync-now')
