@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
-const api: PosApi = {
+type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
+type ExtendedPosApi=PosApi&{
+  getAtolSettings:()=>Promise<AtolSettings>
+  saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
+}
+
+const api: ExtendedPosApi = {
   getBootState: () => ipcRenderer.invoke('pos:get-boot-state'),
   listProducts: () => ipcRenderer.invoke('pos:list-products'),
   listCustomers: (query) => ipcRenderer.invoke('pos:list-customers',query),
@@ -16,6 +22,8 @@ const api: PosApi = {
   getDeviceStatuses: () => ipcRenderer.invoke('pos:get-device-statuses'),
   listUnresolvedOperations: () => ipcRenderer.invoke('pos:list-unresolved-operations'),
   recoverOperation: (id:string) => ipcRenderer.invoke('pos:recover-operation',id),
+  getAtolSettings:()=>ipcRenderer.invoke('pos:get-atol-settings'),
+  saveAtolSettings:(value:AtolSettings)=>ipcRenderer.invoke('pos:save-atol-settings',value),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
   deleteHeldReceipt: (id:string) => ipcRenderer.invoke('pos:delete-held-receipt',id),
