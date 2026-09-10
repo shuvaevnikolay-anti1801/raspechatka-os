@@ -14,17 +14,22 @@ export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):P
   if(!events.length)return []
   const url=checkedServerUrl(config.serverUrl)
   url.pathname='/api/method/raspechatka.api.pos.push_events'
-  const response=await fetch(url,{
-    method:'POST',
-    headers:{
-      Authorization:`token ${config.apiKey}:${config.apiSecret}`,
-      Accept:'application/json','Content-Type':'application/json'
-    },
-    body:JSON.stringify({workplace_code:config.workplaceCode,events})
-  })
-  const payload=await response.json() as {message?:{accepted:string[]};exception?:string}
-  if(!response.ok||!payload.message)throw new Error(payload.exception||`OS ответила с кодом ${response.status}`)
-  return payload.message.accepted
+  const controller=new AbortController()
+  const timer=setTimeout(()=>controller.abort(),15000)
+  try {
+    const response=await fetch(url,{
+      method:'POST',
+      headers:{
+        Authorization:`token ${config.apiKey}:${config.apiSecret}`,
+        Accept:'application/json','Content-Type':'application/json'
+      },
+      body:JSON.stringify({workplace_code:config.workplaceCode,events}),
+      signal:controller.signal
+    })
+    const payload=await response.json() as {message?:{accepted:string[]};exception?:string}
+    if(!response.ok||!payload.message)throw new Error(payload.exception||`OS ответила с кодом ${response.status}`)
+    return payload.message.accepted
+  } finally { clearTimeout(timer) }
 }
 
 function checkedServerUrl(value:string):URL {
