@@ -9,6 +9,7 @@ import { WindowsPrintProvider } from './providers/print'
 import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
 import { UnavailablePaymentProvider } from './providers/unavailable-payment'
 import { ShiftCoordinator } from './shift-coordinator'
+import { registerShiftRecoveryIpc } from './shift-recovery-ipc'
 import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
 import { CommodityPrintQueue } from './print-jobs'
@@ -112,6 +113,7 @@ if(!hasLock){
     }
 
     registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics})
+    registerShiftRecoveryIpc({database,fiscalProvider,shiftCoordinator,diagnostics})
     registerHardwareSettingsIpc(atolSettingsStore)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
