@@ -11,6 +11,7 @@ export type TransactionState =
   | 'fiscalized'
   | 'fiscal_status_unknown'
   | 'completed'
+  | 'cancelled'
   | 'requires_attention'
 
 export type JournalOperation = {
