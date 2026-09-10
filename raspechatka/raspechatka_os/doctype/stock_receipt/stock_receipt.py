@@ -3,7 +3,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, now_datetime
 
-from raspechatka.stock import get_balance, get_item, make_ledger_entry, validate_chronology
+from raspechatka.stock import make_ledger_entry, validate_chronology
 
 
 class StockReceipt(Document):
@@ -21,14 +21,8 @@ class StockReceipt(Document):
 		self._update_purchase_order()
 
 	def before_submit(self):
-		validate_chronology(self.warehouse, self.posting_datetime)
-
-	def before_cancel(self):
-		for row in self.items:
-			item = get_item(row.item)
-			available = get_balance(row.item, self.warehouse, row.storage_location)["qty"]
-			if not item.allow_negative_stock and available < flt(row.quantity):
-				frappe.throw(_("Нельзя отменить приёмку: часть товара {0} уже выбыла со склада.").format(item.item_name))
+		if not self.flags.ignore_stock_chronology:
+			validate_chronology(self.warehouse, self.posting_datetime)
 
 	def on_cancel(self):
 		self._make_ledger_entries(reversal=True)

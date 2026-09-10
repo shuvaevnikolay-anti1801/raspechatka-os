@@ -36,19 +36,11 @@ IMPORT_DOCUMENTS = (
 	("loss", "entity/loss", "write_off"),
 )
 
-# Only source document types that can change physical stock are inspected.
-# Orders are deliberately absent: they affect expected quantities, not stock.
+# Only the three document types selected for the initial migration are audited.
 STOCK_DOCUMENTS = (
 	("supplies", "Приёмки", "entity/supply", "receipt"),
 	("enters", "Оприходования", "entity/enter", "receipt"),
 	("losses", "Списания", "entity/loss", "write_off"),
-	("moves", "Перемещения", "entity/move", "transfer"),
-	("purchase_returns", "Возвраты поставщикам", "entity/purchasereturn", "supplier_return"),
-	("demands", "Отгрузки", "entity/demand", "shipment"),
-	("sales_returns", "Возвраты покупателей", "entity/salesreturn", "customer_return"),
-	("retail_sales", "Розничные продажи", "entity/retaildemand", "sales_receipt"),
-	("retail_returns", "Розничные возвраты", "entity/retailsalesreturn", "sales_return"),
-	("processings", "Технологические операции", "entity/processing", "processing"),
 )
 
 
@@ -90,15 +82,42 @@ def start_stock_history_import():
 	return {"queued": True}
 
 
-def run_stock_history_import():
+@frappe.whitelist(methods=["POST"])
+def start_stock_history_rebuild():
+	"""Queue a clean rebuild of integration-owned history only."""
+	require_access("settings.access", "admin")
+	settings = frappe.get_single("MoySklad Settings")
+	if not settings.get_password("access_token", raise_exception=False):
+		return {"queued": False, "reason": "token_missing"}
+	if settings.stock_history_status == "Running":
+		return {"queued": False, "reason": "already_running"}
+	settings.stock_history_status = "Running"
+	settings.stock_history_error = None
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.enqueue(
+		"raspechatka.api.moysklad_stock_history.run_stock_history_import",
+		queue="long",
+		job_name=f"{JOB_NAME}-rebuild",
+		timeout=7200,
+		rebuild=True,
+	)
+	return {"queued": True}
+
+
+def run_stock_history_import(rebuild=False):
 	"""Replay source receipts and existing mirrored sales in source chronology."""
 	settings = frappe.get_single("MoySklad Settings")
 	stats = defaultdict(int)
 	stats["history_from"] = HISTORY_START
 	stats["errors"] = []
 	try:
-		if not settings.stock_history_initialized:
-			_assert_safe_first_import()
+		if rebuild:
+			stats.update(_reset_initial_history())
+			settings.reload()
+		if rebuild or not settings.stock_history_initialized:
+			if not rebuild:
+				_assert_safe_first_import()
 			_create_opening_documents(settings, stats)
 			settings.reload()
 			settings.stock_history_initialized = 1
@@ -128,8 +147,13 @@ def run_stock_history_import():
 			if index % 25 == 0:
 				frappe.db.commit()
 
+		from raspechatka.stock_reconciliation import _rebuild_operational_balances
+
+		balance_stats = _rebuild_operational_balances()
+		stats["balances_rebuilt"] = balance_stats["rebuilt"]
+		stats["balances_reset"] = balance_stats["reset"]
 		settings.reload()
-		settings.stock_history_status = "Completed"
+		settings.stock_history_status = "Completed with errors" if stats["failed"] else "Completed"
 		settings.stock_history_last_sync_at = now_datetime()
 		settings.stock_history_error = None
 		settings.stock_history_stats_json = json.dumps(dict(stats), ensure_ascii=False, default=str)
@@ -146,6 +170,82 @@ def run_stock_history_import():
 		frappe.db.commit()
 		frappe.log_error(frappe.get_traceback(), "MoySklad stock history import")
 		raise
+
+
+def _reset_initial_history():
+	"""Delete only integration-owned initial-history artifacts without reversals."""
+	opening = frappe.get_all(
+		"Stock Inventory",
+		filters={"source": "MoySklad Opening Balance", "external_id": ["like", "moysklad:opening:%"]},
+		pluck="name",
+		limit_page_length=0,
+	)
+	receipts = frappe.get_all(
+		"Stock Receipt",
+		filters={"source": "MoySklad", "external_id": ["like", "moysklad:%"]},
+		pluck="name",
+		limit_page_length=0,
+	)
+	write_offs = frappe.get_all(
+		"Stock Write Off",
+		filters={"source": "MoySklad", "external_id": ["like", "moysklad:loss:%"]},
+		pluck="name",
+		limit_page_length=0,
+	)
+	sales = frappe.get_all(
+		"Sales Receipt",
+		filters={
+			"source": "MoySklad",
+			"posting_datetime": [">=", f"{HISTORY_START} 00:00:00"],
+		},
+		pluck="name",
+		limit_page_length=0,
+	)
+	vouchers = {
+		"Stock Inventory": opening,
+		"Stock Receipt": receipts,
+		"Stock Write Off": write_offs,
+		"Sales Receipt": sales,
+	}
+	ledger_deleted = 0
+	for voucher_type, names in vouchers.items():
+		if not names:
+			continue
+		ledger_names = frappe.get_all(
+			"Stock Ledger Entry",
+			filters={"voucher_type": voucher_type, "voucher_no": ["in", names]},
+			pluck="name",
+			limit_page_length=0,
+		)
+		for name in ledger_names:
+			frappe.delete_doc("Stock Ledger Entry", name, force=True, ignore_permissions=True)
+		ledger_deleted += len(ledger_names)
+
+	for doctype, names in (
+		("Stock Inventory", opening),
+		("Stock Receipt", receipts),
+		("Stock Write Off", write_offs),
+	):
+		for name in names:
+			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+	if sales:
+		frappe.db.delete("Sales Receipt Material", {"parent": ["in", sales]})
+
+	from raspechatka.stock_reconciliation import _rebuild_operational_balances
+
+	balance_stats = _rebuild_operational_balances()
+	settings = frappe.get_single("MoySklad Settings")
+	settings.stock_history_initialized = 0
+	settings.stock_history_last_sync_at = None
+	settings.stock_history_stats_json = None
+	settings.save(ignore_permissions=True)
+	return {
+		"reset_opening_documents": len(opening),
+		"reset_receipts": len(receipts),
+		"reset_write_offs": len(write_offs),
+		"reset_ledger_entries": ledger_deleted,
+		"reset_balances_rebuilt": balance_stats["rebuilt"],
+	}
 
 
 def _assert_safe_first_import():
@@ -181,7 +281,7 @@ def _create_opening_documents(settings, stats):
 		items = []
 		for source in rows:
 			quantity = flt(source.get("stock"))
-			if quantity <= 0:
+			if abs(quantity) <= 0.000001:
 				continue
 			item = _resolve_catalog_item(settings, source, stats)
 			if not item:
@@ -215,6 +315,7 @@ def _create_opening_documents(settings, stats):
 		doc.external_id = external_id
 		doc.remarks = _("Техническая точка на 30.06.2026 для переноса движений с 01.07.2026")
 		doc.set("items", items)
+		doc.flags.ignore_stock_chronology = True
 		doc.insert(ignore_permissions=True)
 		doc.submit()
 		stats["opening_documents"] += 1
@@ -346,6 +447,7 @@ def _import_stock_document(event, stats):
 	else:
 		doc.reason = row.get("description") or row.get("name") or _("Списание МоегоСклада")
 	doc.set("items", items)
+	doc.flags.ignore_stock_chronology = True
 	doc.insert(ignore_permissions=True)
 	doc.submit()
 	stats[f"{event['source_kind']}_created"] += 1
@@ -540,6 +642,9 @@ def _backfill_sales_stock(name, stats):
 		return
 	doc = frappe.get_doc("Sales Receipt", name)
 	doc.flags.ignore_validate_update_after_submit = True
+	for row in doc.items:
+		row.valuation_rate = 0
+		row.cost_amount = 0
 	doc._prepare_consumed_materials()
 	for row in doc.items:
 		item = frappe.db.get_value(

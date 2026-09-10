@@ -11,6 +11,11 @@ from raspechatka.stock import EPSILON, _balance_key, write_operational_balance
 def rebuild_operational_balances():
     """Rebuild the operational register from the immutable ledger."""
     frappe.only_for("System Manager")
+    return _rebuild_operational_balances()
+
+
+def _rebuild_operational_balances():
+    """Internal balance rebuild for controlled migrations and reconciliation."""
     rows = _ledger_totals()
     ledger_keys = set()
 
@@ -97,8 +102,6 @@ def reconcile_operational_balances():
                     "balance_value": balance_value,
                 }
             )
-        if ledger_qty < -EPSILON:
-            issues.append({"type": "negative_stock", "item": item, "warehouse": warehouse, "quantity": ledger_qty})
         if ledger_qty > EPSILON and abs(ledger_value) <= EPSILON:
             issues.append({"type": "positive_stock_without_value", "item": item, "warehouse": warehouse, "quantity": ledger_qty})
         if balance and abs(flt(balance.available_qty) - (balance_qty - flt(balance.reserved_qty))) > EPSILON:

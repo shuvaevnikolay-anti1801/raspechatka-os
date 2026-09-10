@@ -7,7 +7,7 @@
   {"fieldname":"uom","fieldtype":"Link","label":"Ед. изм.","options":"Catalog Unit","reqd":1,"in_list_view":1},
   {"fieldname":"storage_location","fieldtype":"Link","label":"Место хранения","options":"Storage Location","in_list_view":1},
   {"fieldname":"book_quantity","fieldtype":"Float","label":"Учётное количество","read_only":1,"in_list_view":1},
-  {"fieldname":"counted_quantity","fieldtype":"Float","label":"Фактическое количество","reqd":1,"non_negative":1,"in_list_view":1},
+  {"fieldname":"counted_quantity","fieldtype":"Float","label":"Фактическое количество","reqd":1,"in_list_view":1},
   {"fieldname":"difference_quantity","fieldtype":"Float","label":"Разница","read_only":1,"in_list_view":1},
   {"fieldname":"valuation_rate","fieldtype":"Currency","label":"Себестоимость","in_list_view":1},
   {"fieldname":"difference_amount","fieldtype":"Currency","label":"Сумма разницы","read_only":1,"in_list_view":1}

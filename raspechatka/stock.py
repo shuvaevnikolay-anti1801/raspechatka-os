@@ -30,7 +30,6 @@ def get_item(item_name, allow_inactive=False):
             "item_type",
             "stock_uom",
             "track_inventory",
-            "allow_negative_stock",
             "active",
         ],
         as_dict=True,
@@ -123,8 +122,8 @@ def make_ledger_entry(
 ):
     """Post exactly one immutable stock movement.
 
-    All callers use this service so idempotency, locking, chronology and the
-    network-wide no-negative-stock rule are enforced in one transaction.
+    All callers use this service so idempotency, locking and chronology are
+    enforced in one transaction. Actual stock is allowed to become negative.
     """
     quantity = -flt(quantity) if reversal else flt(quantity)
     amount = -flt(amount) if reversal else flt(amount)
@@ -142,25 +141,7 @@ def make_ledger_entry(
     warehouse = document.warehouse
     validate_location(getattr(row, "storage_location", None), warehouse)
     warehouse_balance = get_balance(row.item, warehouse, lock=True)
-    location_balance = get_balance(
-        row.item,
-        warehouse,
-        getattr(row, "storage_location", None),
-        lock=False,
-    )
     qty_after = flt(warehouse_balance["qty"]) + quantity
-    location_qty_after = flt(location_balance["qty"]) + quantity
-    if qty_after < -EPSILON or location_qty_after < -EPSILON:
-        item_label = (
-            frappe.db.get_value("Catalog Item", row.item, "item_name") or row.item
-        )
-        available = min(flt(warehouse_balance["qty"]), flt(location_balance["qty"]))
-        frappe.throw(
-            _("Недостаточно остатка товара {0}: доступно {1}.").format(
-                item_label, max(available, 0)
-            )
-        )
-
     value_after = flt(warehouse_balance["value"]) + amount
     entry = frappe.new_doc("Stock Ledger Entry")
     entry.posting_datetime = posting_datetime

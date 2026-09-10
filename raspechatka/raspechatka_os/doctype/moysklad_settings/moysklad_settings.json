@@ -226,7 +226,7 @@
    "fieldname": "stock_history_status",
    "fieldtype": "Select",
    "label": "Статус аудита складской истории",
-   "options": "Idle\nRunning\nAudited\nCompleted\nError",
+   "options": "Idle\nRunning\nAudited\nCompleted\nCompleted with errors\nError",
    "read_only": 1
   },
   {

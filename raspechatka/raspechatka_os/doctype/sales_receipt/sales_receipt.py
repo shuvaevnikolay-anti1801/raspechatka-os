@@ -229,12 +229,12 @@ class SalesReceipt(Document):
 		self.set("consumed_materials", [])
 		for row in self.items:
 			item_type = frappe.db.get_value("Catalog Item", row.item, "item_type")
-			if self.receipt_type == "Return":
+			if item_type == "Service":
+				continue
+			if self.receipt_type == "Return" and item_type == "Bundle":
 				materials = self._returned_materials(row.item, flt(row.quantity))
 			elif item_type == "Bundle":
 				materials = self._bundle_materials(row.item, flt(row.quantity))
-			elif item_type == "Service":
-				materials = self._service_materials(row.item, flt(row.quantity))
 			else:
 				continue
 			row_cost = 0
@@ -311,9 +311,8 @@ class SalesReceipt(Document):
 		):
 			component_type = frappe.db.get_value("Catalog Item", component.item, "item_type")
 			quantity = sale_quantity * flt(component.quantity)
-			if component_type == "Service":
-				result.extend(self._service_materials(component.item, quantity))
-			else:
+			track_inventory = frappe.db.get_value("Catalog Item", component.item, "track_inventory")
+			if component_type in {"Product", "Variant"} and track_inventory:
 				result.append(
 					{
 						"material": component.item,
@@ -324,45 +323,6 @@ class SalesReceipt(Document):
 					}
 				)
 		return self._merge_materials(result)
-
-	def _service_materials(self, service, sale_quantity):
-		posting_date = get_datetime(self.posting_datetime).date()
-		rows = frappe.get_all(
-			"Catalog Recipe Component",
-			filters={
-				"parent": service,
-				"parenttype": "Catalog Item",
-				"effective_from": ["<=", posting_date],
-			},
-			fields=[
-				"material",
-				"quantity",
-				"uom",
-				"effective_from",
-				"business_point",
-			],
-			order_by="effective_from desc, idx desc",
-		)
-		selected = {}
-		for recipe in rows:
-			if recipe.business_point not in (None, "", self.business_point):
-				continue
-			current = selected.get(recipe.material)
-			if current and (current.business_point == self.business_point or not recipe.business_point):
-				continue
-			selected[recipe.material] = recipe
-		result = []
-		for recipe in selected.values():
-			result.append(
-				{
-					"material": recipe.material,
-					"quantity": sale_quantity * flt(recipe.quantity),
-					"uom": recipe.uom,
-					"source_type": "Recipe",
-					"effective_from": recipe.effective_from,
-				}
-			)
-		return result
 
 	def _merge_materials(self, rows):
 		merged = {}

@@ -3,7 +3,15 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, now_datetime
 
-from raspechatka.stock import get_average_rate, get_balance, get_item, make_ledger_entry, validate_chronology, validate_location, validate_warehouse_header
+from raspechatka.stock import (
+	get_average_rate,
+	get_balance,
+	get_item,
+	make_ledger_entry,
+	validate_chronology,
+	validate_location,
+	validate_warehouse_header,
+)
 
 
 class StockInventory(Document):
@@ -28,8 +36,6 @@ class StockInventory(Document):
 			if "" in locations_by_item[row.item] and len(locations_by_item[row.item]) > 1:
 				frappe.throw(_("Нельзя одновременно считать товар целиком по складу и по отдельному месту хранения."))
 			row.book_quantity = get_balance(row.item, self.warehouse, row.storage_location, self.posting_datetime)["qty"]
-			if flt(row.counted_quantity) < 0:
-				frappe.throw(_("Фактическое количество не может быть отрицательным."))
 			row.difference_quantity = flt(row.counted_quantity) - flt(row.book_quantity)
 			current_rate = get_average_rate(row.item, self.warehouse, self.posting_datetime)
 			row.valuation_rate = current_rate or flt(row.valuation_rate)
@@ -46,15 +52,8 @@ class StockInventory(Document):
 				make_ledger_entry(self, row, row.difference_quantity, row.valuation_rate, row.difference_amount)
 
 	def before_submit(self):
-		validate_chronology(self.warehouse, self.posting_datetime)
-
-	def before_cancel(self):
-		for row in self.items:
-			if flt(row.difference_quantity) > 0:
-				item = get_item(row.item)
-				available = get_balance(row.item, self.warehouse, row.storage_location)["qty"]
-				if not item.allow_negative_stock and available < flt(row.difference_quantity):
-					frappe.throw(_("Нельзя отменить инвентаризацию: выявленный излишек товара {0} уже выбыл.").format(item.item_name))
+		if not self.flags.ignore_stock_chronology:
+			validate_chronology(self.warehouse, self.posting_datetime)
 
 	def on_cancel(self):
 		for row in self.items:
