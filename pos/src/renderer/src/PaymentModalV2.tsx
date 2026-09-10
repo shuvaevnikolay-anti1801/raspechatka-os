@@ -65,7 +65,21 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
     (cashMinor>0||cardMinor>0||mixedRemainder>0)&&
     (!mixedUsesTerminal||terminalReady)
   )
-  const canSubmit=!busy&&mixedValid&&(!terminalChoice||terminalReady)&&(!remoteChoice||remoteConfirmed)
+  const cashValid=choice!=='cash'||cashMinor===0||cashMinor>=total
+  const canSubmit=!busy&&cashValid&&mixedValid&&(!terminalChoice||terminalReady)&&(!remoteChoice||remoteConfirmed)
+
+  useEffect(()=>{
+    const handler=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'&&!busy){event.preventDefault();onClose();return}
+      if(event.key==='Enter'&&canSubmit){
+        const target=event.target as HTMLElement|null
+        if(target?.tagName==='TEXTAREA')return
+        event.preventDefault();void submit()
+      }
+    }
+    window.addEventListener('keydown',handler)
+    return()=>window.removeEventListener('keydown',handler)
+  })
 
   return <div className="modal-backdrop"><div className="payment-modal payment-modal-v2">
     <header><div><small>ОПЛАТА</small><h2>{formatMoney(total)}</h2></div><button onClick={onClose} disabled={busy}>×</button></header>
@@ -79,7 +93,7 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
 
     {(terminalChoice||mixedUsesTerminal)&&!terminalReady&&<div className="payment-warning"><strong>Эквайринг пока недоступен</strong><span>{terminalMessage}. Деньги не будут считаться принятыми без ответа реального терминала.</span></div>}
 
-    {choice==='cash'&&<label className="cash-input"><span>Получено от клиента</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} placeholder={(total/100).toFixed(2)}/><small>Сдача: {formatMoney(Math.max(0,cashMinor-total))}</small></label>}
+    {choice==='cash'&&<label className="cash-input"><span>Получено от клиента</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} placeholder={(total/100).toFixed(2)}/><small>{cashMinor>0&&cashMinor<total?'Получено меньше суммы чека':'Сдача: '+formatMoney(Math.max(0,cashMinor-total))}</small></label>}
 
     {remoteChoice&&<section className="remote-confirmation">
       <strong>Удалённая оплата по ссылке Точки</strong>
@@ -88,9 +102,9 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
       <label className="cash-input"><span>Комментарий (необязательно)</span><input value={remoteNote} onChange={(e)=>setRemoteNote(e.target.value)} placeholder="Например: подтверждение в приложении Точки" disabled={busy}/></label>
     </section>}
 
-    {choice==='mixed'&&<div className="split-payment"><p>Укажите, сколько клиент платит каждым способом.</p>{rules.acceptsCash&&<label><span>Наличными</span><input value={cash} onChange={(e)=>setCash(e.target.value)} disabled={busy}/></label>}{rules.acceptsCard&&<label><span>Картой</span><input value={card} onChange={(e)=>setCard(e.target.value)} disabled={busy||!terminalReady}/></label>}{rules.acceptsQr&&<div><span>QR — остаток</span><b>{formatMoney(mixedRemainder)}</b></div>}<footer><span>Распределено</span><b>{formatMoney(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0))}</b></footer></div>}
+    {choice==='mixed'&&<div className="split-payment"><p>Укажите, сколько клиент платит каждым способом.</p>{rules.acceptsCash&&<label><span>Наличными</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} disabled={busy}/></label>}{rules.acceptsCard&&<label><span>Картой</span><input value={card} onChange={(e)=>setCard(e.target.value)} disabled={busy||!terminalReady}/></label>}{rules.acceptsQr&&<div><span>QR — остаток</span><b>{formatMoney(mixedRemainder)}</b></div>}<footer><span>Распределено</span><b>{formatMoney(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0))}</b></footer></div>}
 
-    <button className="primary confirm" disabled={!canSubmit} onClick={submit}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
-    <p className="checkout-footnote">После начала операции повторное нажатие блокируется. При сбое касса сохранит состояние и предложит безопасное восстановление.</p>
+    <button className="primary confirm" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
+    <p className="checkout-footnote">Enter — подтвердить · Esc — закрыть. После начала операции повторное нажатие блокируется. При сбое касса сохранит состояние и предложит безопасное восстановление.</p>
   </div></div>
 }
