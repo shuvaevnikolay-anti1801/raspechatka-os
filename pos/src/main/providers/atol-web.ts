@@ -89,7 +89,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
   }
 
   async fiscalizeReturn(request:FiscalReturnRequest):Promise<FiscalResult>{
-    const task=await this.execute(request.operationId,this.buildReceipt('sellReturn',request.amountMinor,request.payments,[]),45000)
+    const task=await this.execute(request.operationId,this.buildReceipt('sellReturn',request.amountMinor,request.payments,request.lines),45000)
     return this.parseFiscalResult(task,request.operationId)
   }
 
@@ -168,17 +168,9 @@ export class AtolWebFiscalProvider implements FiscalProvider {
 
   private async execute(uuid:string,request:Record<string,unknown>,waitMs:number):Promise<AtolTaskResult>{
     const settings=this.requireSettings()
-    try{
-      const response=await this.fetchJson(`${settings.baseUrl}/requests`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid,request:[request]})
-      },5000) as Record<string,unknown>
-      const status=Number(response.statusCode??response.status??201)
-      if(status>=400)throw new Error(`ATOL Web Server отклонил задачу ${uuid}`)
-    }catch(error){
-      // POST мог успеть дойти до ККТ до обрыва связи. Не посылаем его повторно:
-      // вызывающий Transaction Engine переведёт операцию в UNKNOWN и проверит этот же uuid.
-      throw error
-    }
+    await this.fetchJson(`${settings.baseUrl}/requests`,{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid,request:[request]})
+    },5000)
 
     const deadline=Date.now()+waitMs
     while(Date.now()<deadline){
