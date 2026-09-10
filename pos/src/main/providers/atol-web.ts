@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { PaymentPart, PrintResult } from '../../shared/contracts'
+import type { CartLine, PaymentPart, PrintResult } from '../../shared/contracts'
 import type {
   DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest
 } from './contracts'
@@ -18,6 +18,24 @@ const DEFAULT_SETTINGS:AtolSettings={
   baseUrl:'http://127.0.0.1:16732/api/v2',
   taxationType:'patent',
   taxType:'none'
+}
+
+export function allocateFiscalAmounts(lines:CartLine[],totalMinor:number):number[]{
+  if(!lines.length)return []
+  const raw=lines.map((line)=>Math.max(0,Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent??0)/100))))
+  const rawTotal=raw.reduce((sum,value)=>sum+value,0)
+  if(rawTotal<=0)throw new Error('Сумма фискальных позиций должна быть больше нуля')
+  const result:number[]=[]
+  let allocated=0
+  for(let index=0;index<lines.length;index++){
+    const amount=index===lines.length-1?totalMinor-allocated:Math.round(totalMinor*raw[index]/rawTotal)
+    result.push(amount)
+    allocated+=amount
+  }
+  if(result.some((amount)=>amount<0)||result.reduce((sum,value)=>sum+value,0)!==totalMinor){
+    throw new Error('Не удалось распределить итоговую сумму по позициям фискального чека')
+  }
+  return result
 }
 
 export class AtolSettingsStore {
@@ -114,6 +132,9 @@ export class AtolWebFiscalProvider implements FiscalProvider {
 
   private buildReceipt(type:'sell'|'sellReturn',amountMinor:number,payments:PaymentPart[],lines:FiscalRequest['lines']):Record<string,unknown>{
     const settings=this.requireSettings()
+    const paymentTotal=payments.reduce((sum,payment)=>sum+payment.amountMinor,0)
+    if(paymentTotal!==amountMinor)throw new Error('Сумма оплат не совпадает с итогом фискального чека')
+
     const aggregated=new Map<'cash'|'electronically',number>()
     for(const payment of payments){
       const key=payment.method==='cash'?'cash':'electronically'
@@ -128,16 +149,21 @@ export class AtolWebFiscalProvider implements FiscalProvider {
       total:amountMinor/100
     }
     if(lines.length){
-      body.items=lines.map((line)=>({
-        type:'position',
-        name:line.name,
-        price:line.unitPriceMinor/100,
-        quantity:line.quantity,
-        amount:Math.round(line.quantity*line.unitPriceMinor)/100,
-        paymentObject:(line as typeof line & {itemType?:string}).itemType==='service'?'service':'commodity',
-        paymentMethod:'fullPayment',
-        tax:{type:settings.taxType}
-      }))
+      const allocated=allocateFiscalAmounts(lines,amountMinor)
+      body.items=lines.map((line,index)=>{
+        const amountMinor=allocated[index]
+        const effectivePriceMinor=line.quantity>0?amountMinor/line.quantity:0
+        return {
+          type:'position',
+          name:line.name,
+          price:effectivePriceMinor/100,
+          quantity:line.quantity,
+          amount:amountMinor/100,
+          paymentObject:(line as typeof line & {itemType?:string}).itemType==='service'?'service':'commodity',
+          paymentMethod:'fullPayment',
+          tax:{type:settings.taxType}
+        }
+      })
     }
     if(settings.operatorName)body.operator={name:settings.operatorName}
     return body
