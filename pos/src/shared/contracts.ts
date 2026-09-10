@@ -73,7 +73,7 @@ export type ShiftSummary = {
   cashMinor: number
   cardMinor: number
   qrMinor: number
-  remotePaymentMinor: number
+  remotePaymentMinor?: number
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
