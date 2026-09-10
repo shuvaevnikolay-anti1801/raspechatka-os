@@ -2,26 +2,35 @@ import { useEffect, useState } from 'react'
 import type { DeviceStatuses, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
 import './safety.css'
 
+type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
+type ExtendedPosApi=typeof window.raspechatkaPos&{
+  getAtolSettings:()=>Promise<AtolSettings>
+  saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
+}
+const pos=()=>window.raspechatkaPos as ExtendedPosApi
+
 const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
 const stateNames:Record<UnresolvedOperation['state'],string>={
   created:'Создана',payment_in_progress:'Оплата выполняется',payment_confirmed:'Оплата подтверждена',payment_unknown:'Статус оплаты неизвестен',
   fiscalization_in_progress:'Чек формируется',fiscalized:'Фискализировано',fiscal_status_unknown:'Статус ККТ неизвестен',completed:'Завершено',requires_attention:'Требует внимания'
 }
+const defaultAtol:AtolSettings={enabled:false,baseUrl:'http://127.0.0.1:16732/api/v2',taxationType:'patent',taxType:'none',operatorName:''}
 
 export default function PosSafetyPanel(){
   const [devices,setDevices]=useState<DeviceStatuses|null>(null)
   const [unresolved,setUnresolved]=useState<UnresolvedOperation[]>([])
   const [printers,setPrinters]=useState<PrinterInfo[]>([])
   const [selectedPrinter,setSelectedPrinter]=useState('')
+  const [atol,setAtol]=useState<AtolSettings>(defaultAtol)
   const [open,setOpen]=useState(false)
   const [message,setMessage]=useState('')
 
   const refresh=async()=>{
-    const [nextDevices,nextOperations,nextPrinters,nextSelected]=await Promise.all([
-      window.raspechatkaPos.getDeviceStatuses(),window.raspechatkaPos.listUnresolvedOperations(),
-      window.raspechatkaPos.listPrinters(),window.raspechatkaPos.getSelectedPrinter()
+    const [nextDevices,nextOperations,nextPrinters,nextSelected,nextAtol]=await Promise.all([
+      pos().getDeviceStatuses(),pos().listUnresolvedOperations(),
+      pos().listPrinters(),pos().getSelectedPrinter(),pos().getAtolSettings()
     ])
-    setDevices(nextDevices);setUnresolved(nextOperations);setPrinters(nextPrinters);setSelectedPrinter(nextSelected||'')
+    setDevices(nextDevices);setUnresolved(nextOperations);setPrinters(nextPrinters);setSelectedPrinter(nextSelected||'');setAtol(nextAtol)
   }
 
   useEffect(()=>{
@@ -31,14 +40,22 @@ export default function PosSafetyPanel(){
   },[])
 
   const selectPrinter=async(name:string)=>{
-    try{await window.raspechatkaPos.setSelectedPrinter(name);setSelectedPrinter(name);setMessage('Товарный принтер сохранён');await refresh()}
+    try{await pos().setSelectedPrinter(name);setSelectedPrinter(name);setMessage('Товарный принтер сохранён');await refresh()}
     catch(error){setMessage(error instanceof Error?error.message:String(error))}
+  }
+
+  const saveAtol=async()=>{
+    try{
+      const saved=await pos().saveAtolSettings(atol)
+      setAtol(saved);setMessage('Настройки АТОЛ сохранены. Проверяем связь с ККТ…')
+      await refresh()
+    }catch(error){setMessage(error instanceof Error?error.message:String(error))}
   }
 
   const recover=async(id:string)=>{
     try{
       setMessage('Проверяем фактическое состояние операции…')
-      const result=await window.raspechatkaPos.recoverOperation(id)
+      const result=await pos().recoverOperation(id)
       setMessage(result.message);await refresh()
     }catch(error){setMessage(error instanceof Error?error.message:String(error));await refresh()}
   }
@@ -61,6 +78,16 @@ export default function PosSafetyPanel(){
           <DeviceCard title="Эквайринг" status={devices?.payment}/>
           <DeviceCard title="Товарный принтер" status={devices?.printer}/>
         </div>
+        <section className="hardware-settings atol-settings">
+          <div className="settings-title"><div><h3>АТОЛ 1Ф · USB</h3><p>Приложение работает через локальный Web Server Драйвера ККТ 10. Включите его после того, как АТОЛ виден в утилите драйвера.</p></div><label className="toggle"><input type="checkbox" checked={atol.enabled} onChange={(event)=>setAtol({...atol,enabled:event.target.checked})}/><span>Использовать АТОЛ</span></label></div>
+          <div className="settings-grid">
+            <label><span>Адрес Web Server</span><input value={atol.baseUrl} onChange={(event)=>setAtol({...atol,baseUrl:event.target.value})}/></label>
+            <label><span>Система налогообложения</span><select value={atol.taxationType} onChange={(event)=>setAtol({...atol,taxationType:event.target.value})}><option value="patent">Патент</option><option value="usnIncome">УСН доход</option><option value="usnIncomeOutcome">УСН доход − расход</option><option value="osn">ОСН</option></select></label>
+            <label><span>НДС позиции</span><select value={atol.taxType} onChange={(event)=>setAtol({...atol,taxType:event.target.value})}><option value="none">Без НДС</option><option value="vat0">НДС 0%</option><option value="vat5">НДС 5%</option><option value="vat7">НДС 7%</option><option value="vat10">НДС 10%</option><option value="vat20">НДС 20%</option><option value="vat22">НДС 22%</option></select></label>
+            <label><span>Кассир для ККТ (если требуется)</span><input value={atol.operatorName||''} onChange={(event)=>setAtol({...atol,operatorName:event.target.value})} placeholder="Можно оставить пустым"/></label>
+          </div>
+          <button className="save-hardware" onClick={saveAtol}>Сохранить и проверить АТОЛ</button>
+        </section>
         <section className="printer-settings">
           <div><h3>Принтер товарного чека</h3><p>Выберите установленный в Windows принтер один раз. Дальше печать идёт на него без системного окна.</p></div>
           <select value={selectedPrinter} onChange={(event)=>selectPrinter(event.target.value)}>
