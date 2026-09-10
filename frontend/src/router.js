@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { canAccess } from "./api";
 import accessSections from "./access-pages.json";
 import DashboardPage from "./pages/DashboardPage.vue";
+import IAssistantPage from "./pages/IAssistantPage.vue";
 import CatalogPage from "./pages/CatalogPage.vue";
 import ReferencesPage from "./pages/ReferencesPage.vue";
 import MasterDataPage from "./pages/MasterDataPage.vue";
@@ -28,6 +29,7 @@ import TeamSettingsPage from "./pages/TeamSettingsPage.vue";
 
 const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
+  { path: "/assistant", name: "i-assistant", component: IAssistantPage, meta: { module: "dashboard" } },
   { path: "/catalog", name: "catalog", component: CatalogPage, meta: { module: "catalog" } },
   { path: "/catalog/groups", redirect: "/catalog" },
   { path: "/catalog/units", name: "catalog-units", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-units" } },
