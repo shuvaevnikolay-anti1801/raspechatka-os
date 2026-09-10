@@ -5,6 +5,8 @@ import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
+import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
+import { UnavailablePaymentProvider } from './providers/unavailable-payment'
 import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
 import { startAutomaticSync } from './sync'
@@ -59,12 +61,14 @@ if(!hasLock){
     database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
     journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
     const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
-    const paymentProvider=new MockPaymentProvider()
-    const fiscalProvider=new MockFiscalProvider()
+    const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
+    const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
+    const paymentProvider=trainingMode?new MockPaymentProvider():new UnavailablePaymentProvider()
+    const fiscalProvider=trainingMode?new MockFiscalProvider():new AtolWebFiscalProvider(atolSettingsStore)
     const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
 
-    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine})
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine,atolSettingsStore})
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     createWindow()
 
