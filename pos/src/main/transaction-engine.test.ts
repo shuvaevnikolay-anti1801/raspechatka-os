@@ -34,7 +34,7 @@ class TestFiscalProvider implements FiscalProvider {
   returnCalls=0
   statusCalls=0
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
-  async getShiftStatus(){return {open:true,message:'open'}}
+  async getShiftStatus(){return {open:true,state:'opened' as const,message:'open'}}
   async openShift(){return}
   async closeShift(){return {message:'closed'}}
   async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.saleCalls++;return {receiptNumber:`FD-${this.saleCalls}`}}
