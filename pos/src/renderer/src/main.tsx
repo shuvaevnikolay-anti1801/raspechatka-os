@@ -7,6 +7,7 @@ import PilotReadiness from './PilotReadiness'
 import PosSafetyPanel from './PosSafetyPanel'
 import ReceiptExplorer from './ReceiptExplorer'
 import SaleSuccessOverlay from './SaleSuccessOverlay'
+import SettingsModeGuard from './SettingsModeGuard'
 import ShiftRecoveryBanner from './ShiftRecoveryBanner'
 import './styles.css'
 
@@ -14,6 +15,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
     <CashierHotkeys />
+    <SettingsModeGuard />
     <ShiftRecoveryBanner />
     <PosSafetyPanel />
     <PilotReadiness />
