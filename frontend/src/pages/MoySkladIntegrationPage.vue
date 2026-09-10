@@ -10,7 +10,7 @@ const settings = ref({});
 const form = reactive({ access_token: "" });
 const preview = ref(null);
 const salesSync = ref({ points: [], stats: {} });
-const stockHistory = ref({ preview: null });
+const stockHistory = ref({ preview: null, auto_sync: { enabled: false, interval_minutes: 5, stats: {} } });
 const sourceStores = ref([]);
 const openingStock = ref({ warehouses: [], documents: [] });
 const stockSources = ref([]);
@@ -432,6 +432,34 @@ async function rebuildStockHistory() {
   }
 }
 
+async function saveStockSyncSettings() {
+  busy.value = "save-stock-sync";
+  error.value = "";
+  notice.value = "";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock_history.save_stock_sync_settings",
+      {
+        data: JSON.stringify({
+          enabled: Boolean(stockHistory.value.auto_sync?.enabled),
+          interval_minutes: Number(
+            stockHistory.value.auto_sync?.interval_minutes || 5
+          ),
+        }),
+      },
+      { method: "POST" }
+    );
+    stockHistory.value = result || stockHistory.value;
+    notice.value = stockHistory.value.auto_sync?.enabled
+      ? "Автоматическая синхронизация складских документов включена"
+      : "Автоматическая синхронизация складских документов выключена";
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
 async function refreshRunningSync() {
   try {
     if (["Queued", "Running"].includes(salesSync.value.status)) {
@@ -439,7 +467,10 @@ async function refreshRunningSync() {
         "raspechatka.api.moysklad_sales.get_sales_sync_settings"
       );
     }
-    if (stockHistory.value.status === "Running") {
+    if (
+      stockHistory.value.status === "Running" ||
+      ["Queued", "Running"].includes(stockHistory.value.auto_sync?.status)
+    ) {
       stockHistory.value = await call(
         "raspechatka.api.moysklad_stock_history.get_stock_history_settings"
       );
@@ -814,6 +845,64 @@ onUnmounted(() => window.clearInterval(statusTimer));
             }}
           </button>
         </div>
+        <div class="sales-settings stock-sync-settings">
+          <label class="switch-row">
+            <input
+              v-model="stockHistory.auto_sync.enabled"
+              type="checkbox"
+            />
+            <span
+              ><strong>Автоматически синхронизировать складские документы</strong
+              ><small
+                >Загружать из МоегоСклада новые приёмки, оприходования и
+                списания.</small
+              ></span
+            >
+          </label>
+          <label>
+            <span class="field-label">Интервал, минут</span>
+            <select v-model="stockHistory.auto_sync.interval_minutes">
+              <option :value="5">5</option>
+              <option :value="15">15</option>
+              <option :value="30">30</option>
+              <option :value="60">60</option>
+            </select>
+          </label>
+          <button
+            class="button"
+            :disabled="Boolean(busy)"
+            @click="saveStockSyncSettings"
+          >
+            {{ busy === "save-stock-sync" ? "Сохраняем…" : "Сохранить" }}
+          </button>
+        </div>
+        <dl class="sync-summary">
+          <div>
+            <dt>Автосинхронизация</dt>
+            <dd>{{ stockHistory.auto_sync?.enabled ? "Включена" : "Выключена" }}</dd>
+          </div>
+          <div>
+            <dt>Последний запуск</dt>
+            <dd>{{ stockHistory.auto_sync?.last_sync_at || "—" }}</dd>
+          </div>
+          <div>
+            <dt>Статус</dt>
+            <dd>{{ stockHistory.auto_sync?.status || "Idle" }}</dd>
+          </div>
+          <div>
+            <dt>Создано документов</dt>
+            <dd>
+              {{
+                (stockHistory.auto_sync?.stats?.supply_created || 0) +
+                (stockHistory.auto_sync?.stats?.enter_created || 0) +
+                (stockHistory.auto_sync?.stats?.loss_created || 0)
+              }}
+            </dd>
+          </div>
+        </dl>
+        <p v-if="stockHistory.auto_sync?.error" class="last-error">
+          {{ stockHistory.auto_sync.error }}
+        </p>
         <p class="field-hint">
           Проверка ничего не создаёт и не проводит. Она определяет фактический
           состав истории и готовность сопоставлений.

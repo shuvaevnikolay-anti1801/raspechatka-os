@@ -22,6 +22,13 @@ BATCH = json.loads(
 	).read_text(encoding="utf-8")
 )
 RECONCILIATION = (ROOT / "raspechatka/stock_reconciliation.py").read_text(encoding="utf-8")
+SETTINGS = json.loads(
+	(ROOT / "raspechatka/raspechatka_os/doctype/moysklad_settings/moysklad_settings.json").read_text(
+		encoding="utf-8"
+	)
+)
+HOOKS = (ROOT / "raspechatka/hooks.py").read_text(encoding="utf-8")
+INTEGRATION_PAGE = (ROOT / "frontend/src/pages/MoySkladIntegrationPage.vue").read_text(encoding="utf-8")
 
 
 def _section(source, start, end):
@@ -133,6 +140,22 @@ def test_rebuild_movement_identity_includes_batch():
 	movement_key = _section(STOCK, "def _movement_key", "def _default_valuation_source")
 	assert "import_batch=None" in movement_key
 	assert 'str(import_batch or "")' in movement_key
+
+
+def test_automatic_stock_sync_is_installed_but_disabled_by_default():
+	field = next(field for field in SETTINGS["fields"] if field["fieldname"] == "stock_sync_enabled")
+	assert field["default"] == "0"
+	assert "sync_enabled_stock_documents" in HOOKS
+	assert 'v-model="stockHistory.auto_sync.enabled"' in INTEGRATION_PAGE
+	assert "save_stock_sync_settings" in INTEGRATION_PAGE
+
+
+def test_automatic_stock_sync_imports_only_stock_documents():
+	section = _section(HISTORY, "def run_stock_document_sync", "def _stock_sync_is_stale")
+	assert "for source_kind, endpoint, target in IMPORT_DOCUMENTS" in section
+	assert "_sales_receipt_events" not in section
+	assert "_rebuild_operational_balances" in section
+	assert 'frappe.db.exists(doctype, {"external_id": external_id})' in section
 
 
 def test_excluded_source_document_types_are_not_imported_or_audited():

@@ -39,6 +39,16 @@
   "stock_history_initialized",
   "stock_history_last_sync_at",
   "stock_history_stats_json",
+  "stock_sync_section",
+  "stock_sync_enabled",
+  "stock_sync_interval_minutes",
+  "stock_sync_status",
+  "stock_sync_started_at",
+  "stock_sync_heartbeat_at",
+  "stock_sync_cursor",
+  "stock_sync_last_sync_at",
+  "stock_sync_error",
+  "stock_sync_stats_json",
   "opening_stock_section",
   "opening_stock_status",
   "opening_stock_preview_token",
@@ -267,6 +277,73 @@
    "fieldtype": "Long Text",
    "hidden": 1,
    "label": "Статистика переноса складской истории",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_section",
+   "fieldtype": "Section Break",
+   "label": "Временная автоматическая синхронизация складских документов"
+  },
+  {
+   "default": "0",
+   "fieldname": "stock_sync_enabled",
+   "fieldtype": "Check",
+   "label": "Автоматическая синхронизация складских документов"
+  },
+  {
+   "default": "5",
+   "fieldname": "stock_sync_interval_minutes",
+   "fieldtype": "Select",
+   "label": "Интервал синхронизации, минут",
+   "options": "5\n15\n30\n60",
+   "reqd": 1
+  },
+  {
+   "default": "Idle",
+   "fieldname": "stock_sync_status",
+   "fieldtype": "Select",
+   "label": "Статус синхронизации складских документов",
+   "options": "Idle\nQueued\nRunning\nCompleted\nCompleted with errors\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_started_at",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Начало текущей складской синхронизации",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_heartbeat_at",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Активность складской синхронизации",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_cursor",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Курсор складской синхронизации",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_last_sync_at",
+   "fieldtype": "Datetime",
+   "label": "Последняя автоматическая синхронизация",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_error",
+   "fieldtype": "Long Text",
+   "label": "Ошибка складской синхронизации",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_sync_stats_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Статистика складской синхронизации",
    "read_only": 1
   },
   {
