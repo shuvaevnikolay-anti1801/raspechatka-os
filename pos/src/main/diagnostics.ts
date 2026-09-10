@@ -53,7 +53,7 @@ export class PosDiagnostics {
       .run(event.id,event.level,event.source,event.eventType,event.message,event.operationId??null,
         event.details?JSON.stringify(event.details):null,event.createdAt)
     this.db.exec(`DELETE FROM diagnostic_events WHERE id NOT IN (
-      SELECT id FROM diagnostic_events ORDER BY created_at DESC LIMIT 5000
+      SELECT id FROM diagnostic_events ORDER BY created_at DESC,rowid DESC LIMIT 5000
     )`)
     return event
   }
@@ -62,7 +62,7 @@ export class PosDiagnostics {
     const safeLimit=Math.max(1,Math.min(500,Math.floor(limit)||200))
     return (this.db.prepare(`SELECT id,level,source,event_type eventType,message,
       operation_id operationId,details_json detailsJson,created_at createdAt
-      FROM diagnostic_events ORDER BY created_at DESC LIMIT ?`).all(safeLimit) as any[])
+      FROM diagnostic_events ORDER BY created_at DESC,rowid DESC LIMIT ?`).all(safeLimit) as any[])
       .map((row)=>({
         id:row.id,
         level:row.level,

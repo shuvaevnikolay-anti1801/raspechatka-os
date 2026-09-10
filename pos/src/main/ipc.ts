@@ -170,6 +170,14 @@ export function registerIpcHandlers(dependencies:{
     const shift=database.currentShift()
     diagnostics.record({source:'shift',eventType:'shift.close_started',message:'Начинаем закрытие локальной и фискальной смены',operationId:shift?.id})
     try{
+      const shiftSummary=database.getShiftSummary()
+      if(shiftSummary.cardMinor+shiftSummary.qrMinor>0){
+        const paymentHealth=await paymentProvider.healthCheck()
+        if(paymentHealth.status==='not_configured')throw new Error('Нельзя закрыть смену с безналичными оплатами: эквайринг INPAS не настроен для сверки итогов.')
+        diagnostics.record({source:'payment',eventType:'payment.reconcile_started',message:'Сверка итогов INPAS перед закрытием смены',operationId:shift?.id})
+        const reconciliation=await paymentProvider.reconcile()
+        diagnostics.record({source:'payment',eventType:'payment.reconcile_completed',message:reconciliation.message,operationId:shift?.id})
+      }
       const summary=await shiftCoordinator.closeShift(transactionEngine.listUnresolved().length>0)
       diagnostics.record({source:'shift',eventType:'shift.close_completed',message:'Смена успешно закрыта',operationId:shift?.id,details:{receipts:summary.receipts,revenueMinor:summary.revenueMinor}})
       return summary

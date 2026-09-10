@@ -16,4 +16,7 @@ export class UnavailablePaymentProvider implements PaymentProvider {
   async getOperationStatus(_request:PaymentRequest):Promise<PaymentResult>{
     return {status:'unknown',message:'Невозможно проверить банковскую операцию: терминал ещё не настроен'}
   }
+
+  async testConnection():Promise<{message:string}>{throw new Error('Эквайринговый терминал ещё не настроен')}
+  async reconcile():Promise<{message:string}>{throw new Error('Сверка итогов недоступна: эквайринговый терминал ещё не настроен')}
 }

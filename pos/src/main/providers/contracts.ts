@@ -65,6 +65,8 @@ export interface PaymentProvider {
   charge(request: PaymentRequest): Promise<PaymentResult>
   refund(request: PaymentRequest): Promise<PaymentResult>
   getOperationStatus(request: PaymentRequest): Promise<PaymentResult>
+  testConnection(): Promise<{message:string;receipt?:string;raw?:unknown}>
+  reconcile(): Promise<{message:string;receipt?:string;raw?:unknown}>
 }
 
 export interface FiscalProvider {
