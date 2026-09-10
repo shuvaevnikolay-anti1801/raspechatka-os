@@ -3,7 +3,8 @@ import type { SaleDetails, SaleSummary } from '../../shared/contracts'
 import './pilot-ux.css'
 
 const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
-const paymentName=(method:string)=>({cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}[method]||method)
+const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
+const paymentName=(method:string)=>paymentNames[method]||method
 
 export default function ReceiptExplorer(){
   const [open,setOpen]=useState(false)
