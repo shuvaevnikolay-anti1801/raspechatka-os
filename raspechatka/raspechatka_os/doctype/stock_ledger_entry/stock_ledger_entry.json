@@ -3,7 +3,7 @@
  "autoname": "hash",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": ["posting_datetime", "item", "warehouse", "storage_location", "actual_qty", "incoming_rate", "stock_value_difference", "quantity_before", "quantity_after", "stock_value_after", "valuation_source", "voucher_type", "voucher_no", "voucher_detail_no", "movement_key", "is_reversal"],
+ "field_order": ["posting_datetime", "item", "warehouse", "storage_location", "actual_qty", "incoming_rate", "stock_value_difference", "quantity_before", "quantity_after", "stock_value_after", "valuation_source", "voucher_type", "voucher_no", "voucher_detail_no", "import_batch", "movement_key", "is_reversal"],
  "fields": [
   {"fieldname":"posting_datetime","fieldtype":"Datetime","label":"Дата и время","reqd":1,"in_list_view":1,"in_standard_filter":1,"search_index":1},
   {"fieldname":"item","fieldtype":"Link","label":"Товар","options":"Catalog Item","reqd":1,"in_list_view":1,"in_standard_filter":1,"search_index":1},
@@ -19,6 +19,7 @@
   {"fieldname":"voucher_type","fieldtype":"Data","label":"Тип документа","reqd":1,"in_standard_filter":1},
   {"fieldname":"voucher_no","fieldtype":"Data","label":"Документ","reqd":1,"in_list_view":1,"in_standard_filter":1,"search_index":1},
   {"fieldname":"voucher_detail_no","fieldtype":"Data","label":"Строка документа","reqd":1},
+  {"fieldname":"import_batch","fieldtype":"Link","label":"Пакет импорта","options":"MoySklad Stock Import Batch","read_only":1,"in_standard_filter":1,"search_index":1},
   {"fieldname":"movement_key","fieldtype":"Data","label":"Ключ движения","unique":1,"read_only":1,"search_index":1},
   {"fieldname":"is_reversal","fieldtype":"Check","label":"Сторно","default":"0","in_standard_filter":1}
  ],

@@ -6,6 +6,7 @@ from frappe.utils import cint, flt, getdate, nowdate
 
 from raspechatka.access import get_scope, require_access, require_any_access
 from raspechatka.api.warehouse import _ensure_point
+from raspechatka.stock import effective_ledger_condition, get_active_import_batch
 
 
 @frappe.whitelist()
@@ -267,6 +268,7 @@ def get_stock_movements(
 	rows = frappe.get_all(
 		"Stock Ledger Entry",
 		filters=filters,
+		or_filters=_effective_ledger_or_filters(),
 		fields=[
 			"name",
 			"posting_datetime",
@@ -313,7 +315,14 @@ def get_stock_movements(
 		)
 	return {
 		"rows": rows,
-		"total": frappe.db.count("Stock Ledger Entry", filters=filters),
+		"total": (
+			frappe.get_all(
+				"Stock Ledger Entry",
+				filters=filters,
+				or_filters=_effective_ledger_or_filters(),
+				fields=["count(name) as total"],
+			)[0].total
+		),
 		"from_date": str(from_date),
 		"to_date": str(to_date),
 	}
@@ -366,6 +375,7 @@ def _turnover_totals(warehouses, start, end):
 	if not warehouses:
 		return {}
 	placeholders = ", ".join(["%s"] * len(warehouses))
+	condition = effective_ledger_condition(alias="")
 	rows = frappe.db.sql(
 		f"""select item, warehouse,
 			coalesce(sum(case when posting_datetime < %s then actual_qty else 0 end), 0) as opening_qty,
@@ -375,7 +385,7 @@ def _turnover_totals(warehouses, start, end):
 			coalesce(sum(case when posting_datetime >= %s and actual_qty < 0 then abs(actual_qty) else 0 end), 0) as outgoing_qty,
 			coalesce(sum(case when posting_datetime >= %s and actual_qty < 0 then abs(stock_value_difference) else 0 end), 0) as outgoing_value
 		from `tabStock Ledger Entry`
-		where warehouse in ({placeholders}) and posting_datetime<=%s
+		where warehouse in ({placeholders}) and posting_datetime<=%s and {condition}
 		group by item, warehouse""",
 		(start, start, start, start, start, start, *warehouses, end),
 		as_dict=True,
@@ -455,13 +465,14 @@ def _historical_balances(warehouses, end):
 	if not warehouses:
 		return {}
 	placeholders = ", ".join(["%s"] * len(warehouses))
+	condition = effective_ledger_condition(alias="")
 	rows = frappe.db.sql(
 		f"""select item, warehouse,
 			coalesce(sum(actual_qty), 0) as quantity,
 			coalesce(sum(stock_value_difference), 0) as stock_value,
 			max(posting_datetime) as last_movement_at
 		from `tabStock Ledger Entry`
-		where warehouse in ({placeholders}) and posting_datetime <= %s
+		where warehouse in ({placeholders}) and posting_datetime <= %s and {condition}
 		group by item, warehouse""",
 		(*warehouses, end),
 		as_dict=True,
@@ -485,10 +496,12 @@ def _stock_locations(warehouses, end=None):
 	placeholders = ", ".join(["%s"] * len(warehouses))
 	date_condition = " and posting_datetime <= %s" if end else ""
 	values = (*warehouses, end) if end else tuple(warehouses)
+	condition = effective_ledger_condition(alias="")
 	rows = frappe.db.sql(
 		f"""select item, warehouse, storage_location
 		from `tabStock Ledger Entry`
 		where warehouse in ({placeholders}) and storage_location is not null{date_condition}
+		and {condition}
 		group by item, warehouse, storage_location""",
 		values,
 		as_dict=True,
@@ -497,6 +510,14 @@ def _stock_locations(warehouses, end=None):
 	for row in rows:
 		result.setdefault((row.item, row.warehouse), set()).add(row.storage_location)
 	return result
+
+
+def _effective_ledger_or_filters():
+	active = get_active_import_batch()
+	filters = [["Stock Ledger Entry", "import_batch", "is", "not set"]]
+	if active:
+		filters.append(["Stock Ledger Entry", "import_batch", "=", active])
+	return filters
 
 
 def _minimum_stock_levels(warehouses):

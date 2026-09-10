@@ -5,7 +5,7 @@ from frappe.utils import cint, now_datetime, nowdate
 
 from raspechatka.access import get_scope, require_access
 from raspechatka.api.warehouse import _ensure_point, _ensure_supplier, _options
-from raspechatka.stock import get_average_rate, get_balance
+from raspechatka.stock import get_active_import_batch, get_average_rate, get_balance
 
 DOCUMENTS = {
 	"write-offs": {
@@ -234,6 +234,7 @@ def fill_inventory(warehouse, posting_datetime=None):
 	entries = frappe.get_all(
 		"Stock Ledger Entry",
 		filters=filters,
+		or_filters=_effective_ledger_or_filters(),
 		fields=["item", "storage_location", "actual_qty"],
 		limit_page_length=0,
 	)
@@ -279,6 +280,14 @@ def fill_inventory(warehouse, posting_datetime=None):
 			key=lambda key: (items[key[0]].item_code or "", key[0], key[1]),
 		)
 	]
+
+
+def _effective_ledger_or_filters():
+	active = get_active_import_batch()
+	filters = [["Stock Ledger Entry", "import_batch", "is", "not set"]]
+	if active:
+		filters.append(["Stock Ledger Entry", "import_batch", "=", active])
+	return filters
 
 
 def _config(kind):

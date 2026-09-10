@@ -15,6 +15,13 @@ INVENTORY_ITEM = json.loads(
 		encoding="utf-8"
 	)
 )
+BATCH = json.loads(
+	(
+		ROOT
+		/ "raspechatka/raspechatka_os/doctype/moysklad_stock_import_batch/moysklad_stock_import_batch.json"
+	).read_text(encoding="utf-8")
+)
+RECONCILIATION = (ROOT / "raspechatka/stock_reconciliation.py").read_text(encoding="utf-8")
 
 
 def _section(source, start, end):
@@ -94,8 +101,8 @@ def test_target_events_share_one_chronological_stream():
 def test_repeat_run_is_idempotent():
 	stock_doc = _section(HISTORY, "def _import_stock_document", "def _mapped_warehouse")
 	backfill = _section(HISTORY, "def _backfill_sales_stock", "def _catalog_buy_rate")
-	assert 'frappe.db.exists(doctype, {"external_id": external_id})' in stock_doc
-	assert '"Stock Ledger Entry", {"voucher_type": "Sales Receipt", "voucher_no": name}' in backfill
+	assert 'frappe.db.get_value(doctype, {"external_id": external_id}, "name")' in stock_doc
+	assert '"import_batch": import_batch' in backfill
 	assert 'stats["sales_stock_duplicates"]' in backfill
 
 
@@ -104,9 +111,28 @@ def test_stock_movements_are_never_deleted_by_history_import():
 	assert 'frappe.db.delete("Stock Ledger Entry"' not in HISTORY
 
 
-def test_destructive_rebuild_endpoint_is_not_exposed():
-	assert "start_stock_history_rebuild" not in HISTORY
+def test_rebuild_creates_version_without_destructive_reset():
+	assert "start_stock_history_rebuild" in HISTORY
 	assert "_reset_initial_history" not in HISTORY
+	assert 'batch.status = "Running"' in HISTORY
+
+
+def test_old_batch_remains_auditable_as_superseded():
+	statuses = next(field for field in BATCH["fields"] if field["fieldname"] == "status")["options"]
+	assert "Active" in statuses
+	assert "Superseded" in statuses
+	assert '"Superseded"' in _section(HISTORY, "def _activate_import_batch", "def _fail_import_batch")
+
+
+def test_only_active_batch_affects_working_balance():
+	assert "batch.status = 'Active'" in STOCK
+	assert 'effective_ledger_condition(alias="")' in RECONCILIATION
+
+
+def test_rebuild_movement_identity_includes_batch():
+	movement_key = _section(STOCK, "def _movement_key", "def _default_valuation_source")
+	assert "import_batch=None" in movement_key
+	assert 'str(import_batch or "")' in movement_key
 
 
 def test_excluded_source_document_types_are_not_imported_or_audited():

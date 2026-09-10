@@ -4,7 +4,12 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from raspechatka.stock import EPSILON, _balance_key, write_operational_balance
+from raspechatka.stock import (
+	EPSILON,
+	_balance_key,
+	effective_ledger_condition,
+	write_operational_balance,
+)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -137,12 +142,14 @@ def reconcile_operational_balances():
 
 
 def _ledger_totals():
+	condition = effective_ledger_condition(alias="")
 	return frappe.db.sql(
-		"""select item, warehouse,
+		f"""select item, warehouse,
             coalesce(sum(actual_qty), 0) as qty,
             coalesce(sum(stock_value_difference), 0) as value,
             max(posting_datetime) as last_movement_at
         from `tabStock Ledger Entry`
+		where {condition}
         group by item, warehouse""",
 		as_dict=True,
 	)

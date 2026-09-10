@@ -15,6 +15,7 @@ from frappe.utils import (
 	nowtime,
 )
 from raspechatka.access import get_scope, require_access
+from raspechatka.stock import effective_ledger_condition
 
 
 @frappe.whitelist()
@@ -765,10 +766,11 @@ def _inventory_value(as_of, business_entity=None, business_point=None):
 		return 0
 	end = datetime.combine(getdate(as_of), time.max)
 	placeholders = ", ".join(["%s"] * len(warehouses))
+	condition = effective_ledger_condition(alias="")
 	row = frappe.db.sql(
 		f"""select coalesce(sum(stock_value_difference), 0) as stock_value
 		from `tabStock Ledger Entry`
-		where warehouse in ({placeholders}) and posting_datetime <= %s""",
+		where warehouse in ({placeholders}) and posting_datetime <= %s and {condition}""",
 		(*warehouses, end),
 		as_dict=True,
 	)[0]

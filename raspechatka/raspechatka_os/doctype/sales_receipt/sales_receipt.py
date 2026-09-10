@@ -242,7 +242,12 @@ class SalesReceipt(Document):
 				rate = (
 					flt(material["valuation_rate"])
 					if material.get("valuation_rate") is not None
-					else get_average_rate(material["material"], self.warehouse, self.posting_datetime)
+					else get_average_rate(
+						material["material"],
+						self.warehouse,
+						self.posting_datetime,
+						getattr(self.flags, "import_batch", None),
+					)
 				)
 				amount = flt(material["quantity"]) * rate
 				self.append(
@@ -481,7 +486,7 @@ class SalesReceipt(Document):
 			return {}
 		try:
 			return frappe.parse_json(self.source_payload_json) or {}
-		except TypeError, ValueError:
+		except (TypeError, ValueError):
 			return {}
 
 	def _source_lines(self):

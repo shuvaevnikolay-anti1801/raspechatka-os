@@ -403,6 +403,35 @@ async function startStockHistoryImport() {
   }
 }
 
+async function rebuildStockHistory() {
+  if (!window.confirm(
+    "Создать новую версию складской истории? Старые движения сохранятся для аудита и перестанут влиять на рабочие остатки только после успешного построения новой версии."
+  )) return;
+  busy.value = "rebuild-stock-history";
+  error.value = "";
+  notice.value = "";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock_history.start_stock_history_rebuild",
+      {},
+      { method: "POST" }
+    );
+    if (!result.queued) {
+      const reasons = {
+        token_missing: "Сначала сохраните токен МоегоСклада",
+        already_running: "Перенос уже выполняется",
+      };
+      throw new Error(reasons[result.reason] || "Не удалось запустить пересоздание");
+    }
+    stockHistory.value.status = "Running";
+    notice.value = "Новая версия складской истории поставлена в очередь";
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
 async function refreshRunningSync() {
   try {
     if (["Queued", "Running"].includes(salesSync.value.status)) {
@@ -770,6 +799,18 @@ onUnmounted(() => window.clearInterval(statusTimer));
               stockHistory.status === "Running"
                 ? "Перенос выполняется…"
                 : "Перенести историю и движения продаж"
+            }}
+          </button>
+          <button
+            v-if="stockHistory.initialized"
+            class="button"
+            :disabled="Boolean(busy) || stockHistory.status === 'Running'"
+            @click="rebuildStockHistory"
+          >
+            {{
+              stockHistory.status === "Running"
+                ? "Пересоздание выполняется…"
+                : "Пересоздать складскую историю"
             }}
           </button>
         </div>

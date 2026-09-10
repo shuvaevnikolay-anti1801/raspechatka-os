@@ -29,7 +29,12 @@ class StockWriteOff(Document):
 			validate_location(row.storage_location, self.warehouse)
 			if flt(row.quantity) <= 0:
 				frappe.throw(_("Количество списания должно быть больше нуля."))
-			row.valuation_rate = get_average_rate(row.item, self.warehouse, self.posting_datetime)
+			row.valuation_rate = get_average_rate(
+				row.item,
+				self.warehouse,
+				self.posting_datetime,
+				getattr(self.flags, "import_batch", None),
+			)
 			row.amount = flt(row.quantity) * flt(row.valuation_rate)
 		self.total_quantity = sum(flt(row.quantity) for row in self.items)
 		self.total_amount = sum(flt(row.amount) for row in self.items)
