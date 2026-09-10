@@ -287,8 +287,7 @@ def _create_opening_documents(settings, stats):
 			if not item:
 				raise frappe.ValidationError(
 					_("Не сопоставлен товар начального остатка: {0}").format(
-						source.get("name")
-						or _ref_id(source.get("assortment") or source.get("meta"))
+						source.get("name") or _ref_id(source.get("assortment") or source.get("meta"))
 					)
 				)
 			rate = _money(source.get("price") or source.get("buyPrice"))
@@ -475,9 +474,7 @@ def _document_items(settings, row, stats, incoming):
 			label = reference.get("name") or source_item_id
 			if source_kind:
 				label = f"{label} ({source_kind})"
-			raise frappe.ValidationError(
-				_("Не сопоставлена позиция МоегоСклада {0}").format(label)
-			)
+			raise frappe.ValidationError(_("Не сопоставлена позиция МоегоСклада {0}").format(label))
 		item_row = {
 			"item": item,
 			"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
@@ -647,9 +644,7 @@ def _backfill_sales_stock(name, stats):
 		row.cost_amount = 0
 	doc._prepare_consumed_materials()
 	for row in doc.items:
-		item = frappe.db.get_value(
-			"Catalog Item", row.item, ["item_type", "track_inventory"], as_dict=True
-		)
+		item = frappe.db.get_value("Catalog Item", row.item, ["item_type", "track_inventory"], as_dict=True)
 		if item and item.item_type in {"Product", "Variant"} and item.track_inventory:
 			if doc.receipt_type == "Return" and doc.original_receipt:
 				row.valuation_rate = doc._get_original_rate(row.item)
@@ -839,5 +834,5 @@ def _load_json(value):
 		return None
 	try:
 		return json.loads(value)
-	except (TypeError, ValueError):
+	except TypeError, ValueError:
 		return None

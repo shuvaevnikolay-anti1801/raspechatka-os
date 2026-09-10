@@ -44,4 +44,6 @@ class StockWriteOff(Document):
 
 	def on_cancel(self):
 		for row in self.items:
-			make_ledger_entry(self, row, -flt(row.quantity), row.valuation_rate, -flt(row.amount), reversal=True)
+			make_ledger_entry(
+				self, row, -flt(row.quantity), row.valuation_rate, -flt(row.amount), reversal=True
+			)

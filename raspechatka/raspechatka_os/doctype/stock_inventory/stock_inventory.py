@@ -34,8 +34,12 @@ class StockInventory(Document):
 			seen.add(key)
 			locations_by_item.setdefault(row.item, set()).add(row.storage_location or "")
 			if "" in locations_by_item[row.item] and len(locations_by_item[row.item]) > 1:
-				frappe.throw(_("Нельзя одновременно считать товар целиком по складу и по отдельному месту хранения."))
-			row.book_quantity = get_balance(row.item, self.warehouse, row.storage_location, self.posting_datetime)["qty"]
+				frappe.throw(
+					_("Нельзя одновременно считать товар целиком по складу и по отдельному месту хранения.")
+				)
+			row.book_quantity = get_balance(
+				row.item, self.warehouse, row.storage_location, self.posting_datetime
+			)["qty"]
 			row.difference_quantity = flt(row.counted_quantity) - flt(row.book_quantity)
 			current_rate = get_average_rate(row.item, self.warehouse, self.posting_datetime)
 			row.valuation_rate = current_rate or flt(row.valuation_rate)
@@ -49,7 +53,9 @@ class StockInventory(Document):
 	def on_submit(self):
 		for row in self.items:
 			if row.difference_quantity:
-				make_ledger_entry(self, row, row.difference_quantity, row.valuation_rate, row.difference_amount)
+				make_ledger_entry(
+					self, row, row.difference_quantity, row.valuation_rate, row.difference_amount
+				)
 
 	def before_submit(self):
 		if not self.flags.ignore_stock_chronology:
@@ -58,4 +64,11 @@ class StockInventory(Document):
 	def on_cancel(self):
 		for row in self.items:
 			if row.difference_quantity:
-				make_ledger_entry(self, row, row.difference_quantity, row.valuation_rate, row.difference_amount, reversal=True)
+				make_ledger_entry(
+					self,
+					row,
+					row.difference_quantity,
+					row.valuation_rate,
+					row.difference_amount,
+					reversal=True,
+				)

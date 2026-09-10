@@ -4,17 +4,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HISTORY = (ROOT / "raspechatka/api/moysklad_stock_history.py").read_text(encoding="utf-8")
 STOCK = (ROOT / "raspechatka/stock.py").read_text(encoding="utf-8")
-SALE = (
-	ROOT / "raspechatka/raspechatka_os/doctype/sales_receipt/sales_receipt.py"
-).read_text(encoding="utf-8")
-WRITE_OFF = (
-	ROOT / "raspechatka/raspechatka_os/doctype/stock_write_off/stock_write_off.py"
-).read_text(encoding="utf-8")
+SALE = (ROOT / "raspechatka/raspechatka_os/doctype/sales_receipt/sales_receipt.py").read_text(
+	encoding="utf-8"
+)
+WRITE_OFF = (ROOT / "raspechatka/raspechatka_os/doctype/stock_write_off/stock_write_off.py").read_text(
+	encoding="utf-8"
+)
 INVENTORY_ITEM = json.loads(
-	(
-		ROOT
-		/ "raspechatka/raspechatka_os/doctype/stock_inventory_item/stock_inventory_item.json"
-	).read_text(encoding="utf-8")
+	(ROOT / "raspechatka/raspechatka_os/doctype/stock_inventory_item/stock_inventory_item.json").read_text(
+		encoding="utf-8"
+	)
 )
 
 
@@ -36,7 +35,7 @@ def test_opening_negative_quantity_is_imported():
 
 
 def test_sale_from_zero_can_create_negative_balance():
-	assert "qty_after = flt(warehouse_balance[\"qty\"]) + quantity" in STOCK
+	assert 'qty_after = flt(warehouse_balance["qty"]) + quantity' in STOCK
 	assert "qty_after <" not in STOCK
 
 
@@ -95,7 +94,7 @@ def test_target_events_share_one_chronological_stream():
 def test_repeat_run_is_idempotent():
 	stock_doc = _section(HISTORY, "def _import_stock_document", "def _mapped_warehouse")
 	backfill = _section(HISTORY, "def _backfill_sales_stock", "def _catalog_buy_rate")
-	assert "frappe.db.exists(doctype, {\"external_id\": external_id})" in stock_doc
+	assert 'frappe.db.exists(doctype, {"external_id": external_id})' in stock_doc
 	assert '"Stock Ledger Entry", {"voucher_type": "Sales Receipt", "voucher_no": name}' in backfill
 	assert 'stats["sales_stock_duplicates"]' in backfill
 
