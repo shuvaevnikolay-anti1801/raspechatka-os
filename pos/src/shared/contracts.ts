@@ -42,8 +42,8 @@ export type BootState = {
   rules: PointRules
 }
 
-export type ConnectionConfig = { serverUrl: string; deviceId: string; token: string; cashierId?: string }
-export type ConnectionStatus = { configured: boolean; serverUrl: string; deviceId?: string; cashierId?: string; lastSyncAt?: string; lastError?: string }
+export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; cashierId?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
+export type ConnectionStatus = { configured: boolean; serverUrl: string; deviceId?: string; cashierId?: string; workplaceCode?:string; lastSyncAt?: string; lastError?: string }
 
 export type CompleteSaleRequest = {
   clientRequestId: string
