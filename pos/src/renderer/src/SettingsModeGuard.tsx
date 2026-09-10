@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BootState, ConnectionConfig, ConnectionStatus } from '../../shared/contracts'
 import './pilot-ux.css'
+import './settings-connection.css'
 
 const blankConfig:ConnectionConfig={serverUrl:'https://os.rpechatka.ru',deviceId:'',token:''}
 
