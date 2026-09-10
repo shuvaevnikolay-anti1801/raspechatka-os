@@ -54,6 +54,12 @@ export type FiscalOperationStatus = {
   raw?: unknown
 }
 
+export type FiscalShiftStatus = {
+  open: boolean
+  state: 'opened' | 'closed' | 'expired'
+  message: string
+}
+
 export interface PaymentProvider {
   healthCheck(): Promise<DeviceHealth>
   charge(request: PaymentRequest): Promise<PaymentResult>
@@ -63,7 +69,7 @@ export interface PaymentProvider {
 
 export interface FiscalProvider {
   healthCheck(): Promise<DeviceHealth>
-  getShiftStatus(): Promise<{open:boolean;message:string}>
+  getShiftStatus(): Promise<FiscalShiftStatus>
   openShift(): Promise<void>
   closeShift(): Promise<{message:string;reportNumber?:string}>
   fiscalizeSale(request: FiscalRequest): Promise<FiscalResult>
