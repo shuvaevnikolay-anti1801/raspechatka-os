@@ -25,7 +25,7 @@ export class WindowsPrintProvider implements PrintProvider {
     const window=new BrowserWindow({show:false,webPreferences:{sandbox:true,nodeIntegration:false,contextIsolation:true}})
     try{
       const printers=await window.webContents.getPrintersAsync()
-      return printers.map((printer)=>({name:printer.name,isDefault:Boolean(printer.isDefault)}))
+      return printers.map((printer)=>({name:printer.name,isDefault:Boolean((printer as unknown as {isDefault?:boolean}).isDefault)}))
     }finally{window.destroy()}
   }
 
