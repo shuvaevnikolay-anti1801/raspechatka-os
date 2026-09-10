@@ -3,6 +3,7 @@ import { app, BrowserWindow } from 'electron'
 import { PosDatabase } from './database'
 import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
+import { registerHardwareSettingsIpc } from './hardware-ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
 import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
@@ -69,6 +70,7 @@ if(!hasLock){
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
 
     registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine})
+    registerHardwareSettingsIpc(atolSettingsStore)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     createWindow()
 
