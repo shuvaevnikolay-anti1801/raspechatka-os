@@ -35,7 +35,10 @@ export class MockFiscalProvider implements FiscalProvider {
     return {ready:true,status:'ready' as const,message:'Тестовая ККТ готова'}
   }
 
-  async getShiftStatus(){return {open:this.shiftOpen,message:this.shiftOpen?'Тестовая смена открыта':'Тестовая смена закрыта'}}
+  async getShiftStatus(){return this.shiftOpen
+    ?{open:true,state:'opened' as const,message:'Тестовая смена открыта'}
+    :{open:false,state:'closed' as const,message:'Тестовая смена закрыта'}
+  }
   async openShift(){this.shiftOpen=true}
   async closeShift(){this.shiftOpen=false;return {message:'Тестовая фискальная смена закрыта'}}
 
