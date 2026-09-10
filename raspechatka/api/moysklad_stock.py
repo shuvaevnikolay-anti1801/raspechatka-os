@@ -221,7 +221,7 @@ def _build_snapshot(settings):
                 missing_items.append(label)
                 continue
             rate = _money(source.get("price") or source.get("buyPrice"))
-            if quantity < 0 or rate <= 0:
+            if rate <= 0:
                 invalid_rows.append(
                     {
                         "warehouse": mapping.warehouse_name,
@@ -267,8 +267,7 @@ def _build_snapshot(settings):
         )
         frappe.throw(
             _(
-                "В исходных остатках есть отрицательное количество или нулевая "
-                "себестоимость: {0}"
+                "В исходных остатках есть позиции с нулевой себестоимостью: {0}"
             ).format(examples)
         )
 

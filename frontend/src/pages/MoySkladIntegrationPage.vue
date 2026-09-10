@@ -403,6 +403,35 @@ async function startStockHistoryImport() {
   }
 }
 
+async function rebuildStockHistory() {
+  if (!window.confirm(
+    "Удалить только результаты первоначального переноса и заново построить складскую историю? Продажи сохранятся."
+  )) return;
+  busy.value = "rebuild-stock-history";
+  error.value = "";
+  notice.value = "";
+  try {
+    const result = await call(
+      "raspechatka.api.moysklad_stock_history.start_stock_history_rebuild",
+      {},
+      { method: "POST" }
+    );
+    if (!result.queued) {
+      const reasons = {
+        token_missing: "Сначала сохраните токен МоегоСклада",
+        already_running: "Перенос уже выполняется",
+      };
+      throw new Error(reasons[result.reason] || "Не удалось запустить пересоздание");
+    }
+    stockHistory.value.status = "Running";
+    notice.value = "Чистое пересоздание складской истории поставлено в очередь";
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    busy.value = "";
+  }
+}
+
 async function refreshRunningSync() {
   try {
     if (["Queued", "Running"].includes(salesSync.value.status)) {
@@ -772,6 +801,18 @@ onUnmounted(() => window.clearInterval(statusTimer));
                 : "Перенести историю и движения продаж"
             }}
           </button>
+          <button
+            v-if="stockHistory.initialized"
+            class="button"
+            :disabled="Boolean(busy) || stockHistory.status === 'Running'"
+            @click="rebuildStockHistory"
+          >
+            {{
+              stockHistory.status === "Running"
+                ? "Пересоздание выполняется…"
+                : "Пересоздать складскую историю"
+            }}
+          </button>
         </div>
         <p class="field-hint">
           Проверка ничего не создаёт и не проводит. Она определяет фактический
@@ -825,11 +866,22 @@ onUnmounted(() => window.clearInterval(statusTimer));
         </template>
         <dl v-if="stockHistory.stats?.processed" class="sync-summary">
           <div><dt>Обработано</dt><dd>{{ stockHistory.stats.processed || 0 }}</dd></div>
+          <div><dt>Начальных остатков</dt><dd>{{ stockHistory.stats.opening_lines || 0 }}</dd></div>
           <div><dt>Приёмок</dt><dd>{{ stockHistory.stats.supply_created || 0 }}</dd></div>
           <div><dt>Оприходований</dt><dd>{{ stockHistory.stats.enter_created || 0 }}</dd></div>
           <div><dt>Списаний</dt><dd>{{ stockHistory.stats.loss_created || 0 }}</dd></div>
           <div><dt>Движений продаж</dt><dd>{{ stockHistory.stats.sales_stock_created || 0 }}</dd></div>
           <div><dt>Движений возвратов</dt><dd>{{ stockHistory.stats.return_stock_created || 0 }}</dd></div>
+          <div>
+            <dt>Пропущено как дубликаты</dt>
+            <dd>
+              {{
+                (stockHistory.stats.document_duplicates || 0) +
+                (stockHistory.stats.sales_stock_duplicates || 0) +
+                (stockHistory.stats.opening_duplicates || 0)
+              }}
+            </dd>
+          </div>
           <div><dt>Ошибок</dt><dd>{{ stockHistory.stats.failed || 0 }}</dd></div>
         </dl>
         <section v-if="stockHistoryErrors.length" class="stock-history-errors">

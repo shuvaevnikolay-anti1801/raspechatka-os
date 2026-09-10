@@ -712,7 +712,6 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 								><input
 									v-model.number="row.counted_quantity"
 									type="number"
-									min="0"
 									step="0.001"
 									:disabled="form.docstatus !== 0"
 									required /><strong>{{
