@@ -7,6 +7,7 @@ import type {
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
+import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performSync } from './sync'
@@ -26,10 +27,11 @@ export function registerIpcHandlers(dependencies:{
   paymentProvider:PaymentProvider
   fiscalProvider:FiscalProvider
   printProvider:PrintProvider
+  printQueue:CommodityPrintQueue
   transactionEngine:PosTransactionEngine
   shiftCoordinator:ShiftCoordinator
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine,shiftCoordinator}=dependencies
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator}=dependencies
   const bootState=()=>buildBootState(database)
 
   ipcMain.handle('pos:get-boot-state',bootState)
@@ -41,16 +43,48 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:print-sale',async(_event,id:string,kind:PrintKind)=>{
     const sale=database.getSale(id)
     if(kind==='fiscal-copy')return fiscalProvider.reprintReceipt({saleId:sale.id,receiptNumber:sale.receiptNumber})
-    return printProvider.printCommodityReceipt(sale,bootState())
+    return printQueue.printSale(id)
   })
+  ipcMain.handle('pos:list-print-jobs',()=>printQueue.listPending())
+  ipcMain.handle('pos:retry-print-job',(_event,id:string)=>printQueue.retry(id))
   ipcMain.handle('pos:list-printers',()=>printProvider.listPrinters())
   ipcMain.handle('pos:get-selected-printer',()=>printProvider.getSelectedPrinter())
   ipcMain.handle('pos:set-selected-printer',(_event,name:string)=>printProvider.setSelectedPrinter(name))
-  ipcMain.handle('pos:get-device-statuses',async()=>({
-    fiscal:await fiscalProvider.healthCheck(),
-    payment:await paymentProvider.healthCheck(),
-    printer:await printProvider.healthCheck()
-  }))
+  ipcMain.handle('pos:get-device-statuses',async()=>{
+    const boot=bootState()
+    let fiscalShiftOpen:boolean|undefined
+    let fiscalShiftMessage='Состояние фискальной смены не проверено'
+    try{
+      const state=await fiscalProvider.getShiftStatus()
+      fiscalShiftOpen=state.open
+      fiscalShiftMessage=state.message
+    }catch(error){
+      fiscalShiftMessage=error instanceof Error?error.message:String(error)
+    }
+    const localOpen=Boolean(database.currentShift())
+    const shiftReady=fiscalShiftOpen===undefined?false:localOpen===fiscalShiftOpen
+    return {
+      os:{
+        ready:boot.online,
+        status:boot.online?'ready':'offline',
+        message:boot.online?`OS на связи · к отправке ${boot.pendingSync}`:`Локальный режим · к отправке ${boot.pendingSync}`,
+        details:{pendingSync:boot.pendingSync,lastSyncAt:boot.lastSyncAt}
+      },
+      fiscal:await fiscalProvider.healthCheck(),
+      payment:await paymentProvider.healthCheck(),
+      printer:await printProvider.healthCheck(),
+      shift:{
+        ready:shiftReady,
+        localOpen,
+        fiscalOpen:fiscalShiftOpen,
+        message:fiscalShiftOpen===undefined
+          ?`ККТ: ${fiscalShiftMessage}`
+          :localOpen===fiscalShiftOpen
+            ?(localOpen?'Локальная и фискальная смены открыты':'Локальная и фискальная смены закрыты')
+            :`Несоответствие смен: локальная ${localOpen?'открыта':'закрыта'}, ККТ ${fiscalShiftOpen?'открыта':'закрыта'}`
+      }
+    }
+  })
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
   ipcMain.handle('pos:recover-operation',(_event,id:string)=>transactionEngine.recover(id))
 
@@ -86,7 +120,8 @@ export function registerIpcHandlers(dependencies:{
     if(existing)return {...existing,changeMinor:0,queuedForSync:true}
     const shift=database.currentShift();if(!shift)throw new Error('Сначала откройте смену')
     if(!request.lines.length)throw new Error('Чек пуст')
-    const rules=bootState().rules
+    const boot=bootState()
+    const rules=boot.rules
     const discount=Math.min(request.receiptDiscountPercent??0,rules.maxDiscountPercent)
     const totalMinor=calculateTotalMinor(request.lines,rules.allowDiscounts?discount:0)
     const catalog=new Map(database.listProducts().map((x)=>[x.id,x]))
@@ -109,9 +144,15 @@ export function registerIpcHandlers(dependencies:{
     if(hasRemote&&!request.remotePaymentConfirmation?.confirmed){
       throw new Error('Для удалённой оплаты кассир должен отдельно подтвердить, что получение денег проверено.')
     }
-    if(hasRemote&&Number.isNaN(Date.parse(request.remotePaymentConfirmation?.confirmedAt||''))){
-      throw new Error('Не удалось зафиксировать время подтверждения удалённой оплаты.')
-    }
+    const normalizedRequest:CompleteSaleRequest=hasRemote?{
+      ...request,
+      remotePaymentConfirmation:{
+        confirmed:true,
+        confirmedAt:new Date().toISOString(),
+        confirmedBy:boot.cashierName,
+        note:request.remotePaymentConfirmation?.note?.trim()||undefined
+      }
+    }:request
 
     const fiscalHealth=await fiscalProvider.healthCheck()
     if(!fiscalHealth.ready)throw new Error(`Нельзя принимать оплату: ККТ не готова. ${fiscalHealth.message}`)
@@ -120,7 +161,13 @@ export function registerIpcHandlers(dependencies:{
       if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов. ${paymentHealth.message}`)
     }
 
-    return transactionEngine.completeSale({...request,receiptDiscountPercent:discount},shift.id,totalMinor)
+    const result=await transactionEngine.completeSale({...normalizedRequest,receiptDiscountPercent:discount},shift.id,totalMinor)
+    try{
+      await printQueue.printSale(result.saleId)
+      return result
+    }catch(error){
+      return {...result,commodityPrintWarning:error instanceof Error?error.message:String(error)}
+    }
   })
 
   ipcMain.handle('pos:create-return',async(_event,request:CreateReturnRequest):Promise<ReturnResult>=>{
