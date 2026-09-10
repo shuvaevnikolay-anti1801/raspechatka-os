@@ -82,42 +82,15 @@ def start_stock_history_import():
 	return {"queued": True}
 
 
-@frappe.whitelist(methods=["POST"])
-def start_stock_history_rebuild():
-	"""Queue a clean rebuild of integration-owned history only."""
-	require_access("settings.access", "admin")
-	settings = frappe.get_single("MoySklad Settings")
-	if not settings.get_password("access_token", raise_exception=False):
-		return {"queued": False, "reason": "token_missing"}
-	if settings.stock_history_status == "Running":
-		return {"queued": False, "reason": "already_running"}
-	settings.stock_history_status = "Running"
-	settings.stock_history_error = None
-	settings.save(ignore_permissions=True)
-	frappe.db.commit()
-	frappe.enqueue(
-		"raspechatka.api.moysklad_stock_history.run_stock_history_import",
-		queue="long",
-		job_name=f"{JOB_NAME}-rebuild",
-		timeout=7200,
-		rebuild=True,
-	)
-	return {"queued": True}
-
-
-def run_stock_history_import(rebuild=False):
+def run_stock_history_import():
 	"""Replay source receipts and existing mirrored sales in source chronology."""
 	settings = frappe.get_single("MoySklad Settings")
 	stats = defaultdict(int)
 	stats["history_from"] = HISTORY_START
 	stats["errors"] = []
 	try:
-		if rebuild:
-			stats.update(_reset_initial_history())
-			settings.reload()
-		if rebuild or not settings.stock_history_initialized:
-			if not rebuild:
-				_assert_safe_first_import()
+		if not settings.stock_history_initialized:
+			_assert_safe_first_import()
 			_create_opening_documents(settings, stats)
 			settings.reload()
 			settings.stock_history_initialized = 1
@@ -170,82 +143,6 @@ def run_stock_history_import(rebuild=False):
 		frappe.db.commit()
 		frappe.log_error(frappe.get_traceback(), "MoySklad stock history import")
 		raise
-
-
-def _reset_initial_history():
-	"""Delete only integration-owned initial-history artifacts without reversals."""
-	opening = frappe.get_all(
-		"Stock Inventory",
-		filters={"source": "MoySklad Opening Balance", "external_id": ["like", "moysklad:opening:%"]},
-		pluck="name",
-		limit_page_length=0,
-	)
-	receipts = frappe.get_all(
-		"Stock Receipt",
-		filters={"source": "MoySklad", "external_id": ["like", "moysklad:%"]},
-		pluck="name",
-		limit_page_length=0,
-	)
-	write_offs = frappe.get_all(
-		"Stock Write Off",
-		filters={"source": "MoySklad", "external_id": ["like", "moysklad:loss:%"]},
-		pluck="name",
-		limit_page_length=0,
-	)
-	sales = frappe.get_all(
-		"Sales Receipt",
-		filters={
-			"source": "MoySklad",
-			"posting_datetime": [">=", f"{HISTORY_START} 00:00:00"],
-		},
-		pluck="name",
-		limit_page_length=0,
-	)
-	vouchers = {
-		"Stock Inventory": opening,
-		"Stock Receipt": receipts,
-		"Stock Write Off": write_offs,
-		"Sales Receipt": sales,
-	}
-	ledger_deleted = 0
-	for voucher_type, names in vouchers.items():
-		if not names:
-			continue
-		ledger_names = frappe.get_all(
-			"Stock Ledger Entry",
-			filters={"voucher_type": voucher_type, "voucher_no": ["in", names]},
-			pluck="name",
-			limit_page_length=0,
-		)
-		for name in ledger_names:
-			frappe.delete_doc("Stock Ledger Entry", name, force=True, ignore_permissions=True)
-		ledger_deleted += len(ledger_names)
-
-	for doctype, names in (
-		("Stock Inventory", opening),
-		("Stock Receipt", receipts),
-		("Stock Write Off", write_offs),
-	):
-		for name in names:
-			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
-	if sales:
-		frappe.db.delete("Sales Receipt Material", {"parent": ["in", sales]})
-
-	from raspechatka.stock_reconciliation import _rebuild_operational_balances
-
-	balance_stats = _rebuild_operational_balances()
-	settings = frappe.get_single("MoySklad Settings")
-	settings.stock_history_initialized = 0
-	settings.stock_history_last_sync_at = None
-	settings.stock_history_stats_json = None
-	settings.save(ignore_permissions=True)
-	return {
-		"reset_opening_documents": len(opening),
-		"reset_receipts": len(receipts),
-		"reset_write_offs": len(write_offs),
-		"reset_ledger_entries": ledger_deleted,
-		"reset_balances_rebuilt": balance_stats["rebuilt"],
-	}
 
 
 def _assert_safe_first_import():
