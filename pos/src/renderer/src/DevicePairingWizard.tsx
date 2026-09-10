@@ -61,12 +61,12 @@ export default function DevicePairingWizard(){
         <p className="pairing-lead">Сначала в OS выберите конкретную точку: <b>Продажи → Подключение кассы</b>. Полученные там Device ID и Token вставьте сюда. Точку в Windows выбирать нельзя — она определяется самим Device ID.</p>
         <div className="pairing-fields">
           <label><span>Адрес Распечатка OS</span><input value={form.serverUrl} onChange={(e)=>setForm({...form,serverUrl:e.target.value})}/></label>
-          <label><span>Device ID</span><input autoFocus value={form.deviceId} onChange={(e)=>setForm({...form,deviceId:e.target.value})} placeholder="POS-…" autoComplete="off"/></label>
-          <label><span>Token</span><input type="password" value={form.token} onChange={(e)=>setForm({...form,token:e.target.value})} placeholder="Показывается в OS один раз" autoComplete="new-password"/></label>
+          <label><span>Device ID</span><input autoFocus value={form.deviceId||''} onChange={(e)=>setForm({...form,deviceId:e.target.value})} placeholder="POS-…" autoComplete="off"/></label>
+          <label><span>Token</span><input type="password" value={form.token||''} onChange={(e)=>setForm({...form,token:e.target.value})} placeholder="Показывается в OS один раз" autoComplete="new-password"/></label>
         </div>
         <div className="pairing-security"><b>Token хранится только в защищённом хранилище Windows.</b><span>В журнал приложения он не записывается и после подключения не показывается.</span></div>
         {message&&<div className="pairing-message">{message}</div>}
-        <button className="pairing-primary" disabled={busy||!form.deviceId.trim()||!form.token.trim()} onClick={()=>void pair()}>{busy?'Подключаем…':'Подключить кассу'}</button>
+        <button className="pairing-primary" disabled={busy||!(form.deviceId||'').trim()||!(form.token||'').trim()} onClick={()=>void pair()}>{busy?'Подключаем…':'Подключить кассу'}</button>
       </>:<>
         <div className="pairing-point"><small>КАССА ПРИВЯЗАНА К ТОЧКЕ</small><h2>{boot.pointName}</h2><span>{boot.workstationName}</span></div>
         {boot.employees.length?<>
