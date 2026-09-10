@@ -10,6 +10,9 @@ import { PosDatabase } from './database'
 import { JournalOperation, TransactionJournal } from './transaction-journal'
 
 const isLocalPayment=(method:PaymentPart['method'])=>method==='cash'||method==='remote_payment'
+const DANGEROUS_STATES=new Set([
+  'payment_in_progress','payment_confirmed','payment_unknown','fiscalization_in_progress','fiscalized','fiscal_status_unknown'
+])
 
 export class PosTransactionEngine {
   constructor(
@@ -22,19 +25,27 @@ export class PosTransactionEngine {
   listUnresolved(){return this.journal.listUnresolvedSummaries()}
 
   hasBlockingOperation():boolean{
-    return this.journal.listUnresolved().some((operation)=>
-      ['payment_in_progress','payment_confirmed','payment_unknown','fiscalization_in_progress','fiscalized','fiscal_status_unknown'].includes(operation.state))
+    return this.journal.listUnresolved().some((operation)=>DANGEROUS_STATES.has(operation.state))
   }
 
   async completeSale(request:CompleteSaleRequest,shiftId:string,totalMinor?:number):Promise<CompleteSaleResult>{
-    const existingSale=this.database.findSaleByClientRequestId(request.clientRequestId)
-    if(existingSale)return {...existingSale,changeMinor:0,queuedForSync:true}
+    const amount=totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
+    this.validatePayments(request.payments,amount,'оплаты')
+
     const existingOperation=this.journal.getByClientRequestId(request.clientRequestId)
+    const existingSale=this.database.findSaleByClientRequestId(request.clientRequestId)
+    if(existingSale){
+      if(existingOperation&&existingOperation.state!=='completed')this.journal.setState(existingOperation.id,'completed')
+      return {...existingSale,changeMinor:0,queuedForSync:true}
+    }
     if(!existingOperation&&this.hasBlockingOperation()){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Откройте «Восстановление» и завершите её перед новой оплатой.')
     }
+    if(existingOperation&&existingOperation.amountMinor!==amount){
+      throw new Error('Повторный запрос продажи имеет другую сумму. Операция остановлена для защиты от двойной оплаты.')
+    }
+
     const saleId=existingOperation?.entityId??randomUUID()
-    const amount=totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
     const operation=existingOperation??this.journal.create({
       id:randomUUID(),clientRequestId:request.clientRequestId,kind:'sale',entityId:saleId,shiftId,
       amountMinor:amount,request
@@ -43,12 +54,21 @@ export class PosTransactionEngine {
   }
 
   async createReturn(request:CreateReturnRequest,shiftId:string,totalMinor:number,sale:SaleDetails):Promise<ReturnResult>{
-    const existingReturn=this.database.findReturnByClientRequestId(request.clientRequestId)
-    if(existingReturn)return {...existingReturn,queuedForSync:true}
+    this.validatePayments(request.payments,totalMinor,'возврата')
+
     const existingOperation=this.journal.getByClientRequestId(request.clientRequestId)
+    const existingReturn=this.database.findReturnByClientRequestId(request.clientRequestId)
+    if(existingReturn){
+      if(existingOperation&&existingOperation.state!=='completed')this.journal.setState(existingOperation.id,'completed')
+      return {...existingReturn,queuedForSync:true}
+    }
     if(!existingOperation&&this.hasBlockingOperation()){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Сначала завершите её в разделе «Восстановление».')
     }
+    if(existingOperation&&existingOperation.amountMinor!==totalMinor){
+      throw new Error('Повторный запрос возврата имеет другую сумму. Операция остановлена для защиты от двойного возврата.')
+    }
+
     const returnId=existingOperation?.entityId??randomUUID()
     const operation=existingOperation??this.journal.create({
       id:randomUUID(),clientRequestId:request.clientRequestId,kind:'return',entityId:returnId,
@@ -61,6 +81,16 @@ export class PosTransactionEngine {
     const operation=this.journal.get(operationId)
     if(!operation)throw new Error('Незавершённая операция не найдена')
     if(operation.state==='completed')return {status:'completed',message:'Операция уже завершена'}
+
+    if(operation.kind==='sale'&&this.database.findSaleByClientRequestId(operation.clientRequestId)){
+      this.journal.setState(operation.id,'completed')
+      return {status:'completed',message:'Продажа уже сохранена локально. Состояние журнала восстановлено.'}
+    }
+    if(operation.kind==='return'&&this.database.findReturnByClientRequestId(operation.clientRequestId)){
+      this.journal.setState(operation.id,'completed')
+      return {status:'completed',message:'Возврат уже сохранён локально. Состояние журнала восстановлено.'}
+    }
+
     try{await this.reconcileUnknownState(operation)}catch(error){
       return {status:'attention',message:error instanceof Error?error.message:String(error)}
     }
@@ -79,27 +109,34 @@ export class PosTransactionEngine {
 
   private async runSale(operation:JournalOperation):Promise<CompleteSaleResult>{
     const request=operation.request as CompleteSaleRequest
+    this.validatePayments(request.payments,operation.amountMinor,'оплаты')
     let current=operation
+
     if(current.state==='created'||current.state==='requires_attention'){
       const payments=await this.processPayments(current,request.payments,'charge')
+      this.assertConfirmedPayments(request.payments,payments,operation.amountMinor)
       this.journal.setConfirmedPayments(current.id,payments)
       this.journal.setState(current.id,'payment_confirmed')
       current=this.journal.get(current.id)!
     }
     if(current.state==='payment_confirmed'){
+      this.assertConfirmedPayments(request.payments,current.confirmedPayments,operation.amountMinor)
       const fiscal=await this.fiscalizeSale(current,request)
       this.journal.setFiscalReceipt(current.id,fiscal.receiptNumber)
       this.journal.setState(current.id,'fiscalized')
       current=this.journal.get(current.id)!
     }
     if(current.state==='fiscalized'){
-      this.database.saveSale({
-        id:current.entityId,clientRequestId:current.clientRequestId,shiftId:current.shiftId,totalMinor:current.amountMinor,
-        paymentMethod:current.confirmedPayments.length>1?'mixed':current.confirmedPayments[0].method,
-        fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,
-        customerId:request.customer?.id,customerName:request.customer?.name,
-        receiptDiscountPercent:request.receiptDiscountPercent??0,lines:request.lines,payments:current.confirmedPayments,order:request.order
-      })
+      const existing=this.database.findSaleByClientRequestId(current.clientRequestId)
+      if(!existing){
+        this.database.saveSale({
+          id:current.entityId,clientRequestId:current.clientRequestId,shiftId:current.shiftId,totalMinor:current.amountMinor,
+          paymentMethod:current.confirmedPayments.length>1?'mixed':current.confirmedPayments[0].method,
+          fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,
+          customerId:request.customer?.id,customerName:request.customer?.name,
+          receiptDiscountPercent:request.receiptDiscountPercent??0,lines:request.lines,payments:current.confirmedPayments,order:request.order
+        })
+      }
       this.journal.setState(current.id,'completed')
     }
     if(this.journal.get(current.id)!.state!=='completed')throw new Error('Операция не завершена и требует проверки')
@@ -112,6 +149,7 @@ export class PosTransactionEngine {
 
   private async runReturn(operation:JournalOperation,sale:SaleDetails):Promise<ReturnResult>{
     const request=operation.request as CreateReturnRequest
+    this.validatePayments(request.payments,operation.amountMinor,'возврата')
     const lines=request.lines.map((requested)=>{
       const original=sale.lines.find((x)=>x.id===requested.saleItemId)
       if(!original)throw new Error('Позиция исходного чека не найдена')
@@ -125,19 +163,24 @@ export class PosTransactionEngine {
     let current=operation
     if(current.state==='created'||current.state==='requires_attention'){
       const payments=await this.processPayments(current,request.payments,'refund')
+      this.assertConfirmedPayments(request.payments,payments,operation.amountMinor)
       this.journal.setConfirmedPayments(current.id,payments)
       this.journal.setState(current.id,'payment_confirmed')
       current=this.journal.get(current.id)!
     }
     if(current.state==='payment_confirmed'){
+      this.assertConfirmedPayments(request.payments,current.confirmedPayments,operation.amountMinor)
       const fiscal=await this.fiscalizeReturn(current,sale,lines)
       this.journal.setFiscalReceipt(current.id,fiscal.receiptNumber)
       this.journal.setState(current.id,'fiscalized')
       current=this.journal.get(current.id)!
     }
     if(current.state==='fiscalized'){
-      this.database.saveReturn({id:current.entityId,clientRequestId:current.clientRequestId,saleId:sale.id,shiftId:current.shiftId,
-        totalMinor:current.amountMinor,fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,lines,payments:current.confirmedPayments})
+      const existing=this.database.findReturnByClientRequestId(current.clientRequestId)
+      if(!existing){
+        this.database.saveReturn({id:current.entityId,clientRequestId:current.clientRequestId,saleId:sale.id,shiftId:current.shiftId,
+          totalMinor:current.amountMinor,fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,lines,payments:current.confirmedPayments})
+      }
       this.journal.setState(current.id,'completed')
     }
     const saved=this.database.findReturnByClientRequestId(current.clientRequestId)
@@ -149,16 +192,17 @@ export class PosTransactionEngine {
     const confirmed:PaymentPart[]=[...operation.confirmedPayments]
     for(let index=confirmed.length;index<requested.length;index++){
       const part=requested[index]
-      const attemptId=`${operation.id}:payment:${index}`
+      const attemptId=randomUUID()
+      this.journal.startPaymentAttempt({id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor})
+
       if(isLocalPayment(part.method)){
-        const transactionId=part.method==='cash'?`CASH-${operation.entityId}`:`REMOTE-MANUAL-${operation.entityId}`
-        this.journal.startPaymentAttempt({id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor})
+        const transactionId=part.method==='cash'?`CASH-${operation.entityId}-${index}`:`REMOTE-MANUAL-${operation.entityId}-${index}`
         this.journal.finishPaymentAttempt({id:attemptId,state:'approved',transactionId})
         confirmed.push({...part,transactionId})
         this.journal.setConfirmedPayments(operation.id,confirmed)
         continue
       }
-      this.journal.startPaymentAttempt({id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor})
+
       this.journal.setState(operation.id,'payment_in_progress')
       let result:PaymentResult
       try{
@@ -181,6 +225,11 @@ export class PosTransactionEngine {
         this.journal.setState(operation.id,'requires_attention',result.message||'Оплата отклонена')
         throw new Error(result.message||'Оплата отклонена')
       }
+      if(!result.transactionId){
+        this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',rawResult:result,error:'Терминал подтвердил оплату без transactionId'})
+        this.journal.setState(operation.id,'payment_unknown','Терминал подтвердил оплату без идентификатора операции')
+        throw new Error('Оплата подтверждена без идентификатора банка. НЕ повторяйте её — откройте «Восстановление».')
+      }
       this.journal.finishPaymentAttempt({id:attemptId,state:'approved',transactionId:result.transactionId,rawResult:result})
       confirmed.push({...part,transactionId:result.transactionId})
       this.journal.setConfirmedPayments(operation.id,confirmed)
@@ -189,7 +238,7 @@ export class PosTransactionEngine {
   }
 
   private async fiscalizeSale(operation:JournalOperation,request:CompleteSaleRequest):Promise<FiscalResult>{
-    const attemptId=`${operation.id}:fiscal`
+    const attemptId=randomUUID()
     this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'sale'})
     this.journal.setState(operation.id,'fiscalization_in_progress')
     try{
@@ -197,6 +246,7 @@ export class PosTransactionEngine {
       const lines=request.lines.map((line)=>({...line,itemType:catalog.get(line.productId)?.type})) as CartLine[]
       const result=await this.fiscalProvider.fiscalizeSale({operationId:attemptId,saleId:operation.entityId,
         amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines})
+      if(!result.receiptNumber)throw new Error('ККТ не вернула номер фискального документа')
       this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
       return result
     }catch(error){
@@ -208,7 +258,7 @@ export class PosTransactionEngine {
   }
 
   private async fiscalizeReturn(operation:JournalOperation,sale:SaleDetails,returnLines:Array<{saleItemId:number;quantity:number;lineTotalMinor:number}>):Promise<FiscalResult>{
-    const attemptId=`${operation.id}:fiscal`
+    const attemptId=randomUUID()
     this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'return'})
     this.journal.setState(operation.id,'fiscalization_in_progress')
     try{
@@ -221,6 +271,7 @@ export class PosTransactionEngine {
       })
       const result=await this.fiscalProvider.fiscalizeReturn({operationId:attemptId,returnId:operation.entityId,saleId:sale.id,
         amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines})
+      if(!result.receiptNumber)throw new Error('ККТ не вернула номер фискального документа возврата')
       this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
       return result
     }catch(error){
@@ -238,12 +289,18 @@ export class PosTransactionEngine {
       const result=await this.paymentProvider.getOperationStatus({operationId:attempt.id,saleId:operation.entityId,
         amountMinor:attempt.amountMinor,method:attempt.method as PaymentPart['method']})
       if(result.status==='approved'){
+        if(!result.transactionId){
+          this.journal.setState(operation.id,'payment_unknown','Банк подтвердил операцию без transactionId')
+          throw new Error('Банк подтвердил операцию без идентификатора. Требуется ручная проверка.')
+        }
         const payments=[...operation.confirmedPayments]
-        if(!payments.some((x)=>x.transactionId===result.transactionId))payments.push({method:attempt.method as PaymentPart['method'],amountMinor:attempt.amountMinor,transactionId:result.transactionId})
+        if(!payments.some((x)=>x.transactionId===result.transactionId)){
+          payments.push({method:attempt.method as PaymentPart['method'],amountMinor:attempt.amountMinor,transactionId:result.transactionId})
+        }
         this.journal.finishPaymentAttempt({id:attempt.id,state:'approved',transactionId:result.transactionId,rawResult:result})
         this.journal.setConfirmedPayments(operation.id,payments)
-        const expected=(operation.request as CompleteSaleRequest|CreateReturnRequest).payments.length
-        this.journal.setState(operation.id,payments.length>=expected?'payment_confirmed':'created')
+        const requested=(operation.request as CompleteSaleRequest|CreateReturnRequest).payments
+        this.journal.setState(operation.id,payments.length>=requested.length?'payment_confirmed':'created')
       }else if(result.status==='declined'){
         this.journal.finishPaymentAttempt({id:attempt.id,state:'declined',transactionId:result.transactionId,rawResult:result,error:result.message})
         this.journal.setState(operation.id,'requires_attention',result.message||'Операция терминала не была оплачена')
@@ -270,5 +327,32 @@ export class PosTransactionEngine {
         throw new Error(result.message||'Статус фискального документа всё ещё неизвестен')
       }
     }
+  }
+
+  private validatePayments(payments:PaymentPart[],expectedTotal:number,label:string):void{
+    if(!Number.isInteger(expectedTotal)||expectedTotal<0)throw new Error(`Некорректная сумма ${label}`)
+    if(!payments.length)throw new Error(`Не выбран способ ${label}`)
+    for(const payment of payments){
+      if(!Number.isInteger(payment.amountMinor)||payment.amountMinor<=0){
+        throw new Error(`Некорректная сумма части ${label}`)
+      }
+    }
+    const sum=payments.reduce((total,payment)=>total+payment.amountMinor,0)
+    if(sum!==expectedTotal){
+      throw new Error(`Сумма способов ${label} (${sum}) не совпадает с суммой операции (${expectedTotal}). Операция не начата.`)
+    }
+  }
+
+  private assertConfirmedPayments(requested:PaymentPart[],confirmed:PaymentPart[],expectedTotal:number):void{
+    if(confirmed.length!==requested.length){
+      throw new Error('Не все части оплаты подтверждены. Фискализация заблокирована.')
+    }
+    for(let index=0;index<requested.length;index++){
+      if(requested[index].method!==confirmed[index].method||requested[index].amountMinor!==confirmed[index].amountMinor){
+        throw new Error('Подтверждённая оплата не совпадает с исходным способом или суммой. Фискализация заблокирована.')
+      }
+    }
+    const sum=confirmed.reduce((total,payment)=>total+payment.amountMinor,0)
+    if(sum!==expectedTotal)throw new Error('Подтверждённая сумма не совпадает с суммой чека. Фискализация заблокирована.')
   }
 }
