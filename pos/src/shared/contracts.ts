@@ -1,5 +1,5 @@
 export type PaymentMethod = 'cash' | 'card' | 'qr' | 'remote_payment'
-export type SalePaymentMethod = 'cash' | 'card' | 'qr' | 'mixed'
+export type SalePaymentMethod = string
 
 export type Product = {
   id: string
