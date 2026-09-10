@@ -393,7 +393,7 @@ def get_budget(month=None, business_entity=None, business_point=None):
 	require_access("finance.planning", "read")
 	month = getdate(month or get_first_day(nowdate())).replace(day=1)
 	budget = _get_budget(month, business_entity, business_point)
-	return budget.as_dict(no_nulls=False) if budget else {"month": str(month), "business_entity": business_entity, "business_point": business_point, "revenue_plan": 0, "checks_plan": 0, "average_check_plan": 0, "net_profit_plan": 0, "opening_cash_plan": 0, "equipment_value": 0, "loan_balance": 0, "other_liabilities": 0, "lines": []}
+	return budget.as_dict(no_nulls=False) if budget else {"month": str(month), "business_entity": business_entity, "business_point": business_point, "revenue_plan": 0, "checks_plan": 0, "average_check_plan": 0, "net_profit_plan": 0, "club_members_plan": 0, "reviews_plan": 0, "opening_cash_plan": 0, "equipment_value": 0, "loan_balance": 0, "other_liabilities": 0, "lines": []}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -403,7 +403,7 @@ def save_budget(data):
 	_ensure_entity(data.get("business_entity"))
 	_ensure_point(data.get("business_point"), data.get("business_entity"))
 	doc = frappe.get_doc("Finance Budget", data["name"]) if data.get("name") else frappe.new_doc("Finance Budget")
-	for fieldname in ("month", "business_entity", "business_point", "revenue_plan", "checks_plan", "average_check_plan", "net_profit_plan", "opening_cash_plan", "equipment_value", "loan_balance", "other_liabilities", "comment"):
+	for fieldname in ("month", "business_entity", "business_point", "revenue_plan", "checks_plan", "average_check_plan", "net_profit_plan", "club_members_plan", "reviews_plan", "opening_cash_plan", "equipment_value", "loan_balance", "other_liabilities", "comment"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	doc.set("lines", [])

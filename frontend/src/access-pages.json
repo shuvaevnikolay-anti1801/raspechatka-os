@@ -4,7 +4,8 @@
     "label": "Центр управления",
     "order": 10,
     "pages": [
-      { "area": "page.dashboard", "label": "Центр управления", "route": "/", "legacy_area": "dashboard", "order": 10 }
+      { "area": "page.dashboard", "label": "Центр управления", "route": "/", "legacy_area": "dashboard", "order": 10 },
+      { "area": "page.dashboard.assistant", "label": "I Assistant", "route": "/assistant", "legacy_area": "dashboard", "order": 20 }
     ]
   },
   {

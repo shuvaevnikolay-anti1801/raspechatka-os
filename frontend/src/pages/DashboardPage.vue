@@ -7,27 +7,32 @@ const router = useRouter();
 const loading = ref(true);
 const error = ref("");
 const data = reactive({
-  filters: { entities: [], points: [] },
+  filters: { organizations: [], entities: [], points: [] },
   period: {},
   metrics: {},
   alerts: [],
   dynamics: [],
-  points: [],
-  upcoming_events: [],
 });
 const filters = reactive({
   period: "today",
   from_date: "",
   to_date: "",
+  organization: "",
   business_entity: "",
   city: "",
   business_point: "",
 });
 let timer;
 
+const availableEntities = computed(() =>
+  data.filters.entities.filter(
+    (row) => !filters.organization || row.organization === filters.organization,
+  ),
+);
 const availableCities = computed(() => [
   ...new Set(
     data.filters.points
+      .filter((row) => !filters.organization || row.organization === filters.organization)
       .filter((row) => !filters.business_entity || row.business_entity === filters.business_entity)
       .map((row) => row.city)
       .filter(Boolean),
@@ -36,6 +41,7 @@ const availableCities = computed(() => [
 const availablePoints = computed(() =>
   data.filters.points.filter(
     (row) =>
+      (!filters.organization || row.organization === filters.organization) &&
       (!filters.business_entity || row.business_entity === filters.business_entity) &&
       (!filters.city || row.city === filters.city),
   ),
@@ -66,6 +72,12 @@ async function load(silent = false) {
     loading.value = false;
   }
 }
+function changeOrganization() {
+  filters.business_entity = "";
+  filters.city = "";
+  filters.business_point = "";
+  load();
+}
 function changeEntity() {
   filters.city = "";
   filters.business_point = "";
@@ -74,11 +86,6 @@ function changeEntity() {
 function changeCity() {
   filters.business_point = "";
   load();
-}
-function selectPoint(name) {
-  filters.business_point = name;
-  load();
-  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function openRoute(path) {
   router.push({
@@ -113,9 +120,13 @@ onBeforeUnmount(() => window.clearInterval(timer));
         <input v-model="filters.from_date" type="date" aria-label="Дата начала" @change="load()" />
         <input v-model="filters.to_date" type="date" aria-label="Дата окончания" @change="load()" />
       </template>
-      <select v-model="filters.business_entity" aria-label="Организация" @change="changeEntity">
-        <option value="">Все организации</option>
-        <option v-for="row in data.filters.entities" :key="row.name" :value="row.name">{{ row.short_name || row.name }}</option>
+      <select v-model="filters.organization" aria-label="Партнёр" @change="changeOrganization">
+        <option value="">Все партнёры</option>
+        <option v-for="row in data.filters.organizations" :key="row.name" :value="row.name">{{ row.organization_name || row.name }}</option>
+      </select>
+      <select v-model="filters.business_entity" aria-label="Юридическое лицо" @change="changeEntity">
+        <option value="">Все юридические лица</option>
+        <option v-for="row in availableEntities" :key="row.name" :value="row.name">{{ row.short_name || row.name }}</option>
       </select>
       <select v-model="filters.city" aria-label="Город" @change="changeCity">
         <option value="">Все города</option>
@@ -156,6 +167,18 @@ onBeforeUnmount(() => window.clearInterval(timer));
           <footer v-if="data.metrics.average_check?.plan"><span>План {{ money(data.metrics.average_check.plan) }}</span><strong>{{ percent(data.metrics.average_check.attainment) }}</strong></footer>
           <footer v-else><span>План не задан</span><router-link to="/finance/planning">Настроить</router-link></footer>
         </article>
+        <article>
+          <small>КЛУБ</small><b>{{ number(data.metrics.club?.total) }}</b>
+          <div>Новые за период <strong>{{ number(data.metrics.club?.value) }}</strong> · Выбыли <strong>{{ number(data.metrics.club?.churn) }}</strong></div>
+          <footer v-if="data.metrics.club?.plan"><span>План новых {{ number(data.metrics.club.plan) }}</span><strong>{{ percent(data.metrics.club.attainment) }}</strong></footer>
+          <footer v-else><span>План не задан</span><router-link to="/finance/planning">Настроить</router-link></footer>
+        </article>
+        <article>
+          <small>ОТЗЫВЫ</small><b>+{{ number(data.metrics.reviews?.value) }}</b>
+          <div><span :class="{ positive: data.metrics.reviews?.delta > 0, negative: data.metrics.reviews?.delta < 0 }">{{ percent(data.metrics.reviews?.delta, true) }}</span> к прошлому периоду</div>
+          <footer v-if="data.metrics.reviews?.plan"><span>План {{ number(data.metrics.reviews.plan) }}</span><strong>{{ percent(data.metrics.reviews.attainment) }}</strong></footer>
+          <footer v-else><span>План не задан</span><router-link to="/finance/planning">Настроить</router-link></footer>
+        </article>
       </div>
 
       <div class="control-layout">
@@ -179,31 +202,6 @@ onBeforeUnmount(() => window.clearInterval(timer));
           <div v-else class="control-empty"><b>Продаж за период нет</b><span>График появится после проведения первого чека.</span></div>
         </article>
       </div>
-
-      <article class="control-panel points-table">
-        <header><div><small>ТОЧКИ ПРОДАЖ</small><h2>Сравнение результатов</h2></div><span>{{ data.points.length }} точек</span></header>
-        <div class="table-shell">
-          <table>
-            <thead><tr><th>Точка</th><th>Город</th><th>Выручка</th><th>План</th><th>Динамика</th><th>Чеки</th><th>Средний чек</th><th>Маржа</th><th>Сигналы</th></tr></thead>
-            <tbody><tr v-for="row in data.points" :key="row.name" tabindex="0" @click="selectPoint(row.name)" @keydown.enter="selectPoint(row.name)">
-              <td class="item-name">{{ row.point_name }}</td><td>{{ row.city || "—" }}</td><td class="number-cell">{{ money(row.revenue) }}</td><td class="number-cell">{{ percent(row.plan_attainment) }}</td>
-              <td :class="['number-cell', { positive: row.delta > 0, negative: row.delta < 0 }]">{{ percent(row.delta, true) }}</td><td class="number-cell">{{ number(row.receipts) }}</td>
-              <td class="number-cell">{{ money(row.average_check) }}</td><td class="number-cell">{{ percent(row.margin) }}</td><td><span :class="['signal-badge', { active: row.alerts }]">{{ row.alerts }}</span></td>
-            </tr></tbody>
-          </table>
-          <div v-if="!data.points.length" class="table-message"><strong>Нет доступных точек</strong><span>Проверьте область доступа пользователя и настройки точек продаж.</span></div>
-        </div>
-      </article>
-
-      <article class="control-panel events-panel">
-        <header><div><small>БЛИЖАЙШИЕ 7 ДНЕЙ</small><h2>Поставки и платежи</h2></div></header>
-        <div v-if="data.upcoming_events.length" class="control-event-list">
-          <button v-for="event in data.upcoming_events" :key="`${event.type}-${event.title}-${event.date}`" @click="openRoute(event.route)">
-            <time>{{ event.date }}</time><span><small>{{ event.type }} · {{ event.business_point }}</small><b>{{ event.title }}</b></span><em>→</em>
-          </button>
-        </div>
-        <div v-else class="control-empty compact"><span>На ближайшие семь дней событий нет.</span></div>
-      </article>
     </template>
   </section>
 </template>

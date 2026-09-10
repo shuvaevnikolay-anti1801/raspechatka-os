@@ -31,3 +31,4 @@ raspechatka.patches.v1_0.build_operational_stock_balances
 raspechatka.patches.v1_0.add_stock_performance_indexes
 raspechatka.patches.v1_0.seed_employment_document_templates
 raspechatka.patches.v1_0.initialize_supplier_settlements
+raspechatka.patches.v1_0.add_club_and_review_plans

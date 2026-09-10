@@ -13,13 +13,14 @@ def get_control_center(
 	period="today",
 	from_date=None,
 	to_date=None,
+	organization=None,
 	business_entity=None,
 	city=None,
 	business_point=None,
 ):
 	require_access("page.dashboard", "read")
 	start, end = _period_dates(period, from_date, to_date)
-	points = _points(business_entity, city, business_point)
+	points = _points(organization, business_entity, city, business_point)
 	point_names = [row.name for row in points]
 	period_days = (end - start).days + 1
 	previous_start = start - timedelta(days=period_days)
@@ -29,15 +30,15 @@ def get_control_center(
 	previous = _sales_totals(point_names, previous_start, previous_end)
 	plans = _plans(points, start, end, allow_entity_plan=not city and not business_point)
 	alerts = _alerts(points)
+	club = _club_metrics(point_names, start, end, previous_start, previous_end)
+	reviews = _review_metrics(point_names, start, end, previous_start, previous_end)
 
 	return {
 		"filters": _filter_options(),
 		"period": {"from_date": str(start), "to_date": str(end)},
-		"metrics": _metrics(current["totals"], previous["totals"], plans["totals"]),
+		"metrics": _metrics(current["totals"], previous["totals"], plans["totals"], club, reviews),
 		"alerts": alerts[:30],
 		"dynamics": _dynamics(point_names, start, end),
-		"points": _point_rows(points, current["by_point"], previous["by_point"], plans["by_point"], alerts),
-		"upcoming_events": _upcoming_events(points),
 	}
 
 
@@ -61,11 +62,19 @@ def _period_dates(period, from_date, to_date):
 def _filter_options():
 	points = _points()
 	entity_names = sorted({row.business_entity for row in points if row.business_entity})
+	organization_names = sorted({row.organization for row in points if row.organization})
 	return {
+		"organizations": frappe.get_all(
+			"Organization",
+			filters={"name": ["in", organization_names or ["__none__"]]},
+			fields=["name", "organization_name"],
+			order_by="organization_name asc",
+			limit_page_length=0,
+		),
 		"entities": frappe.get_all(
 			"Business Entity",
 			filters={"name": ["in", entity_names or ["__none__"]]},
-			fields=["name", "short_name"],
+			fields=["name", "short_name", "organization"],
 			order_by="short_name asc",
 			limit_page_length=0,
 		),
@@ -73,13 +82,15 @@ def _filter_options():
 	}
 
 
-def _points(business_entity=None, city=None, business_point=None):
+def _points(organization=None, business_entity=None, city=None, business_point=None):
 	filters = {"active": 1}
 	scope = get_scope()
 	if not scope["global"]:
 		filters["name"] = ["in", scope["points"] or ["__none__"]]
 	if business_entity:
 		filters["business_entity"] = business_entity
+	if organization:
+		filters["organization"] = organization
 	if city:
 		filters["city"] = city
 	if business_point:
@@ -88,7 +99,7 @@ def _points(business_entity=None, city=None, business_point=None):
 	rows = frappe.get_all(
 		"Business Point",
 		filters=filters,
-		fields=["name", "point_name", "business_entity", "city", "address"],
+		fields=["name", "point_name", "organization", "business_entity", "city", "address"],
 		order_by="city asc, point_name asc",
 		limit_page_length=0,
 	)
@@ -133,10 +144,12 @@ def _numeric(row):
 
 
 def _plans(points, start, end, allow_entity_plan):
-	by_point = {row.name: {"revenue": 0, "checks": 0, "average_check": 0} for row in points}
+	by_point = {
+		row.name: {"revenue": 0, "checks": 0, "average_check": 0, "club": 0, "reviews": 0} for row in points
+	}
 	point_entities = {row.name: row.business_entity for row in points}
 	entities = sorted({entity for entity in point_entities.values() if entity})
-	totals = {"revenue": 0, "checks": 0, "average_check": 0}
+	totals = {"revenue": 0, "checks": 0, "average_check": 0, "club": 0, "reviews": 0}
 	average_check_values = []
 
 	month = getdate(get_first_day(start))
@@ -148,7 +161,15 @@ def _plans(points, start, end, allow_entity_plan):
 		budgets = frappe.get_all(
 			"Finance Budget",
 			filters={"month": month, "business_entity": ["in", entities or ["__none__"]]},
-			fields=["business_entity", "business_point", "revenue_plan", "checks_plan", "average_check_plan"],
+			fields=[
+				"business_entity",
+				"business_point",
+				"revenue_plan",
+				"checks_plan",
+				"average_check_plan",
+				"club_members_plan",
+				"reviews_plan",
+			],
 			limit_page_length=0,
 		)
 		point_budgets = {row.business_point: row for row in budgets if row.business_point in by_point}
@@ -159,8 +180,12 @@ def _plans(points, start, end, allow_entity_plan):
 			bucket["revenue"] += flt(budget.revenue_plan) * share
 			bucket["checks"] += flt(budget.checks_plan) * share
 			bucket["average_check"] = flt(budget.average_check_plan)
+			bucket["club"] += flt(budget.club_members_plan) * share
+			bucket["reviews"] += flt(budget.reviews_plan) * share
 			totals["revenue"] += flt(budget.revenue_plan) * share
 			totals["checks"] += flt(budget.checks_plan) * share
+			totals["club"] += flt(budget.club_members_plan) * share
+			totals["reviews"] += flt(budget.reviews_plan) * share
 			if flt(budget.average_check_plan):
 				average_check_values.append(flt(budget.average_check_plan))
 
@@ -173,6 +198,8 @@ def _plans(points, start, end, allow_entity_plan):
 					continue
 				totals["revenue"] += flt(budget.revenue_plan) * share
 				totals["checks"] += flt(budget.checks_plan) * share
+				totals["club"] += flt(budget.club_members_plan) * share
+				totals["reviews"] += flt(budget.reviews_plan) * share
 				if flt(budget.average_check_plan):
 					average_check_values.append(flt(budget.average_check_plan))
 
@@ -188,7 +215,7 @@ def _plans(points, start, end, allow_entity_plan):
 	return {"totals": totals, "by_point": by_point}
 
 
-def _metrics(current, previous, plan):
+def _metrics(current, previous, plan, club, reviews):
 	average_check = current["revenue"] / current["receipts"] if current["receipts"] else 0
 	previous_check = previous["revenue"] / previous["receipts"] if previous["receipts"] else 0
 	margin = current["profit"] / current["revenue"] * 100 if current["revenue"] else 0
@@ -200,6 +227,69 @@ def _metrics(current, previous, plan):
 			"returns": current["returns"],
 		},
 		"average_check": _metric(average_check, previous_check, plan["average_check"]),
+		"club": {
+			**_metric(club["new"], club["previous_new"], plan["club"]),
+			"total": club["total"],
+			"churn": club["churn"],
+		},
+		"reviews": _metric(reviews["value"], reviews["previous"], plan["reviews"]),
+	}
+
+
+def _club_metrics(points, start, end, previous_start, previous_end):
+	if not points:
+		return {"total": 0, "new": 0, "previous_new": 0, "churn": 0}
+	base = {"registration_point": ["in", points]}
+	return {
+		"total": frappe.db.count("Client", base),
+		"new": frappe.db.count(
+			"Client",
+			{
+				**base,
+				"registered_at": [
+					"between",
+					[datetime.combine(start, time.min), datetime.combine(end, time.max)],
+				],
+			},
+		),
+		"previous_new": frappe.db.count(
+			"Client",
+			{
+				**base,
+				"registered_at": [
+					"between",
+					[
+						datetime.combine(previous_start, time.min),
+						datetime.combine(previous_end, time.max),
+					],
+				],
+			},
+		),
+		"churn": frappe.db.count("Client", {**base, "club_status": "Заблокирован"}),
+	}
+
+
+def _review_metrics(points, start, end, previous_start, previous_end):
+	def total(period_start, period_end):
+		if not points:
+			return 0
+		value = frappe.db.sql(
+			"""select coalesce(sum(reviews_count), 0)
+			from `tabSales Shift`
+			where business_point in %(points)s
+				and opened_at between %(start)s and %(end)s
+				and status != 'Cancelled'""",
+			{
+				"points": points,
+				"start": datetime.combine(period_start, time.min),
+				"end": datetime.combine(period_end, time.max),
+			},
+		)[0][0]
+		return int(value or 0)
+
+	return {
+		"value": total(start, end),
+		"previous": total(previous_start, previous_end),
 	}
 
 
@@ -307,7 +397,11 @@ def _alerts(points):
 					"/warehouse/purchase-orders",
 				)
 			)
-		if order.payment_due_date and getdate(order.payment_due_date) < today and flt(order.outstanding_amount) > 0:
+		if (
+			order.payment_due_date
+			and getdate(order.payment_due_date) < today
+			and flt(order.outstanding_amount) > 0
+		):
 			alerts.append(
 				_alert(
 					"critical",
@@ -391,9 +485,7 @@ def _point_rows(points, current, previous, plans, alerts):
 				"margin": values["profit"] / values["revenue"] * 100 if values["revenue"] else 0,
 				"delta": _metric(values["revenue"], old["revenue"])["delta"],
 				"plan_attainment": (
-					values["revenue"] / flt(plan.get("revenue")) * 100
-					if flt(plan.get("revenue"))
-					else None
+					values["revenue"] / flt(plan.get("revenue")) * 100 if flt(plan.get("revenue")) else None
 				),
 				"alerts": alert_counts.get(point.name, 0),
 			}
