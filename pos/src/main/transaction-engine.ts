@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { calculateTotalMinor } from '../shared/cart'
 import type {
-  CompleteSaleRequest, CompleteSaleResult, CreateReturnRequest, PaymentPart, ReturnResult, SaleDetails
+  CartLine, CompleteSaleRequest, CompleteSaleResult, CreateReturnRequest, PaymentPart, ReturnResult, SaleDetails
 } from '../shared/contracts'
 import type {
   FiscalProvider, FiscalResult, PaymentProvider, PaymentResult
@@ -9,101 +9,90 @@ import type {
 import { PosDatabase } from './database'
 import { JournalOperation, TransactionJournal } from './transaction-journal'
 
-const isLocalPayment = (method: PaymentPart['method']) => method === 'cash' || method === 'remote_payment'
+const isLocalPayment=(method:PaymentPart['method'])=>method==='cash'||method==='remote_payment'
 
 export class PosTransactionEngine {
   constructor(
-    private readonly database: PosDatabase,
-    private readonly journal: TransactionJournal,
-    private readonly paymentProvider: PaymentProvider,
-    private readonly fiscalProvider: FiscalProvider
-  ) {}
+    private readonly database:PosDatabase,
+    private readonly journal:TransactionJournal,
+    private readonly paymentProvider:PaymentProvider,
+    private readonly fiscalProvider:FiscalProvider
+  ){}
 
-  listUnresolved() {
-    return this.journal.listUnresolvedSummaries()
+  listUnresolved(){return this.journal.listUnresolvedSummaries()}
+
+  hasBlockingOperation():boolean{
+    return this.journal.listUnresolved().some((operation)=>
+      ['payment_in_progress','payment_confirmed','payment_unknown','fiscalization_in_progress','fiscalized','fiscal_status_unknown'].includes(operation.state))
   }
 
-  hasBlockingOperation(): boolean {
-    return this.journal.listUnresolved().some((operation) =>
-      ['payment_in_progress','payment_confirmed','payment_unknown','fiscalization_in_progress','fiscalized','fiscal_status_unknown'].includes(operation.state)
-    )
-  }
-
-  async completeSale(request: CompleteSaleRequest, shiftId: string, totalMinor?: number): Promise<CompleteSaleResult> {
-    const existingSale = this.database.findSaleByClientRequestId(request.clientRequestId)
-    if (existingSale) return {...existingSale, changeMinor:0, queuedForSync:true}
-
-    const existingOperation = this.journal.getByClientRequestId(request.clientRequestId)
-    if (!existingOperation && this.hasBlockingOperation()) {
+  async completeSale(request:CompleteSaleRequest,shiftId:string,totalMinor?:number):Promise<CompleteSaleResult>{
+    const existingSale=this.database.findSaleByClientRequestId(request.clientRequestId)
+    if(existingSale)return {...existingSale,changeMinor:0,queuedForSync:true}
+    const existingOperation=this.journal.getByClientRequestId(request.clientRequestId)
+    if(!existingOperation&&this.hasBlockingOperation()){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Откройте «Восстановление» и завершите её перед новой оплатой.')
     }
-
-    const saleId = existingOperation?.entityId ?? randomUUID()
-    const amount = totalMinor ?? calculateTotalMinor(request.lines, request.receiptDiscountPercent ?? 0)
-    const operation = existingOperation ?? this.journal.create({
+    const saleId=existingOperation?.entityId??randomUUID()
+    const amount=totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
+    const operation=existingOperation??this.journal.create({
       id:randomUUID(),clientRequestId:request.clientRequestId,kind:'sale',entityId:saleId,shiftId,
       amountMinor:amount,request
     })
     return this.runSale(operation)
   }
 
-  async createReturn(request: CreateReturnRequest, shiftId: string, totalMinor: number, sale: SaleDetails): Promise<ReturnResult> {
-    const existingReturn = this.database.findReturnByClientRequestId(request.clientRequestId)
-    if (existingReturn) return {...existingReturn, queuedForSync:true}
-
-    const existingOperation = this.journal.getByClientRequestId(request.clientRequestId)
-    if (!existingOperation && this.hasBlockingOperation()) {
+  async createReturn(request:CreateReturnRequest,shiftId:string,totalMinor:number,sale:SaleDetails):Promise<ReturnResult>{
+    const existingReturn=this.database.findReturnByClientRequestId(request.clientRequestId)
+    if(existingReturn)return {...existingReturn,queuedForSync:true}
+    const existingOperation=this.journal.getByClientRequestId(request.clientRequestId)
+    if(!existingOperation&&this.hasBlockingOperation()){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Сначала завершите её в разделе «Восстановление».')
     }
-    const returnId = existingOperation?.entityId ?? randomUUID()
-    const operation = existingOperation ?? this.journal.create({
+    const returnId=existingOperation?.entityId??randomUUID()
+    const operation=existingOperation??this.journal.create({
       id:randomUUID(),clientRequestId:request.clientRequestId,kind:'return',entityId:returnId,
       relatedSaleId:sale.id,shiftId,amountMinor:totalMinor,request
     })
-    return this.runReturn(operation, sale)
+    return this.runReturn(operation,sale)
   }
 
-  async recover(operationId: string): Promise<{status:'completed'|'attention';message:string}> {
-    const operation = this.journal.get(operationId)
-    if (!operation) throw new Error('Незавершённая операция не найдена')
-    if (operation.state === 'completed') return {status:'completed',message:'Операция уже завершена'}
-
-    await this.reconcileUnknownState(operation)
-    const refreshed = this.journal.get(operationId)!
-    if (refreshed.kind === 'sale') {
-      try {
-        await this.runSale(refreshed)
-        return {status:'completed',message:'Продажа успешно восстановлена'}
-      } catch (error) {
-        return {status:'attention',message:error instanceof Error?error.message:String(error)}
-      }
-    }
-
-    const sale = this.database.getSale(refreshed.relatedSaleId!)
-    try {
-      await this.runReturn(refreshed, sale)
-      return {status:'completed',message:'Возврат успешно восстановлен'}
-    } catch (error) {
+  async recover(operationId:string):Promise<{status:'completed'|'attention';message:string}>{
+    const operation=this.journal.get(operationId)
+    if(!operation)throw new Error('Незавершённая операция не найдена')
+    if(operation.state==='completed')return {status:'completed',message:'Операция уже завершена'}
+    try{await this.reconcileUnknownState(operation)}catch(error){
       return {status:'attention',message:error instanceof Error?error.message:String(error)}
     }
+    const refreshed=this.journal.get(operationId)!
+    if(refreshed.state==='requires_attention'){
+      return {status:'attention',message:refreshed.lastError||'Операция не завершена. Проверьте причину перед новой попыткой.'}
+    }
+    if(refreshed.kind==='sale'){
+      try{await this.runSale(refreshed);return {status:'completed',message:'Продажа успешно восстановлена'}}
+      catch(error){return {status:'attention',message:error instanceof Error?error.message:String(error)}}
+    }
+    const sale=this.database.getSale(refreshed.relatedSaleId!)
+    try{await this.runReturn(refreshed,sale);return {status:'completed',message:'Возврат успешно восстановлен'}}
+    catch(error){return {status:'attention',message:error instanceof Error?error.message:String(error)}}
   }
 
-  private async runSale(operation: JournalOperation): Promise<CompleteSaleResult> {
-    const request = operation.request as CompleteSaleRequest
-    let current = operation
-    if (current.state === 'created' || current.state === 'requires_attention') {
-      const payments = await this.processPayments(current, request.payments, 'charge')
+  private async runSale(operation:JournalOperation):Promise<CompleteSaleResult>{
+    const request=operation.request as CompleteSaleRequest
+    let current=operation
+    if(current.state==='created'||current.state==='requires_attention'){
+      const payments=await this.processPayments(current,request.payments,'charge')
       this.journal.setConfirmedPayments(current.id,payments)
       this.journal.setState(current.id,'payment_confirmed')
-      current = this.journal.get(current.id)!
+      current=this.journal.get(current.id)!
     }
-    if (current.state === 'payment_confirmed') {
-      const fiscal = await this.fiscalizeSale(current, request)
+    if(current.state==='payment_confirmed'){
+      const fiscal=await this.fiscalizeSale(current,request)
       this.journal.setFiscalReceipt(current.id,fiscal.receiptNumber)
       this.journal.setState(current.id,'fiscalized')
-      current = this.journal.get(current.id)!
+      current=this.journal.get(current.id)!
     }
-    if (current.state === 'fiscalized') {
+    if(current.state==='fiscalized'){
       this.database.saveSale({
         id:current.entityId,clientRequestId:current.clientRequestId,shiftId:current.shiftId,totalMinor:current.amountMinor,
         paymentMethod:current.confirmedPayments.length>1?'mixed':current.confirmedPayments[0].method,
@@ -113,18 +102,16 @@ export class PosTransactionEngine {
       })
       this.journal.setState(current.id,'completed')
     }
-    if (!['completed'].includes(this.journal.get(current.id)!.state)) {
-      throw new Error('Операция не завершена и требует проверки')
-    }
-    const sale = this.database.findSaleByClientRequestId(current.clientRequestId)
-    if (!sale) throw new Error('Продажа фискализирована, но локальная запись ещё не создана')
+    if(this.journal.get(current.id)!.state!=='completed')throw new Error('Операция не завершена и требует проверки')
+    const sale=this.database.findSaleByClientRequestId(current.clientRequestId)
+    if(!sale)throw new Error('Продажа фискализирована, но локальная запись ещё не создана')
     const cashAmount=request.payments.find((x)=>x.method==='cash')?.amountMinor??0
     return {...sale,changeMinor:cashAmount?Math.max(0,(request.cashReceivedMinor??cashAmount)-cashAmount):0,queuedForSync:true,
       order:request.order?this.database.findOrderBySourceSale(current.entityId):undefined}
   }
 
-  private async runReturn(operation: JournalOperation, sale: SaleDetails): Promise<ReturnResult> {
-    const request = operation.request as CreateReturnRequest
+  private async runReturn(operation:JournalOperation,sale:SaleDetails):Promise<ReturnResult>{
+    const request=operation.request as CreateReturnRequest
     const lines=request.lines.map((requested)=>{
       const original=sale.lines.find((x)=>x.id===requested.saleItemId)
       if(!original)throw new Error('Позиция исходного чека не найдена')
@@ -135,21 +122,20 @@ export class PosTransactionEngine {
         (sale.lines.reduce((sum,x)=>sum+Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent??0)/100)),0)||1))
       return {...requested,lineTotalMinor:Math.round(paidLineTotal*requested.quantity/original.quantity)}
     })
-
-    let current = operation
-    if (current.state === 'created' || current.state === 'requires_attention') {
-      const payments = await this.processPayments(current, request.payments, 'refund')
+    let current=operation
+    if(current.state==='created'||current.state==='requires_attention'){
+      const payments=await this.processPayments(current,request.payments,'refund')
       this.journal.setConfirmedPayments(current.id,payments)
       this.journal.setState(current.id,'payment_confirmed')
-      current = this.journal.get(current.id)!
+      current=this.journal.get(current.id)!
     }
-    if (current.state === 'payment_confirmed') {
-      const fiscal = await this.fiscalizeReturn(current, sale)
+    if(current.state==='payment_confirmed'){
+      const fiscal=await this.fiscalizeReturn(current,sale,lines)
       this.journal.setFiscalReceipt(current.id,fiscal.receiptNumber)
       this.journal.setState(current.id,'fiscalized')
-      current = this.journal.get(current.id)!
+      current=this.journal.get(current.id)!
     }
-    if (current.state === 'fiscalized') {
+    if(current.state==='fiscalized'){
       this.database.saveReturn({id:current.entityId,clientRequestId:current.clientRequestId,saleId:sale.id,shiftId:current.shiftId,
         totalMinor:current.amountMinor,fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,lines,payments:current.confirmedPayments})
       this.journal.setState(current.id,'completed')
@@ -159,28 +145,27 @@ export class PosTransactionEngine {
     return {...saved,queuedForSync:true}
   }
 
-  private async processPayments(operation: JournalOperation, requested: PaymentPart[], action:'charge'|'refund'): Promise<PaymentPart[]> {
-    if (operation.confirmedPayments.length) return operation.confirmedPayments
-    const confirmed:PaymentPart[]=[]
-    for (let index=0; index<requested.length; index++) {
+  private async processPayments(operation:JournalOperation,requested:PaymentPart[],action:'charge'|'refund'):Promise<PaymentPart[]>{
+    const confirmed:PaymentPart[]=[...operation.confirmedPayments]
+    for(let index=confirmed.length;index<requested.length;index++){
       const part=requested[index]
       const attemptId=`${operation.id}:payment:${index}`
-      if (isLocalPayment(part.method)) {
+      if(isLocalPayment(part.method)){
         const transactionId=part.method==='cash'?`CASH-${operation.entityId}`:`REMOTE-MANUAL-${operation.entityId}`
         this.journal.startPaymentAttempt({id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor})
         this.journal.finishPaymentAttempt({id:attemptId,state:'approved',transactionId})
         confirmed.push({...part,transactionId})
+        this.journal.setConfirmedPayments(operation.id,confirmed)
         continue
       }
-
       this.journal.startPaymentAttempt({id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor})
       this.journal.setState(operation.id,'payment_in_progress')
       let result:PaymentResult
-      try {
+      try{
         result=action==='charge'
-          ? await this.paymentProvider.charge({operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,method:part.method})
-          : await this.paymentProvider.refund({operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,method:part.method})
-      } catch(error) {
+          ?await this.paymentProvider.charge({operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,method:part.method})
+          :await this.paymentProvider.refund({operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,method:part.method})
+      }catch(error){
         const message=error instanceof Error?error.message:String(error)
         this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',error:message})
         this.journal.setState(operation.id,'payment_unknown',message)
@@ -203,16 +188,18 @@ export class PosTransactionEngine {
     return confirmed
   }
 
-  private async fiscalizeSale(operation: JournalOperation, request: CompleteSaleRequest): Promise<FiscalResult> {
+  private async fiscalizeSale(operation:JournalOperation,request:CompleteSaleRequest):Promise<FiscalResult>{
     const attemptId=`${operation.id}:fiscal`
     this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'sale'})
     this.journal.setState(operation.id,'fiscalization_in_progress')
-    try {
+    try{
+      const catalog=new Map(this.database.listProducts().map((item)=>[item.id,item]))
+      const lines=request.lines.map((line)=>({...line,itemType:catalog.get(line.productId)?.type})) as CartLine[]
       const result=await this.fiscalProvider.fiscalizeSale({operationId:attemptId,saleId:operation.entityId,
-        amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines:request.lines})
+        amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines})
       this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
       return result
-    } catch(error) {
+    }catch(error){
       const message=error instanceof Error?error.message:String(error)
       this.journal.finishFiscalAttempt({id:attemptId,state:'unknown',error:message})
       this.journal.setState(operation.id,'fiscal_status_unknown',message)
@@ -220,16 +207,23 @@ export class PosTransactionEngine {
     }
   }
 
-  private async fiscalizeReturn(operation: JournalOperation, sale: SaleDetails): Promise<FiscalResult> {
+  private async fiscalizeReturn(operation:JournalOperation,sale:SaleDetails,returnLines:Array<{saleItemId:number;quantity:number;lineTotalMinor:number}>):Promise<FiscalResult>{
     const attemptId=`${operation.id}:fiscal`
     this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'return'})
     this.journal.setState(operation.id,'fiscalization_in_progress')
-    try {
+    try{
+      const catalog=new Map(this.database.listProducts().map((item)=>[item.id,item]))
+      const lines:CartLine[]=returnLines.map((returned)=>{
+        const original=sale.lines.find((line)=>line.id===returned.saleItemId)!
+        return {productId:original.productId,name:original.name,quantity:returned.quantity,
+          unitPriceMinor:Math.round(returned.lineTotalMinor/returned.quantity),discountPercent:0,
+          ...({itemType:catalog.get(original.productId)?.type} as object)} as CartLine
+      })
       const result=await this.fiscalProvider.fiscalizeReturn({operationId:attemptId,returnId:operation.entityId,saleId:sale.id,
-        amountMinor:operation.amountMinor,payments:operation.confirmedPayments})
+        amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines})
       this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
       return result
-    } catch(error) {
+    }catch(error){
       const message=error instanceof Error?error.message:String(error)
       this.journal.finishFiscalAttempt({id:attemptId,state:'unknown',error:message})
       this.journal.setState(operation.id,'fiscal_status_unknown',message)
@@ -237,8 +231,8 @@ export class PosTransactionEngine {
     }
   }
 
-  private async reconcileUnknownState(operation: JournalOperation): Promise<void> {
-    if (operation.state === 'payment_unknown' || operation.state === 'payment_in_progress') {
+  private async reconcileUnknownState(operation:JournalOperation):Promise<void>{
+    if(operation.state==='payment_unknown'||operation.state==='payment_in_progress'){
       const attempt=this.journal.getLatestPaymentAttempt(operation.id)
       if(!attempt)throw new Error('Не найдена попытка оплаты для восстановления')
       const result=await this.paymentProvider.getOperationStatus({operationId:attempt.id,saleId:operation.entityId,
@@ -258,7 +252,6 @@ export class PosTransactionEngine {
         throw new Error(result.message||'Результат банковской операции всё ещё неизвестен')
       }
     }
-
     const refreshed=this.journal.get(operation.id)!
     if(refreshed.state==='fiscal_status_unknown'||refreshed.state==='fiscalization_in_progress'){
       const attempt=this.journal.getLatestFiscalAttempt(operation.id)
