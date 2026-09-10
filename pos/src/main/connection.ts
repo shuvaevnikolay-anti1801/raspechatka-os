@@ -26,8 +26,8 @@ export class ConnectionStore {
     if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows пока не предоставила защищённое хранилище')
     const normalized:ConnectionConfig = {
       serverUrl: config.serverUrl.trim().replace(/\/$/, ''),
-      deviceId: config.deviceId.trim(),
-      token: config.token.trim(),
+      deviceId: (config.deviceId||'').trim(),
+      token: (config.token||'').trim(),
       cashierId: config.cashierId?.trim()||undefined
     }
     if(!/^https?:\/\//i.test(normalized.serverUrl))throw new Error('Укажите корректный адрес Распечатка OS')
