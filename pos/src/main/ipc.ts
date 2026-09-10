@@ -18,6 +18,8 @@ const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='qr'?rules.acceptsQr:
   method==='remote_payment'?(rules.acceptsRemotePayment!==false):false
 
+const usesTerminal=(payments:PaymentPart[])=>payments.some((payment)=>payment.method==='card'||payment.method==='qr')
+
 export function registerIpcHandlers(dependencies:{
   database:PosDatabase
   connectionStore:ConnectionStore
@@ -102,6 +104,22 @@ export function registerIpcHandlers(dependencies:{
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
     const cashAmount=request.payments.find((x)=>x.method==='cash')?.amountMinor??0
     if(cashAmount&&(request.cashReceivedMinor??cashAmount)<cashAmount)throw new Error('Получено наличными меньше суммы наличной оплаты')
+
+    const hasRemote=request.payments.some((x)=>x.method==='remote_payment')
+    if(hasRemote&&!request.remotePaymentConfirmation?.confirmed){
+      throw new Error('Для удалённой оплаты кассир должен отдельно подтвердить, что получение денег проверено.')
+    }
+    if(hasRemote&&Number.isNaN(Date.parse(request.remotePaymentConfirmation?.confirmedAt||''))){
+      throw new Error('Не удалось зафиксировать время подтверждения удалённой оплаты.')
+    }
+
+    const fiscalHealth=await fiscalProvider.healthCheck()
+    if(!fiscalHealth.ready)throw new Error(`Нельзя принимать оплату: ККТ не готова. ${fiscalHealth.message}`)
+    if(usesTerminal(request.payments)){
+      const paymentHealth=await paymentProvider.healthCheck()
+      if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов. ${paymentHealth.message}`)
+    }
+
     return transactionEngine.completeSale({...request,receiptDiscountPercent:discount},shift.id,totalMinor)
   })
 
@@ -124,6 +142,17 @@ export function registerIpcHandlers(dependencies:{
     const totalMinor=lines.reduce((sum,x)=>sum+x.lineTotalMinor,0)
     if(request.payments.some((x)=>!accepted(bootState().rules,x.method)))throw new Error('Способ возврата недоступен на этой точке')
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма возврата по способам оплаты не совпадает с итогом')
+    if(request.payments.some((x)=>x.method==='remote_payment')){
+      throw new Error('Автоматический возврат удалённой оплаты пока не поддерживается. Не фиксируем фиктивный возврат денег.')
+    }
+
+    const fiscalHealth=await fiscalProvider.healthCheck()
+    if(!fiscalHealth.ready)throw new Error(`Нельзя начинать возврат: ККТ не готова. ${fiscalHealth.message}`)
+    if(usesTerminal(request.payments)){
+      const paymentHealth=await paymentProvider.healthCheck()
+      if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов к возврату. ${paymentHealth.message}`)
+    }
+
     return transactionEngine.createReturn(request,shift.id,totalMinor,sale)
   })
 }
