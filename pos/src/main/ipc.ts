@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { calculateTotalMinor } from '../shared/cart'
 import type {
@@ -9,6 +8,7 @@ import type {
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
+import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performSync } from './sync'
 import { PosTransactionEngine } from './transaction-engine'
 
@@ -25,8 +25,9 @@ export function registerIpcHandlers(dependencies:{
   fiscalProvider:FiscalProvider
   printProvider:PrintProvider
   transactionEngine:PosTransactionEngine
+  shiftCoordinator:ShiftCoordinator
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine}=dependencies
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine,shiftCoordinator}=dependencies
   const bootState=()=>buildBootState(database)
 
   ipcMain.handle('pos:get-boot-state',bootState)
@@ -68,23 +69,8 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>database.createUnpaidOrder(request))
   ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>database.updateOrder(request))
 
-  ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
-    const current=database.currentShift();if(current)return current
-    const fiscalHealth=await fiscalProvider.healthCheck()
-    if(!fiscalHealth.ready)throw new Error(`ККТ не готова: ${fiscalHealth.message}`)
-    const fiscalShift=await fiscalProvider.getShiftStatus()
-    if(!fiscalShift.open)await fiscalProvider.openShift()
-    return database.openShift({id:randomUUID(),openedAt:new Date().toISOString(),cashierName:bootState().cashierName})
-  })
-  ipcMain.handle('pos:close-shift',async()=>{
-    if(transactionEngine.listUnresolved().length)throw new Error('Нельзя закрыть смену: есть незавершённые операции. Сначала завершите их в «Восстановлении».')
-    const current=database.currentShift();if(!current)throw new Error('Нет открытой смены')
-    const fiscalHealth=await fiscalProvider.healthCheck()
-    if(!fiscalHealth.ready)throw new Error(`ККТ не готова к закрытию смены: ${fiscalHealth.message}`)
-    const fiscalShift=await fiscalProvider.getShiftStatus()
-    if(fiscalShift.open)await fiscalProvider.closeShift()
-    return database.closeShift()
-  })
+  ipcMain.handle('pos:open-shift',async():Promise<Shift>=>shiftCoordinator.openShift(bootState().cashierName))
+  ipcMain.handle('pos:close-shift',()=>shiftCoordinator.closeShift(transactionEngine.listUnresolved().length>0))
 
   ipcMain.handle('pos:get-connection-status',()=>connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
