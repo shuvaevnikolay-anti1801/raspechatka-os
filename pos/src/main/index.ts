@@ -7,7 +7,6 @@ import { registerHardwareSettingsIpc } from './hardware-ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
 import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
-import { UnavailablePaymentProvider } from './providers/unavailable-payment'
 import { ShiftCoordinator } from './shift-coordinator'
 import { registerShiftRecoveryIpc } from './shift-recovery-ipc'
 import { registerPilotIpc } from './pilot-ipc'
@@ -16,6 +15,7 @@ import { PosTransactionEngine } from './transaction-engine'
 import { CommodityPrintQueue } from './print-jobs'
 import { buildBootState, startAutomaticSync } from './sync'
 import { PosDiagnostics } from './diagnostics'
+import { InpasPaymentProvider, InpasSettingsStore } from './providers/inpas'
 
 let stopAutomaticSync:(()=>void)|undefined
 let stopAutomaticPrintRetry:(()=>void)|undefined
@@ -74,7 +74,9 @@ if(!hasLock){
     const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
     const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
     const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
-    const paymentProvider=trainingMode?new MockPaymentProvider():new UnavailablePaymentProvider()
+    const inpasSettingsStore=new InpasSettingsStore(join(userData,'inpas-settings.json'))
+    const inpasProvider=new InpasPaymentProvider(inpasSettingsStore,join(userData,'inpas-results'))
+    const paymentProvider=trainingMode?new MockPaymentProvider():inpasProvider
     const fiscalProvider=trainingMode?new MockFiscalProvider():new AtolWebFiscalProvider(atolSettingsStore)
     const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
@@ -116,7 +118,7 @@ if(!hasLock){
     registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics})
     registerShiftRecoveryIpc({database,fiscalProvider,shiftCoordinator,diagnostics})
     registerPilotIpc(diagnostics)
-    registerHardwareSettingsIpc(atolSettingsStore)
+    registerHardwareSettingsIpc(atolSettingsStore,inpasSettingsStore,trainingMode?undefined:inpasProvider,diagnostics)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
     createWindow()

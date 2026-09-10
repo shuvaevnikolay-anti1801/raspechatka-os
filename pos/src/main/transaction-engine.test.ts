@@ -27,6 +27,8 @@ class TestPaymentProvider implements PaymentProvider {
   }
   async refund(_request:PaymentRequest):Promise<PaymentResult>{this.refundCalls++;return this.nextCharge}
   async getOperationStatus(_request:PaymentRequest):Promise<PaymentResult>{this.statusCalls++;return this.nextStatus}
+  async testConnection(){return {message:'test'}}
+  async reconcile(){return {message:'test'}}
 }
 
 class TestFiscalProvider implements FiscalProvider {

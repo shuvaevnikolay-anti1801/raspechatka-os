@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeviceStatuses, PrintJobSummary, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
+import type { DeviceStatuses, InpasSettings, PrintJobSummary, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
 import './safety.css'
 
 type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
@@ -11,6 +11,7 @@ const pos=()=>window.raspechatkaPos as ExtendedPosApi
 
 const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
 const defaultAtol:AtolSettings={enabled:false,baseUrl:'http://127.0.0.1:16732/api/v2',taxationType:'patent',taxType:'none',operatorName:''}
+const defaultInpas:InpasSettings={enabled:false,executablePath:'',terminalId:'',currencyCode:'643',timeoutMs:3600000,qrMode:'terminal_choice'}
 
 const recoveryText=(operation:UnresolvedOperation):{title:string;detail:string;critical:boolean}=>{
   if(operation.state==='payment_unknown'||operation.state==='payment_in_progress')return {
@@ -42,16 +43,17 @@ export default function PosSafetyPanel(){
   const [printers,setPrinters]=useState<PrinterInfo[]>([])
   const [selectedPrinter,setSelectedPrinter]=useState('')
   const [atol,setAtol]=useState<AtolSettings>(defaultAtol)
+  const [inpas,setInpas]=useState<InpasSettings>(defaultInpas)
   const [open,setOpen]=useState(false)
   const [message,setMessage]=useState('')
 
   const refresh=async()=>{
-    const [nextDevices,nextOperations,nextPrintJobs,nextPrinters,nextSelected,nextAtol]=await Promise.all([
+    const [nextDevices,nextOperations,nextPrintJobs,nextPrinters,nextSelected,nextAtol,nextInpas]=await Promise.all([
       pos().getDeviceStatuses(),pos().listUnresolvedOperations(),pos().listPrintJobs(),
-      pos().listPrinters(),pos().getSelectedPrinter(),pos().getAtolSettings()
+      pos().listPrinters(),pos().getSelectedPrinter(),pos().getAtolSettings(),pos().getInpasSettings()
     ])
     setDevices(nextDevices);setUnresolved(nextOperations);setPrintJobs(nextPrintJobs)
-    setPrinters(nextPrinters);setSelectedPrinter(nextSelected||'');setAtol(nextAtol)
+    setPrinters(nextPrinters);setSelectedPrinter(nextSelected||'');setAtol(nextAtol);setInpas(nextInpas)
   }
 
   useEffect(()=>{
@@ -71,6 +73,22 @@ export default function PosSafetyPanel(){
       setAtol(saved);setMessage('Настройки АТОЛ сохранены. Проверяем связь с ККТ…')
       await refresh()
     }catch(error){setMessage(error instanceof Error?error.message:String(error))}
+  }
+
+  const saveInpas=async()=>{
+    try{
+      const saved=await pos().saveInpasSettings(inpas)
+      setInpas(saved);setMessage('Настройки INPAS сохранены')
+      await refresh()
+    }catch(error){setMessage(error instanceof Error?error.message:String(error))}
+  }
+
+  const terminalAction=async(action:'test'|'reconcile')=>{
+    try{
+      setMessage(action==='test'?'Проверяем связь с PAX…':'Выполняем сверку итогов…')
+      const result=action==='test'?await pos().testPaymentTerminal():await pos().reconcilePaymentTerminal()
+      setMessage(result.message);await refresh()
+    }catch(error){setMessage(error instanceof Error?error.message:String(error));await refresh()}
   }
 
   const recover=async(id:string)=>{
@@ -123,6 +141,17 @@ export default function PosSafetyPanel(){
             <label><span>Кассир для ККТ (если требуется)</span><input value={atol.operatorName||''} onChange={(event)=>setAtol({...atol,operatorName:event.target.value})} placeholder="Можно оставить пустым"/></label>
           </div>
           <button className="save-hardware" onClick={saveAtol}>Сохранить и проверить АТОЛ</button>
+        </section>
+        <section className="hardware-settings inpas-settings">
+          <div className="settings-title"><div><h3>Точка / INPAS · PAX</h3><p>Касса запускает официальный DC Console.exe отдельным процессом. Для карты и QR используется банковский экран терминала.</p></div><label className="toggle"><input type="checkbox" checked={inpas.enabled} onChange={(event)=>setInpas({...inpas,enabled:event.target.checked})}/><span>Использовать INPAS</span></label></div>
+          <div className="settings-grid">
+            <label><span>Путь к DC Console.exe</span><input value={inpas.executablePath} onChange={(event)=>setInpas({...inpas,executablePath:event.target.value})} placeholder="Определяется автоматически или укажите вручную"/></label>
+            <label><span>ID терминала</span><input value={inpas.terminalId} onChange={(event)=>setInpas({...inpas,terminalId:event.target.value})} placeholder="Например, из настройки банка"/></label>
+            <label><span>Код валюты</span><input value={inpas.currencyCode} onChange={(event)=>setInpas({...inpas,currencyCode:event.target.value})} inputMode="numeric"/></label>
+            <label><span>Ожидание операции, секунд</span><input value={Math.round(inpas.timeoutMs/1000)} onChange={(event)=>setInpas({...inpas,timeoutMs:Number(event.target.value)*1000})} type="number" min="30" max="3600"/></label>
+          </div>
+          <p className="hardware-note">Важно: комплект INPAS использует одну команду продажи для карты и QR. При выборе «QR / СБП» касса передаёт сумму терминалу, а конкретный способ подтверждается на экране PAX.</p>
+          <div className="hardware-actions"><button className="save-hardware" onClick={saveInpas}>Сохранить INPAS</button><button onClick={()=>void terminalAction('test')}>Проверить связь</button><button onClick={()=>void terminalAction('reconcile')}>Сверка итогов</button></div>
         </section>
         <section className="printer-settings">
           <div><h3>Принтер товарного чека</h3><p>Выберите установленный в Windows принтер один раз. Дальше печать идёт на него без системного окна.</p></div>

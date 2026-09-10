@@ -25,6 +25,8 @@ export class MockPaymentProvider implements PaymentProvider {
   async getOperationStatus(request: PaymentRequest): Promise<PaymentResult> {
     return this.results.get(request.operationId)??{status:'declined',message:'Тестовая банковская операция не найдена'}
   }
+  async testConnection(){return {message:'Тестовый терминал готов'}}
+  async reconcile(){return {message:'Тестовая сверка итогов выполнена'}}
 }
 
 export class MockFiscalProvider implements FiscalProvider {

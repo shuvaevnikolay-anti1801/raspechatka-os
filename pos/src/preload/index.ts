@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
+import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, InpasSettings, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
 type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
 type ShiftRecoveryStatus={pending:boolean;action?:'open'|'close';startedAt?:string;localOpen:boolean;fiscalOpen?:boolean;fiscalState?:'closed'|'opened'|'expired'|'unknown';safeToRecover:boolean;message:string}
@@ -34,6 +34,10 @@ const api: ExtendedPosApi = {
   getShiftRecoveryStatus:()=>ipcRenderer.invoke('pos:get-shift-recovery-status'),
   recoverShiftState:()=>ipcRenderer.invoke('pos:recover-shift-state'),
   recordShiftDiscrepancy:(differenceMinor:number,note:string)=>ipcRenderer.invoke('pos:record-shift-discrepancy',{differenceMinor,note}),
+  getInpasSettings:()=>ipcRenderer.invoke('pos:get-inpas-settings'),
+  saveInpasSettings:(value:InpasSettings)=>ipcRenderer.invoke('pos:save-inpas-settings',value),
+  testPaymentTerminal:()=>ipcRenderer.invoke('pos:test-payment-terminal'),
+  reconcilePaymentTerminal:()=>ipcRenderer.invoke('pos:reconcile-payment-terminal'),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
   deleteHeldReceipt: (id:string) => ipcRenderer.invoke('pos:delete-held-receipt',id),
