@@ -362,13 +362,19 @@ def _mapped_warehouse(reference):
 def _document_items(settings, row, stats, incoming):
 	items = []
 	for position in row.get("_positions") or []:
-		source_item_id = _ref_id(position.get("assortment"))
+		reference = position.get("assortment") or {}
+		source_item_id = _ref_id(reference)
+		source_kind = _assortment_kind(reference)
+		if source_kind == "service":
+			stats["service_positions_skipped"] += 1
+			continue
 		item = _resolve_catalog_item(settings, position, stats)
 		if not item:
+			label = reference.get("name") or source_item_id
+			if source_kind:
+				label = f"{label} ({source_kind})"
 			raise frappe.ValidationError(
-				_("Не сопоставлена позиция МоегоСклада {0}").format(
-					(position.get("assortment") or {}).get("name") or source_item_id
-				)
+				_("Не сопоставлена позиция МоегоСклада {0}").format(label)
 			)
 		item_row = {
 			"item": item,
@@ -383,6 +389,18 @@ def _document_items(settings, row, stats, incoming):
 	return items
 
 
+def _assortment_kind(reference):
+	meta = reference.get("meta") if isinstance(reference.get("meta"), dict) else reference
+	source_kind = str(meta.get("type") or "").lower()
+	if source_kind:
+		return source_kind
+	href = str(meta.get("href") or "").split("?", 1)[0].rstrip("/")
+	parts = href.split("/")
+	if "entity" in parts and parts.index("entity") + 1 < len(parts):
+		return parts[parts.index("entity") + 1].lower()
+	return ""
+
+
 def _resolve_catalog_item(settings, source, stats):
 	"""Resolve and permanently bind one unlinked catalog card without guessing."""
 	reference = source.get("assortment") or source.get("meta") or {}
@@ -390,13 +408,7 @@ def _resolve_catalog_item(settings, source, stats):
 	if not source_id:
 		return None
 
-	meta = reference.get("meta") if isinstance(reference.get("meta"), dict) else reference
-	source_kind = str(meta.get("type") or "").lower()
-	if not source_kind:
-		href = str(meta.get("href") or "").split("?", 1)[0].rstrip("/")
-		parts = href.split("/")
-		if "entity" in parts and parts.index("entity") + 1 < len(parts):
-			source_kind = parts[parts.index("entity") + 1].lower()
+	source_kind = _assortment_kind(reference)
 	if source_kind not in {"product", "variant", "consignment"}:
 		return None
 
