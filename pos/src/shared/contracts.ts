@@ -1,4 +1,4 @@
-export type PaymentMethod = 'cash' | 'card' | 'qr'
+export type PaymentMethod = 'cash' | 'card' | 'qr' | 'remote_payment'
 export type SalePaymentMethod = PaymentMethod | 'mixed'
 
 export type Product = {
@@ -22,7 +22,7 @@ export type Customer = { id: string; name: string; phone?: string; discountPerce
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
-export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean }
+export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean; acceptsRemotePayment?: boolean }
 
 export type BootState = {
   pointId: string
@@ -73,6 +73,7 @@ export type ShiftSummary = {
   cashMinor: number
   cardMinor: number
   qrMinor: number
+  remotePaymentMinor: number
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
@@ -97,6 +98,27 @@ export type Order = { id:string; orderNumber:string; phone:string; customerName?
 export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }
 export type UpdateOrderRequest = { id:string; phone?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
+export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
+export type DeviceStatuses = { fiscal:HardwareStatus; payment:HardwareStatus; printer:HardwareStatus }
+export type PrinterInfo = {name:string;isDefault:boolean}
+export type TransactionState = 'created'|'payment_in_progress'|'payment_confirmed'|'payment_unknown'|'fiscalization_in_progress'|'fiscalized'|'fiscal_status_unknown'|'completed'|'requires_attention'
+export type UnresolvedOperation = {
+  id:string
+  clientRequestId:string
+  kind:'sale'|'return'
+  entityId:string
+  relatedSaleId?:string
+  shiftId:string
+  amountMinor:number
+  state:TransactionState
+  fiscalReceiptNumber?:string
+  lastError?:string
+  createdAt:string
+  updatedAt:string
+  paymentMethods:string[]
+}
+export type RecoveryResult = {status:'completed'|'attention';message:string}
+
 export type PosApi = {
   getBootState: () => Promise<BootState>
   listProducts: () => Promise<Product[]>
@@ -106,6 +128,12 @@ export type PosApi = {
   createReturn: (request: CreateReturnRequest) => Promise<ReturnResult>
   listReturns: () => Promise<ReturnSummary[]>
   printSale: (id: string, kind: PrintKind) => Promise<PrintResult>
+  listPrinters: () => Promise<PrinterInfo[]>
+  getSelectedPrinter: () => Promise<string|undefined>
+  setSelectedPrinter: (name:string) => Promise<void>
+  getDeviceStatuses: () => Promise<DeviceStatuses>
+  listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
+  recoverOperation: (id:string) => Promise<RecoveryResult>
   listHeldReceipts: () => Promise<HeldReceipt[]>
   holdReceipt: (receipt: Omit<HeldReceipt, 'id' | 'createdAt'>) => Promise<HeldReceipt>
   deleteHeldReceipt: (id: string) => Promise<void>
