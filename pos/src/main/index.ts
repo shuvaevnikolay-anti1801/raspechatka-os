@@ -5,6 +5,13 @@ import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
+import { TransactionJournal } from './transaction-journal'
+import { PosTransactionEngine } from './transaction-engine'
+import { startAutomaticSync } from './sync'
+
+let stopAutomaticSync:(()=>void)|undefined
+let database:PosDatabase|undefined
+let journal:TransactionJournal|undefined
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -38,20 +45,39 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  const database = new PosDatabase(join(app.getPath('userData'), 'raspechatka-pos.sqlite'))
-  registerIpcHandlers({
-    database,
-    connectionStore: new ConnectionStore(join(app.getPath('userData'), 'connection.bin')),
-    paymentProvider: new MockPaymentProvider(),
-    fiscalProvider: new MockFiscalProvider(),
-    printProvider: new WindowsPrintProvider()
+const hasLock=app.requestSingleInstanceLock()
+if(!hasLock){
+  app.quit()
+}else{
+  app.on('second-instance',()=>{
+    const window=BrowserWindow.getAllWindows()[0]
+    if(window){if(window.isMinimized())window.restore();window.focus()}
   })
-  createWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  app.whenReady().then(() => {
+    const userData=app.getPath('userData')
+    database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
+    journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
+    const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
+    const paymentProvider=new MockPaymentProvider()
+    const fiscalProvider=new MockFiscalProvider()
+    const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
+    const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
+
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine})
+    stopAutomaticSync=startAutomaticSync(database,connectionStore)
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
+}
+
+app.on('before-quit',()=>{
+  stopAutomaticSync?.()
+  journal?.close()
+  database?.close()
 })
 
 app.on('window-all-closed', () => {
