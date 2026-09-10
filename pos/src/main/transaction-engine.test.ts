@@ -82,6 +82,14 @@ describe('PosTransactionEngine safety',()=>{
     expect(engine.listUnresolved()).toHaveLength(0)
   })
 
+  it('does not accept remote payment without explicit cashier confirmation',async()=>{
+    await expect(engine.completeSale(request([{method:'remote_payment',amountMinor:2000}],'remote-unconfirmed'),shiftId))
+      .rejects.toThrow(/не подтверждена/)
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
   it('persists unknown bank state and recovers without a second charge',async()=>{
     payment.throwOnCharge=true
     await expect(engine.completeSale(request([{method:'card',amountMinor:2000}]),shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
@@ -99,6 +107,21 @@ describe('PosTransactionEngine safety',()=>{
     expect(payment.statusCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('treats an explicitly declined card payment as terminal without blocking the next sale',async()=>{
+    payment.nextCharge={status:'declined',message:'Недостаточно средств'}
+    await expect(engine.completeSale(request([{method:'card',amountMinor:2000}],'declined-card'),shiftId)).rejects.toThrow(/Недостаточно средств/)
+    expect(payment.chargeCalls).toBe(1)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(engine.listUnresolved()).toHaveLength(0)
+    expect(engine.hasBlockingOperation()).toBe(false)
+
+    payment.nextCharge={status:'approved',transactionId:'bank-next'}
+    const next=await engine.completeSale(request([{method:'card',amountMinor:2000}],'next-card'),shiftId)
+    expect(next.saleId).toBeTruthy()
+    expect(payment.chargeCalls).toBe(2)
+    expect(fiscal.saleCalls).toBe(1)
   })
 
   it('keeps confirmed first part of mixed payment during recovery',async()=>{
@@ -120,6 +143,46 @@ describe('PosTransactionEngine safety',()=>{
     expect(payment.chargeCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(database.getSale(database.listSales()[0].id).payments.map((x)=>x.method)).toEqual(['cash','card'])
+  })
+
+  it('stores manual remote payment confirmation without calling the terminal',async()=>{
+    const remoteRequest:CompleteSaleRequest={
+      ...request([{method:'remote_payment',amountMinor:2000}],'remote-request'),
+      remotePaymentConfirmation:{
+        confirmed:true,
+        confirmedAt:'2026-09-10T12:00:00.000Z',
+        confirmedBy:'Кассир',
+        note:'Проверено по подтверждению клиента'
+      }
+    }
+
+    const completed=await engine.completeSale(remoteRequest,shiftId)
+    const sale=database.getSale(completed.saleId)
+
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(1)
+    expect(sale.payments[0].method).toBe('remote_payment')
+    expect(sale.remotePaymentConfirmation?.confirmedBy).toBe('Кассир')
+    expect(database.getShiftSummary().remotePaymentMinor).toBe(2000)
+  })
+
+  it('auto-finishes a fiscalized operation locally without touching money or KKT again',async()=>{
+    const savedRequest=request([{method:'cash',amountMinor:2000}],'crash-after-fiscal')
+    const operation=journal.create({
+      id:'operation-crash',clientRequestId:savedRequest.clientRequestId,kind:'sale',entityId:'sale-crash',
+      shiftId,amountMinor:2000,request:savedRequest,createdAt:'2026-09-10T12:00:00.000Z'
+    })
+    journal.setConfirmedPayments(operation.id,[{method:'cash',amountMinor:2000,transactionId:'CASH-sale-crash-0'}])
+    journal.setFiscalReceipt(operation.id,'FD-ALREADY-PRINTED')
+    journal.setState(operation.id,'fiscalized')
+
+    const recovered=await engine.recoverSafeOperations()
+
+    expect(recovered).toBe(1)
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(database.findSaleByClientRequestId(savedRequest.clientRequestId)?.receiptNumber).toBe('FD-ALREADY-PRINTED')
+    expect(engine.listUnresolved()).toHaveLength(0)
   })
 
   it('repairs a stale journal if the sale was already committed locally',async()=>{

@@ -55,7 +55,7 @@ export type CompleteSaleRequest = {
 
 export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order; commodityPrintWarning?: string }
 export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned' }
-export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[] }
+export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[]; remotePaymentConfirmation?: RemotePaymentConfirmation }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
 
 export type ReturnLine = { saleItemId: number; quantity: number }
@@ -95,7 +95,7 @@ export type ShiftSummary = {
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
-export type DeliveryNotice = { id:string; supplier:string; expectedDate?:string; deliveryCompany?:string; deliveryCode?:string; details?:string; status:string }
+export type DeliveryNotice = { id:string; supplier:string; expectedDate?:string;deliveryCompany?:string; deliveryCode?:string; details?:string; status:string }
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
 export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
@@ -115,7 +115,7 @@ export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'err
 export type ShiftDeviceStatus = {ready:boolean;localOpen:boolean;fiscalOpen?:boolean;message:string}
 export type DeviceStatuses = { os:HardwareStatus; fiscal:HardwareStatus; payment:HardwareStatus; printer:HardwareStatus; shift:ShiftDeviceStatus }
 export type PrinterInfo = {name:string;isDefault:boolean}
-export type TransactionState = 'created'|'payment_in_progress'|'payment_confirmed'|'payment_unknown'|'fiscalization_in_progress'|'fiscalized'|'fiscal_status_unknown'|'completed'|'requires_attention'
+export type TransactionState = 'created'|'payment_in_progress'|'payment_confirmed'|'payment_unknown'|'fiscalization_in_progress'|'fiscalized'|'fiscal_status_unknown'|'completed'|'cancelled'|'requires_attention'
 export type UnresolvedOperation = {
   id:string
   clientRequestId:string

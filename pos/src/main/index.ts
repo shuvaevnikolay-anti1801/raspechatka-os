@@ -84,6 +84,13 @@ if(!hasLock){
       database.setState('shift_recovery_message',error instanceof Error?error.message:String(error))
     }
 
+    try{
+      const recovered=await transactionEngine.recoverSafeOperations()
+      if(recovered>0)database.setState('transaction_recovery_message',`После перезапуска безопасно завершено локально: ${recovered}`)
+    }catch(error){
+      database.setState('transaction_recovery_message',error instanceof Error?error.message:String(error))
+    }
+
     registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator})
     registerHardwareSettingsIpc(atolSettingsStore)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)

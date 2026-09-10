@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
   CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
-  CashCount, CashCountLine, CleanerVisitResult, PaymentPart, Product, ReturnSummary,
+  CashCount, CashCountLine, CleanerVisitResult, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
   SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 
 const emptySummary=():ShiftSummary=>({
-  receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,
+  receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,
   depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0
 })
 
@@ -50,6 +50,7 @@ export class PosDatabase {
         total_minor INTEGER NOT NULL, payment_method TEXT NOT NULL,
         payment_transaction_id TEXT NOT NULL, fiscal_number TEXT NOT NULL,
         customer_id TEXT, customer_name TEXT, receipt_discount_percent REAL NOT NULL DEFAULT 0,
+        remote_payment_confirmation_json TEXT,
         status TEXT NOT NULL DEFAULT 'completed', created_at TEXT NOT NULL,
         FOREIGN KEY (shift_id) REFERENCES shifts(id)
       );
@@ -119,6 +120,7 @@ export class PosDatabase {
     this.ensureColumn('sales', 'customer_id', 'TEXT')
     this.ensureColumn('sales', 'customer_name', 'TEXT')
     this.ensureColumn('sales', 'receipt_discount_percent', 'REAL NOT NULL DEFAULT 0')
+    this.ensureColumn('sales', 'remote_payment_confirmation_json', 'TEXT')
     this.ensureColumn('sales', 'status', "TEXT NOT NULL DEFAULT 'completed'")
     this.ensureColumn('customers', 'purchase_count', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('customers', 'total_spent_minor', 'INTEGER NOT NULL DEFAULT 0')
@@ -211,8 +213,9 @@ export class PosDatabase {
     const payments=this.db.prepare(`SELECT
       COALESCE(SUM(CASE WHEN method='cash' THEN amount_minor ELSE 0 END),0) cashMinor,
       COALESCE(SUM(CASE WHEN method='card' THEN amount_minor ELSE 0 END),0) cardMinor,
-      COALESCE(SUM(CASE WHEN method='qr' THEN amount_minor ELSE 0 END),0) qrMinor
-      FROM sale_payments WHERE sale_id IN (SELECT id FROM sales WHERE shift_id=?)`).get(shift.id) as Pick<ShiftSummary,'cashMinor'|'cardMinor'|'qrMinor'>
+      COALESCE(SUM(CASE WHEN method='qr' THEN amount_minor ELSE 0 END),0) qrMinor,
+      COALESCE(SUM(CASE WHEN method='remote_payment' THEN amount_minor ELSE 0 END),0) remotePaymentMinor
+      FROM sale_payments WHERE sale_id IN (SELECT id FROM sales WHERE shift_id=?)`).get(shift.id) as Pick<ShiftSummary,'cashMinor'|'cardMinor'|'qrMinor'|'remotePaymentMinor'>
     const refunds=this.db.prepare('SELECT COALESCE(SUM(total_minor),0) returnsMinor FROM returns WHERE shift_id=?')
       .get(shift.id) as {returnsMinor:number}
     const cashReturns=this.db.prepare(`SELECT COALESCE(SUM(amount_minor),0) value FROM return_payments
@@ -229,11 +232,11 @@ export class PosDatabase {
     return (this.db.prepare('SELECT id saleId,fiscal_number receiptNumber,total_minor totalMinor FROM sales WHERE client_request_id=?').get(id) as {saleId:string;receiptNumber:string;totalMinor:number}|undefined)??null
   }
 
-  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;lines:CartLine[];payments:PaymentPart[];order?:{phone:string;comment?:string;dueAt?:string}}):void {
+  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;lines:CartLine[];payments:PaymentPart[];remotePaymentConfirmation?:RemotePaymentConfirmation;order?:{phone:string;comment?:string;dueAt?:string}}):void {
     this.db.exec('BEGIN')
     try {
-      this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerId??null,input.customerName??null,input.receiptDiscountPercent,input.createdAt)
+      this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,remote_payment_confirmation_json,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerId??null,input.customerName??null,input.receiptDiscountPercent,input.remotePaymentConfirmation?JSON.stringify(input.remotePaymentConfirmation):null,input.createdAt)
       const lineRaw=input.lines.map((line)=>Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent??0)/100)))
       const rawTotal=lineRaw.reduce((sum,x)=>sum+x,0)
       const insertLine=this.db.prepare('INSERT INTO sale_items (sale_id,product_id,name,quantity,unit_price_minor,discount_percent,line_total_minor) VALUES (?,?,?,?,?,?,?)')
@@ -246,7 +249,7 @@ export class PosDatabase {
       const reduceStock=this.db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND track_inventory=1')
       input.lines.forEach((x)=>reduceStock.run(x.quantity,x.productId))
       this.queue('sale.completed',input,input.createdAt)
-      if ((input as any).order) this.createOrderFromSale(input, (input as any).order)
+      if (input.order) this.createOrderFromSale(input, input.order)
       this.db.exec('COMMIT')
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
@@ -262,7 +265,8 @@ export class PosDatabase {
       discount_percent discountPercent,COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
       FROM sale_items WHERE sale_id=? ORDER BY id`).all(id) as SaleDetails['lines']
     const payments=this.db.prepare('SELECT method,amount_minor amountMinor,transaction_id transactionId FROM sale_payments WHERE sale_id=? ORDER BY id').all(id) as PaymentPart[]
-    return {...sale,lines,payments}
+    const rawRemote=(this.db.prepare('SELECT remote_payment_confirmation_json value FROM sales WHERE id=?').get(id) as {value:string|null}|undefined)?.value
+    return {...sale,lines,payments,remotePaymentConfirmation:rawRemote?JSON.parse(rawRemote) as RemotePaymentConfirmation:undefined}
   }
 
   findReturnByClientRequestId(id:string):{returnId:string;receiptNumber:string;totalMinor:number}|null {
