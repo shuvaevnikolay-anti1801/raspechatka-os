@@ -32,8 +32,8 @@ export default function SettingsModeGuard(){
   return <div className="pilot-backdrop">
     <section className="pilot-modal admin-gate">
       <header><div><small>ТЕХНИЧЕСКИЙ РАЗДЕЛ</small><h2>Настройки рабочего места</h2></div><button onClick={()=>setOpen(false)}>×</button></header>
-      <p>Здесь находятся адрес сервера, ключи подключения и параметры рабочего места. В обычной работе кассиру этот раздел не нужен.</p>
-      <div className="admin-gate-note"><b>На текущем этапе это защита от случайного изменения, а не авторизация.</b><span>Позже доступ будет определяться ролью сотрудника из Распечатка OS.</span></div>
+      <p>Здесь находятся подключение кассы к конкретной точке, АТОЛ, принтер и эквайринг. В обычной работе кассиру этот раздел не нужен.</p>
+      <div className="admin-gate-note"><b>Device ID определяет точку, а Token хранится в защищённом хранилище Windows.</b><span>Позже доступ к техническим настройкам будет определяться ролью сотрудника из Распечатка OS.</span></div>
       <div className="readiness-actions"><button onClick={()=>setOpen(false)}>Отмена</button><button className="primary" onClick={continueToSettings}>Открыть технические настройки</button></div>
     </section>
   </div>
