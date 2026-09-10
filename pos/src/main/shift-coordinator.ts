@@ -15,11 +15,23 @@ export type ShiftRecoveryResult = {
   message?:string
 }
 
+export type PendingShiftTransition = {
+  action:'open'|'close'
+  shiftId:string
+  startedAt:string
+}
+
 export class ShiftCoordinator {
   constructor(
     private readonly database:PosDatabase,
     private readonly fiscalProvider:FiscalProvider
   ){}
+
+  getPendingTransition():PendingShiftTransition|undefined{
+    const transition=this.loadTransition()
+    if(!transition)return undefined
+    return {action:transition.action,shiftId:transition.shiftId,startedAt:transition.startedAt}
+  }
 
   async recoverPendingTransition():Promise<ShiftRecoveryResult>{
     const transition=this.loadTransition()
@@ -44,6 +56,9 @@ export class ShiftCoordinator {
         return {recovered:false,pending:true,message:'Фискальная смена АТОЛ истекла во время открытия. Сначала её нужно закрыть; локальную смену автоматически не создаём.'}
       }
       const current=this.database.currentShift()
+      if(current&&current.id!==transition.shiftId){
+        return {recovered:false,pending:true,message:'На компьютере уже есть другая локальная смена. Автоматическое восстановление остановлено, чтобы не связать её с чужой фискальной сменой.'}
+      }
       if(!current){
         this.database.openShift({
           id:transition.shiftId,
@@ -56,10 +71,12 @@ export class ShiftCoordinator {
     }
 
     if(fiscalShift.open){
+      // Мы точно видим, что фискальная смена всё ещё открыта: закрытие не произошло.
+      // Повторная команда закрытия безопасна, поэтому незавершённый маркер можно снять.
       this.clearTransition()
       return {recovered:false,pending:false,message:fiscalShift.state==='expired'
         ?'Фискальная смена истекла, но всё ещё открыта. Её можно безопасно закрыть повторной командой.'
-        :'Предыдущее закрытие фискальной смены не произошло. Закрытие можно повторить.'}
+        :'Предыдущее закрытие фискальной смены не произошло. Закрытие можно безопасно повторить.'}
     }
 
     const current=this.database.currentShift()
@@ -145,9 +162,10 @@ export class ShiftCoordinator {
           this.clearTransition()
           return summary
         }
+        // ККТ однозначно говорит, что смена по-прежнему открыта: повторное закрытие безопасно.
         this.clearTransition()
       }catch{
-        // Оставляем transition. Повторное закрытие вслепую запрещено до проверки состояния ККТ.
+        // Статус неизвестен. Оставляем transition и не разрешаем слепо считать смену закрытой.
       }
       throw error
     }
