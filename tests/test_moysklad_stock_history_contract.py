@@ -86,7 +86,7 @@ def test_bundle_return_uses_frozen_original_composition():
 
 
 def test_target_events_share_one_chronological_stream():
-	run = _section(HISTORY, "def run_stock_history_import", "def _reset_initial_history")
+	run = _section(HISTORY, "def run_stock_history_import", "def _assert_safe_first_import")
 	assert "events.extend(_sales_receipt_events())" in run
 	assert 'events.sort(key=lambda row: (get_datetime(row["moment"]), row["priority"], row["key"]))' in run
 
@@ -99,19 +99,14 @@ def test_repeat_run_is_idempotent():
 	assert 'stats["sales_stock_duplicates"]' in backfill
 
 
-def test_reset_targets_only_initial_migration_artifacts():
-	reset = _section(HISTORY, "def _reset_initial_history", "def _assert_safe_first_import")
-	assert '"source": "MoySklad Opening Balance"' in reset
-	assert '"source": "MoySklad"' in reset
-	assert '"Sales Receipt Material"' in reset
-	assert 'frappe.delete_doc("Sales Receipt"' not in reset
+def test_stock_movements_are_never_deleted_by_history_import():
+	assert 'frappe.delete_doc("Stock Ledger Entry"' not in HISTORY
+	assert 'frappe.db.delete("Stock Ledger Entry"' not in HISTORY
 
 
-def test_rebuild_resets_then_replays_once():
-	run = _section(HISTORY, "def run_stock_history_import", "def _reset_initial_history")
-	assert "if rebuild:" in run
-	assert "stats.update(_reset_initial_history())" in run
-	assert "_create_opening_documents(settings, stats)" in run
+def test_destructive_rebuild_endpoint_is_not_exposed():
+	assert "start_stock_history_rebuild" not in HISTORY
+	assert "_reset_initial_history" not in HISTORY
 
 
 def test_excluded_source_document_types_are_not_imported_or_audited():
