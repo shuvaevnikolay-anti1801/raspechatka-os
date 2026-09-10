@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeviceStatuses, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
+import type { DeviceStatuses, PrintJobSummary, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
 import './safety.css'
 
 type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
@@ -10,15 +10,35 @@ type ExtendedPosApi=typeof window.raspechatkaPos&{
 const pos=()=>window.raspechatkaPos as ExtendedPosApi
 
 const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
-const stateNames:Record<UnresolvedOperation['state'],string>={
-  created:'Создана',payment_in_progress:'Оплата выполняется',payment_confirmed:'Оплата подтверждена',payment_unknown:'Статус оплаты неизвестен',
-  fiscalization_in_progress:'Чек формируется',fiscalized:'Фискализировано',fiscal_status_unknown:'Статус ККТ неизвестен',completed:'Завершено',requires_attention:'Требует внимания'
-}
 const defaultAtol:AtolSettings={enabled:false,baseUrl:'http://127.0.0.1:16732/api/v2',taxationType:'patent',taxType:'none',operatorName:''}
+
+const recoveryText=(operation:UnresolvedOperation):{title:string;detail:string;critical:boolean}=>{
+  if(operation.state==='payment_unknown'||operation.state==='payment_in_progress')return {
+    title:`Результат оплаты ${money(operation.amountMinor)} неизвестен`,
+    detail:'Не повторяйте оплату. Касса сначала проверит исходную операцию терминала.',critical:true
+  }
+  if(operation.state==='payment_confirmed')return {
+    title:`Оплата ${money(operation.amountMinor)} получена`,
+    detail:'Деньги подтверждены. Нужно безопасно продолжить формирование фискального чека.',critical:true
+  }
+  if(operation.state==='fiscal_status_unknown'||operation.state==='fiscalization_in_progress')return {
+    title:'Состояние фискального чека неизвестно',
+    detail:'Не пробивайте второй чек вручную. Касса сначала запросит результат уже начатой операции АТОЛ.',critical:true
+  }
+  if(operation.state==='fiscalized')return {
+    title:'Фискальный чек уже пробит',
+    detail:'Повторная фискализация запрещена. Нужно только завершить локальную запись операции.',critical:false
+  }
+  return {
+    title:operation.kind==='sale'?'Продажу нужно завершить':'Возврат нужно завершить',
+    detail:operation.lastError||'Операция сохранена локально и может быть безопасно продолжена.',critical:false
+  }
+}
 
 export default function PosSafetyPanel(){
   const [devices,setDevices]=useState<DeviceStatuses|null>(null)
   const [unresolved,setUnresolved]=useState<UnresolvedOperation[]>([])
+  const [printJobs,setPrintJobs]=useState<PrintJobSummary[]>([])
   const [printers,setPrinters]=useState<PrinterInfo[]>([])
   const [selectedPrinter,setSelectedPrinter]=useState('')
   const [atol,setAtol]=useState<AtolSettings>(defaultAtol)
@@ -26,11 +46,12 @@ export default function PosSafetyPanel(){
   const [message,setMessage]=useState('')
 
   const refresh=async()=>{
-    const [nextDevices,nextOperations,nextPrinters,nextSelected,nextAtol]=await Promise.all([
-      pos().getDeviceStatuses(),pos().listUnresolvedOperations(),
+    const [nextDevices,nextOperations,nextPrintJobs,nextPrinters,nextSelected,nextAtol]=await Promise.all([
+      pos().getDeviceStatuses(),pos().listUnresolvedOperations(),pos().listPrintJobs(),
       pos().listPrinters(),pos().getSelectedPrinter(),pos().getAtolSettings()
     ])
-    setDevices(nextDevices);setUnresolved(nextOperations);setPrinters(nextPrinters);setSelectedPrinter(nextSelected||'');setAtol(nextAtol)
+    setDevices(nextDevices);setUnresolved(nextOperations);setPrintJobs(nextPrintJobs)
+    setPrinters(nextPrinters);setSelectedPrinter(nextSelected||'');setAtol(nextAtol)
   }
 
   useEffect(()=>{
@@ -60,24 +81,39 @@ export default function PosSafetyPanel(){
     }catch(error){setMessage(error instanceof Error?error.message:String(error));await refresh()}
   }
 
+  const retryPrint=async(id:string)=>{
+    try{
+      const result=await pos().retryPrintJob(id)
+      setMessage(result.message);await refresh()
+    }catch(error){setMessage(error instanceof Error?error.message:String(error));await refresh()}
+  }
+
   const statusClass=(ready:boolean,status?:string)=>ready?'ok':status==='not_configured'?'muted':'bad'
+  const attentionCount=unresolved.length+printJobs.length
   return <>
     <aside className="safety-strip" aria-label="Состояние кассы">
+      <Status label="OS" value={devices?.os.message||'Проверяем…'} state={statusClass(Boolean(devices?.os.ready),devices?.os.status)}/>
       <Status label="ККТ" value={devices?.fiscal.message||'Проверяем…'} state={statusClass(Boolean(devices?.fiscal.ready),devices?.fiscal.status)}/>
       <Status label="Терминал" value={devices?.payment.message||'Проверяем…'} state={statusClass(Boolean(devices?.payment.ready),devices?.payment.status)}/>
-      <Status label="Товарный принтер" value={devices?.printer.message||'Проверяем…'} state={statusClass(Boolean(devices?.printer.ready),devices?.printer.status)}/>
-      <button className={unresolved.length?'recovery-button danger':'recovery-button'} onClick={()=>setOpen(true)}>
-        {unresolved.length?`Восстановление · ${unresolved.length}`:'Оборудование'}
+      <Status label="Принтер" value={devices?.printer.message||'Проверяем…'} state={statusClass(Boolean(devices?.printer.ready),devices?.printer.status)}/>
+      <Status label="Смена" value={devices?.shift.message||'Проверяем…'} state={devices?.shift.ready?'ok':'bad'}/>
+      <button className={attentionCount?'recovery-button danger':'recovery-button'} onClick={()=>setOpen(true)}>
+        {attentionCount?`Требует внимания · ${attentionCount}`:'Оборудование'}
       </button>
     </aside>
     {open&&<div className="safety-backdrop" onMouseDown={(event)=>{if(event.target===event.currentTarget)setOpen(false)}}>
       <section className="safety-panel">
         <header><div><small>НАДЁЖНОСТЬ КАССЫ</small><h2>Оборудование и восстановление</h2></div><button onClick={()=>setOpen(false)}>×</button></header>
         <div className="device-cards">
+          <DeviceCard title="Raspechatka OS" status={devices?.os}/>
           <DeviceCard title="ККТ АТОЛ" status={devices?.fiscal}/>
           <DeviceCard title="Эквайринг" status={devices?.payment}/>
           <DeviceCard title="Товарный принтер" status={devices?.printer}/>
         </div>
+        <section className={devices?.shift.ready?'shift-safety ready':'shift-safety danger'}>
+          <div><small>СОСТОЯНИЕ СМЕНЫ</small><strong>{devices?.shift.message||'Проверяем состояние локальной и фискальной смены…'}</strong></div>
+          {!devices?.shift.ready&&<p>До начала продаж нужно устранить несоответствие локальной смены и смены ККТ.</p>}
+        </section>
         <section className="hardware-settings atol-settings">
           <div className="settings-title"><div><h3>АТОЛ 1Ф · USB</h3><p>Приложение работает через локальный Web Server Драйвера ККТ 10. Включите его после того, как АТОЛ виден в утилите драйвера.</p></div><label className="toggle"><input type="checkbox" checked={atol.enabled} onChange={(event)=>setAtol({...atol,enabled:event.target.checked})}/><span>Использовать АТОЛ</span></label></div>
           <div className="settings-grid">
@@ -98,10 +134,19 @@ export default function PosSafetyPanel(){
         <section className="recovery-list">
           <h3>Незавершённые операции</h3>
           {!unresolved.length?<div className="recovery-empty"><strong>Всё в порядке</strong><span>Нет операций с неизвестным состоянием оплаты или ККТ.</span></div>:
-          unresolved.map((operation)=><article key={operation.id} className={operation.state.includes('unknown')?'critical':''}>
-            <div><b>{operation.kind==='sale'?'Продажа':'Возврат'} · {money(operation.amountMinor)}</b><small>{new Date(operation.createdAt).toLocaleString('ru-RU')}</small></div>
-            <div><strong>{stateNames[operation.state]}</strong>{operation.lastError&&<small>{operation.lastError}</small>}</div>
+          unresolved.map((operation)=>{const text=recoveryText(operation);return <article key={operation.id} className={text.critical?'critical':''}>
+            <div><b>{text.title}</b><small>{operation.kind==='sale'?'Продажа':'Возврат'} · {new Date(operation.createdAt).toLocaleString('ru-RU')}</small></div>
+            <div><strong>{text.detail}</strong>{operation.lastError&&<small>{operation.lastError}</small>}</div>
             <button onClick={()=>recover(operation.id)}>Проверить и продолжить</button>
+          </article>})}
+        </section>
+        <section className="recovery-list print-recovery-list">
+          <h3>Товарные чеки, ожидающие печати</h3>
+          {!printJobs.length?<div className="recovery-empty"><strong>Очередь пуста</strong><span>Все товарные чеки напечатаны.</span></div>:
+          printJobs.map((job)=><article key={job.id} className={job.state==='error'?'critical':''}>
+            <div><b>Товарный чек не напечатан</b><small>Попыток: {job.attempts} · {new Date(job.createdAt).toLocaleString('ru-RU')}</small></div>
+            <div><strong>Продажа уже сохранена и не будет отменена.</strong>{job.lastError&&<small>{job.lastError}</small>}</div>
+            <button onClick={()=>retryPrint(job.id)}>Повторить печать</button>
           </article>)}
         </section>
         {message&&<div className="safety-message">{message}</div>}
