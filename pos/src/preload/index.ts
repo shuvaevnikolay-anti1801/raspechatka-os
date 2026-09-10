@@ -5,6 +5,7 @@ type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:st
 type ExtendedPosApi=PosApi&{
   getAtolSettings:()=>Promise<AtolSettings>
   saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
+  recoverShiftState:()=>Promise<{recovered:boolean;pending:boolean;message?:string}>
 }
 
 const api: ExtendedPosApi = {
@@ -27,6 +28,7 @@ const api: ExtendedPosApi = {
   listDiagnosticEvents: (limit?:number) => ipcRenderer.invoke('pos:list-diagnostic-events',limit),
   getAtolSettings:()=>ipcRenderer.invoke('pos:get-atol-settings'),
   saveAtolSettings:(value:AtolSettings)=>ipcRenderer.invoke('pos:save-atol-settings',value),
+  recoverShiftState:()=>ipcRenderer.invoke('pos:recover-shift-state'),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
   deleteHeldReceipt: (id:string) => ipcRenderer.invoke('pos:delete-held-receipt',id),
