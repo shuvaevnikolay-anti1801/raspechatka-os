@@ -2,6 +2,13 @@ name: POS Windows Installer
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - version-16
+    paths:
+      - "pos/**"
+      - "shared/**"
+      - ".github/workflows/pos-windows.yml"
   push:
     branches:
       - version-16

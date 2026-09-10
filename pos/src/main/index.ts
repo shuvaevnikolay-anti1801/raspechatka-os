@@ -3,8 +3,22 @@ import { app, BrowserWindow } from 'electron'
 import { PosDatabase } from './database'
 import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
+import { registerHardwareSettingsIpc } from './hardware-ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
+import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
+import { UnavailablePaymentProvider } from './providers/unavailable-payment'
+import { ShiftCoordinator } from './shift-coordinator'
+import { TransactionJournal } from './transaction-journal'
+import { PosTransactionEngine } from './transaction-engine'
+import { CommodityPrintQueue } from './print-jobs'
+import { buildBootState, startAutomaticSync } from './sync'
+
+let stopAutomaticSync:(()=>void)|undefined
+let stopAutomaticPrintRetry:(()=>void)|undefined
+let database:PosDatabase|undefined
+let journal:TransactionJournal|undefined
+let printQueue:CommodityPrintQueue|undefined
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -38,20 +52,56 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  const database = new PosDatabase(join(app.getPath('userData'), 'raspechatka-pos.sqlite'))
-  registerIpcHandlers({
-    database,
-    connectionStore: new ConnectionStore(join(app.getPath('userData'), 'connection.bin')),
-    paymentProvider: new MockPaymentProvider(),
-    fiscalProvider: new MockFiscalProvider(),
-    printProvider: new WindowsPrintProvider()
+const hasLock=app.requestSingleInstanceLock()
+if(!hasLock){
+  app.quit()
+}else{
+  app.on('second-instance',()=>{
+    const window=BrowserWindow.getAllWindows()[0]
+    if(window){if(window.isMinimized())window.restore();window.focus()}
   })
-  createWindow()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  app.whenReady().then(async() => {
+    const userData=app.getPath('userData')
+    database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
+    journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
+    const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
+    const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
+    const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
+    const paymentProvider=trainingMode?new MockPaymentProvider():new UnavailablePaymentProvider()
+    const fiscalProvider=trainingMode?new MockFiscalProvider():new AtolWebFiscalProvider(atolSettingsStore)
+    const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
+    const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
+    const shiftCoordinator=new ShiftCoordinator(database,fiscalProvider)
+    printQueue=new CommodityPrintQueue(
+      join(userData,'raspechatka-pos-print-jobs.sqlite'),database,printProvider,()=>buildBootState(database!)
+    )
+
+    try{
+      const recovery=await shiftCoordinator.recoverPendingTransition()
+      if(recovery.message)database.setState('shift_recovery_message',recovery.message)
+    }catch(error){
+      database.setState('shift_recovery_message',error instanceof Error?error.message:String(error))
+    }
+
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator})
+    registerHardwareSettingsIpc(atolSettingsStore)
+    stopAutomaticSync=startAutomaticSync(database,connectionStore)
+    stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
+}
+
+app.on('before-quit',()=>{
+  stopAutomaticSync?.()
+  stopAutomaticPrintRetry?.()
+  printQueue?.close()
+  journal?.close()
+  database?.close()
 })
 
 app.on('window-all-closed', () => {

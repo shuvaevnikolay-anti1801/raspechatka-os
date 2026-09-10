@@ -1,5 +1,5 @@
-export type PaymentMethod = 'cash' | 'card' | 'qr'
-export type SalePaymentMethod = PaymentMethod | 'mixed'
+export type PaymentMethod = 'cash' | 'card' | 'qr' | 'remote_payment'
+export type SalePaymentMethod = string
 
 export type Product = {
   id: string
@@ -21,8 +21,9 @@ export type Product = {
 export type Customer = { id: string; name: string; phone?: string; discountPercent: number; purchaseCount?: number; totalSpentMinor?: number }
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
+export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
-export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean }
+export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean; acceptsRemotePayment?: boolean }
 
 export type BootState = {
   pointId: string
@@ -48,10 +49,11 @@ export type CompleteSaleRequest = {
   customer?: Customer | null
   receiptDiscountPercent?: number
   cashReceivedMinor?: number
+  remotePaymentConfirmation?: RemotePaymentConfirmation
   order?: { phone:string; comment?:string; dueAt?:string }
 }
 
-export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order }
+export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order; commodityPrintWarning?: string }
 export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned' }
 export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[] }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
@@ -62,6 +64,17 @@ export type ReturnResult = { returnId: string; receiptNumber: string; totalMinor
 export type ReturnSummary = { id: string; saleId: string; receiptNumber: string; originalReceiptNumber: string; totalMinor: number; createdAt: string }
 export type PrintKind = 'fiscal-copy' | 'commodity'
 export type PrintResult = { kind: PrintKind; status: 'printed' | 'simulated'; message: string }
+export type PrintJobSummary = {
+  id:string
+  saleId:string
+  kind:'commodity'
+  state:'pending'|'printing'|'printed'|'error'
+  attempts:number
+  lastError?:string
+  createdAt:string
+  updatedAt:string
+  printedAt?:string
+}
 
 export type HeldReceipt = { id: string; label: string; lines: CartLine[]; customer?: Customer | null; discountPercent: number; createdAt: string }
 export type CashOperationType = 'deposit' | 'withdrawal'
@@ -73,6 +86,7 @@ export type ShiftSummary = {
   cashMinor: number
   cardMinor: number
   qrMinor: number
+  remotePaymentMinor?: number
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
@@ -97,6 +111,28 @@ export type Order = { id:string; orderNumber:string; phone:string; customerName?
 export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }
 export type UpdateOrderRequest = { id:string; phone?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
+export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
+export type ShiftDeviceStatus = {ready:boolean;localOpen:boolean;fiscalOpen?:boolean;message:string}
+export type DeviceStatuses = { os:HardwareStatus; fiscal:HardwareStatus; payment:HardwareStatus; printer:HardwareStatus; shift:ShiftDeviceStatus }
+export type PrinterInfo = {name:string;isDefault:boolean}
+export type TransactionState = 'created'|'payment_in_progress'|'payment_confirmed'|'payment_unknown'|'fiscalization_in_progress'|'fiscalized'|'fiscal_status_unknown'|'completed'|'requires_attention'
+export type UnresolvedOperation = {
+  id:string
+  clientRequestId:string
+  kind:'sale'|'return'
+  entityId:string
+  relatedSaleId?:string
+  shiftId:string
+  amountMinor:number
+  state:TransactionState
+  fiscalReceiptNumber?:string
+  lastError?:string
+  createdAt:string
+  updatedAt:string
+  paymentMethods:string[]
+}
+export type RecoveryResult = {status:'completed'|'attention';message:string}
+
 export type PosApi = {
   getBootState: () => Promise<BootState>
   listProducts: () => Promise<Product[]>
@@ -106,6 +142,14 @@ export type PosApi = {
   createReturn: (request: CreateReturnRequest) => Promise<ReturnResult>
   listReturns: () => Promise<ReturnSummary[]>
   printSale: (id: string, kind: PrintKind) => Promise<PrintResult>
+  listPrintJobs: () => Promise<PrintJobSummary[]>
+  retryPrintJob: (id:string) => Promise<PrintResult>
+  listPrinters: () => Promise<PrinterInfo[]>
+  getSelectedPrinter: () => Promise<string|undefined>
+  setSelectedPrinter: (name:string) => Promise<void>
+  getDeviceStatuses: () => Promise<DeviceStatuses>
+  listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
+  recoverOperation: (id:string) => Promise<RecoveryResult>
   listHeldReceipts: () => Promise<HeldReceipt[]>
   holdReceipt: (receipt: Omit<HeldReceipt, 'id' | 'createdAt'>) => Promise<HeldReceipt>
   deleteHeldReceipt: (id: string) => Promise<void>
