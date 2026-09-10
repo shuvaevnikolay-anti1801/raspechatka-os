@@ -31,18 +31,13 @@ export class PosTransactionEngine {
   async recoverSafeOperations():Promise<number>{
     let recovered=0
     for(const operation of this.journal.listUnresolved()){
-      // После того как ККТ уже вернула фискальный номер, повторного обращения к деньгам или ККТ не требуется.
-      // Такую операцию можно безопасно завершить локально при старте приложения.
       if(operation.state!=='fiscalized')continue
       try{
-        if(operation.kind==='sale'){
-          await this.runSale(operation)
-        }else if(operation.relatedSaleId){
-          await this.runReturn(operation,this.database.getSale(operation.relatedSaleId))
-        }
+        if(operation.kind==='sale')await this.runSale(operation)
+        else if(operation.relatedSaleId)await this.runReturn(operation,this.database.getSale(operation.relatedSaleId))
         recovered++
       }catch{
-        // Не маскируем проблему: операция останется в списке восстановления для ручной проверки.
+        // Операция остаётся в центре восстановления; внешние действия повторно не запускаются.
       }
     }
     return recovered
@@ -51,6 +46,9 @@ export class PosTransactionEngine {
   async completeSale(request:CompleteSaleRequest,shiftId:string,totalMinor?:number):Promise<CompleteSaleResult>{
     const amount=totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
     this.validatePayments(request.payments,amount,'оплаты')
+    if(request.payments.some((payment)=>payment.method==='remote_payment')&&!request.remotePaymentConfirmation?.confirmed){
+      throw new Error('Удалённая оплата не подтверждена кассиром. Операция не начата.')
+    }
 
     const existingOperation=this.journal.getByClientRequestId(request.clientRequestId)
     const existingSale=this.database.findSaleByClientRequestId(request.clientRequestId)
@@ -58,6 +56,7 @@ export class PosTransactionEngine {
       if(existingOperation&&existingOperation.state!=='completed')this.journal.setState(existingOperation.id,'completed')
       return {...existingSale,changeMinor:0,queuedForSync:true}
     }
+    if(existingOperation?.state==='cancelled')throw new Error('Эта попытка оплаты уже завершена отказом. Начните новую оплату.')
     if(!existingOperation&&this.hasBlockingOperation()){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Откройте «Восстановление» и завершите её перед новой оплатой.')
     }
@@ -82,6 +81,7 @@ export class PosTransactionEngine {
       if(existingOperation&&existingOperation.state!=='completed')this.journal.setState(existingOperation.id,'completed')
       return {...existingReturn,queuedForSync:true}
     }
+    if(existingOperation?.state==='cancelled')throw new Error('Эта попытка возврата уже завершена отказом. Начните новую операцию.')
     if(!existingOperation&&this.hasBlockingOperation()){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Сначала завершите её в разделе «Восстановление».')
     }
@@ -101,6 +101,7 @@ export class PosTransactionEngine {
     const operation=this.journal.get(operationId)
     if(!operation)throw new Error('Незавершённая операция не найдена')
     if(operation.state==='completed')return {status:'completed',message:'Операция уже завершена'}
+    if(operation.state==='cancelled')return {status:'completed',message:'Попытка завершена без продажи: оплата или возврат были отклонены'}
 
     if(operation.kind==='sale'&&this.database.findSaleByClientRequestId(operation.clientRequestId)){
       this.journal.setState(operation.id,'completed')
@@ -115,6 +116,7 @@ export class PosTransactionEngine {
       return {status:'attention',message:error instanceof Error?error.message:String(error)}
     }
     const refreshed=this.journal.get(operationId)!
+    if(refreshed.state==='cancelled')return {status:'completed',message:'Банк подтвердил, что операция не была выполнена. Можно начать новую.'}
     if(refreshed.state==='requires_attention'){
       return {status:'attention',message:refreshed.lastError||'Операция не завершена. Проверьте причину перед новой попыткой.'}
     }
@@ -130,6 +132,9 @@ export class PosTransactionEngine {
   private async runSale(operation:JournalOperation):Promise<CompleteSaleResult>{
     const request=operation.request as CompleteSaleRequest
     this.validatePayments(request.payments,operation.amountMinor,'оплаты')
+    if(request.payments.some((payment)=>payment.method==='remote_payment')&&!request.remotePaymentConfirmation?.confirmed){
+      throw new Error('В журнале отсутствует подтверждение удалённой оплаты. Фискализация заблокирована.')
+    }
     let current=operation
 
     if(current.state==='created'||current.state==='requires_attention'){
@@ -243,7 +248,7 @@ export class PosTransactionEngine {
       }
       if(result.status==='declined'){
         this.journal.finishPaymentAttempt({id:attemptId,state:'declined',transactionId:result.transactionId,rawResult:result,error:result.message})
-        this.journal.setState(operation.id,'requires_attention',result.message||'Оплата отклонена')
+        this.journal.setState(operation.id,'cancelled',result.message||'Оплата отклонена')
         throw new Error(result.message||'Оплата отклонена')
       }
       if(!result.transactionId){
@@ -324,7 +329,7 @@ export class PosTransactionEngine {
         this.journal.setState(operation.id,payments.length>=requested.length?'payment_confirmed':'created')
       }else if(result.status==='declined'){
         this.journal.finishPaymentAttempt({id:attempt.id,state:'declined',transactionId:result.transactionId,rawResult:result,error:result.message})
-        this.journal.setState(operation.id,'requires_attention',result.message||'Операция терминала не была оплачена')
+        this.journal.setState(operation.id,'cancelled',result.message||'Операция терминала не была выполнена')
       }else{
         this.journal.setState(operation.id,'payment_unknown',result.message||'Терминал всё ещё не даёт однозначный статус')
         throw new Error(result.message||'Результат банковской операции всё ещё неизвестен')
@@ -354,20 +359,14 @@ export class PosTransactionEngine {
     if(!Number.isInteger(expectedTotal)||expectedTotal<0)throw new Error(`Некорректная сумма ${label}`)
     if(!payments.length)throw new Error(`Не выбран способ ${label}`)
     for(const payment of payments){
-      if(!Number.isInteger(payment.amountMinor)||payment.amountMinor<=0){
-        throw new Error(`Некорректная сумма части ${label}`)
-      }
+      if(!Number.isInteger(payment.amountMinor)||payment.amountMinor<=0)throw new Error(`Некорректная сумма части ${label}`)
     }
     const sum=payments.reduce((total,payment)=>total+payment.amountMinor,0)
-    if(sum!==expectedTotal){
-      throw new Error(`Сумма способов ${label} (${sum}) не совпадает с суммой операции (${expectedTotal}). Операция не начата.`)
-    }
+    if(sum!==expectedTotal)throw new Error(`Сумма способов ${label} (${sum}) не совпадает с суммой операции (${expectedTotal}). Операция не начата.`)
   }
 
   private assertConfirmedPayments(requested:PaymentPart[],confirmed:PaymentPart[],expectedTotal:number):void{
-    if(confirmed.length!==requested.length){
-      throw new Error('Не все части оплаты подтверждены. Фискализация заблокирована.')
-    }
+    if(confirmed.length!==requested.length)throw new Error('Не все части оплаты подтверждены. Фискализация заблокирована.')
     for(let index=0;index<requested.length;index++){
       if(requested[index].method!==confirmed[index].method||requested[index].amountMinor!==confirmed[index].amountMinor){
         throw new Error('Подтверждённая оплата не совпадает с исходным способом или суммой. Фискализация заблокирована.')
