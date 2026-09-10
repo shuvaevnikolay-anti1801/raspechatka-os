@@ -28,6 +28,26 @@ export class PosTransactionEngine {
     return this.journal.listUnresolved().some((operation)=>DANGEROUS_STATES.has(operation.state))
   }
 
+  async recoverSafeOperations():Promise<number>{
+    let recovered=0
+    for(const operation of this.journal.listUnresolved()){
+      // После того как ККТ уже вернула фискальный номер, повторного обращения к деньгам или ККТ не требуется.
+      // Такую операцию можно безопасно завершить локально при старте приложения.
+      if(operation.state!=='fiscalized')continue
+      try{
+        if(operation.kind==='sale'){
+          await this.runSale(operation)
+        }else if(operation.relatedSaleId){
+          await this.runReturn(operation,this.database.getSale(operation.relatedSaleId))
+        }
+        recovered++
+      }catch{
+        // Не маскируем проблему: операция останется в списке восстановления для ручной проверки.
+      }
+    }
+    return recovered
+  }
+
   async completeSale(request:CompleteSaleRequest,shiftId:string,totalMinor?:number):Promise<CompleteSaleResult>{
     const amount=totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
     this.validatePayments(request.payments,amount,'оплаты')
@@ -134,7 +154,8 @@ export class PosTransactionEngine {
           paymentMethod:current.confirmedPayments.length>1?'mixed':current.confirmedPayments[0].method,
           fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,
           customerId:request.customer?.id,customerName:request.customer?.name,
-          receiptDiscountPercent:request.receiptDiscountPercent??0,lines:request.lines,payments:current.confirmedPayments,order:request.order
+          receiptDiscountPercent:request.receiptDiscountPercent??0,lines:request.lines,payments:current.confirmedPayments,
+          remotePaymentConfirmation:request.remotePaymentConfirmation,order:request.order
         })
       }
       this.journal.setState(current.id,'completed')
