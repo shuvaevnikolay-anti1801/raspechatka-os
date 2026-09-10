@@ -8,6 +8,7 @@ import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
 import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
 import { UnavailablePaymentProvider } from './providers/unavailable-payment'
+import { ShiftCoordinator } from './shift-coordinator'
 import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
 import { startAutomaticSync } from './sync'
@@ -57,7 +58,7 @@ if(!hasLock){
     if(window){if(window.isMinimized())window.restore();window.focus()}
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async() => {
     const userData=app.getPath('userData')
     database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
     journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
@@ -68,8 +69,16 @@ if(!hasLock){
     const fiscalProvider=trainingMode?new MockFiscalProvider():new AtolWebFiscalProvider(atolSettingsStore)
     const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
+    const shiftCoordinator=new ShiftCoordinator(database,fiscalProvider)
 
-    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine})
+    try{
+      const recovery=await shiftCoordinator.recoverPendingTransition()
+      if(recovery.message)database.setState('shift_recovery_message',recovery.message)
+    }catch(error){
+      database.setState('shift_recovery_message',error instanceof Error?error.message:String(error))
+    }
+
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine,shiftCoordinator})
     registerHardwareSettingsIpc(atolSettingsStore)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     createWindow()
