@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { calculateSubtotalMinor, calculateTotalMinor } from '../../shared/cart'
+import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import type {
   BootState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
-  Customer, HeldReceipt, PaymentMethod, PaymentPart, Product, ReturnSummary, SaleDetails,
+  Customer, HeldReceipt, PaymentMethod, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary, SaleDetails,
   SalePaymentMethod, SaleSummary, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, Order, OrderStatus
 } from '../../shared/contracts'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
-type PaymentChoice=PaymentMethod|'mixed'
 const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2})
 const formatMoney=(minor:number)=>money.format(minor/100)
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
-const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR-код',mixed:'Смешанная'}
-const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
+const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
+const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
 const emptyWorkplace:WorkplaceData={schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 
 export default function App(){
@@ -67,6 +67,7 @@ export default function App(){
   const subtotal=calculateSubtotalMinor(cart)
   const allowedDiscount=boot?.rules.allowDiscounts?Math.min(discount,boot.rules.maxDiscountPercent):0
   const total=calculateTotalMinor(cart,allowedDiscount)
+  const preferredPayment:PaymentChoice=boot?.rules.acceptsCash?'cash':boot?.rules.acceptsRemotePayment!==false?'remote_payment':boot?.rules.acceptsCard?'card':'qr'
 
   const add=(product:Product)=>setCart((current)=>{
     const found=current.find((line)=>line.productId===product.id)
@@ -74,7 +75,7 @@ export default function App(){
   })
   const change=(id:string,delta:number)=>setCart((current)=>current.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
   const clear=()=>{setCart([]);setCustomer(null);setDiscount(0);setOrderDraft(null)}
-  const openShift=async()=>{await window.raspechatkaPos.openShift();await refresh();setCashCountOpen('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}
+  const openShift=async()=>{try{await window.raspechatkaPos.openShift();await refresh();setCashCountOpen('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
@@ -85,16 +86,17 @@ export default function App(){
     setCart(receipt.lines);setCustomer(receipt.customer??null);setDiscount(receipt.discountPercent)
     await window.raspechatkaPos.deleteHeldReceipt(receipt.id);await refresh();setScreen('sale')
   }
-  const complete=async(payments:PaymentPart[],cashReceivedMinor?:number)=>{
+  const complete=async(payments:PaymentPart[],cashReceivedMinor?:number,remotePaymentConfirmation?:RemotePaymentConfirmation)=>{
     if(busy)return
     setBusy(true)
     try{
       const result=await window.raspechatkaPos.completeSale({
         clientRequestId:crypto.randomUUID(),payments,lines:cart,customer,
-        receiptDiscountPercent:allowedDiscount,cashReceivedMinor,order:orderDraft||undefined
+        receiptDiscountPercent:allowedDiscount,cashReceivedMinor,remotePaymentConfirmation,order:orderDraft||undefined
       })
       clear();setPayment(null);await refresh()
-      setMessage(orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):''))
+      const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
+      setMessage(result.commodityPrintWarning?baseMessage+'. Товарный чек ожидает повторной печати: '+result.commodityPrintWarning:baseMessage)
     }catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
   }
   const startReturn=async(sale:SaleSummary)=>{
@@ -148,8 +150,8 @@ export default function App(){
           {discount>0&&<div className="subtotal"><span>Без скидки</span><s>{formatMoney(subtotal)}</s></div>}
           <div className="total"><span>Итого</span><strong>{formatMoney(total)}</strong></div>
           {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
-            <div className="receipt-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:''})}>Оформить заказ</button><button className="primary" disabled={!cart.length} onClick={()=>setPayment(boot.rules.acceptsCard?'card':'cash')}>К оплате</button></div>
-            <small className="training">Учебный режим оборудования · деньги не списываются</small>
+            <div className="receipt-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:''})}>Оформить заказ</button><button className="primary" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате</button></div>
+            <small className="training">ККТ и оборудование проверяются перед каждой оплатой</small>
           </>}
         </footer>
       </aside>
@@ -158,20 +160,20 @@ export default function App(){
     {screen==='receipts'&&<Page title="Чеки и возвраты" kicker="ИСТОРИЯ">
       {held.length>0&&<section className="held"><h3>Отложенные</h3>{held.map((r)=><article key={r.id}><div><b>{r.label}</b><small>{r.lines.length} поз. · {new Date(r.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div><button onClick={()=>restoreReceipt(r)}>Продолжить</button></article>)}</section>}
       <div className="data-table receipts-table"><header><span>Чек</span><span>Дата</span><span>Покупатель</span><span>Оплата</span><span>Сумма</span><span/></header>
-      {sales.length?sales.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small> − {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions"><button onClick={()=>printSale(s.id,'fiscal-copy')}>Копия чека</button><button onClick={()=>printSale(s.id,'commodity')}>Товарный</button><button disabled={s.status==='returned'} onClick={()=>startReturn(s)}>Возврат</button></div></div>):<Empty title="Продаж пока нет" text="После первого тестового чека здесь появится история."/>}</div>
+      {sales.length?sales.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]||s.paymentMethod}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small> − {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions"><button onClick={()=>printSale(s.id,'fiscal-copy')}>Копия чека</button><button onClick={()=>printSale(s.id,'commodity')}>Товарный</button><button disabled={s.status==='returned'} onClick={()=>startReturn(s)}>Возврат</button></div></div>):<Empty title="Продаж пока нет" text="После первого тестового чека здесь появится история."/>}</div>
       {returns.length>0&&<section className="return-history"><h3>Оформленные возвраты</h3>{returns.map((x)=><article key={x.id}><div><b>{x.receiptNumber}</b><small>к чеку {x.originalReceiptNumber} · {new Date(x.createdAt).toLocaleString('ru-RU')}</small></div><strong>− {formatMoney(x.totalMinor)}</strong></article>)}</section>}
     </Page>}
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker={boot.shift?'СМЕНА ОТКРЫТА':'СМЕНА ЗАКРЫТА'}>
       <div className="metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label="В кассе ожидается" value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
       <section className="shift-card"><div><small>КАССИР</small><h2>{boot.cashierName}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<small>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</small>}</div>{boot.shift?<div className="shift-actions"><button onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</button><button onClick={()=>setCashOperation('deposit')}>Внести деньги</button><button onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</button><button className="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</button></div>:<button className="primary" onClick={openShift}>Открыть смену</button>}</section>
-      {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section><h3>Движения наличных</h3>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p>Операций пока нет</p>}</section></div>}
+      {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section><h3>Движения наличных</h3>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p>Операций пока нет</p>}</section></div>}
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} 
     {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();setMessage('Каталог, настройки и очередь операций синхронизированы')}}/>}
 
-    {payment&&<PaymentModal choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
-    {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>{setPayment(boot.rules.acceptsCard?'card':'cash')}} onSave={async(d)=>{try{const o=await window.raspechatkaPos.createUnpaidOrder({phone:d.phone,lines:cart,comment:d.comment,dueAt:d.dueAt});setOrderDraft(null);clear();await refresh();setMessage('Заказ '+o.orderNumber+' сохранён без оплаты')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
+    {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
+    {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>{setPayment(preferredPayment)}} onSave={async(d)=>{try{const o=await window.raspechatkaPos.createUnpaidOrder({phone:d.phone,lines:cart,comment:d.comment,dueAt:d.dueAt});setOrderDraft(null);clear();await refresh();setMessage('Заказ '+o.orderNumber+' сохранён без оплаты')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{
       setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
     }}/>}
@@ -199,32 +201,6 @@ function EditOrderModal({order,onClose,onSaved}:{order:Order;onClose:()=>void;on
   return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>{order.orderNumber}</small><h2>Изменить заказ</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Телефон</span><input value={phone} onChange={(e)=>setPhone(e.target.value)}/></label><label className="cash-input"><span>Комментарий</span><textarea value={comment} onChange={(e)=>setComment(e.target.value)}/></label><label className="cash-input"><span>Статус</span><select value={status} onChange={(e)=>setStatus(e.target.value as OrderStatus)}><option value="new">Новый</option><option value="in_progress">В работе</option><option value="ready">Готов</option><option value="issued">Выдан</option><option value="cancelled">Отменён</option></select></label><label className="cash-input"><span>Срок готовности</span><input type="datetime-local" value={dueAt} onChange={(e)=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={async()=>{await window.raspechatkaPos.updateOrder({id:order.id,phone,comment,status,dueAt:dueAt||undefined});await onSaved()}}>Сохранить</button></div></div>
 }
 
-function PaymentModal({choice,total,rules,busy,onChoice,onClose,onComplete}:{choice:PaymentChoice;total:number;rules:BootState['rules'];busy:boolean;onChoice:(x:PaymentChoice)=>void;onClose:()=>void;onComplete:(payments:PaymentPart[],cashReceived?:number)=>Promise<void>}){
-  const [cash,setCash]=useState('')
-  const [card,setCard]=useState('')
-  const cashMinor=toMinor(cash)
-  const cardMinor=toMinor(card)
-  const mixedRemainder=Math.max(0,total-cashMinor-cardMinor)
-  const submit=()=>{
-    if(choice==='mixed'){
-      const parts:PaymentPart[]=[]
-      if(cashMinor)parts.push({method:'cash',amountMinor:cashMinor})
-      if(cardMinor)parts.push({method:'card',amountMinor:cardMinor})
-      if(mixedRemainder&&rules.acceptsQr)parts.push({method:'qr',amountMinor:mixedRemainder})
-      return onComplete(parts,cashMinor)
-    }
-    return onComplete([{method:choice,amountMinor:total}],choice==='cash'?(cashMinor||total):undefined)
-  }
-  const mixedValid=choice!=='mixed'||(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0)===total&&cashMinor+cardMinor<=total&&(cashMinor>0||cardMinor>0||mixedRemainder>0))
-  return <div className="modal-backdrop"><div className="payment-modal">
-    <header><div><small>ОПЛАТА</small><h2>{formatMoney(total)}</h2></div><button onClick={onClose}>×</button></header>
-    <div className="method-grid">{rules.acceptsCash&&<button className={choice==='cash'?'active':''} onClick={()=>onChoice('cash')}>Наличные</button>}{rules.acceptsCard&&<button className={choice==='card'?'active':''} onClick={()=>onChoice('card')}>Банковская карта</button>}{rules.acceptsQr&&<button className={choice==='qr'?'active':''} onClick={()=>onChoice('qr')}>QR-код</button>}<button className={choice==='mixed'?'active':''} onClick={()=>onChoice('mixed')}>Смешанная</button></div>
-    {choice==='cash'&&<label className="cash-input"><span>Получено от клиента</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} placeholder={(total/100).toFixed(2)}/><small>Сдача: {formatMoney(Math.max(0,cashMinor-total))}</small></label>}
-    {choice==='mixed'&&<div className="split-payment"><p>Укажите, сколько клиент платит каждым способом.</p>{rules.acceptsCash&&<label><span>Наличными</span><input value={cash} onChange={(e)=>setCash(e.target.value)}/></label>}{rules.acceptsCard&&<label><span>Картой</span><input value={card} onChange={(e)=>setCard(e.target.value)}/></label>}{rules.acceptsQr&&<div><span>QR — остаток</span><b>{formatMoney(mixedRemainder)}</b></div>}<footer><span>Распределено</span><b>{formatMoney(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0))}</b></footer></div>}
-    <button className="primary confirm" disabled={busy||!mixedValid} onClick={submit}>{busy?'Проводим…':'Подтвердить · '+formatMoney(total)}</button><p>ККТ и терминал работают в тестовом режиме</p>
-  </div></div>
-}
-
 function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boolean;onClose:()=>void;onComplete:(lines:Array<{saleItemId:number;quantity:number}>,payments:PaymentPart[])=>Promise<void>}){
   const [quantities,setQuantities]=useState<Record<number,number>>({})
   const [method,setMethod]=useState<PaymentMethod>(sale.payments[0]?.method??'cash')
@@ -237,8 +213,9 @@ function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boole
   return <div className="modal-backdrop"><div className="payment-modal return-modal">
     <header><div><small>ВОЗВРАТ ПО ЧЕКУ</small><h2>{sale.receiptNumber}</h2></div><button onClick={onClose}>×</button></header>
     <div className="return-lines">{sale.lines.map((x)=>{const available=x.quantity-x.returnedQuantity;return <article key={x.id}><div><b>{x.name}</b><small>Куплено {x.quantity}, ранее возвращено {x.returnedQuantity}</small></div><label>Вернуть <input type="number" min="0" max={available} step="1" value={quantities[x.id]??0} onChange={(e)=>setQuantities({...quantities,[x.id]:Math.min(available,Math.max(0,Number(e.target.value)))})}/></label></article>})}</div>
-    <div className="refund-footer"><div><span>Вернуть клиенту</span><strong>{formatMoney(total)}</strong></div><label>Способ возврата<select value={method} onChange={(e)=>setMethod(e.target.value as PaymentMethod)}>{sale.payments.map((x)=><option key={x.method} value={x.method}>{paymentNames[x.method]}</option>)}</select></label></div>
-    <button className="primary confirm" disabled={busy||!lines.length||!total} onClick={()=>onComplete(lines,[{method,amountMinor:total}])}>{busy?'Оформляем…':'Оформить возврат · '+formatMoney(total)}</button>
+    <div className="refund-footer"><div><span>Вернуть клиенту</span><strong>{formatMoney(total)}</strong></div><label>Способ возврата<select value={method} onChange={(e)=>setMethod(e.target.value as PaymentMethod)}>{sale.payments.map((x)=><option key={x.method} value={x.method}>{paymentNames[x.method]||x.method}</option>)}</select></label></div>
+    {method==='remote_payment'&&<div className="error-note">Автоматический возврат удалённой оплаты пока не подключён. Выберите другой согласованный способ возврата.</div>}
+    <button className="primary confirm" disabled={busy||!lines.length||!total||method==='remote_payment'} onClick={()=>onComplete(lines,[{method,amountMinor:total}])}>{busy?'Оформляем…':'Оформить возврат · '+formatMoney(total)}</button>
   </div></div>
 }
 
@@ -274,7 +251,7 @@ function WorkPage({products,data,shiftOpen,onChanged,notify}:{products:Product[]
     </div>}
     {tab==='stock'&&<><div className="work-toolbar"><div><h2>Остатки и хранение</h2><p>Адрес относится к товару на этой конкретной точке.</p></div><button onClick={()=>setWriteOff(true)}>Списать брак</button><button className="primary" onClick={()=>setNeed(true)}>Потребность точки</button></div><div className="stock-list"><header><span>Товар</span><span>Остаток</span><span>Где лежит</span></header>{stockProducts.map((x)=><div key={x.id}><div><b>{x.name}</b><small>{x.sku}</small></div><strong className={(x.stock??0)<=0?'low':''}>{x.stock??0} {x.uom}</strong><span>{x.storageAddress||'Адрес ещё не указан'}</span></div>)}</div>{data.supplyRequests.length>0&&<section className="work-card open-needs"><h3>Уже отправлено закупщику</h3>{data.supplyRequests.map((x)=><article key={x.id}><div><b>{x.itemName}</b><small>{x.comment||new Date(x.createdAt).toLocaleDateString('ru-RU')}</small></div><span>{x.quantity} · {x.status}</span></article>)}</section>}</>}
     {tab==='delivery'&&<section className="work-card delivery-list"><h2>Ожидаемые поставки</h2><p>Только то, что нужно сотруднику для приёмки. Сам складской документ оформляется в OS.</p>{data.deliveries.length?data.deliveries.map((x)=><article key={x.id}><div><small>{x.expectedDate?new Date(x.expectedDate+'T00:00:00').toLocaleDateString('ru-RU'):'Дата не назначена'}</small><h3>{x.supplier}</h3><p>{x.details||'Без дополнительной информации'}</p></div><div><span>{x.status}</span>{x.deliveryCode&&<strong>Код: {x.deliveryCode}</strong>}</div></article>):<Empty title="Поставок нет" text="Новые ожидаемые поставки появятся здесь из OS."/>}</section>}
-    {tab==='cleaner'&&<div className="work-grid"><section className="work-card hero-card"><small>УБОРОК ДО ВЫПЛАТЫ</small><h2>{Math.min(data.cleaner.visitsSincePayment,4)} из 4</h2><p>Каждое посещение отмечается один раз.</p><button className="primary" onClick={async()=>{try{const r=await window.raspechatkaPos.recordCleanerVisit();await onChanged();notify(r.paymentDueMinor?'Четыре уборки отмечены — можно выплатить 2 000 ₽':'Посещение уборщицы отмечено')}catch(e){notify(String(e))}}}>Отметить сегодняшнюю уборку</button>{data.cleaner.paymentDueMinor>0&&<button className="pay-cleaner" disabled={!shiftOpen} onClick={async()=>{try{await window.raspechatkaPos.payCleaner(data.cleaner.paymentDueMinor);await onChanged();notify('Выплата уборщице проведена как изъятие из кассы')}catch(e){notify(e instanceof Error?e.message:String(e))}}}>Выплатить {formatMoney(data.cleaner.paymentDueMinor)} из кассы</button>}{data.cleaner.paymentDueMinor>0&&!shiftOpen&&<small>Для выплаты откройте кассовую смену.</small>}</section><section className="work-card"><h3>Последние посещения</h3>{data.cleaner.recentVisits.length?data.cleaner.recentVisits.map((x)=><article key={x.id}><div><b>{new Date(x.visitDate+'T00:00:00').toLocaleDateString('ru-RU')}</b><small>{x.recordedBy}</small></div><span>{x.paid?'Оплачено':'Ожидает'}</span></article>):<p>Посещений пока нет.</p>}</section></div>}
+    {tab==='cleaner'&&<div className="work-grid"><section className="work-card hero-card"><small>УБОРОК ДО ВЫПЛАТЫ</small><h2>{Math.min(data.cleaner.visitsSincePayment,4)} из 4</h2><p>Каждое посещение отмечается один раз.</p><button className="primary" onClick={async()=>{try{const r=await window.raspechatkaPos.recordCleanerVisit();await onChanged();notify(r.paymentDueMinor?'Четыре уборки отмечены — можно выплатить 2 000 ₽':'Посещение уборщицы отмечено')}catch(e){notify(String(e))}}}>Отметить сегодняшнюю уборку</button>{data.cleaner.paymentDueMinor>0&&<button className="pay-cleaner" disabled={!shiftOpen} onClick={async()=>{try{await window.raspechatkaPos.payCleaner(data.cleaner.paymentDueMinor);await onChanged();notify('Выплата уборщице проведена как изъятие из кассы')}catch(e){notify(e instanceof Error?e.message:String(e))}}}>Выплатить {formatMoney(data.cleaner.paymentDueMinor)} из кассы</button>}{data.cleaner.paymentDueMinor>0&&!shiftOpen&&<small>Для выплаты откройте кассовую смену.</small>}</section><section className="work-card"><h3>Последние посещения</h3>{data.cleaner.recentVisits.length?data.cleaner.recentVisits.map((x)=><article key={x.id}><div><b>{new Date(x.visitDate+'T00:00:00').toLocaleDateString('ru-RU')}</b><small>{x.recordedBy}</small></div><span>{x.paid?'Оплачено':'Ожидает'}</span></article>):<p>Посещений пока нет</p>}</section></div>}
     {writeOff&&<WriteOffModal products={stockProducts} onClose={()=>setWriteOff(false)} onComplete={async(request)=>{try{await window.raspechatkaPos.reportStockWriteOff(request);setWriteOff(false);await onChanged();notify('Списание поставлено в очередь и уйдёт в OS при синхронизации')}catch(e){notify(e instanceof Error?e.message:String(e))}}}/>} 
     {need&&<SupplyRequestModal products={products} onClose={()=>setNeed(false)} onComplete={async(request)=>{try{await window.raspechatkaPos.createSupplyRequest(request);setNeed(false);await onChanged();notify('Потребность точки отправлена закупщику')}catch(e){notify(e instanceof Error?e.message:String(e))}}}/>} 
   </Page>

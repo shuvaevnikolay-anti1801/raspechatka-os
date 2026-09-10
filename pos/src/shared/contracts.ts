@@ -55,7 +55,7 @@ export type CompleteSaleRequest = {
 
 export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order; commodityPrintWarning?: string }
 export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned' }
-export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[] }
+export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[]; remotePaymentConfirmation?: RemotePaymentConfirmation }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
 
 export type ReturnLine = { saleItemId: number; quantity: number }
