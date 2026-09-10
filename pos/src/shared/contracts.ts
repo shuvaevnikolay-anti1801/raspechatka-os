@@ -21,6 +21,7 @@ export type Product = {
 export type Customer = { id: string; name: string; phone?: string; discountPercent: number; purchaseCount?: number; totalSpentMinor?: number }
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
+export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
 export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean; acceptsRemotePayment?: boolean }
 
@@ -48,6 +49,7 @@ export type CompleteSaleRequest = {
   customer?: Customer | null
   receiptDiscountPercent?: number
   cashReceivedMinor?: number
+  remotePaymentConfirmation?: RemotePaymentConfirmation
   order?: { phone:string; comment?:string; dueAt?:string }
 }
 
