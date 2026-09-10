@@ -68,7 +68,7 @@ if(!hasLock){
     const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
 
-    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine,atolSettingsStore})
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine})
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     createWindow()
 
