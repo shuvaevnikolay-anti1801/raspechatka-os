@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Shift, ShiftSummary } from '../shared/contracts'
 import { PosDatabase } from './database'
-import type { FiscalProvider } from './providers/contracts'
+import type { FiscalProvider, FiscalShiftStatus } from './providers/contracts'
 
 const STATE_KEY='fiscal_shift_transition_v1'
 
@@ -25,7 +25,7 @@ export class ShiftCoordinator {
     const transition=this.loadTransition()
     if(!transition)return {recovered:false,pending:false}
 
-    let fiscalShift:{open:boolean;message:string}
+    let fiscalShift:FiscalShiftStatus
     try{
       fiscalShift=await this.fiscalProvider.getShiftStatus()
     }catch(error){
@@ -39,6 +39,9 @@ export class ShiftCoordinator {
       if(!fiscalShift.open){
         this.clearTransition()
         return {recovered:false,pending:false,message:'Предыдущее открытие фискальной смены не завершилось. Можно безопасно повторить открытие.'}
+      }
+      if(fiscalShift.state==='expired'){
+        return {recovered:false,pending:true,message:'Фискальная смена АТОЛ истекла во время открытия. Сначала её нужно закрыть; локальную смену автоматически не создаём.'}
       }
       const current=this.database.currentShift()
       if(!current){
@@ -54,7 +57,9 @@ export class ShiftCoordinator {
 
     if(fiscalShift.open){
       this.clearTransition()
-      return {recovered:false,pending:false,message:'Предыдущее закрытие фискальной смены не произошло. Закрытие можно повторить.'}
+      return {recovered:false,pending:false,message:fiscalShift.state==='expired'
+        ?'Фискальная смена истекла, но всё ещё открыта. Её можно безопасно закрыть повторной командой.'
+        :'Предыдущее закрытие фискальной смены не произошло. Закрытие можно повторить.'}
     }
 
     const current=this.database.currentShift()
@@ -73,6 +78,9 @@ export class ShiftCoordinator {
       if(!fiscalShift.open){
         throw new Error('Локальная смена открыта, но фискальная смена АТОЛ закрыта. Не открываем её автоматически: требуется проверить историю смены.')
       }
+      if(fiscalShift.state==='expired'){
+        throw new Error('Фискальная смена АТОЛ истекла. Новые продажи нельзя начинать: сначала закройте текущую смену и откройте новую.')
+      }
       return current
     }
 
@@ -81,6 +89,9 @@ export class ShiftCoordinator {
 
     const shift:Shift={id:randomUUID(),openedAt:new Date().toISOString(),cashierName}
     const fiscalShift=await this.fiscalProvider.getShiftStatus()
+    if(fiscalShift.state==='expired'){
+      throw new Error('На АТОЛ осталась истёкшая фискальная смена. Сначала закройте её, затем откройте новую смену Распечатка Кассы.')
+    }
     this.saveTransition({action:'open',shiftId:shift.id,openedAt:shift.openedAt,cashierName,startedAt:new Date().toISOString()})
 
     try{
@@ -91,12 +102,12 @@ export class ShiftCoordinator {
     }catch(error){
       try{
         const status=await this.fiscalProvider.getShiftStatus()
-        if(status.open){
+        if(status.open&&status.state!=='expired'){
           const saved=this.database.currentShift()??this.database.openShift(shift)
           this.clearTransition()
           return saved
         }
-        this.clearTransition()
+        if(!status.open)this.clearTransition()
       }catch{
         // Не очищаем transition: при следующем запуске сначала узнаем фактическое состояние ККТ.
       }
@@ -115,10 +126,10 @@ export class ShiftCoordinator {
     const current=this.database.currentShift()
     if(!current)throw new Error('Нет открытой смены')
 
-    const health=await this.fiscalProvider.healthCheck()
-    if(!health.ready)throw new Error(`ККТ не готова к закрытию смены: ${health.message}`)
-
     const fiscalShift=await this.fiscalProvider.getShiftStatus()
+    const health=await this.fiscalProvider.healthCheck()
+    if(!health.ready&&fiscalShift.state!=='expired')throw new Error(`ККТ не готова к закрытию смены: ${health.message}`)
+
     this.saveTransition({action:'close',shiftId:current.id,startedAt:new Date().toISOString()})
 
     try{
