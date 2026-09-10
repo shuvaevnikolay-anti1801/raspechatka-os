@@ -13,9 +13,7 @@ from raspechatka.api import sales as sales_api
 def _authenticate(device_id, token):
 	device_id = str(device_id or "").strip()
 	token = str(token or "")
-	name = frappe.db.get_value(
-		"POS Connection", {"device_id": device_id, "enabled": 1}, "name"
-	)
+	name = frappe.db.get_value("POS Connection", {"device_id": device_id, "enabled": 1}, "name")
 	if not name:
 		frappe.throw(_("Касса не зарегистрирована"), frappe.AuthenticationError)
 	connection = frappe.get_doc("POS Connection", name)
@@ -65,7 +63,9 @@ def _workplace(point_name):
 	if not rows:
 		frappe.throw(_("Для точки не настроено рабочее место кассы"))
 	if len(rows) > 1:
-		frappe.throw(_("Для точки найдено несколько рабочих мест кассы. Оставьте одно активное рабочее место."))
+		frappe.throw(
+			_("Для точки найдено несколько рабочих мест кассы. Оставьте одно активное рабочее место.")
+		)
 	return rows[0]
 
 
@@ -111,9 +111,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			"rules": _rules(point),
 			"products": legacy_pos._get_products(point.name),
 			"customers": legacy_pos._get_customers(),
-			"workplaceData": legacy_pos._get_workplace_data(
-				workplace_data_employee, point, workplace
-			),
+			"workplaceData": legacy_pos._get_workplace_data(workplace_data_employee, point, workplace),
 		}
 		_touch(connection)
 		return result
@@ -139,23 +137,27 @@ def _sale_receipt(payload, cashier_id, receipt_type="Sale"):
 		item = str(row.get("productId") or "")
 		if item.startswith("free-"):
 			item = legacy_pos._resolve_legacy_pos_item(row)
-		items.append({
-			"item": item,
-			"quantity": flt(row.get("quantity")),
-			"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
-			"unit_price": flt(row.get("unitPriceMinor")) / 100,
-			"discount_percent": flt(row.get("discountPercent")),
-		})
+		items.append(
+			{
+				"item": item,
+				"quantity": flt(row.get("quantity")),
+				"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
+				"unit_price": flt(row.get("unitPriceMinor")) / 100,
+				"discount_percent": flt(row.get("discountPercent")),
+			}
+		)
 	payments = []
 	for payment in payload.get("payments") or []:
 		channel = _payment_channel(payment.get("method"))
 		if not channel:
 			frappe.throw(_("Неизвестный способ оплаты {0}").format(payment.get("method")))
-		payments.append({
-			"payment_channel": channel,
-			"amount": flt(payment.get("amountMinor")) / 100,
-			"external_payment_id": payment.get("transactionId"),
-		})
+		payments.append(
+			{
+				"payment_channel": channel,
+				"amount": flt(payment.get("amountMinor")) / 100,
+				"external_payment_id": payment.get("transactionId"),
+			}
+		)
 	return {
 		"external_id": payload.get("id"),
 		"receipt_type": receipt_type,
@@ -165,8 +167,7 @@ def _sale_receipt(payload, cashier_id, receipt_type="Sale"):
 		"client": payload.get("customerId"),
 		"original_external_id": payload.get("saleId") if receipt_type == "Return" else None,
 		"comment": (
-			f"Фискальный чек: {payload.get('fiscalNumber')}"
-			if payload.get("fiscalNumber") else None
+			f"Фискальный чек: {payload.get('fiscalNumber')}" if payload.get("fiscalNumber") else None
 		),
 		"items": items,
 		"payments": payments,
@@ -182,7 +183,9 @@ def _shift(payload, cashier_id, closed=False):
 		"closed_at": payload.get("closedAt") if closed else None,
 		"cashier": cashier_id,
 		"opening_cash": 0,
-		"closing_cash": flt((payload.get("summary") or {}).get("expectedCashMinor")) / 100 if closed else None,
+		"closing_cash": (
+			flt((payload.get("summary") or {}).get("expectedCashMinor")) / 100 if closed else None
+		),
 	}
 
 
@@ -204,24 +207,38 @@ def _return_receipt(payload, cashier_id):
 		item = str(row.get("productId") or "")
 		if not item:
 			continue
-		items.append({
-			"item": item,
-			"quantity": flt(row.get("quantity")),
-			"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
-			"unit_price": flt(row.get("unitPriceMinor")) / 100,
-			"discount_percent": 0,
-		})
+		items.append(
+			{
+				"item": item,
+				"quantity": flt(row.get("quantity")),
+				"uom": frappe.db.get_value("Catalog Item", item, "stock_uom"),
+				"unit_price": flt(row.get("unitPriceMinor")) / 100,
+				"discount_percent": 0,
+			}
+		)
 	payments = []
 	for payment in payload.get("payments") or []:
 		channel = _payment_channel(payment.get("method"))
 		if channel:
-			payments.append({"payment_channel": channel, "amount": flt(payment.get("amountMinor")) / 100, "external_payment_id": payment.get("transactionId")})
+			payments.append(
+			{
+				"payment_channel": channel,
+				"amount": flt(payment.get("amountMinor")) / 100,
+				"external_payment_id": payment.get("transactionId"),
+			}
+			)
 	return {
-		"external_id": payload.get("id"), "receipt_type": "Return",
-		"shift_external_id": payload.get("shiftId"), "posting_datetime": payload.get("createdAt"),
-		"cashier": cashier_id, "original_external_id": payload.get("saleId"),
-		"comment": f"Фискальный чек: {payload.get('fiscalNumber')}" if payload.get("fiscalNumber") else None,
-		"items": items, "payments": payments,
+		"external_id": payload.get("id"),
+		"receipt_type": "Return",
+		"shift_external_id": payload.get("shiftId"),
+		"posting_datetime": payload.get("createdAt"),
+		"cashier": cashier_id,
+		"original_external_id": payload.get("saleId"),
+		"comment": (
+			f"Фискальный чек: {payload.get('fiscalNumber')}" if payload.get("fiscalNumber") else None
+		),
+		"items": items,
+		"payments": payments,
 	}
 
 
@@ -256,17 +273,42 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			if not event_id or not event_type:
 				frappe.throw(_("В событии отсутствует id или eventType"))
 			if event_type == "shift.opened":
-				sales_api._ingest_shift(_shift(payload, selected["id"]), connection, {"created": 0, "duplicates": 0, "errors": []})
+				sales_api._ingest_shift(
+					_shift(payload, selected["id"]),
+					connection,
+					{"created": 0, "duplicates": 0, "errors": []},
+				)
 			elif event_type == "shift.closed":
-				sales_api._ingest_shift(_shift(payload, selected["id"], True), connection, {"created": 0, "duplicates": 0, "errors": []}, update_existing=True)
+				sales_api._ingest_shift(
+					_shift(payload, selected["id"], True),
+					connection,
+					{"created": 0, "duplicates": 0, "errors": []},
+					update_existing=True,
+				)
 			elif event_type == "sale.completed":
-				sales_api._ingest_receipt(_sale_receipt(payload, selected["id"]), connection, {"created": 0, "duplicates": 0, "errors": []})
+				sales_api._ingest_receipt(
+					_sale_receipt(payload, selected["id"]),
+					connection,
+					{"created": 0, "duplicates": 0, "errors": []},
+				)
 			elif event_type == "sale.returned":
-				sales_api._ingest_receipt(_return_receipt(payload, selected["id"]), connection, {"created": 0, "duplicates": 0, "errors": []})
+				sales_api._ingest_receipt(
+					_return_receipt(payload, selected["id"]),
+					connection,
+					{"created": 0, "duplicates": 0, "errors": []},
+				)
 			elif event_type == "cash.deposited":
-				sales_api._ingest_cash(_cash(payload, selected["id"], "Deposit"), connection, {"created": 0, "duplicates": 0, "errors": []})
+				sales_api._ingest_cash(
+					_cash(payload, selected["id"], "Deposit"),
+					connection,
+					{"created": 0, "duplicates": 0, "errors": []},
+				)
 			elif event_type == "cash.withdrawn":
-				sales_api._ingest_cash(_cash(payload, selected["id"], "Withdrawal"), connection, {"created": 0, "duplicates": 0, "errors": []})
+				sales_api._ingest_cash(
+					_cash(payload, selected["id"], "Withdrawal"),
+					connection,
+					{"created": 0, "duplicates": 0, "errors": []},
+				)
 			elif event_type in ("order.created", "order.updated"):
 				_ingest_order(event_type, event_id, connection, payload)
 			else:
