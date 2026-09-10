@@ -4,17 +4,27 @@ import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type {
   DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult,
-  FiscalReturnRequest
+  FiscalReturnRequest, FiscalShiftStatus
 } from './providers/contracts'
 import { PosDatabase } from './database'
 import { ShiftCoordinator } from './shift-coordinator'
 
 class ShiftFiscalProvider implements FiscalProvider {
-  open=true
-  async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'ok'}}
-  async getShiftStatus(){return {open:this.open,message:this.open?'open':'closed'}}
-  async openShift(){this.open=true}
-  async closeShift(){this.open=false;return {message:'closed'}}
+  state:FiscalShiftStatus['state']='opened'
+  async healthCheck():Promise<DeviceHealth>{
+    return this.state==='expired'
+      ?{ready:false,status:'error',message:'expired'}
+      :{ready:true,status:'ready',message:'ok'}
+  }
+  async getShiftStatus():Promise<FiscalShiftStatus>{
+    return this.state==='closed'
+      ?{open:false,state:'closed',message:'closed'}
+      :this.state==='expired'
+        ?{open:true,state:'expired',message:'expired'}
+        :{open:true,state:'opened',message:'open'}
+  }
+  async openShift(){this.state='opened'}
+  async closeShift(){this.state='closed';return {message:'closed'}}
   async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{return {receiptNumber:'1'}}
   async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{return {receiptNumber:'2'}}
   async getOperationStatus():Promise<FiscalOperationStatus>{return {status:'not_found'}}
@@ -42,7 +52,7 @@ describe('ShiftCoordinator recovery',()=>{
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'open',shiftId:'shift-recovered',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
     }))
-    fiscal.open=true
+    fiscal.state='opened'
 
     const result=await coordinator.recoverPendingTransition()
 
@@ -56,7 +66,7 @@ describe('ShiftCoordinator recovery',()=>{
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'close',shiftId:'shift-open',startedAt:'2026-09-10T18:00:00.000Z'
     }))
-    fiscal.open=false
+    fiscal.state='closed'
 
     const result=await coordinator.recoverPendingTransition()
 
@@ -69,12 +79,41 @@ describe('ShiftCoordinator recovery',()=>{
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'open',shiftId:'shift-failed',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
     }))
-    fiscal.open=false
+    fiscal.state='closed'
 
     const result=await coordinator.recoverPendingTransition()
 
     expect(result.recovered).toBe(false)
     expect(database.currentShift()).toBeNull()
     expect(database.getState('fiscal_shift_transition_v1')).toBe('')
+  })
+
+  it('does not restore a local shift when the ATOL shift already expired',async()=>{
+    database.setState('fiscal_shift_transition_v1',JSON.stringify({
+      action:'open',shiftId:'shift-expired',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
+    }))
+    fiscal.state='expired'
+
+    const result=await coordinator.recoverPendingTransition()
+
+    expect(result.pending).toBe(true)
+    expect(database.currentShift()).toBeNull()
+  })
+
+  it('allows closing an expired ATOL shift instead of blocking on health check',async()=>{
+    database.openShift({id:'shift-open',openedAt:'2026-09-09T08:00:00.000Z',cashierName:'Кассир'})
+    fiscal.state='expired'
+
+    await coordinator.closeShift(false)
+
+    expect(fiscal.state).toBe('closed')
+    expect(database.currentShift()).toBeNull()
+  })
+
+  it('blocks using an already-open local shift when ATOL shift has expired',async()=>{
+    database.openShift({id:'shift-open',openedAt:'2026-09-09T08:00:00.000Z',cashierName:'Кассир'})
+    fiscal.state='expired'
+
+    await expect(coordinator.openShift('Кассир')).rejects.toThrow('истекла')
   })
 })
