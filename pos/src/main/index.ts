@@ -11,11 +11,14 @@ import { UnavailablePaymentProvider } from './providers/unavailable-payment'
 import { ShiftCoordinator } from './shift-coordinator'
 import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
-import { startAutomaticSync } from './sync'
+import { CommodityPrintQueue } from './print-jobs'
+import { buildBootState, startAutomaticSync } from './sync'
 
 let stopAutomaticSync:(()=>void)|undefined
+let stopAutomaticPrintRetry:(()=>void)|undefined
 let database:PosDatabase|undefined
 let journal:TransactionJournal|undefined
+let printQueue:CommodityPrintQueue|undefined
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -70,6 +73,9 @@ if(!hasLock){
     const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
     const shiftCoordinator=new ShiftCoordinator(database,fiscalProvider)
+    printQueue=new CommodityPrintQueue(
+      join(userData,'raspechatka-pos-print-jobs.sqlite'),database,printProvider,()=>buildBootState(database!)
+    )
 
     try{
       const recovery=await shiftCoordinator.recoverPendingTransition()
@@ -78,9 +84,10 @@ if(!hasLock){
       database.setState('shift_recovery_message',error instanceof Error?error.message:String(error))
     }
 
-    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine,shiftCoordinator})
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator})
     registerHardwareSettingsIpc(atolSettingsStore)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
+    stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
     createWindow()
 
     app.on('activate', () => {
@@ -91,6 +98,8 @@ if(!hasLock){
 
 app.on('before-quit',()=>{
   stopAutomaticSync?.()
+  stopAutomaticPrintRetry?.()
+  printQueue?.close()
   journal?.close()
   database?.close()
 })
