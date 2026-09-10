@@ -2,7 +2,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { CartLine, PaymentPart, PrintResult } from '../../shared/contracts'
 import type {
-  DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest
+  DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest,
+  FiscalShiftStatus
 } from './contracts'
 
 export type AtolSettings = {
@@ -70,18 +71,26 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     if(!settings.enabled)return {ready:false,status:'not_configured',message:'АТОЛ 1Ф не включён в настройках'}
     try{
       const shift=await this.getShiftStatus()
-      return {ready:true,status:'ready',message:shift.message,details:{baseUrl:settings.baseUrl}}
+      if(shift.state==='expired'){
+        return {
+          ready:false,
+          status:'error',
+          message:'Фискальная смена АТОЛ истекла. Сначала закройте её, затем откройте новую.',
+          details:{baseUrl:settings.baseUrl,shiftState:shift.state}
+        }
+      }
+      return {ready:true,status:'ready',message:shift.message,details:{baseUrl:settings.baseUrl,shiftState:shift.state}}
     }catch(error){
       return {ready:false,status:'offline',message:error instanceof Error?error.message:String(error),details:{baseUrl:settings.baseUrl}}
     }
   }
 
-  async getShiftStatus():Promise<{open:boolean;message:string}>{
+  async getShiftStatus():Promise<FiscalShiftStatus>{
     const task=await this.execute(randomUUID(),{type:'getShiftStatus'},8000)
     const state=String(((task.result?.shiftStatus as Record<string,unknown>|undefined)?.state)??'unknown')
-    if(state==='opened')return {open:true,message:'АТОЛ готов · смена открыта'}
-    if(state==='closed')return {open:false,message:'АТОЛ готов · смена закрыта'}
-    if(state==='expired')return {open:true,message:'Фискальная смена истекла и требует закрытия'}
+    if(state==='opened')return {open:true,state:'opened',message:'АТОЛ готов · смена открыта'}
+    if(state==='closed')return {open:false,state:'closed',message:'АТОЛ готов · смена закрыта'}
+    if(state==='expired')return {open:true,state:'expired',message:'Фискальная смена истекла и требует закрытия'}
     throw new Error(`АТОЛ вернул неизвестное состояние смены: ${state}`)
   }
 
