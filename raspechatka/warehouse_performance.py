@@ -3,6 +3,8 @@ from time import perf_counter
 import frappe
 from frappe.utils import cint, now_datetime
 
+from raspechatka.stock import effective_ledger_condition
+
 
 @frappe.whitelist()
 def get_stock_query_plan():
@@ -61,18 +63,19 @@ def benchmark_stock_reads(iterations=3):
 
 
 def _diagnostic_queries(warehouse, item=None):
+	condition = effective_ledger_condition(alias="")
 	queries = {
 		"movement_page": (
-			"""select name, posting_datetime, item, actual_qty
+			f"""select name, posting_datetime, item, actual_qty
 			from `tabStock Ledger Entry`
-			where warehouse = %s and posting_datetime <= %s
+			where warehouse = %s and posting_datetime <= %s and {condition}
 			order by posting_datetime desc, creation desc limit 100""",
 			(warehouse, now_datetime()),
 		),
 		"historical_totals": (
-			"""select item, warehouse, sum(actual_qty), sum(stock_value_difference)
+			f"""select item, warehouse, sum(actual_qty), sum(stock_value_difference)
 			from `tabStock Ledger Entry`
-			where warehouse = %s and posting_datetime <= %s
+			where warehouse = %s and posting_datetime <= %s and {condition}
 			group by item, warehouse""",
 			(warehouse, now_datetime()),
 		),

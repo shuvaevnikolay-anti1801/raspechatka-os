@@ -48,34 +48,71 @@ def validate_location(storage_location, warehouse):
 		frappe.throw(_("Место хранения должно относиться к складу документа."))
 
 
-def validate_chronology(warehouse, posting_datetime):
-	latest = frappe.db.get_value(
-		"Stock Ledger Entry",
-		{"warehouse": warehouse},
-		"posting_datetime",
-		order_by="posting_datetime desc",
+def effective_ledger_condition(alias="sle", import_batch_override=None):
+	prefix = f"{alias}." if alias else ""
+	if import_batch_override:
+		return f"(coalesce({prefix}import_batch, '') = '' or {prefix}import_batch = %s)"
+	return (
+		f"(coalesce({prefix}import_batch, '') = '' or exists ("
+		"select 1 from `tabMoySklad Stock Import Batch` batch "
+		f"where batch.name = {prefix}import_batch and batch.status = 'Active'))"
 	)
+
+
+def get_active_import_batch():
+	if not frappe.db.table_exists("MoySklad Stock Import Batch"):
+		return None
+	return frappe.db.get_value(
+		"MoySklad Stock Import Batch", {"status": "Active"}, "name", order_by="creation desc"
+	)
+
+
+def validate_chronology(warehouse, posting_datetime):
+	values = [warehouse]
+	condition = effective_ledger_condition()
+	latest = frappe.db.sql(
+		f"""select posting_datetime from `tabStock Ledger Entry` sle
+		where sle.warehouse = %s and {condition}
+		order by posting_datetime desc limit 1""",
+		values,
+	)
+	latest = latest[0][0] if latest else None
 	if latest and get_datetime(posting_datetime) < get_datetime(latest):
 		frappe.throw(
 			_("Нельзя провести складской документ раньше уже существующего движения ({0}).").format(latest)
 		)
 
 
-def get_balance(item, warehouse, storage_location=None, posting_datetime=None, lock=False):
-	conditions = ["item=%s", "warehouse=%s"]
+def get_balance(
+	item,
+	warehouse,
+	storage_location=None,
+	posting_datetime=None,
+	lock=False,
+	import_batch_override=None,
+):
+	conditions = ["sle.item=%s", "sle.warehouse=%s"]
 	values = [item, warehouse]
 	if storage_location is not None:
 		if storage_location:
-			conditions.append("storage_location=%s")
+			conditions.append("sle.storage_location=%s")
 			values.append(storage_location)
 		else:
-			conditions.append("coalesce(storage_location, '')=''")
+			conditions.append("coalesce(sle.storage_location, '')=''")
 	if posting_datetime:
-		conditions.append("posting_datetime<=%s")
+		conditions.append("sle.posting_datetime<=%s")
 		values.append(posting_datetime)
+	conditions.append(effective_ledger_condition(import_batch_override=import_batch_override))
+	if import_batch_override:
+		values.append(import_batch_override)
 	if lock:
 		_lock_balance(item, warehouse)
-	if storage_location is None and posting_datetime is None and frappe.db.table_exists("Stock Balance"):
+	if (
+		storage_location is None
+		and posting_datetime is None
+		and not import_batch_override
+		and frappe.db.table_exists("Stock Balance")
+	):
 		current = frappe.db.get_value(
 			"Stock Balance",
 			_balance_key(item, warehouse),
@@ -87,7 +124,7 @@ def get_balance(item, warehouse, storage_location=None, posting_datetime=None, l
 	row = frappe.db.sql(
 		f"""select coalesce(sum(actual_qty), 0) as qty,
 			coalesce(sum(stock_value_difference), 0) as value
-		from `tabStock Ledger Entry`
+		from `tabStock Ledger Entry` sle
 		where {" and ".join(conditions)}""",
 		tuple(values),
 		as_dict=True,
@@ -95,8 +132,13 @@ def get_balance(item, warehouse, storage_location=None, posting_datetime=None, l
 	return {"qty": flt(row.qty), "value": flt(row.value)}
 
 
-def get_average_rate(item, warehouse, posting_datetime=None):
-	balance = get_balance(item, warehouse, posting_datetime=posting_datetime)
+def get_average_rate(item, warehouse, posting_datetime=None, import_batch_override=None):
+	balance = get_balance(
+		item,
+		warehouse,
+		posting_datetime=posting_datetime,
+		import_batch_override=import_batch_override,
+	)
 	return flt(balance["value"] / balance["qty"]) if balance["qty"] else 0
 
 
@@ -112,14 +154,21 @@ def make_ledger_entry(document, row, quantity, rate, amount, reversal=False, val
 		return None
 
 	posting_datetime = now_datetime() if reversal else document.posting_datetime
-	movement_key = _movement_key(document.doctype, document.name, row.name, reversal)
+	import_batch = getattr(document.flags, "import_batch", None)
+	movement_key = _movement_key(document.doctype, document.name, row.name, reversal, import_batch)
 	existing = frappe.db.get_value("Stock Ledger Entry", {"movement_key": movement_key}, "name")
 	if existing:
 		return frappe.get_doc("Stock Ledger Entry", existing)
 
 	warehouse = document.warehouse
 	validate_location(getattr(row, "storage_location", None), warehouse)
-	warehouse_balance = get_balance(row.item, warehouse, lock=True)
+	warehouse_balance = get_balance(
+		row.item,
+		warehouse,
+		posting_datetime=posting_datetime if import_batch else None,
+		lock=True,
+		import_batch_override=import_batch,
+	)
 	qty_after = flt(warehouse_balance["qty"]) + quantity
 	value_after = flt(warehouse_balance["value"]) + amount
 	entry = frappe.new_doc("Stock Ledger Entry")
@@ -137,17 +186,23 @@ def make_ledger_entry(document, row, quantity, rate, amount, reversal=False, val
 	entry.voucher_type = document.doctype
 	entry.voucher_no = document.name
 	entry.voucher_detail_no = row.name
+	entry.import_batch = import_batch
 	entry.movement_key = movement_key
 	entry.is_reversal = 1 if reversal else 0
 	entry.insert(ignore_permissions=True)
-	write_operational_balance(
-		row.item,
-		warehouse,
-		qty_after,
-		value_after,
-		posting_datetime,
-		entry.name,
+	batch_is_active = (
+		not import_batch
+		or frappe.db.get_value("MoySklad Stock Import Batch", import_batch, "status") == "Active"
 	)
+	if batch_is_active:
+		write_operational_balance(
+			row.item,
+			warehouse,
+			qty_after,
+			value_after,
+			posting_datetime,
+			entry.name,
+		)
 	return entry
 
 
@@ -193,13 +248,14 @@ def _lock_balance(item, warehouse):
 	frappe.db.sql("select name from `tabCatalog Warehouse` where name=%s for update", warehouse)
 
 
-def _movement_key(voucher_type, voucher_no, voucher_detail_no, reversal):
+def _movement_key(voucher_type, voucher_no, voucher_detail_no, reversal, import_batch=None):
 	raw = "|".join(
 		[
 			str(voucher_type or ""),
 			str(voucher_no or ""),
 			str(voucher_detail_no or ""),
 			"reversal" if reversal else "posting",
+			str(import_batch or ""),
 		]
 	)
 	return hashlib.sha256(raw.encode()).hexdigest()

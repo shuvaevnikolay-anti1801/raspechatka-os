@@ -38,10 +38,19 @@ class StockInventory(Document):
 					_("Нельзя одновременно считать товар целиком по складу и по отдельному месту хранения.")
 				)
 			row.book_quantity = get_balance(
-				row.item, self.warehouse, row.storage_location, self.posting_datetime
+				row.item,
+				self.warehouse,
+				row.storage_location,
+				self.posting_datetime,
+				import_batch_override=getattr(self.flags, "import_batch", None),
 			)["qty"]
 			row.difference_quantity = flt(row.counted_quantity) - flt(row.book_quantity)
-			current_rate = get_average_rate(row.item, self.warehouse, self.posting_datetime)
+			current_rate = get_average_rate(
+				row.item,
+				self.warehouse,
+				self.posting_datetime,
+				getattr(self.flags, "import_batch", None),
+			)
 			row.valuation_rate = current_rate or flt(row.valuation_rate)
 			if row.difference_quantity > 0 and flt(row.valuation_rate) <= 0:
 				frappe.throw(_("Для излишка товара {0} укажите себестоимость.").format(item.item_name))

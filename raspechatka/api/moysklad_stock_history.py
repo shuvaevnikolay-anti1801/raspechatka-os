@@ -48,6 +48,8 @@ STOCK_DOCUMENTS = (
 def get_stock_history_settings():
 	require_access("settings.access", "admin")
 	settings = frappe.get_single("MoySklad Settings")
+	from raspechatka.stock import get_active_import_batch
+
 	return {
 		"history_from": HISTORY_START,
 		"status": settings.stock_history_status or "Idle",
@@ -57,6 +59,13 @@ def get_stock_history_settings():
 		"initialized": bool(settings.stock_history_initialized),
 		"last_sync_at": settings.stock_history_last_sync_at,
 		"stats": _load_json(settings.stock_history_stats_json) or {},
+		"active_import_batch": get_active_import_batch(),
+		"recent_import_batches": frappe.get_all(
+			"MoySklad Stock Import Batch",
+			fields=["name", "status", "mode", "started_at", "completed_at"],
+			order_by="creation desc",
+			limit_page_length=10,
+		),
 	}
 
 
@@ -82,16 +91,45 @@ def start_stock_history_import():
 	return {"queued": True}
 
 
-def run_stock_history_import():
+@frappe.whitelist(methods=["POST"])
+def start_stock_history_rebuild():
+	"""Build a new immutable version and switch it on only after success."""
+	require_access("settings.access", "admin")
+	settings = frappe.get_single("MoySklad Settings")
+	if not settings.get_password("access_token", raise_exception=False):
+		return {"queued": False, "reason": "token_missing"}
+	if settings.stock_history_status == "Running":
+		return {"queued": False, "reason": "already_running"}
+	settings.stock_history_status = "Running"
+	settings.stock_history_error = None
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.enqueue(
+		"raspechatka.api.moysklad_stock_history.run_stock_history_import",
+		queue="long",
+		job_name=f"{JOB_NAME}-rebuild",
+		timeout=7200,
+		rebuild=True,
+	)
+	return {"queued": True}
+
+
+def run_stock_history_import(rebuild=False):
 	"""Replay source receipts and existing mirrored sales in source chronology."""
 	settings = frappe.get_single("MoySklad Settings")
 	stats = defaultdict(int)
 	stats["history_from"] = HISTORY_START
 	stats["errors"] = []
+	batch = None
 	try:
-		if not settings.stock_history_initialized:
+		batch = _start_import_batch(rebuild)
+		building_batch = frappe.db.get_value("MoySklad Stock Import Batch", batch, "status") == "Running"
+		stats["import_batch"] = batch
+		if building_batch:
+			_create_opening_documents(settings, stats, batch, replay_existing=True)
+		elif not settings.stock_history_initialized:
 			_assert_safe_first_import()
-			_create_opening_documents(settings, stats)
+			_create_opening_documents(settings, stats, batch)
 			settings.reload()
 			settings.stock_history_initialized = 1
 			settings.save(ignore_permissions=True)
@@ -107,9 +145,9 @@ def run_stock_history_import():
 			frappe.db.savepoint(savepoint)
 			try:
 				if event["kind"] == "sales_receipt":
-					_backfill_sales_stock(event["name"], stats)
+					_backfill_sales_stock(event["name"], stats, batch)
 				else:
-					_import_stock_document(event, stats)
+					_import_stock_document(event, stats, batch, replay_existing=building_batch)
 			except Exception as exc:
 				frappe.db.rollback(save_point=savepoint)
 				stats["failed"] += 1
@@ -120,6 +158,11 @@ def run_stock_history_import():
 			if index % 25 == 0:
 				frappe.db.commit()
 
+		if stats["failed"] and building_batch:
+			_fail_import_batch(batch, stats)
+		else:
+			_activate_import_batch(batch, stats)
+
 		from raspechatka.stock_reconciliation import _rebuild_operational_balances
 
 		balance_stats = _rebuild_operational_balances()
@@ -127,6 +170,8 @@ def run_stock_history_import():
 		stats["balances_reset"] = balance_stats["reset"]
 		settings.reload()
 		settings.stock_history_status = "Completed with errors" if stats["failed"] else "Completed"
+		if not stats["failed"]:
+			settings.stock_history_initialized = 1
 		settings.stock_history_last_sync_at = now_datetime()
 		settings.stock_history_error = None
 		settings.stock_history_stats_json = json.dumps(dict(stats), ensure_ascii=False, default=str)
@@ -135,6 +180,8 @@ def run_stock_history_import():
 		return dict(stats)
 	except Exception as exc:
 		frappe.db.rollback()
+		if batch:
+			_fail_import_batch(batch, stats, exc)
 		settings = frappe.get_single("MoySklad Settings")
 		settings.stock_history_status = "Error"
 		settings.stock_history_error = str(exc)[:2000]
@@ -143,6 +190,63 @@ def run_stock_history_import():
 		frappe.db.commit()
 		frappe.log_error(frappe.get_traceback(), "MoySklad stock history import")
 		raise
+
+
+def _start_import_batch(rebuild):
+	from raspechatka.stock import get_active_import_batch
+
+	active = get_active_import_batch()
+	if active and not rebuild:
+		return active
+	batch = frappe.new_doc("MoySklad Stock Import Batch")
+	batch.status = "Running"
+	batch.mode = "Rebuild" if rebuild or active else "Initial"
+	batch.history_from = HISTORY_START
+	batch.started_at = now_datetime()
+	batch.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return batch.name
+
+
+def _activate_import_batch(batch, stats):
+	status = frappe.db.get_value("MoySklad Stock Import Batch", batch, "status")
+	if status == "Active":
+		return
+	for old_batch in frappe.get_all(
+		"MoySklad Stock Import Batch",
+		filters={"status": "Active", "name": ["!=", batch]},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"MoySklad Stock Import Batch", old_batch, "status", "Superseded", update_modified=False
+		)
+	frappe.db.set_value(
+		"MoySklad Stock Import Batch",
+		batch,
+		{
+			"status": "Active",
+			"completed_at": now_datetime(),
+			"statistics_json": json.dumps(dict(stats), ensure_ascii=False, default=str),
+			"error": None,
+		},
+		update_modified=False,
+	)
+
+
+def _fail_import_batch(batch, stats, exc=None):
+	if frappe.db.get_value("MoySklad Stock Import Batch", batch, "status") != "Running":
+		return
+	frappe.db.set_value(
+		"MoySklad Stock Import Batch",
+		batch,
+		{
+			"status": "Failed",
+			"completed_at": now_datetime(),
+			"statistics_json": json.dumps(dict(stats), ensure_ascii=False, default=str),
+			"error": str(exc)[:2000] if exc else _("Пакет построен с ошибками и не активирован."),
+		},
+		update_modified=False,
+	)
 
 
 def _assert_safe_first_import():
@@ -164,14 +268,23 @@ def _warehouse_map():
 	return {row.moysklad_store_id: row for row in rows}
 
 
-def _create_opening_documents(settings, stats):
+def _create_opening_documents(settings, stats, import_batch, replay_existing=False):
 	"""Create the source balance immediately before the requested history window."""
 	warehouses = _warehouse_map()
 	if not warehouses:
 		frappe.throw(_("Не сопоставлены склады МоегоСклада."))
 	for source_store_id, warehouse in warehouses.items():
 		external_id = f"moysklad:opening:{source_store_id}:{HISTORY_START}"
-		if frappe.db.exists("Stock Inventory", {"external_id": external_id}):
+		existing = frappe.db.get_value("Stock Inventory", {"external_id": external_id}, "name")
+		has_batch_movement = existing and frappe.db.exists(
+			"Stock Ledger Entry",
+			{"voucher_type": "Stock Inventory", "voucher_no": existing, "import_batch": import_batch},
+		)
+		if existing and (replay_existing or not has_batch_movement):
+			_replay_stock_document(frappe.get_doc("Stock Inventory", existing), import_batch)
+			stats["opening_replayed"] += 1
+			continue
+		if existing:
 			stats["opening_duplicates"] += 1
 			continue
 		rows = _stock_at_moment(settings, source_store_id)
@@ -212,6 +325,7 @@ def _create_opening_documents(settings, stats):
 		doc.remarks = _("Техническая точка на 30.06.2026 для переноса движений с 01.07.2026")
 		doc.set("items", items)
 		doc.flags.ignore_stock_chronology = True
+		doc.flags.import_batch = import_batch
 		doc.insert(ignore_permissions=True)
 		doc.submit()
 		stats["opening_documents"] += 1
@@ -304,11 +418,20 @@ def _positions(settings, source_kind, row):
 	)
 
 
-def _import_stock_document(event, stats):
+def _import_stock_document(event, stats, import_batch, replay_existing=False):
 	row = event["source"]
 	external_id = f"moysklad:{event['source_kind']}:{event['key']}"
 	doctype = "Stock Receipt" if event["kind"] == "receipt" else "Stock Write Off"
-	if frappe.db.exists(doctype, {"external_id": external_id}):
+	existing = frappe.db.get_value(doctype, {"external_id": external_id}, "name")
+	has_batch_movement = existing and frappe.db.exists(
+		"Stock Ledger Entry",
+		{"voucher_type": doctype, "voucher_no": existing, "import_batch": import_batch},
+	)
+	if existing and (replay_existing or not has_batch_movement):
+		_replay_stock_document(frappe.get_doc(doctype, existing), import_batch)
+		stats["document_replayed"] += 1
+		return
+	if existing:
 		stats["document_duplicates"] += 1
 		return
 	warehouse = _mapped_warehouse(row.get("store"))
@@ -344,9 +467,42 @@ def _import_stock_document(event, stats):
 		doc.reason = row.get("description") or row.get("name") or _("Списание МоегоСклада")
 	doc.set("items", items)
 	doc.flags.ignore_stock_chronology = True
+	doc.flags.import_batch = import_batch
 	doc.insert(ignore_permissions=True)
 	doc.submit()
 	stats[f"{event['source_kind']}_created"] += 1
+
+
+def _replay_stock_document(doc, import_batch):
+	doc.flags.import_batch = import_batch
+	if doc.doctype == "Stock Receipt":
+		doc._make_ledger_entries()
+		return
+	for row in doc.items:
+		from raspechatka.stock import get_average_rate, get_balance, make_ledger_entry
+
+		if doc.doctype == "Stock Inventory":
+			book_quantity = get_balance(
+				row.item,
+				doc.warehouse,
+				row.storage_location,
+				doc.posting_datetime,
+				import_batch_override=import_batch,
+			)["qty"]
+			quantity = flt(row.counted_quantity) - flt(book_quantity)
+			rate = flt(row.valuation_rate)
+			amount = quantity * rate
+		else:
+			quantity = -flt(row.quantity)
+			rate = get_average_rate(
+				row.item,
+				doc.warehouse,
+				doc.posting_datetime,
+				import_batch,
+			)
+			amount = quantity * rate
+
+		make_ledger_entry(doc, row, quantity, rate, amount)
 
 
 def _mapped_warehouse(reference):
@@ -530,12 +686,16 @@ def _supplier(reference):
 	return doc.name
 
 
-def _backfill_sales_stock(name, stats):
-	if frappe.db.exists("Stock Ledger Entry", {"voucher_type": "Sales Receipt", "voucher_no": name}):
+def _backfill_sales_stock(name, stats, import_batch):
+	if frappe.db.exists(
+		"Stock Ledger Entry",
+		{"voucher_type": "Sales Receipt", "voucher_no": name, "import_batch": import_batch},
+	):
 		stats["sales_stock_duplicates"] += 1
 		return
 	doc = frappe.get_doc("Sales Receipt", name)
 	doc.flags.ignore_validate_update_after_submit = True
+	doc.flags.import_batch = import_batch
 	for row in doc.items:
 		row.valuation_rate = 0
 		row.cost_amount = 0
@@ -548,7 +708,12 @@ def _backfill_sales_stock(name, stats):
 			else:
 				from raspechatka.stock import get_average_rate
 
-				row.valuation_rate = get_average_rate(row.item, doc.warehouse)
+				row.valuation_rate = get_average_rate(
+					row.item,
+					doc.warehouse,
+					doc.posting_datetime,
+					import_batch_override=import_batch,
+				)
 			row.cost_amount = flt(row.quantity) * flt(row.valuation_rate)
 	doc.cost_amount = sum(flt(row.cost_amount) for row in doc.items)
 	doc.profit_amount = (-1 if doc.receipt_type == "Return" else 1) * (

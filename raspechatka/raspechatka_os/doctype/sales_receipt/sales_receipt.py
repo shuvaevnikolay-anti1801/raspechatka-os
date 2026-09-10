@@ -242,7 +242,12 @@ class SalesReceipt(Document):
 				rate = (
 					flt(material["valuation_rate"])
 					if material.get("valuation_rate") is not None
-					else get_average_rate(material["material"], self.warehouse, self.posting_datetime)
+					else get_average_rate(
+						material["material"],
+						self.warehouse,
+						self.posting_datetime,
+						getattr(self.flags, "import_batch", None),
+					)
 				)
 				amount = flt(material["quantity"]) * rate
 				self.append(
