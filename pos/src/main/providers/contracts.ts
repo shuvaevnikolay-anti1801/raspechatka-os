@@ -35,6 +35,7 @@ export type FiscalReturnRequest = {
   saleId: string
   amountMinor: number
   payments: PaymentPart[]
+  lines: CartLine[]
 }
 
 export type FiscalResult = {
