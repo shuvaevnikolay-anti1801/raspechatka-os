@@ -8,6 +8,7 @@ type ExtendedPosApi=PosApi&{
   saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
   getShiftRecoveryStatus:()=>Promise<ShiftRecoveryStatus>
   recoverShiftState:()=>Promise<{recovered:boolean;pending:boolean;message?:string}>
+  recordShiftDiscrepancy:(differenceMinor:number,note:string)=>Promise<unknown>
 }
 
 const api: ExtendedPosApi = {
@@ -32,6 +33,7 @@ const api: ExtendedPosApi = {
   saveAtolSettings:(value:AtolSettings)=>ipcRenderer.invoke('pos:save-atol-settings',value),
   getShiftRecoveryStatus:()=>ipcRenderer.invoke('pos:get-shift-recovery-status'),
   recoverShiftState:()=>ipcRenderer.invoke('pos:recover-shift-state'),
+  recordShiftDiscrepancy:(differenceMinor:number,note:string)=>ipcRenderer.invoke('pos:record-shift-discrepancy',{differenceMinor,note}),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
   deleteHeldReceipt: (id:string) => ipcRenderer.invoke('pos:delete-held-receipt',id),
@@ -50,7 +52,11 @@ const api: ExtendedPosApi = {
   listOrders: () => ipcRenderer.invoke('pos:list-orders'),
   createUnpaidOrder: (request:CreateUnpaidOrderRequest) => ipcRenderer.invoke('pos:create-unpaid-order',request),
   updateOrder: (request:UpdateOrderRequest) => ipcRenderer.invoke('pos:update-order',request),
-  completeSale: (request: CompleteSaleRequest) => ipcRenderer.invoke('pos:complete-sale', request),
+  completeSale: async(request: CompleteSaleRequest) => {
+    const result=await ipcRenderer.invoke('pos:complete-sale',request)
+    window.postMessage({source:'raspechatka-pos',type:'sale-completed',result,payments:request.payments},'*')
+    return result
+  },
   getConnectionStatus: () => ipcRenderer.invoke('pos:get-connection-status'),
   saveConnection: (config:ConnectionConfig) => ipcRenderer.invoke('pos:save-connection',config),
   syncNow: () => ipcRenderer.invoke('pos:sync-now')
