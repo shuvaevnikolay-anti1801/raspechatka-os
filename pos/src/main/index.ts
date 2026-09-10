@@ -10,6 +10,7 @@ import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
 import { ShiftCoordinator } from './shift-coordinator'
 import { registerShiftRecoveryIpc } from './shift-recovery-ipc'
 import { registerPilotIpc } from './pilot-ipc'
+import { registerPairingIpc } from './pairing-ipc'
 import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
 import { CommodityPrintQueue } from './print-jobs'
@@ -34,6 +35,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#f3f5f1',
     icon: join(__dirname, '../../build/icon.png'),
+    title:'Касса Распечатка',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -70,7 +72,7 @@ if(!hasLock){
     database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
     journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
     diagnostics = new PosDiagnostics(join(userData,'raspechatka-pos-diagnostics.sqlite'))
-    diagnostics.record({source:'app',eventType:'app.started',message:'Распечатка Касса запущена'})
+    diagnostics.record({source:'app',eventType:'app.started',message:'Касса Распечатка запущена'})
     const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
     const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
     const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
@@ -118,6 +120,7 @@ if(!hasLock){
     registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics})
     registerShiftRecoveryIpc({database,fiscalProvider,shiftCoordinator,diagnostics})
     registerPilotIpc(diagnostics)
+    registerPairingIpc({database,connectionStore,diagnostics})
     registerHardwareSettingsIpc(atolSettingsStore,inpasSettingsStore,trainingMode?undefined:inpasProvider,diagnostics)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
@@ -130,7 +133,7 @@ if(!hasLock){
 }
 
 app.on('before-quit',()=>{
-  try{diagnostics?.record({source:'app',eventType:'app.stopping',message:'Распечатка Касса завершает работу'})}catch{}
+  try{diagnostics?.record({source:'app',eventType:'app.stopping',message:'Касса Распечатка завершает работу'})}catch{}
   stopAutomaticSync?.()
   stopAutomaticPrintRetry?.()
   printQueue?.close()
