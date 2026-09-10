@@ -10,11 +10,12 @@ integration can later be disabled without changing warehouse accounting.
 import json
 import unicodedata
 from collections import defaultdict
+from datetime import timedelta
 from urllib.parse import urljoin
 
 import frappe
 from frappe import _
-from frappe.utils import flt, get_datetime, now_datetime
+from frappe.utils import cint, flt, get_datetime, now_datetime
 
 from raspechatka.access import require_access
 from raspechatka.api.moysklad import (
@@ -29,6 +30,8 @@ HISTORY_START = "2026-07-01"
 PAGE_SIZE = 100
 SAMPLE_LIMIT = 5
 JOB_NAME = "raspechatka-moysklad-stock-history"
+STOCK_SYNC_JOB_NAME = "raspechatka-moysklad-stock-sync"
+STALE_SYNC_MINUTES = 20
 OPENING_MOMENT = "2026-06-30 23:59:59"
 IMPORT_DOCUMENTS = (
 	("supply", "entity/supply", "receipt"),
@@ -66,7 +69,215 @@ def get_stock_history_settings():
 			order_by="creation desc",
 			limit_page_length=10,
 		),
+		"auto_sync": {
+			"enabled": bool(settings.stock_sync_enabled),
+			"interval_minutes": cint(settings.stock_sync_interval_minutes or 5),
+			"status": settings.stock_sync_status or "Idle",
+			"last_sync_at": settings.stock_sync_last_sync_at,
+			"error": settings.stock_sync_error,
+			"stats": _load_json(settings.stock_sync_stats_json) or {},
+		},
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_stock_sync_settings(data):
+	require_access("settings.access", "admin")
+	data = frappe.parse_json(data) or {}
+	settings = frappe.get_single("MoySklad Settings")
+	enabled = cint(data.get("enabled"))
+	if enabled:
+		if not settings.get_password("access_token", raise_exception=False):
+			frappe.throw(_("Сначала сохраните токен МоегоСклада."))
+		if not settings.stock_history_initialized:
+			frappe.throw(_("Сначала перенесите складскую историю."))
+		from raspechatka.stock import get_active_import_batch
+
+		if not get_active_import_batch():
+			frappe.throw(_("Не найден активный пакет складской истории."))
+		if not _warehouse_map():
+			frappe.throw(_("Сначала сопоставьте склады МоегоСклада."))
+	settings.stock_sync_enabled = enabled
+	settings.stock_sync_interval_minutes = str(max(5, min(cint(data.get("interval_minutes") or 5), 60)))
+	settings.save(ignore_permissions=True)
+	return get_stock_history_settings()
+
+
+@frappe.whitelist(methods=["POST"])
+def start_stock_document_sync():
+	require_access("settings.access", "admin")
+	return enqueue_stock_document_sync()
+
+
+def enqueue_stock_document_sync():
+	settings = frappe.get_single("MoySklad Settings")
+	if not settings.get_password("access_token", raise_exception=False):
+		return {"queued": False, "reason": "token_missing"}
+	if not settings.stock_history_initialized:
+		return {"queued": False, "reason": "history_missing"}
+	if settings.stock_history_status == "Running":
+		return {"queued": False, "reason": "history_running"}
+	if settings.stock_sync_status in ("Queued", "Running"):
+		if not _stock_sync_is_stale(settings):
+			return {"queued": False, "reason": "already_running"}
+		_reset_stale_stock_sync(settings)
+	from raspechatka.stock import get_active_import_batch
+
+	if not get_active_import_batch():
+		return {"queued": False, "reason": "active_batch_missing"}
+	settings.stock_sync_status = "Queued"
+	settings.stock_sync_started_at = now_datetime()
+	settings.stock_sync_heartbeat_at = settings.stock_sync_started_at
+	settings.stock_sync_error = None
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+	frappe.enqueue(
+		"raspechatka.api.moysklad_stock_history.run_stock_document_sync",
+		queue="long",
+		job_name=STOCK_SYNC_JOB_NAME,
+		timeout=3600,
+	)
+	return {"queued": True}
+
+
+def sync_enabled_stock_documents():
+	"""Lightweight scheduler guard; disabled until an administrator enables it."""
+	settings = frappe.get_single("MoySklad Settings")
+	if not settings.stock_sync_enabled:
+		return
+	if settings.stock_sync_status in ("Queued", "Running"):
+		if not _stock_sync_is_stale(settings):
+			return
+		_reset_stale_stock_sync(settings)
+	if not settings.get_password("access_token", raise_exception=False):
+		return
+	interval = cint(settings.stock_sync_interval_minutes or 5)
+	if settings.stock_sync_last_sync_at:
+		elapsed = now_datetime() - get_datetime(settings.stock_sync_last_sync_at)
+		if elapsed.total_seconds() < interval * 60:
+			return
+	try:
+		enqueue_stock_document_sync()
+	except Exception as exc:
+		frappe.db.rollback()
+		settings = frappe.get_single("MoySklad Settings")
+		settings.stock_sync_status = "Error"
+		settings.stock_sync_error = _("Ошибка автоматической синхронизации: {0}").format(str(exc)[:1800])
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.log_error(frappe.get_traceback(), "MoySklad automatic stock sync")
+		raise
+
+
+def run_stock_document_sync():
+	"""Import only new receipt, enter and loss documents into the active batch."""
+	settings = frappe.get_single("MoySklad Settings")
+	settings.stock_sync_status = "Running"
+	settings.stock_sync_started_at = settings.stock_sync_started_at or now_datetime()
+	settings.stock_sync_heartbeat_at = now_datetime()
+	settings.stock_sync_error = None
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	from raspechatka.stock import get_active_import_batch
+
+	started_at = now_datetime()
+	stats = defaultdict(int)
+	stats["mode"] = "incremental"
+	stats["errors"] = []
+	try:
+		batch = get_active_import_batch()
+		if not batch:
+			raise frappe.ValidationError(_("Нет активного пакета складской истории."))
+		for source_kind, endpoint, target in IMPORT_DOCUMENTS:
+			for row in _iter_documents(settings, endpoint):
+				stats["processed"] += 1
+				if row.get("applicable") is False:
+					stats["not_applicable"] += 1
+					continue
+				doctype = "Stock Receipt" if target == "receipt" else "Stock Write Off"
+				external_id = f"moysklad:{source_kind}:{row.get('id')}"
+				if frappe.db.exists(doctype, {"external_id": external_id}):
+					stats["document_duplicates"] += 1
+					continue
+				savepoint = f"moysklad_stock_sync_{stats['processed']}"
+				frappe.db.savepoint(savepoint)
+				try:
+					row["_positions"] = _positions(settings, source_kind, row)
+					event = {
+						"kind": target,
+						"source_kind": source_kind,
+						"key": row.get("id"),
+						"source": row,
+					}
+					_import_stock_document(event, stats, batch)
+				except Exception as exc:
+					frappe.db.rollback(save_point=savepoint)
+					stats["failed"] += 1
+					if len(stats["errors"]) < 50:
+						stats["errors"].append(
+							{"type": source_kind, "id": row.get("id"), "error": str(exc)[:500]}
+						)
+				if stats["processed"] % 25 == 0:
+					_touch_stock_sync_heartbeat()
+					frappe.db.commit()
+
+		created = stats["supply_created"] + stats["enter_created"] + stats["loss_created"]
+		if created:
+			from raspechatka.stock_reconciliation import _rebuild_operational_balances
+
+			balance_stats = _rebuild_operational_balances()
+			stats["balances_rebuilt"] = balance_stats["rebuilt"]
+			stats["balances_reset"] = balance_stats["reset"]
+		settings.reload()
+		settings.stock_sync_status = "Completed with errors" if stats["failed"] else "Completed"
+		settings.stock_sync_cursor = started_at
+		settings.stock_sync_last_sync_at = now_datetime()
+		settings.stock_sync_started_at = None
+		settings.stock_sync_heartbeat_at = None
+		settings.stock_sync_error = None
+		settings.stock_sync_stats_json = json.dumps(dict(stats), ensure_ascii=False, default=str)
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+		return dict(stats)
+	except Exception as exc:
+		frappe.db.rollback()
+		settings = frappe.get_single("MoySklad Settings")
+		settings.stock_sync_status = "Error"
+		settings.stock_sync_started_at = None
+		settings.stock_sync_heartbeat_at = None
+		settings.stock_sync_error = str(exc)[:2000]
+		settings.stock_sync_stats_json = json.dumps(dict(stats), ensure_ascii=False, default=str)
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.log_error(frappe.get_traceback(), "MoySklad stock document sync")
+		raise
+
+
+def _stock_sync_is_stale(settings):
+	heartbeat = settings.stock_sync_heartbeat_at or settings.stock_sync_started_at
+	return bool(
+		heartbeat and now_datetime() - get_datetime(heartbeat) > timedelta(minutes=STALE_SYNC_MINUTES)
+	)
+
+
+def _reset_stale_stock_sync(settings):
+	settings.stock_sync_status = "Error"
+	settings.stock_sync_started_at = None
+	settings.stock_sync_heartbeat_at = None
+	settings.stock_sync_error = _("Предыдущая синхронизация не обновляла состояние более 20 минут.")
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _touch_stock_sync_heartbeat():
+	frappe.db.set_value(
+		"MoySklad Settings",
+		"MoySklad Settings",
+		"stock_sync_heartbeat_at",
+		now_datetime(),
+		update_modified=False,
+	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -78,6 +289,8 @@ def start_stock_history_import():
 		return {"queued": False, "reason": "token_missing"}
 	if settings.stock_history_status == "Running":
 		return {"queued": False, "reason": "already_running"}
+	if settings.stock_sync_status in ("Queued", "Running"):
+		return {"queued": False, "reason": "stock_sync_running"}
 	settings.stock_history_status = "Running"
 	settings.stock_history_error = None
 	settings.save(ignore_permissions=True)
@@ -100,6 +313,8 @@ def start_stock_history_rebuild():
 		return {"queued": False, "reason": "token_missing"}
 	if settings.stock_history_status == "Running":
 		return {"queued": False, "reason": "already_running"}
+	if settings.stock_sync_status in ("Queued", "Running"):
+		return {"queued": False, "reason": "stock_sync_running"}
 	settings.stock_history_status = "Running"
 	settings.stock_history_error = None
 	settings.save(ignore_permissions=True)
