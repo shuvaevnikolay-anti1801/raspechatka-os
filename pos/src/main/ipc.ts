@@ -8,12 +8,15 @@ import type {
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
-import { loadBootstrap, pushEvents } from './frappe'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
+import { buildBootState, performSync } from './sync'
+import { PosTransactionEngine } from './transaction-engine'
 
-const demoRules={allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,acceptsCash:true,acceptsCard:true,acceptsQr:false}
 const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
-  method==='cash'?rules.acceptsCash:method==='card'?rules.acceptsCard:rules.acceptsQr
+  method==='cash'?rules.acceptsCash:
+  method==='card'?rules.acceptsCard:
+  method==='qr'?rules.acceptsQr:
+  method==='remote_payment'?(rules.acceptsRemotePayment!==false):false
 
 export function registerIpcHandlers(dependencies:{
   database:PosDatabase
@@ -21,21 +24,10 @@ export function registerIpcHandlers(dependencies:{
   paymentProvider:PaymentProvider
   fiscalProvider:FiscalProvider
   printProvider:PrintProvider
+  transactionEngine:PosTransactionEngine
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider}=dependencies
-  const cashierName='Администратор'
-
-  const bootState=():BootState=>{
-    const cached=database.getState('bootstrap')
-    const remote=cached?JSON.parse(cached) as Partial<BootState>:{}
-    return {
-      pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
-      workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
-      cashierName:remote.cashierName??cashierName,online:Boolean(remote.online),
-      pendingSync:database.pendingSyncCount(),lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
-      shift:database.currentShift(),rules:remote.rules??demoRules
-    }
-  }
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,transactionEngine}=dependencies
+  const bootState=()=>buildBootState(database)
 
   ipcMain.handle('pos:get-boot-state',bootState)
   ipcMain.handle('pos:list-products',()=>database.listProducts())
@@ -48,6 +40,17 @@ export function registerIpcHandlers(dependencies:{
     if(kind==='fiscal-copy')return fiscalProvider.reprintReceipt({saleId:sale.id,receiptNumber:sale.receiptNumber})
     return printProvider.printCommodityReceipt(sale,bootState())
   })
+  ipcMain.handle('pos:list-printers',()=>printProvider.listPrinters())
+  ipcMain.handle('pos:get-selected-printer',()=>printProvider.getSelectedPrinter())
+  ipcMain.handle('pos:set-selected-printer',(_event,name:string)=>printProvider.setSelectedPrinter(name))
+  ipcMain.handle('pos:get-device-statuses',async()=>({
+    fiscal:await fiscalProvider.healthCheck(),
+    payment:await paymentProvider.healthCheck(),
+    printer:await printProvider.healthCheck()
+  }))
+  ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
+  ipcMain.handle('pos:recover-operation',(_event,id:string)=>transactionEngine.recover(id))
+
   ipcMain.handle('pos:list-held-receipts',()=>database.listHeldReceipts())
   ipcMain.handle('pos:hold-receipt',(_event,input:Omit<HeldReceipt,'id'|'createdAt'>)=>database.holdReceipt(input))
   ipcMain.handle('pos:delete-held-receipt',(_event,id:string)=>database.deleteHeldReceipt(id))
@@ -65,39 +68,30 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>database.createUnpaidOrder(request))
   ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>database.updateOrder(request))
 
-  ipcMain.handle('pos:open-shift',():Shift=>database.openShift({
-    id:randomUUID(),openedAt:new Date().toISOString(),cashierName:bootState().cashierName
-  }))
-  ipcMain.handle('pos:close-shift',()=>database.closeShift())
+  ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
+    const current=database.currentShift();if(current)return current
+    const fiscalHealth=await fiscalProvider.healthCheck()
+    if(!fiscalHealth.ready)throw new Error(`ККТ не готова: ${fiscalHealth.message}`)
+    const fiscalShift=await fiscalProvider.getShiftStatus()
+    if(!fiscalShift.open)await fiscalProvider.openShift()
+    return database.openShift({id:randomUUID(),openedAt:new Date().toISOString(),cashierName:bootState().cashierName})
+  })
+  ipcMain.handle('pos:close-shift',async()=>{
+    if(transactionEngine.listUnresolved().length)throw new Error('Нельзя закрыть смену: есть незавершённые операции. Сначала завершите их в «Восстановлении».')
+    const current=database.currentShift();if(!current)throw new Error('Нет открытой смены')
+    const fiscalHealth=await fiscalProvider.healthCheck()
+    if(!fiscalHealth.ready)throw new Error(`ККТ не готова к закрытию смены: ${fiscalHealth.message}`)
+    const fiscalShift=await fiscalProvider.getShiftStatus()
+    if(fiscalShift.open)await fiscalProvider.closeShift()
+    return database.closeShift()
+  })
 
   ipcMain.handle('pos:get-connection-status',()=>connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
     connectionStore.save(config);database.setState('sync_error','')
     return connectionStore.status(bootState().lastSyncAt)
   })
-  ipcMain.handle('pos:sync-now',async():Promise<BootState>=>{
-    const config=connectionStore.load();if(!config)throw new Error('Сначала заполните подключение к Распечатка OS')
-    try {
-      const events=database.pendingEvents()
-      if(events.length)database.markEventsSent(await pushEvents(config,events))
-      const remote=await loadBootstrap(config)
-      database.replaceProducts(remote.products)
-      database.replaceCustomers(remote.customers)
-      database.setWorkplaceData(remote.workplaceData)
-      const lastSyncAt=new Date().toISOString()
-      database.setState('bootstrap',JSON.stringify({
-        pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
-        workstationName:remote.workplace.name,cashierName:remote.employee.name,online:true,
-        lastSyncAt,source:'frappe',rules:remote.rules
-      }))
-      database.setState('sync_error','');return bootState()
-    }catch(error){
-      const message=error instanceof Error?error.message:String(error)
-      database.setState('sync_error',message)
-      database.setState('bootstrap',JSON.stringify({...bootState(),online:false}))
-      throw error
-    }
-  })
+  ipcMain.handle('pos:sync-now',()=>performSync(database,connectionStore))
 
   ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
     const existing=database.findSaleByClientRequestId(request.clientRequestId)
@@ -116,31 +110,13 @@ export function registerIpcHandlers(dependencies:{
       }
       if(product.preventDiscounts&&(line.discountPercent||discount))throw new Error(`Для «${product.name}» скидка запрещена`)
       if(line.unitPriceMinor<(product.minimumSalePriceMinor??0))throw new Error(`Цена «${product.name}» ниже минимальной`)
-      if(product.trackInventory&&!product.allowNegativeStock&&(product.stock??0)<line.quantity)throw new Error(`Недостаточно остатка «${product.name}»: доступно ${product.stock??0}`)
     }
     if(!request.payments.length||request.payments.some((x)=>!accepted(rules,x.method)))throw new Error('Способ оплаты недоступен на этой точке')
     if(request.payments.some((x)=>!Number.isInteger(x.amountMinor)||x.amountMinor<=0))throw new Error('Некорректная сумма оплаты')
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
     const cashAmount=request.payments.find((x)=>x.method==='cash')?.amountMinor??0
     if(cashAmount&&(request.cashReceivedMinor??cashAmount)<cashAmount)throw new Error('Получено наличными меньше суммы наличной оплаты')
-    const saleId=randomUUID()
-    const payments:PaymentPart[]=[]
-    for(const part of request.payments){
-      const result=await paymentProvider.charge({saleId,amountMinor:part.amountMinor,method:part.method})
-      if(!result.approved)throw new Error('Оплата не подтверждена')
-      payments.push({...part,transactionId:result.transactionId})
-    }
-    const fiscal=await fiscalProvider.fiscalizeSale({saleId,amountMinor:totalMinor,payments,lines:request.lines})
-    database.saveSale({
-      id:saleId,clientRequestId:request.clientRequestId,shiftId:shift.id,totalMinor,
-      paymentMethod:payments.length>1?'mixed':payments[0].method,fiscalNumber:fiscal.receiptNumber,
-      createdAt:new Date().toISOString(),customerId:request.customer?.id,customerName:request.customer?.name,
-      receiptDiscountPercent:discount,lines:request.lines,payments
-      ,order:request.order
-    })
-    const order=request.order?database.findOrderBySourceSale(saleId):undefined
-    return {saleId,receiptNumber:fiscal.receiptNumber,totalMinor,
-      changeMinor:cashAmount?Math.max(0,(request.cashReceivedMinor??cashAmount)-cashAmount):0,queuedForSync:true,order}
+    return transactionEngine.completeSale({...request,receiptDiscountPercent:discount},shift.id,totalMinor)
   })
 
   ipcMain.handle('pos:create-return',async(_event,request:CreateReturnRequest):Promise<ReturnResult>=>{
@@ -160,16 +136,8 @@ export function registerIpcHandlers(dependencies:{
       return {...requested,lineTotalMinor:Math.round(paidLineTotal*requested.quantity/original.quantity)}
     })
     const totalMinor=lines.reduce((sum,x)=>sum+x.lineTotalMinor,0)
+    if(request.payments.some((x)=>!accepted(bootState().rules,x.method)))throw new Error('Способ возврата недоступен на этой точке')
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма возврата по способам оплаты не совпадает с итогом')
-    const returnId=randomUUID();const payments:PaymentPart[]=[]
-    for(const part of request.payments){
-      const result=await paymentProvider.refund({saleId:returnId,amountMinor:part.amountMinor,method:part.method})
-      if(!result.approved)throw new Error('Возврат оплаты не подтверждён')
-      payments.push({...part,transactionId:result.transactionId})
-    }
-    const fiscal=await fiscalProvider.fiscalizeReturn({returnId,saleId:sale.id,amountMinor:totalMinor,payments})
-    database.saveReturn({id:returnId,clientRequestId:request.clientRequestId,saleId:sale.id,shiftId:shift.id,
-      totalMinor,fiscalNumber:fiscal.receiptNumber,createdAt:new Date().toISOString(),lines,payments})
-    return {returnId,receiptNumber:fiscal.receiptNumber,totalMinor,queuedForSync:true}
+    return transactionEngine.createReturn(request,shift.id,totalMinor,sale)
   })
 }
