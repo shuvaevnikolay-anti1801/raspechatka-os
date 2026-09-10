@@ -3,7 +3,8 @@ import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
 import './pilot-ux.css'
 
 const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
-const paymentName=(method:string)=>({cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата'}[method]||method)
+const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата'}
+const paymentName=(method:string)=>paymentNames[method]||method
 type Payload={result:CompleteSaleResult;payments:PaymentPart[]}
 
 export default function SaleSuccessOverlay(){
