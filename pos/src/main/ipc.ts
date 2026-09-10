@@ -7,6 +7,7 @@ import type {
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
+import { PosDiagnostics } from './diagnostics'
 import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
@@ -30,9 +31,18 @@ export function registerIpcHandlers(dependencies:{
   printQueue:CommodityPrintQueue
   transactionEngine:PosTransactionEngine
   shiftCoordinator:ShiftCoordinator
+  diagnostics:PosDiagnostics
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator}=dependencies
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics}=dependencies
   const bootState=()=>buildBootState(database)
+
+  const errorMessage=(error:unknown)=>error instanceof Error?error.message:String(error)
+  const assertFiscalShiftReady=async(action:string)=>{
+    const fiscalShift=await fiscalProvider.getShiftStatus()
+    if(!fiscalShift.open)throw new Error(`Нельзя ${action}: фискальная смена АТОЛ закрыта. Откройте смену кассы.`)
+    if(fiscalShift.state==='expired')throw new Error(`Нельзя ${action}: фискальная смена АТОЛ истекла. Закройте текущую смену и откройте новую.`)
+    return fiscalShift
+  }
 
   ipcMain.handle('pos:get-boot-state',bootState)
   ipcMain.handle('pos:list-products',()=>database.listProducts())
@@ -42,27 +52,54 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:list-returns',()=>database.listReturns())
   ipcMain.handle('pos:print-sale',async(_event,id:string,kind:PrintKind)=>{
     const sale=database.getSale(id)
-    if(kind==='fiscal-copy')return fiscalProvider.reprintReceipt({saleId:sale.id,receiptNumber:sale.receiptNumber})
-    return printQueue.printSale(id)
+    diagnostics.record({source:kind==='fiscal-copy'?'fiscal':'printer',eventType:'receipt.reprint_started',message:`Повторная печать чека ${sale.receiptNumber}`,operationId:id,details:{kind}})
+    try{
+      const result=kind==='fiscal-copy'
+        ?await fiscalProvider.reprintReceipt({saleId:sale.id,receiptNumber:sale.receiptNumber})
+        :await printQueue.printSale(id)
+      diagnostics.record({source:kind==='fiscal-copy'?'fiscal':'printer',eventType:'receipt.reprint_completed',message:result.message,operationId:id,details:{kind}})
+      return result
+    }catch(error){
+      diagnostics.record({source:kind==='fiscal-copy'?'fiscal':'printer',level:'error',eventType:'receipt.reprint_failed',message:errorMessage(error),operationId:id,details:{kind}})
+      throw error
+    }
   })
   ipcMain.handle('pos:list-print-jobs',()=>printQueue.listPending())
-  ipcMain.handle('pos:retry-print-job',(_event,id:string)=>printQueue.retry(id))
+  ipcMain.handle('pos:retry-print-job',async(_event,id:string)=>{
+    diagnostics.record({source:'printer',eventType:'print.retry_started',message:'Повторная печать товарного чека',operationId:id})
+    try{
+      const result=await printQueue.retry(id)
+      diagnostics.record({source:'printer',eventType:'print.retry_completed',message:result.message,operationId:id})
+      return result
+    }catch(error){
+      diagnostics.record({source:'printer',level:'error',eventType:'print.retry_failed',message:errorMessage(error),operationId:id})
+      throw error
+    }
+  })
   ipcMain.handle('pos:list-printers',()=>printProvider.listPrinters())
   ipcMain.handle('pos:get-selected-printer',()=>printProvider.getSelectedPrinter())
-  ipcMain.handle('pos:set-selected-printer',(_event,name:string)=>printProvider.setSelectedPrinter(name))
+  ipcMain.handle('pos:set-selected-printer',async(_event,name:string)=>{
+    await printProvider.setSelectedPrinter(name)
+    diagnostics.record({source:'printer',eventType:'printer.selected',message:name?`Выбран товарный принтер: ${name}`:'Товарный принтер отключён'})
+  })
   ipcMain.handle('pos:get-device-statuses',async()=>{
     const boot=bootState()
     let fiscalShiftOpen:boolean|undefined
     let fiscalShiftMessage='Состояние фискальной смены не проверено'
+    let fiscalExpired=false
     try{
       const state=await fiscalProvider.getShiftStatus()
       fiscalShiftOpen=state.open
+      fiscalExpired=state.state==='expired'
       fiscalShiftMessage=state.message
     }catch(error){
-      fiscalShiftMessage=error instanceof Error?error.message:String(error)
+      fiscalShiftMessage=errorMessage(error)
     }
     const localOpen=Boolean(database.currentShift())
-    const shiftReady=fiscalShiftOpen===undefined?false:localOpen===fiscalShiftOpen
+    const shiftReady=fiscalShiftOpen!==undefined&&localOpen===fiscalShiftOpen&&!fiscalExpired
+    const [fiscal,payment,printer]=await Promise.all([
+      fiscalProvider.healthCheck(),paymentProvider.healthCheck(),printProvider.healthCheck()
+    ])
     return {
       os:{
         ready:boot.online,
@@ -70,23 +107,36 @@ export function registerIpcHandlers(dependencies:{
         message:boot.online?`OS на связи · к отправке ${boot.pendingSync}`:`Локальный режим · к отправке ${boot.pendingSync}`,
         details:{pendingSync:boot.pendingSync,lastSyncAt:boot.lastSyncAt}
       },
-      fiscal:await fiscalProvider.healthCheck(),
-      payment:await paymentProvider.healthCheck(),
-      printer:await printProvider.healthCheck(),
+      fiscal,
+      payment,
+      printer,
       shift:{
         ready:shiftReady,
         localOpen,
         fiscalOpen:fiscalShiftOpen,
-        message:fiscalShiftOpen===undefined
-          ?`ККТ: ${fiscalShiftMessage}`
-          :localOpen===fiscalShiftOpen
-            ?(localOpen?'Локальная и фискальная смены открыты':'Локальная и фискальная смены закрыты')
-            :`Несоответствие смен: локальная ${localOpen?'открыта':'закрыта'}, ККТ ${fiscalShiftOpen?'открыта':'закрыта'}`
+        message:fiscalExpired
+          ?'Фискальная смена АТОЛ истекла — продажи заблокированы до закрытия и открытия новой смены'
+          :fiscalShiftOpen===undefined
+            ?`ККТ: ${fiscalShiftMessage}`
+            :localOpen===fiscalShiftOpen
+              ?(localOpen?'Локальная и фискальная смены открыты':'Локальная и фискальная смены закрыты')
+              :`Несоответствие смен: локальная ${localOpen?'открыта':'закрыта'}, ККТ ${fiscalShiftOpen?'открыта':'закрыта'}`
       }
     }
   })
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
-  ipcMain.handle('pos:recover-operation',(_event,id:string)=>transactionEngine.recover(id))
+  ipcMain.handle('pos:recover-operation',async(_event,id:string)=>{
+    diagnostics.record({source:'recovery',level:'warning',eventType:'operation.recovery_started',message:'Начата проверка незавершённой операции',operationId:id})
+    try{
+      const result=await transactionEngine.recover(id)
+      diagnostics.record({source:'recovery',level:result.status==='completed'?'info':'warning',eventType:'operation.recovery_result',message:result.message,operationId:id})
+      return result
+    }catch(error){
+      diagnostics.record({source:'recovery',level:'error',eventType:'operation.recovery_failed',message:errorMessage(error),operationId:id})
+      throw error
+    }
+  })
+  ipcMain.handle('pos:list-diagnostic-events',(_event,limit?:number)=>diagnostics.list(limit))
 
   ipcMain.handle('pos:list-held-receipts',()=>database.listHeldReceipts())
   ipcMain.handle('pos:hold-receipt',(_event,input:Omit<HeldReceipt,'id'|'createdAt'>)=>database.holdReceipt(input))
@@ -105,15 +155,47 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>database.createUnpaidOrder(request))
   ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>database.updateOrder(request))
 
-  ipcMain.handle('pos:open-shift',async():Promise<Shift>=>shiftCoordinator.openShift(bootState().cashierName))
-  ipcMain.handle('pos:close-shift',()=>shiftCoordinator.closeShift(transactionEngine.listUnresolved().length>0))
+  ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
+    diagnostics.record({source:'shift',eventType:'shift.open_started',message:'Начинаем открытие локальной и фискальной смены'})
+    try{
+      const shift=await shiftCoordinator.openShift(bootState().cashierName)
+      diagnostics.record({source:'shift',eventType:'shift.open_completed',message:'Смена успешно открыта',operationId:shift.id})
+      return shift
+    }catch(error){
+      diagnostics.record({source:'shift',level:'error',eventType:'shift.open_failed',message:errorMessage(error)})
+      throw error
+    }
+  })
+  ipcMain.handle('pos:close-shift',async()=>{
+    const shift=database.currentShift()
+    diagnostics.record({source:'shift',eventType:'shift.close_started',message:'Начинаем закрытие локальной и фискальной смены',operationId:shift?.id})
+    try{
+      const summary=await shiftCoordinator.closeShift(transactionEngine.listUnresolved().length>0)
+      diagnostics.record({source:'shift',eventType:'shift.close_completed',message:'Смена успешно закрыта',operationId:shift?.id,details:{receipts:summary.receipts,revenueMinor:summary.revenueMinor}})
+      return summary
+    }catch(error){
+      diagnostics.record({source:'shift',level:'error',eventType:'shift.close_failed',message:errorMessage(error),operationId:shift?.id})
+      throw error
+    }
+  })
 
   ipcMain.handle('pos:get-connection-status',()=>connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
     connectionStore.save(config);database.setState('sync_error','')
+    diagnostics.record({source:'sync',eventType:'sync.connection_saved',message:'Настройки подключения к Raspechatka OS сохранены'})
     return connectionStore.status(bootState().lastSyncAt)
   })
-  ipcMain.handle('pos:sync-now',()=>performSync(database,connectionStore))
+  ipcMain.handle('pos:sync-now',async()=>{
+    diagnostics.record({source:'sync',eventType:'sync.manual_started',message:'Запущена ручная синхронизация'})
+    try{
+      const result=await performSync(database,connectionStore)
+      diagnostics.record({source:'sync',eventType:'sync.manual_completed',message:`Синхронизация завершена · к отправке ${result.pendingSync}`})
+      return result
+    }catch(error){
+      diagnostics.record({source:'sync',level:'warning',eventType:'sync.manual_failed',message:errorMessage(error)})
+      throw error
+    }
+  })
 
   ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
     const existing=database.findSaleByClientRequestId(request.clientRequestId)
@@ -156,17 +238,34 @@ export function registerIpcHandlers(dependencies:{
 
     const fiscalHealth=await fiscalProvider.healthCheck()
     if(!fiscalHealth.ready)throw new Error(`Нельзя принимать оплату: ККТ не готова. ${fiscalHealth.message}`)
+    await assertFiscalShiftReady('проводить продажу')
     if(usesTerminal(request.payments)){
       const paymentHealth=await paymentProvider.healthCheck()
       if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов. ${paymentHealth.message}`)
     }
 
-    const result=await transactionEngine.completeSale({...normalizedRequest,receiptDiscountPercent:discount},shift.id,totalMinor)
+    diagnostics.record({
+      source:usesTerminal(request.payments)?'payment':'fiscal',
+      eventType:'sale.started',
+      message:`Начата продажа на ${totalMinor/100} ₽`,
+      operationId:request.clientRequestId,
+      details:{totalMinor,payments:request.payments.map((x)=>x.method)}
+    })
     try{
-      await printQueue.printSale(result.saleId)
-      return result
+      const result=await transactionEngine.completeSale({...normalizedRequest,receiptDiscountPercent:discount},shift.id,totalMinor)
+      diagnostics.record({source:'fiscal',eventType:'sale.completed',message:`Продажа завершена, чек ${result.receiptNumber}`,operationId:request.clientRequestId,details:{saleId:result.saleId,totalMinor}})
+      try{
+        await printQueue.printSale(result.saleId)
+        diagnostics.record({source:'printer',eventType:'commodity_print.completed',message:'Товарный чек напечатан',operationId:request.clientRequestId})
+        return result
+      }catch(error){
+        const message=errorMessage(error)
+        diagnostics.record({source:'printer',level:'warning',eventType:'commodity_print.failed',message,operationId:request.clientRequestId,details:{saleId:result.saleId}})
+        return {...result,commodityPrintWarning:message}
+      }
     }catch(error){
-      return {...result,commodityPrintWarning:error instanceof Error?error.message:String(error)}
+      diagnostics.record({source:'fiscal',level:'error',eventType:'sale.failed',message:errorMessage(error),operationId:request.clientRequestId,details:{totalMinor}})
+      throw error
     }
   })
 
@@ -195,11 +294,20 @@ export function registerIpcHandlers(dependencies:{
 
     const fiscalHealth=await fiscalProvider.healthCheck()
     if(!fiscalHealth.ready)throw new Error(`Нельзя начинать возврат: ККТ не готова. ${fiscalHealth.message}`)
+    await assertFiscalShiftReady('оформлять возврат')
     if(usesTerminal(request.payments)){
       const paymentHealth=await paymentProvider.healthCheck()
       if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов к возврату. ${paymentHealth.message}`)
     }
 
-    return transactionEngine.createReturn(request,shift.id,totalMinor,sale)
+    diagnostics.record({source:'fiscal',eventType:'return.started',message:`Начат возврат на ${totalMinor/100} ₽`,operationId:request.clientRequestId,details:{saleId:request.saleId,totalMinor}})
+    try{
+      const result=await transactionEngine.createReturn(request,shift.id,totalMinor,sale)
+      diagnostics.record({source:'fiscal',eventType:'return.completed',message:`Возврат завершён, чек ${result.receiptNumber}`,operationId:request.clientRequestId,details:{returnId:result.returnId,totalMinor}})
+      return result
+    }catch(error){
+      diagnostics.record({source:'fiscal',level:'error',eventType:'return.failed',message:errorMessage(error),operationId:request.clientRequestId,details:{saleId:request.saleId,totalMinor}})
+      throw error
+    }
   })
 }

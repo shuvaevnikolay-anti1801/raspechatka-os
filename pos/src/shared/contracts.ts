@@ -132,6 +132,16 @@ export type UnresolvedOperation = {
   paymentMethods:string[]
 }
 export type RecoveryResult = {status:'completed'|'attention';message:string}
+export type DiagnosticEvent = {
+  id:string
+  level:'info'|'warning'|'error'
+  source:'app'|'shift'|'payment'|'fiscal'|'printer'|'sync'|'recovery'
+  eventType:string
+  message:string
+  operationId?:string
+  details?:Record<string,unknown>
+  createdAt:string
+}
 
 export type PosApi = {
   getBootState: () => Promise<BootState>
@@ -150,6 +160,7 @@ export type PosApi = {
   getDeviceStatuses: () => Promise<DeviceStatuses>
   listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
   recoverOperation: (id:string) => Promise<RecoveryResult>
+  listDiagnosticEvents: (limit?:number) => Promise<DiagnosticEvent[]>
   listHeldReceipts: () => Promise<HeldReceipt[]>
   holdReceipt: (receipt: Omit<HeldReceipt, 'id' | 'createdAt'>) => Promise<HeldReceipt>
   deleteHeldReceipt: (id: string) => Promise<void>

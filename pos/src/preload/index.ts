@@ -24,6 +24,7 @@ const api: ExtendedPosApi = {
   getDeviceStatuses: () => ipcRenderer.invoke('pos:get-device-statuses'),
   listUnresolvedOperations: () => ipcRenderer.invoke('pos:list-unresolved-operations'),
   recoverOperation: (id:string) => ipcRenderer.invoke('pos:recover-operation',id),
+  listDiagnosticEvents: (limit?:number) => ipcRenderer.invoke('pos:list-diagnostic-events',limit),
   getAtolSettings:()=>ipcRenderer.invoke('pos:get-atol-settings'),
   saveAtolSettings:(value:AtolSettings)=>ipcRenderer.invoke('pos:save-atol-settings',value),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
