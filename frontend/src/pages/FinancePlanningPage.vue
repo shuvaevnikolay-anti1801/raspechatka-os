@@ -11,14 +11,14 @@ const month = ref(new Date().toISOString().slice(0, 7)),
 	error = ref("");
 const canEdit = computed(() => canAccess("finance.planning", "Edit"));
 const points = computed(() =>
-	options.points.filter((x) => !entity.value || x.business_entity === entity.value),
+	options.points.filter((x) => !entity.value || x.business_entity === entity.value)
 );
 const money = (v) =>
 	new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(
-		Number(v || 0),
+		Number(v || 0)
 	);
 const calculatedRevenue = computed(
-	() => Number(form.checks_plan || 0) * Number(form.average_check_plan || 0),
+	() => Number(form.checks_plan || 0) * Number(form.average_check_plan || 0)
 );
 async function load() {
 	loading.value = true;
@@ -56,7 +56,7 @@ async function save() {
 		const r = await call(
 			"raspechatka.api.finance.save_budget",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		form.name = r.name;
 		await load();
@@ -152,8 +152,8 @@ onMounted(init);
 						v-model.number="form.reviews_plan"
 						type="number"
 						min="0"
-						:disabled="!canEdit" /></label
-				>
+						:disabled="!canEdit"
+				/></label>
 			</div>
 			<div class="finance-report-grid planning-grid">
 				<article class="finance-panel">
