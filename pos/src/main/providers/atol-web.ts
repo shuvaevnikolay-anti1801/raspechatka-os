@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import type { PaymentPart } from '../../shared/contracts'
+import type { PaymentPart, PrintResult } from '../../shared/contracts'
 import type {
-  DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest, PrintResult
+  DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest
 } from './contracts'
 
 export type AtolSettings = {
