@@ -13,12 +13,14 @@ import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
 import { CommodityPrintQueue } from './print-jobs'
 import { buildBootState, startAutomaticSync } from './sync'
+import { PosDiagnostics } from './diagnostics'
 
 let stopAutomaticSync:(()=>void)|undefined
 let stopAutomaticPrintRetry:(()=>void)|undefined
 let database:PosDatabase|undefined
 let journal:TransactionJournal|undefined
 let printQueue:CommodityPrintQueue|undefined
+let diagnostics:PosDiagnostics|undefined
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -65,6 +67,8 @@ if(!hasLock){
     const userData=app.getPath('userData')
     database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
     journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
+    diagnostics = new PosDiagnostics(join(userData,'raspechatka-pos-diagnostics.sqlite'))
+    diagnostics.record({source:'app',eventType:'app.started',message:'Распечатка Касса запущена'})
     const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
     const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
     const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
@@ -79,19 +83,35 @@ if(!hasLock){
 
     try{
       const recovery=await shiftCoordinator.recoverPendingTransition()
-      if(recovery.message)database.setState('shift_recovery_message',recovery.message)
+      if(recovery.message){
+        database.setState('shift_recovery_message',recovery.message)
+        diagnostics.record({
+          source:'recovery',
+          level:recovery.pending?'warning':'info',
+          eventType:'shift.recovery',
+          message:recovery.message
+        })
+      }
     }catch(error){
-      database.setState('shift_recovery_message',error instanceof Error?error.message:String(error))
+      const message=error instanceof Error?error.message:String(error)
+      database.setState('shift_recovery_message',message)
+      diagnostics.record({source:'recovery',level:'error',eventType:'shift.recovery_failed',message})
     }
 
     try{
       const recovered=await transactionEngine.recoverSafeOperations()
-      if(recovered>0)database.setState('transaction_recovery_message',`После перезапуска безопасно завершено локально: ${recovered}`)
+      if(recovered>0){
+        const message=`После перезапуска безопасно завершено локально: ${recovered}`
+        database.setState('transaction_recovery_message',message)
+        diagnostics.record({source:'recovery',eventType:'transaction.safe_recovery',message,details:{recovered}})
+      }
     }catch(error){
-      database.setState('transaction_recovery_message',error instanceof Error?error.message:String(error))
+      const message=error instanceof Error?error.message:String(error)
+      database.setState('transaction_recovery_message',message)
+      diagnostics.record({source:'recovery',level:'error',eventType:'transaction.recovery_failed',message})
     }
 
-    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator})
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics})
     registerHardwareSettingsIpc(atolSettingsStore)
     stopAutomaticSync=startAutomaticSync(database,connectionStore)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
@@ -104,11 +124,13 @@ if(!hasLock){
 }
 
 app.on('before-quit',()=>{
+  try{diagnostics?.record({source:'app',eventType:'app.stopping',message:'Распечатка Касса завершает работу'})}catch{}
   stopAutomaticSync?.()
   stopAutomaticPrintRetry?.()
   printQueue?.close()
   journal?.close()
   database?.close()
+  diagnostics?.close()
 })
 
 app.on('window-all-closed', () => {
