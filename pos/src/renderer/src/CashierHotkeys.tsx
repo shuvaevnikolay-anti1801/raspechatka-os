@@ -27,7 +27,7 @@ export default function CashierHotkeys(){
         return
       }
       if(event.key==='Escape'){
-        const closeButton=document.querySelector<HTMLButtonElement>('.modal-backdrop header button, .safety-backdrop .safety-panel>header button, .shift-recovery-banner button')
+        const closeButton=document.querySelector<HTMLButtonElement>('.modal-backdrop header button, .safety-backdrop .safety-panel>header button')
         if(closeButton){event.preventDefault();closeButton.click()}
         return
       }
