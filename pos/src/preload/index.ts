@@ -2,9 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
 type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
+type ShiftRecoveryStatus={pending:boolean;action?:'open'|'close';startedAt?:string;localOpen:boolean;fiscalOpen?:boolean;fiscalState?:'closed'|'opened'|'expired'|'unknown';safeToRecover:boolean;message:string}
 type ExtendedPosApi=PosApi&{
   getAtolSettings:()=>Promise<AtolSettings>
   saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
+  getShiftRecoveryStatus:()=>Promise<ShiftRecoveryStatus>
   recoverShiftState:()=>Promise<{recovered:boolean;pending:boolean;message?:string}>
 }
 
@@ -28,6 +30,7 @@ const api: ExtendedPosApi = {
   listDiagnosticEvents: (limit?:number) => ipcRenderer.invoke('pos:list-diagnostic-events',limit),
   getAtolSettings:()=>ipcRenderer.invoke('pos:get-atol-settings'),
   saveAtolSettings:(value:AtolSettings)=>ipcRenderer.invoke('pos:save-atol-settings',value),
+  getShiftRecoveryStatus:()=>ipcRenderer.invoke('pos:get-shift-recovery-status'),
   recoverShiftState:()=>ipcRenderer.invoke('pos:recover-shift-state'),
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
