@@ -26,7 +26,7 @@ export type Customer = {
   purchaseCount?: number
   totalSpentMinor?: number
   clubStatus?: string
-  isClubMember?: boolean
+  isClubMember?: number
 }
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
