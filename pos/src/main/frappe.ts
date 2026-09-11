@@ -45,6 +45,7 @@ async function post<T>(config:ConnectionConfig,method:string,body:Record<string,
     return payload.message
   }catch(error){
     if(error instanceof DOMException&&error.name==='AbortError')throw new Error('Распечатка OS не ответила вовремя')
+    if(error instanceof TypeError)throw new Error('Нет связи с Распечатка OS. Проверьте интернет и адрес OS в настройках кассы.')
     throw error
   }finally{clearTimeout(timer)}
 }
@@ -53,7 +54,7 @@ export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):P
   if(!events.length)return []
   const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_device.push_events',{
     device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null,
-    events,app_version:'0.1.1'
+    events,app_version:'0.1.2'
   },20000)
   return result.accepted||[]
 }
