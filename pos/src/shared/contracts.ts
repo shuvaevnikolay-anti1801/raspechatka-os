@@ -18,13 +18,32 @@ export type Product = {
   storageAddress?: string
 }
 
-export type Customer = { id: string; name: string; phone?: string; discountPercent: number; purchaseCount?: number; totalSpentMinor?: number }
+export type Customer = {
+  id: string
+  name: string
+  phone?: string
+  discountPercent: number
+  purchaseCount?: number
+  totalSpentMinor?: number
+  clubStatus?: string
+  isClubMember?: boolean
+}
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
 export type PointEmployee = { id:string; name:string }
-export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean; acceptsRemotePayment?: boolean }
+export type PointRules = {
+  allowFreePrice: boolean
+  allowRemoveCartItem: boolean
+  allowDiscounts: boolean
+  maxDiscountPercent: number
+  acceptsCash: boolean
+  acceptsCard: boolean
+  acceptsQr: boolean
+  acceptsRemotePayment?: boolean
+  reviewDiscountPerReviewMinor?: number
+}
 
 export type BootState = {
   pointId: string
@@ -60,6 +79,20 @@ export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalM
 export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned' }
 export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[]; remotePaymentConfirmation?: RemotePaymentConfirmation }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
+export type PointReceiptSummary = {
+  id:string
+  externalId?:string
+  receiptNumber:string
+  createdAt:string
+  customerName:string
+  customerPhone?:string
+  cashierName?:string
+  paymentLabel:string
+  totalMinor:number
+  discountMinor:number
+  reviewDiscountMinor:number
+  status:string
+}
 
 export type ReturnLine = { saleItemId: number; quantity: number }
 export type CreateReturnRequest = { clientRequestId: string; saleId: string; lines: ReturnLine[]; payments: PaymentPart[] }
@@ -85,6 +118,8 @@ export type CashOperation = { id: string; type: CashOperationType; amountMinor: 
 export type ShiftSummary = {
   receipts: number
   revenueMinor: number
+  grossRevenueMinor?: number
+  averageCheckBeforeDiscountMinor?: number
   returnsMinor: number
   cashMinor: number
   cardMinor: number
@@ -153,6 +188,7 @@ export type PosApi = {
   listProducts: () => Promise<Product[]>
   listCustomers: (query?: string) => Promise<Customer[]>
   listSales: () => Promise<SaleSummary[]>
+  searchPointReceipts: (query?:string) => Promise<PointReceiptSummary[]>
   getSale: (id: string) => Promise<SaleDetails>
   createReturn: (request: CreateReturnRequest) => Promise<ReturnResult>
   listReturns: () => Promise<ReturnSummary[]>
