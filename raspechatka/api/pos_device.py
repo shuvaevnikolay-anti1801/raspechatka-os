@@ -42,6 +42,39 @@ def _point_employees(point_name):
 	return [{"id": row.name, "name": row.employee_name or row.name} for row in rows]
 
 
+def _customers():
+	"""Return active clients without SQL-function strings blocked by Frappe v16."""
+	purchases = {}
+	for row in frappe.get_all(
+		"Client Purchase",
+		fields=["client", "net_amount", "returned_amount"],
+		limit_page_length=0,
+	):
+		if not row.client:
+			continue
+		bucket = purchases.setdefault(row.client, {"purchase_count": 0, "total_spent": 0.0})
+		bucket["purchase_count"] += 1
+		bucket["total_spent"] += flt(row.net_amount) - flt(row.returned_amount)
+
+	return [
+		{
+			"id": row.name,
+			"name": row.client_name,
+			"phone": row.phone,
+			"discountPercent": flt(row.discount_percent),
+			"purchaseCount": int((purchases.get(row.name) or {}).get("purchase_count") or 0),
+			"totalSpentMinor": round(flt((purchases.get(row.name) or {}).get("total_spent")) * 100),
+		}
+		for row in frappe.get_all(
+			"Client",
+			filters={"active": 1},
+			fields=["name", "client_name", "phone", "discount_percent"],
+			order_by="client_name asc",
+			limit_page_length=10000,
+		)
+	]
+
+
 def _selected_employee(employees, cashier_id):
 	cashier_id = str(cashier_id or "").strip()
 	if cashier_id:
@@ -110,7 +143,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			"employees": employees,
 			"rules": _rules(point),
 			"products": legacy_pos._get_products(point.name),
-			"customers": legacy_pos._get_customers(),
+			"customers": _customers(),
 			"workplaceData": legacy_pos._get_workplace_data(workplace_data_employee, point, workplace),
 		}
 		_touch(connection)
