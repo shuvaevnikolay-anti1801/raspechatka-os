@@ -1,4 +1,4 @@
-import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, Product, WorkplaceData } from '../shared/contracts'
+import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptSummary, Product, WorkplaceData } from '../shared/contracts'
 
 type BootstrapResponse = {
   point: { id:string; name:string }
@@ -52,7 +52,7 @@ async function post<T>(config:ConnectionConfig,method:string,body:Record<string,
 
 export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):Promise<string[]> {
   if(!events.length)return []
-  const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_device.push_events',{
+  const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_v2.push_events',{
     device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null,
     events,app_version:'0.1.2'
   },20000)
@@ -60,7 +60,14 @@ export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):P
 }
 
 export async function loadBootstrap(config:ConnectionConfig):Promise<BootstrapResponse> {
-  return post<BootstrapResponse>(config,'raspechatka.api.pos_device.get_bootstrap',{
+  return post<BootstrapResponse>(config,'raspechatka.api.pos_v2.get_bootstrap',{
     device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null
   },15000)
+}
+
+export async function searchPointReceipts(config:ConnectionConfig,query=''):Promise<PointReceiptSummary[]> {
+  const result=await post<{rows:PointReceiptSummary[]}>(config,'raspechatka.api.pos_v2.search_receipts',{
+    device_id:config.deviceId,token:config.token,query,limit:100
+  },15000)
+  return result.rows||[]
 }
