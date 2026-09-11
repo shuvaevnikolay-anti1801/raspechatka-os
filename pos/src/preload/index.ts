@@ -3,13 +3,28 @@ import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, 
 
 type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
 type ShiftRecoveryStatus={pending:boolean;action?:'open'|'close';startedAt?:string;localOpen:boolean;fiscalOpen?:boolean;fiscalState?:'closed'|'opened'|'expired'|'unknown';safeToRecover:boolean;message:string}
+type ReceiptSearchFilters={
+  period?:'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
+  shiftExternalId?:string
+  dateFrom?:string
+  dateTo?:string
+  cashierId?:string
+  amountMinMinor?:number
+  amountMaxMinor?:number
+  paymentChannel?:'Cash'|'Card'|'QR'|''
+  status?:'Draft'|'Posted'|'Cancelled'|''
+  receiptType?:'Sale'|'Return'|''
+}
 type ExtendedPosApi=PosApi&{
   getAtolSettings:()=>Promise<AtolSettings>
   saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
   getShiftRecoveryStatus:()=>Promise<ShiftRecoveryStatus>
   recoverShiftState:()=>Promise<{recovered:boolean;pending:boolean;message?:string}>
   recordShiftDiscrepancy:(differenceMinor:number,note:string)=>Promise<unknown>
+  setReceiptSearchFilters:(filters:ReceiptSearchFilters)=>void
 }
+
+let receiptSearchFilters:ReceiptSearchFilters={period:'current_shift'}
 
 const cleanRemoteMessage=(error:unknown)=>{
   const raw=error instanceof Error?error.message:String(error)
@@ -35,6 +50,8 @@ const api: ExtendedPosApi = {
   listProducts: () => ipcRenderer.invoke('pos:list-products'),
   listCustomers: (query) => ipcRenderer.invoke('pos:list-customers',query),
   listSales: () => ipcRenderer.invoke('pos:list-sales'),
+  searchPointReceipts: (query) => ipcRenderer.invoke('pos:search-point-receipts',query,receiptSearchFilters),
+  setReceiptSearchFilters: (filters) => { receiptSearchFilters={...filters} },
   getSale: (id:string) => ipcRenderer.invoke('pos:get-sale',id),
   createReturn: (request:CreateReturnRequest) => ipcRenderer.invoke('pos:create-return',request),
   listReturns: () => ipcRenderer.invoke('pos:list-returns'),

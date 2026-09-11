@@ -1,8 +1,10 @@
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { PosDatabase } from './database'
+import { PosDatabaseV2 } from './database-v2'
 import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
+import { registerPosV2Ipc } from './pos-v2-ipc'
 import { registerHardwareSettingsIpc } from './hardware-ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
@@ -69,7 +71,7 @@ if(!hasLock){
 
   app.whenReady().then(async() => {
     const userData=app.getPath('userData')
-    database = new PosDatabase(join(userData, 'raspechatka-pos.sqlite'))
+    database = new PosDatabaseV2(join(userData, 'raspechatka-pos.sqlite'))
     journal = new TransactionJournal(join(userData, 'raspechatka-pos-journal.sqlite'))
     diagnostics = new PosDiagnostics(join(userData,'raspechatka-pos-diagnostics.sqlite'))
     diagnostics.record({source:'app',eventType:'app.started',message:'Касса Распечатка запущена'})
@@ -118,6 +120,7 @@ if(!hasLock){
     }
 
     registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics})
+    registerPosV2Ipc(connectionStore)
     registerShiftRecoveryIpc({database,fiscalProvider,shiftCoordinator,diagnostics})
     registerPilotIpc(diagnostics)
     registerPairingIpc({database,connectionStore,diagnostics})

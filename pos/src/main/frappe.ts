@@ -1,4 +1,4 @@
-import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, Product, WorkplaceData } from '../shared/contracts'
+import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptSummary, Product, WorkplaceData } from '../shared/contracts'
 
 type BootstrapResponse = {
   point: { id:string; name:string }
@@ -9,6 +9,19 @@ type BootstrapResponse = {
   products: Product[]
   customers: Customer[]
   workplaceData: WorkplaceData
+}
+
+type ReceiptSearchFilters={
+  period?:'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
+  shiftExternalId?:string
+  dateFrom?:string
+  dateTo?:string
+  cashierId?:string
+  amountMinMinor?:number
+  amountMaxMinor?:number
+  paymentChannel?:'Cash'|'Card'|'QR'|''
+  status?:'Draft'|'Posted'|'Cancelled'|''
+  receiptType?:'Sale'|'Return'|''
 }
 
 type FrappeResponse<T>={message?:T;exception?:string;exc_type?:string;_server_messages?:string}
@@ -52,7 +65,7 @@ async function post<T>(config:ConnectionConfig,method:string,body:Record<string,
 
 export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):Promise<string[]> {
   if(!events.length)return []
-  const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_device.push_events',{
+  const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_v2.push_events',{
     device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null,
     events,app_version:'0.1.2'
   },20000)
@@ -60,7 +73,27 @@ export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):P
 }
 
 export async function loadBootstrap(config:ConnectionConfig):Promise<BootstrapResponse> {
-  return post<BootstrapResponse>(config,'raspechatka.api.pos_device.get_bootstrap',{
+  return post<BootstrapResponse>(config,'raspechatka.api.pos_v2.get_bootstrap',{
     device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null
   },15000)
+}
+
+export async function searchPointReceipts(config:ConnectionConfig,query='',filters:ReceiptSearchFilters={}):Promise<PointReceiptSummary[]> {
+  const result=await post<{rows:PointReceiptSummary[]}>(config,'raspechatka.api.receipt_search.search_receipts',{
+    device_id:config.deviceId,
+    token:config.token,
+    query,
+    period:filters.period||'current_shift',
+    shift_external_id:filters.shiftExternalId||null,
+    date_from:filters.dateFrom||null,
+    date_to:filters.dateTo||null,
+    cashier_id:filters.cashierId||null,
+    amount_min_minor:filters.amountMinMinor??null,
+    amount_max_minor:filters.amountMaxMinor??null,
+    payment_channel:filters.paymentChannel||null,
+    status:filters.status||null,
+    receipt_type:filters.receiptType||null,
+    limit:100
+  },15000)
+  return result.rows||[]
 }
