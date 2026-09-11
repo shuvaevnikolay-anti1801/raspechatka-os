@@ -21,47 +21,80 @@ export function buildBootState(database:PosDatabase):BootState{
 export async function performSync(database:PosDatabase,connectionStore:ConnectionStore):Promise<BootState>{
   const config=connectionStore.load()
   if(!config)throw new Error('Сначала подключите кассу к Распечатка OS по Device ID и Token')
-  try{
-    // Bootstrap first: the server itself resolves the point from Device ID.
-    // A Windows register can never choose or override another business point.
-    let remote=await loadBootstrap(config)
+
+  let bootstrapError=''
+  let outboxError=''
+  let successfulContact=false
+  let bootstrapSucceeded=false
+
+  const applyBootstrap=async()=>{
+    const remote=await loadBootstrap(config)
     database.replaceProducts(remote.products)
     database.replaceCustomers(remote.customers)
     database.setWorkplaceData(remote.workplaceData)
-    const cache=(online:boolean,lastSyncAt?:string)=>database.setState('bootstrap',JSON.stringify({
+    database.setState('bootstrap',JSON.stringify({
       pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
       workstationName:remote.workplace.name,cashierId:remote.employee?.id,cashierName:remote.employee?.name||'Выберите сотрудника',
-      employees:remote.employees||[],online,lastSyncAt,source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
+      employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
+      source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
     }))
-    cache(true,buildBootState(database).lastSyncAt)
+    successfulContact=true
+    bootstrapSucceeded=true
+  }
 
-    // Money and shift events are only sent after a cashier attached to this point is selected.
-    if(config.cashierId){
+  // Справочники и очередь денежных документов синхронизируются независимо.
+  // Ошибка каталога/клиентов не должна блокировать уже созданные чеки и смены.
+  try{
+    await applyBootstrap()
+  }catch(error){
+    bootstrapError=error instanceof Error?error.message:String(error)
+    database.setState('master_data_error',bootstrapError)
+  }
+
+  if(config.cashierId){
+    try{
       let guard=0
       while(database.pendingSyncCount()>0&&guard<100){
         const events=database.pendingEvents(100)
         if(!events.length)break
         const accepted=await pushEvents(config,events)
+        successfulContact=true
         if(!accepted.length)break
         database.markEventsSent(accepted)
         guard++
       }
-      // Refresh again because the push may have changed point data, orders or shift state in OS.
-      remote=await loadBootstrap(config)
-      database.replaceProducts(remote.products)
-      database.replaceCustomers(remote.customers)
-      database.setWorkplaceData(remote.workplaceData)
+      database.setState('outbox_error','')
+    }catch(error){
+      outboxError=error instanceof Error?error.message:String(error)
+      database.setState('outbox_error',outboxError)
     }
-    const lastSyncAt=new Date().toISOString()
-    cache(true,lastSyncAt)
-    database.setState('sync_error','')
-    return buildBootState(database)
-  }catch(error){
-    const message=error instanceof Error?error.message:String(error)
-    database.setState('sync_error',message)
-    database.setState('bootstrap',JSON.stringify({...buildBootState(database),online:false}))
-    throw error
   }
+
+  // После отправки очереди ещё раз пробуем получить свежие справочники, но не
+  // превращаем их ошибку в блокировку outbox.
+  if(config.cashierId&&bootstrapSucceeded){
+    try{
+      await applyBootstrap()
+      bootstrapError=''
+      database.setState('master_data_error','')
+    }catch(error){
+      bootstrapError=error instanceof Error?error.message:String(error)
+      database.setState('master_data_error',bootstrapError)
+    }
+  }
+
+  const errors=[bootstrapError&&`Справочники: ${bootstrapError}`,outboxError&&`Очередь документов: ${outboxError}`].filter(Boolean)
+  const syncError=errors.join(' · ')
+  database.setState('sync_error',syncError)
+
+  const current=buildBootState(database)
+  const lastSyncAt=successfulContact?new Date().toISOString():current.lastSyncAt
+  database.setState('bootstrap',JSON.stringify({...current,online:successfulContact,lastSyncAt}))
+
+  if(!successfulContact){
+    throw new Error(syncError||'Не удалось связаться с Распечатка OS')
+  }
+  return buildBootState(database)
 }
 
 export function startAutomaticSync(database:PosDatabase,connectionStore:ConnectionStore):()=>void{
