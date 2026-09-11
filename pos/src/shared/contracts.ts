@@ -23,6 +23,7 @@ export type CartLine = { productId: string; name: string; quantity: number; unit
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
+export type PointEmployee = { id:string; name:string }
 export type PointRules = { allowFreePrice: boolean; allowRemoveCartItem: boolean; allowDiscounts: boolean; maxDiscountPercent: number; acceptsCash: boolean; acceptsCard: boolean; acceptsQr: boolean; acceptsRemotePayment?: boolean }
 
 export type BootState = {
@@ -30,7 +31,9 @@ export type BootState = {
   pointName: string
   workplaceId: string
   workstationName: string
+  cashierId?: string
   cashierName: string
+  employees: PointEmployee[]
   online: boolean
   pendingSync: number
   lastSyncAt?: string
@@ -39,8 +42,8 @@ export type BootState = {
   rules: PointRules
 }
 
-export type ConnectionConfig = { serverUrl: string; apiKey: string; apiSecret: string; workplaceCode: string }
-export type ConnectionStatus = { configured: boolean; serverUrl: string; workplaceCode: string; lastSyncAt?: string; lastError?: string }
+export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; cashierId?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
+export type ConnectionStatus = { configured: boolean; serverUrl: string; deviceId?: string; cashierId?: string; workplaceCode?:string; lastSyncAt?: string; lastError?: string }
 
 export type CompleteSaleRequest = {
   clientRequestId: string
@@ -188,5 +191,6 @@ export type PosApi = {
   completeSale: (request: CompleteSaleRequest) => Promise<CompleteSaleResult>
   getConnectionStatus: () => Promise<ConnectionStatus>
   saveConnection: (config: ConnectionConfig) => Promise<ConnectionStatus>
+  setActiveCashier: (cashierId:string) => Promise<BootState>
   syncNow: () => Promise<BootState>
 }

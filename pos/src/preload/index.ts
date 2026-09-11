@@ -63,6 +63,7 @@ const api: ExtendedPosApi = {
   },
   getConnectionStatus: () => ipcRenderer.invoke('pos:get-connection-status'),
   saveConnection: (config:ConnectionConfig) => ipcRenderer.invoke('pos:save-connection',config),
+  setActiveCashier: (cashierId:string) => ipcRenderer.invoke('pos:set-active-cashier',cashierId),
   syncNow: () => ipcRenderer.invoke('pos:sync-now')
 }
 
