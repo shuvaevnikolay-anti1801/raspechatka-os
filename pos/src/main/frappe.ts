@@ -11,6 +11,19 @@ type BootstrapResponse = {
   workplaceData: WorkplaceData
 }
 
+type ReceiptSearchFilters={
+  period?:'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
+  shiftExternalId?:string
+  dateFrom?:string
+  dateTo?:string
+  cashierId?:string
+  amountMinMinor?:number
+  amountMaxMinor?:number
+  paymentChannel?:'Cash'|'Card'|'QR'|''
+  status?:'Draft'|'Posted'|'Cancelled'|''
+  receiptType?:'Sale'|'Return'|''
+}
+
 type FrappeResponse<T>={message?:T;exception?:string;exc_type?:string;_server_messages?:string}
 
 function checkedServerUrl(value:string):URL {
@@ -65,9 +78,22 @@ export async function loadBootstrap(config:ConnectionConfig):Promise<BootstrapRe
   },15000)
 }
 
-export async function searchPointReceipts(config:ConnectionConfig,query=''):Promise<PointReceiptSummary[]> {
-  const result=await post<{rows:PointReceiptSummary[]}>(config,'raspechatka.api.pos_v2.search_receipts',{
-    device_id:config.deviceId,token:config.token,query,limit:100
+export async function searchPointReceipts(config:ConnectionConfig,query='',filters:ReceiptSearchFilters={}):Promise<PointReceiptSummary[]> {
+  const result=await post<{rows:PointReceiptSummary[]}>(config,'raspechatka.api.receipt_search.search_receipts',{
+    device_id:config.deviceId,
+    token:config.token,
+    query,
+    period:filters.period||'current_shift',
+    shift_external_id:filters.shiftExternalId||null,
+    date_from:filters.dateFrom||null,
+    date_to:filters.dateTo||null,
+    cashier_id:filters.cashierId||null,
+    amount_min_minor:filters.amountMinMinor??null,
+    amount_max_minor:filters.amountMaxMinor??null,
+    payment_channel:filters.paymentChannel||null,
+    status:filters.status||null,
+    receipt_type:filters.receiptType||null,
+    limit:100
   },15000)
   return result.rows||[]
 }
