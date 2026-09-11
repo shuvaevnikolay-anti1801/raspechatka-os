@@ -24,12 +24,22 @@
 .pos-v2-pay{grid-column:1/-1!important;font-size:13px!important}
 
 .receipt-search{display:grid;grid-template-columns:minmax(420px,1fr) auto;align-items:center;gap:14px;margin-bottom:12px;padding:11px;border:1px solid var(--rp-line);background:#e9ece6}
-.receipt-search label{height:42px;display:flex;align-items:center;gap:9px;padding:0 11px;border:1px solid var(--rp-line-dark);background:#fff}
-.receipt-search label>span{font-size:20px}
-.receipt-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;font-size:12px}
+.receipt-search>label{height:42px;display:flex;align-items:center;gap:9px;padding:0 11px;border:1px solid var(--rp-line-dark);background:#fff}
+.receipt-search>label>span{font-size:20px}
+.receipt-search>label>input{min-width:0;flex:1;border:0;outline:0;background:transparent;font-size:12px}
 .receipt-search>div{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .receipt-search>div b{font-size:10px}
 .receipt-search>div small{color:var(--rp-muted);font-size:8px}
+.receipt-filter-panel{grid-column:1/-1!important;width:100%;display:block!important;align-items:initial!important;gap:0!important;padding-top:2px;border-top:1px solid var(--rp-line)}
+.receipt-periods{display:flex!important;flex-direction:row!important;align-items:center!important;gap:6px!important;flex-wrap:wrap;padding:10px 0 8px}
+.receipt-periods button{height:30px;padding:0 11px;border:1px solid var(--rp-line);background:#fff;color:var(--rp-ink);font-size:9px;font-weight:700;cursor:pointer}
+.receipt-periods button.active{border-color:var(--rp-ink);background:var(--rp-ink);color:#fff}
+.receipt-filter-grid{display:grid!important;grid-template-columns:repeat(4,minmax(130px,1fr)) auto;align-items:end!important;gap:8px!important;width:100%}
+.receipt-filter-grid label{display:flex;flex-direction:column;gap:4px;min-width:0}
+.receipt-filter-grid label span{color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.receipt-filter-grid input,.receipt-filter-grid select{width:100%;height:34px;padding:0 8px;border:1px solid var(--rp-line-dark);background:#fff;color:var(--rp-ink);font-size:10px;outline:0}
+.receipt-filter-grid input:focus,.receipt-filter-grid select:focus{border-color:var(--rp-ink)}
+.receipt-filter-reset{height:34px;padding:0 12px;border:1px solid var(--rp-line-dark);background:transparent;color:var(--rp-ink);font-size:9px;font-weight:700;white-space:nowrap;cursor:pointer}
 .pos-v2-history .history-readonly{display:block;color:var(--rp-muted);font-size:9px;text-align:center}
 .pos-v2-history .page-empty{grid-column:1/-1}
 
@@ -41,4 +51,5 @@
   .pos-v2-metrics{grid-template-columns:repeat(3,minmax(0,1fr))!important}
   .receipt-search{grid-template-columns:1fr}
   .receipt-search>div{align-items:flex-start}
+  .receipt-filter-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}
 }
