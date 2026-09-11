@@ -35,7 +35,7 @@ export class PosDatabaseV2 extends PosDatabase {
       purchase_count AS purchaseCount,total_spent_minor AS totalSpentMinor,
       club_status AS clubStatus,is_club_member AS isClubMember
       FROM customers WHERE active=1 AND (name LIKE ? OR phone LIKE ?) ORDER BY name LIMIT 50`)
-      .all(q,q).map((row:any)=>({...row,isClubMember:Boolean(row.isClubMember)})) as Customer[]
+      .all(q,q).map((row:any)=>({...row,isClubMember:Number(row.isClubMember)||0})) as Customer[]
   }
 
   override replaceCustomers(customers:Customer[]):void{
