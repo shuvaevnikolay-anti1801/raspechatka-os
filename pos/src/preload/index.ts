@@ -35,6 +35,7 @@ const api: ExtendedPosApi = {
   listProducts: () => ipcRenderer.invoke('pos:list-products'),
   listCustomers: (query) => ipcRenderer.invoke('pos:list-customers',query),
   listSales: () => ipcRenderer.invoke('pos:list-sales'),
+  searchPointReceipts: (query) => ipcRenderer.invoke('pos:search-point-receipts',query),
   getSale: (id:string) => ipcRenderer.invoke('pos:get-sale',id),
   createReturn: (request:CreateReturnRequest) => ipcRenderer.invoke('pos:create-return',request),
   listReturns: () => ipcRenderer.invoke('pos:list-returns'),
