@@ -57,8 +57,6 @@ export class ShiftCoordinator {
 
       const current=this.database.currentShift()
       if(!current||current.id!==transition.shiftId){
-        // Рабочая смена уже закончилась: старое ожидание открытия ККТ больше
-        // не должно само открывать сотруднику новую смену.
         this.clearTransition()
         return {recovered:false,pending:false,message:'Рабочая смена уже закрыта; отложенное открытие ККТ отменено.'}
       }
@@ -75,8 +73,8 @@ export class ShiftCoordinator {
       }
     }
 
-    // При закрытии рабочую смену сотрудника мы уже считаем завершённой.
-    // Здесь восстанавливаем только фискальное закрытие, не меняя рабочую смену.
+    // Рабочая смена сотрудника уже закрыта. Восстанавливаем только фискальное
+    // закрытие ККТ и никогда не создаём/закрываем рабочую смену из состояния ККТ.
     if(!fiscalShift.open){
       this.clearTransition()
       return {recovered:true,pending:false,message:'Фискальная смена ККТ закрыта.'}
@@ -95,19 +93,16 @@ export class ShiftCoordinator {
     const current=this.database.currentShift()
     if(current)return current
 
-    // Сначала открываем именно рабочую смену сотрудника. Наличие ККТ не должно
-    // мешать сотруднику начать рабочую смену; без готовой ККТ будут запрещены
-    // только фискальные продажи и возвраты.
+    // Рабочая смена открывается явно сотрудником и не зависит от доступности
+    // ККТ. Если ККТ недоступна, продажи будут заблокированы отдельной проверкой.
     const shift:Shift={id:randomUUID(),openedAt:new Date().toISOString(),cashierName}
     const saved=this.database.openShift(shift)
     this.saveTransition({action:'open',shiftId:shift.id,openedAt:shift.openedAt,cashierName,startedAt:new Date().toISOString()})
 
-    // Фискальную смену пытаемся привести в нужное состояние best effort.
-    // Ошибка ККТ не откатывает уже открытую рабочую смену сотрудника.
     try{
       await this.recoverPendingTransition()
     }catch{
-      // Маркер transition остаётся и будет восстановлен при следующей проверке.
+      // Рабочая смена уже открыта. Маркер ККТ остаётся для последующего recovery.
     }
     return saved
   }
@@ -116,34 +111,20 @@ export class ShiftCoordinator {
     const current=this.database.currentShift()
     if(!current)throw new Error('Нет открытой рабочей смены')
 
-    // Рабочая смена должна закрываться всегда — даже если ККТ, эквайринг или
-    // сеть недоступны. Незавершённые транзакции остаются в механизме recovery
-    // и не удерживают сотрудника в открытой рабочей смене.
+    // Рабочая смена сотрудника закрывается независимо от состояния ККТ,
+    // эквайринга и recovery-операций. Это не означает, что фискальная смена
+    // закрыта: для неё сохраняется отдельный pending transition.
     const summary=this.database.closeShift()
     this.saveTransition({action:'close',shiftId:current.id,startedAt:new Date().toISOString()})
 
     try{
-      const recovery=await this.recoverPendingTransition()
-      if(recovery.pending){
-        return {
-          ...summary,
-          fiscalClosePending:true,
-          warning:recovery.message||(hasUnresolvedTransactions
-            ?'Рабочая смена закрыта. Есть незавершённые операции и отложенное закрытие ККТ.'
-            :'Рабочая смена закрыта. Закрытие ККТ будет завершено после восстановления связи.')
-        }
-      }
-    }catch(error){
-      return {
-        ...summary,
-        fiscalClosePending:true,
-        warning:`Рабочая смена закрыта. ККТ требует последующего закрытия: ${error instanceof Error?error.message:String(error)}`
-      }
+      await this.recoverPendingTransition()
+    }catch{
+      // Не откатываем закрытие рабочей смены. Фискальное закрытие будет
+      // повторено после восстановления связи с ККТ.
     }
 
-    if(hasUnresolvedTransactions){
-      return {...summary,warning:'Рабочая смена закрыта. Незавершённые операции сохранены для последующего восстановления.'}
-    }
+    void hasUnresolvedTransactions
     return summary
   }
 
