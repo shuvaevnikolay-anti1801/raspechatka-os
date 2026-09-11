@@ -1,0 +1,23 @@
+{
+ "actions": [],
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "catalog_group"
+ ],
+ "fields": [
+  {
+   "fieldname": "catalog_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Группа товаров",
+   "options": "Catalog Group",
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "module": "Raspechatka OS",
+ "name": "Business Point POS Group",
+ "permissions": []
+}
