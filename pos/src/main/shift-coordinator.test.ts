@@ -48,7 +48,7 @@ describe('ShiftCoordinator recovery',()=>{
     database.close();rmSync(dir,{recursive:true,force:true})
   })
 
-  it('restores local shift when ATOL opening succeeded before app crash',async()=>{
+  it('does not recreate an employee shift from an already-open ATOL shift',async()=>{
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'open',shiftId:'shift-recovered',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
     }))
@@ -57,12 +57,13 @@ describe('ShiftCoordinator recovery',()=>{
     const result=await coordinator.recoverPendingTransition()
 
     expect(result.recovered).toBe(true)
-    expect(database.currentShift()?.id).toBe('shift-recovered')
+    expect(database.currentShift()).toBeNull()
     expect(database.getState('fiscal_shift_transition_v1')).toBe('')
   })
 
-  it('finishes local close when ATOL was already closed before app crash',async()=>{
+  it('keeps an already-closed employee shift closed when ATOL was also closed',async()=>{
     database.openShift({id:'shift-open',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир'})
+    database.closeShift()
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'close',shiftId:'shift-open',startedAt:'2026-09-10T18:00:00.000Z'
     }))
@@ -75,7 +76,7 @@ describe('ShiftCoordinator recovery',()=>{
     expect(database.getState('fiscal_shift_transition_v1')).toBe('')
   })
 
-  it('does not invent a completed opening when ATOL is still closed',async()=>{
+  it('does not invent a completed employee shift when ATOL is still closed',async()=>{
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'open',shiftId:'shift-failed',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
     }))
@@ -88,7 +89,7 @@ describe('ShiftCoordinator recovery',()=>{
     expect(database.getState('fiscal_shift_transition_v1')).toBe('')
   })
 
-  it('does not restore a local shift when the ATOL shift already expired',async()=>{
+  it('drops a stale ATOL-open transition when no employee shift exists',async()=>{
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'open',shiftId:'shift-expired',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
     }))
@@ -96,11 +97,12 @@ describe('ShiftCoordinator recovery',()=>{
 
     const result=await coordinator.recoverPendingTransition()
 
-    expect(result.pending).toBe(true)
+    expect(result.pending).toBe(false)
     expect(database.currentShift()).toBeNull()
+    expect(database.getState('fiscal_shift_transition_v1')).toBe('')
   })
 
-  it('allows closing an expired ATOL shift instead of blocking on health check',async()=>{
+  it('allows closing an employee shift even when ATOL shift is expired',async()=>{
     database.openShift({id:'shift-open',openedAt:'2026-09-09T08:00:00.000Z',cashierName:'Кассир'})
     fiscal.state='expired'
 
@@ -110,10 +112,13 @@ describe('ShiftCoordinator recovery',()=>{
     expect(database.currentShift()).toBeNull()
   })
 
-  it('blocks using an already-open local shift when ATOL shift has expired',async()=>{
+  it('returns an already-open employee shift even when ATOL needs service',async()=>{
     database.openShift({id:'shift-open',openedAt:'2026-09-09T08:00:00.000Z',cashierName:'Кассир'})
     fiscal.state='expired'
 
-    await expect(coordinator.openShift('Кассир')).rejects.toThrow('истекла')
+    const shift=await coordinator.openShift('Кассир')
+
+    expect(shift.id).toBe('shift-open')
+    expect(database.currentShift()?.id).toBe('shift-open')
   })
 })
