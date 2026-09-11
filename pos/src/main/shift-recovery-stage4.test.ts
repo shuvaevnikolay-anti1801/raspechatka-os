@@ -46,8 +46,9 @@ describe('stage 4 shift recovery',()=>{
     rmSync(dir,{recursive:true,force:true})
   })
 
-  it('keeps an ambiguous close pending while ATOL status cannot be checked',async()=>{
+  it('keeps fiscal close pending while ATOL status cannot be checked',async()=>{
     database.openShift({id:'shift-1',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир'})
+    database.closeShift()
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'close',shiftId:'shift-1',startedAt:'2026-09-10T18:00:00.000Z'
     }))
@@ -57,11 +58,12 @@ describe('stage 4 shift recovery',()=>{
 
     expect(result.pending).toBe(true)
     expect(coordinator.getPendingTransition()?.action).toBe('close')
-    expect(database.currentShift()?.id).toBe('shift-1')
+    expect(database.currentShift()).toBeNull()
   })
 
-  it('finishes local close after ATOL becomes reachable and reports shift closed',async()=>{
+  it('finishes fiscal close after ATOL becomes reachable and keeps employee shift closed',async()=>{
     database.openShift({id:'shift-1',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир'})
+    database.closeShift()
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'close',shiftId:'shift-1',startedAt:'2026-09-10T18:00:00.000Z'
     }))
@@ -75,7 +77,7 @@ describe('stage 4 shift recovery',()=>{
     expect(coordinator.getPendingTransition()).toBeUndefined()
   })
 
-  it('refuses to attach a recovered ATOL opening to a different local shift',async()=>{
+  it('never replaces a different employee shift with recovered ATOL state',async()=>{
     database.openShift({id:'another-shift',openedAt:'2026-09-10T07:00:00.000Z',cashierName:'Другой кассир'})
     database.setState('fiscal_shift_transition_v1',JSON.stringify({
       action:'open',shiftId:'shift-from-crash',openedAt:'2026-09-10T08:00:00.000Z',cashierName:'Кассир',startedAt:'2026-09-10T08:00:00.000Z'
@@ -84,8 +86,9 @@ describe('stage 4 shift recovery',()=>{
 
     const result=await coordinator.recoverPendingTransition()
 
-    expect(result.pending).toBe(true)
+    expect(result.recovered).toBe(true)
+    expect(result.pending).toBe(false)
     expect(database.currentShift()?.id).toBe('another-shift')
-    expect(coordinator.getPendingTransition()?.action).toBe('open')
+    expect(coordinator.getPendingTransition()).toBeUndefined()
   })
 })
