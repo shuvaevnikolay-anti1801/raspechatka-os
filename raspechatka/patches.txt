@@ -33,3 +33,4 @@ raspechatka.patches.v1_0.seed_employment_document_templates
 raspechatka.patches.v1_0.initialize_supplier_settlements
 raspechatka.patches.v1_0.add_club_and_review_plans
 raspechatka.patches.v1_0.assign_legacy_moysklad_stock_batch
+raspechatka.patches.v1_0.backfill_catalog_assortments_for_active_points
