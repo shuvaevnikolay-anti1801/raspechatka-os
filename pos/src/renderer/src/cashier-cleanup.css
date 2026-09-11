@@ -1,0 +1,3 @@
+.topbar .brand{display:none!important}
+.topbar{grid-template-columns:minmax(0,1fr) auto!important}
+.topbar .point{justify-self:start}

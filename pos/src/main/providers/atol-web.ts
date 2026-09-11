@@ -219,7 +219,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
 
   private requireSettings():AtolSettings{
     const settings=this.settingsStore.load()
-    if(!settings.enabled)throw new Error('АТОЛ 1Ф не настроен. Откройте «Оборудование» и включите ККТ.')
+    if(!settings.enabled)throw new Error('АТОЛ 1Ф не настроен. Откройте «Настройки» → «ККТ АТОЛ» и включите ККТ.')
     return settings
   }
 
@@ -233,6 +233,9 @@ export class AtolWebFiscalProvider implements FiscalProvider {
       return text?JSON.parse(text):{}
     }catch(error){
       if(error instanceof Error&&error.name==='AbortError')throw new Error('ATOL Web Server не ответил вовремя')
+      if(error instanceof TypeError){
+        throw new Error('Нет связи с ATOL Web Server. Проверьте адрес в настройках и убедитесь, что Драйвер ККТ / Web Server запущен на этом компьютере.')
+      }
       throw error
     }finally{clearTimeout(timer)}
   }

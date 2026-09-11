@@ -11,6 +11,25 @@ type ExtendedPosApi=PosApi&{
   recordShiftDiscrepancy:(differenceMinor:number,note:string)=>Promise<unknown>
 }
 
+const cleanRemoteMessage=(error:unknown)=>{
+  const raw=error instanceof Error?error.message:String(error)
+  return raw
+    .replace(/^Error invoking remote method ['"][^'"]+['"]:\s*/i,'')
+    .replace(/^Error:\s*/i,'')
+    .trim()
+}
+
+const invokeShift=async<T>(channel:'pos:open-shift'|'pos:close-shift'):Promise<T>=>{
+  try{return await ipcRenderer.invoke(channel) as T}
+  catch(error){
+    const message=cleanRemoteMessage(error)
+    if(/fetch failed/i.test(message)){
+      throw new Error('Нет связи с АТОЛ. Проверьте в «Настройках», что Драйвер ККТ и локальный Web Server запущены, затем повторите операцию со сменой.')
+    }
+    throw new Error(message||'Не удалось выполнить операцию со сменой')
+  }
+}
+
 const api: ExtendedPosApi = {
   getBootState: () => ipcRenderer.invoke('pos:get-boot-state'),
   listProducts: () => ipcRenderer.invoke('pos:list-products'),
@@ -41,8 +60,8 @@ const api: ExtendedPosApi = {
   listHeldReceipts: () => ipcRenderer.invoke('pos:list-held-receipts'),
   holdReceipt: (receipt:Omit<HeldReceipt,'id'|'createdAt'>) => ipcRenderer.invoke('pos:hold-receipt',receipt),
   deleteHeldReceipt: (id:string) => ipcRenderer.invoke('pos:delete-held-receipt',id),
-  openShift: () => ipcRenderer.invoke('pos:open-shift'),
-  closeShift: () => ipcRenderer.invoke('pos:close-shift'),
+  openShift: () => invokeShift('pos:open-shift'),
+  closeShift: () => invokeShift('pos:close-shift'),
   getShiftSummary: () => ipcRenderer.invoke('pos:get-shift-summary'),
   listCashOperations: () => ipcRenderer.invoke('pos:list-cash-operations'),
   addCashOperation: (type:CashOperationType,amountMinor:number,reason:string) => ipcRenderer.invoke('pos:add-cash-operation',type,amountMinor,reason),
