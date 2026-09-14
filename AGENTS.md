@@ -89,6 +89,23 @@ Treat every external HTTP API, SaaS, webhook source, payment/fiscal device provi
 11. **Test the failure path.** Integration work is not complete with happy-path tests only. Cover timeout/offline, provider 5xx or equivalent, duplicate delivery, process restart at dangerous boundaries, and successful recovery when the dependency comes back.
 12. **Record larger resilience debt.** If making an existing integration compliant is larger than the current task, record the follow-up in **«Архитектор ОС» → «02 План»** or, if inaccessible, in the PR handoff/final report.
 
+## Idempotency and duplicate safety
+
+Assume every state-changing command can be delivered more than once because of a lost response, user double-click, browser retry, queue redelivery, worker restart, webhook retry, POS outbox replay, scheduler overlap, or multiple backend servers behind a load balancer. Duplicate delivery must not create duplicate business effects.
+
+1. **Classify every write command before implementation.** Any command that creates or changes a sale, return, payment, cash movement, bank operation, stock movement, stock document, purchase order, supplier allocation, payroll result, external message, fiscal operation, or another durable business fact must explicitly decide how duplicate delivery is handled.
+2. **Use a stable idempotency key for retryable creates.** The caller generates the key once per logical action and reuses it for every retry. Do not generate a fresh key inside each retry. For imported/provider data prefer the provider's immutable operation ID; otherwise use a UUID or deterministic business key whose semantics are documented.
+3. **Enforce uniqueness in MariaDB for critical effects.** `if not exists: insert` is not sufficient under concurrency. The final protection for money, stock, sales, returns, imported operations, and other critical facts must be a UNIQUE field/index or another transactional constraint owned by the database.
+4. **Return the original result on a duplicate request.** A successful command retried with the same idempotency key should normally return the already-created document/result rather than create another record or fail with a generic duplicate error.
+5. **Reject key reuse with different payload.** If the same idempotency key is presented with materially different amount, entity, items, direction, or other protected input, stop and require investigation instead of silently accepting the changed request.
+6. **Protect derived side effects independently.** Idempotency of the parent document is not enough. Stock ledger rows, finance postings, client-history rows, profitability rows, audit actions, notifications, and other effects produced by hooks/workflows need their own deterministic source key or UNIQUE protection where re-execution could duplicate them.
+7. **Make submit/cancel/post transitions retry-safe.** Repeating a command after the requested state is already reached should return the current successful state when the same operation is being retried. Use row locks or equivalent transactional serialization when two workers can attempt the same transition concurrently.
+8. **Do not rely on frontend button disabling.** UI guards improve UX but are never the correctness boundary. The server/database must remain safe if two identical requests arrive simultaneously from different browser tabs, workers, POS devices, or backend instances.
+9. **Unknown external money/fiscal outcomes are not ordinary retries.** Preserve recovery state and reconcile with the provider before repeating any charge, refund, or fiscalization that could execute twice.
+10. **Queues, schedulers and sync jobs must tolerate overlap.** Either deduplicate the job itself or make every consumed item idempotent and concurrency-safe. Duplicate jobs may waste work but must not duplicate business facts or corrupt status counters.
+11. **Test duplicates and races.** For every critical command add coverage for sequential retry after success, lost-response retry, same key with changed payload, and concurrent duplicate execution where practical.
+12. **Do not introduce new idempotency debt silently.** If a touched critical command lacks the protection above and fixing it is larger than the current task, record a follow-up in **«Архитектор ОС» → «02 План»** before completing the work.
+
 ## Generated frontend assets
 
 Feature branches must edit source files under `frontend/`, but must not commit generated files under:
