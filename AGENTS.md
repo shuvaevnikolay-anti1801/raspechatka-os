@@ -45,6 +45,33 @@ The following are shared conflict hotspots. Make only small additive changes and
 
 If another open PR edits the same DocType or hotspot, stop and report the dependency or coordinate through an integration task.
 
+## Modular monolith and domain boundaries
+
+The central Raspechatka OS is intentionally a **modular monolith**: one Frappe deployment and one MariaDB database, with business domains separated by responsibility. Do not introduce microservices, a database per domain, or a separate Frappe app per domain without a new explicit architecture decision.
+
+Core domain boundaries currently include catalog, sales, warehouse, clients, finance, team, access/references, and integrations. A domain owns its business invariants and all state-changing logic for the records it owns.
+
+1. **Every domain must have a public gateway.** Represent it with explicit service/facade/module functions or another clear contract owned by that domain. Other domains call this gateway instead of reaching through internal implementation details.
+2. **Cross-domain writes must go through the owner domain.** Feature code must not directly create, update, delete, submit, cancel, or execute SQL writes against DocTypes/tables owned by another domain. For example, Sales may request a stock movement through the Warehouse/Stock service; it must not implement its own direct `Stock Ledger Entry` mutation.
+3. **Cross-domain reads should prefer public query/service functions.** Read-only reporting and analytics may directly query another domain's records when that is materially simpler and no invariant can be changed. Keep such reads isolated, documented by purpose, and strictly free of writes.
+4. **Multi-domain workflows use coordinators, not ownership leakage.** A sale may coordinate Sales, Warehouse, Clients, and Finance, but the coordinator calls each domain's gateway. It must not copy the internal rules of those domains into itself.
+5. **Whitelisted Frappe methods are an external boundary, not the only internal contract.** Internal Python code should normally call domain services directly rather than making HTTP calls back into the same application.
+6. **Keep domain-specific code inside its domain.** Put only genuinely reusable, domain-neutral behavior into shared helpers/components. Do not create a generic shared abstraction merely to avoid a small amount of duplication.
+7. **Split by responsibility, not by arbitrary file size.** Refactor when one file/component owns several independent workflows, screens, or business responsibilities, or when unrelated changes repeatedly collide in the same file. Do not split code only to satisfy a line-count target.
+8. **Preserve compatibility while splitting.** Prefer incremental extraction behind existing APIs/contracts over a big-bang rewrite.
+
+### POS boundary
+
+The Windows POS is a separate edge application, not another module inside the server monolith. Keep the Electron `main`, `preload`, `renderer`, and `shared` boundaries and keep hardware behind provider contracts. New independent POS screens/workflows must not continue accumulating in the root `AppV2` component; extract Sale, Receipts, Orders, Shift, Work, Settings, and future workflows into focused components/modules as they are materially developed.
+
+### Team boundary
+
+Do not keep expanding one undifferentiated `team.py`. When the Team area grows, preserve separate subdomain responsibilities for employees, schedule/shift planning, motivation, and payroll. Accounting/tax calendar/reporting should receive its own domain or explicit subdomain boundary when implemented, even if the navigation groups it near Team.
+
+### Architectural follow-ups
+
+If an implementation task exposes a necessary structural refactor that is larger than the current task, do not silently expand scope. Record it as a follow-up in **«Архитектор ОС» → «02 План»** when that project source is accessible; otherwise record it explicitly in the PR handoff/final report so it can be added to the plan. Small safe extractions required to keep the current change inside the rules above are allowed.
+
 ## Generated frontend assets
 
 Feature branches must edit source files under `frontend/`, but must not commit generated files under:
