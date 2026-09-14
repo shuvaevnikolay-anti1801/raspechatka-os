@@ -72,6 +72,23 @@ Do not keep expanding one undifferentiated `team.py`. When the Team area grows, 
 
 If an implementation task exposes a necessary structural refactor that is larger than the current task, do not silently expand scope. Record it as a follow-up in **«Архитектор ОС» → «02 План»** when that project source is accessible; otherwise record it explicitly in the PR handoff/final report so it can be added to the plan. Small safe extractions required to keep the current change inside the rules above are allowed.
 
+## External integrations and graceful degradation
+
+Treat every external HTTP API, SaaS, webhook source, payment/fiscal device provider, and similar dependency as potentially slow, unavailable, duplicated, or capable of returning an unknown outcome. An external outage must not become an outage of unrelated Raspechatka OS functions.
+
+1. **Define failure behavior before implementing an integration.** State the source of truth, sync direction, business criticality, degraded mode, and recovery/reconciliation path.
+2. **Block only what truly depends on the provider.** If a bank, messaging service, video service, or other auxiliary provider is down, unrelated sales, warehouse, clients, and other domains must keep working. A card-payment or legally required fiscal operation may block that specific operation, but must not crash or freeze the POS application.
+3. **Use bounded timeouts and fail fast.** Never leave a user request waiting indefinitely for an external service. Safe retries use exponential backoff with jitter and must not create a retry storm.
+4. **Do not silently lose required external work.** When delivery must eventually happen, persist the intent in a durable queue/outbox/inbox or equivalent state before/around the external call, expose pending/failed state, and support automatic plus manual retry/recovery.
+5. **Make retries idempotent.** External creates, payments, webhooks, imports, and sync operations need stable idempotency/deduplication keys whenever the provider/process permits it. Duplicate delivery must be harmless.
+6. **Unknown financial/fiscal outcomes require reconciliation, not blind retry.** Preserve the operation in a recovery state and verify the provider result before any repeat that could charge or fiscalize twice.
+7. **Sync integrations must catch up after outages.** Persist cursor/checkpoint state and use an overlap/backfill strategy where the provider API permits it, so temporary downtime delays data rather than losing it.
+8. **Separate connection/auth state from operational health.** A transient timeout or 5xx must not permanently convert a valid authorization into a disconnected state. Re-authorization is required only when credentials/consent are actually invalid.
+9. **Expose integration health.** Keep useful fields/metrics such as last successful contact/sync, last error, stale/degraded state, pending/retry count, next retry, and alert after a meaningful failure threshold. UI that shows cached/last-known data must make staleness clear when it matters.
+10. **Incoming webhooks are authenticated, deduplicated, and retry-safe.** Persist/process them so repeated provider delivery cannot duplicate business effects; acknowledge quickly when long processing can be deferred.
+11. **Test the failure path.** Integration work is not complete with happy-path tests only. Cover timeout/offline, provider 5xx or equivalent, duplicate delivery, process restart at dangerous boundaries, and successful recovery when the dependency comes back.
+12. **Record larger resilience debt.** If making an existing integration compliant is larger than the current task, record the follow-up in **«Архитектор ОС» → «02 План»** or, if inaccessible, in the PR handoff/final report.
+
 ## Generated frontend assets
 
 Feature branches must edit source files under `frontend/`, but must not commit generated files under:
