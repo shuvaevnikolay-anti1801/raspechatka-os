@@ -124,19 +124,22 @@ async function renameRole(role) {
 	managingRole.value = true;
 	error.value = "";
 	try {
+		let result;
 		if (role.is_new) {
-			await call(
+			result = await call(
 				"raspechatka.access.create_work_role",
 				{ role_name: roleName },
 				{ method: "POST" }
 			);
 		} else {
-			await call(
+			result = await call(
 				"raspechatka.access.rename_work_role",
 				{ role: role.name, role_name: roleName },
 				{ method: "POST" }
 			);
 		}
+		if (!result?.label) throw new Error("Сервер не подтвердил новое название роли");
+		role.label = result.label;
 		cancelRoleEdit();
 		await load();
 	} catch (renameError) {
