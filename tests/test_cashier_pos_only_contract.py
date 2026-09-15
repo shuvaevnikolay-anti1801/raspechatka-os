@@ -11,8 +11,11 @@ def test_cashier_web_access_is_denied_before_routing():
 	assert 'before_request = ["raspechatka.security.enforce_cashier_pos_only"]' in hooks
 	assert 'CASHIER_ROLE = "Raspechatka Cashier"' in security
 	assert 'frappe.PermissionError' in security
-	assert '"raspechatka.api.pos.get_bootstrap"' in security
-	assert '"raspechatka.api.pos.push_events"' in security
+	assert '"raspechatka.api.pos_v2.get_bootstrap"' in security
+	assert '"raspechatka.api.pos_v2.push_events"' in security
+	assert '"raspechatka.api.receipt_search.search_receipts"' in security
+	assert '"raspechatka.api.pos.get_bootstrap"' not in security
+	assert '"raspechatka.api.pos.push_events"' not in security
 	assert '"Raspechatka Cashier"' in web and "frappe.PermissionError" in web
 
 

@@ -4,8 +4,9 @@ from frappe import _
 CASHIER_ROLE = "Raspechatka Cashier"
 CASHIER_ALLOWED_METHODS = {
 	"logout",
-	"raspechatka.api.pos.get_bootstrap",
-	"raspechatka.api.pos.push_events",
+	"raspechatka.api.pos_v2.get_bootstrap",
+	"raspechatka.api.pos_v2.push_events",
+	"raspechatka.api.receipt_search.search_receipts",
 }
 
 
