@@ -11,7 +11,6 @@ from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
-
 POS_MIRROR_RETENTION_DAYS = 60
 
 
@@ -67,8 +66,20 @@ def _customers(point_name):
 	rows = base_pos._customers()
 	if not rows:
 		return rows
-	registered = set(frappe.get_all("Client", filters={"registration_point": point_name, "active": 1}, pluck="name", limit_page_length=10000))
-	point_purchases = frappe.get_all("Client Purchase", filters={"business_point": point_name}, fields=["client", "net_amount", "returned_amount"], limit_page_length=10000)
+	registered = set(
+		frappe.get_all(
+			"Client",
+			filters={"registration_point": point_name, "active": 1},
+			pluck="name",
+			limit_page_length=10000,
+		)
+	)
+	point_purchases = frappe.get_all(
+		"Client Purchase",
+		filters={"business_point": point_name},
+		fields=["client", "net_amount", "returned_amount"],
+		limit_page_length=10000,
+	)
 	stats = {}
 	for purchase in point_purchases:
 		bucket = stats.setdefault(purchase.client, {"count": 0, "total": 0.0})
@@ -99,7 +110,12 @@ def _customers(point_name):
 def _receipt_mirror(point_name):
 	rows = frappe.get_all(
 		"Sales Receipt",
-		filters={"business_point": point_name, "receipt_type": "Sale", "docstatus": ["!=", 2], "posting_datetime": [">=", add_days(now_datetime(), -POS_MIRROR_RETENTION_DAYS)]},
+		filters={
+			"business_point": point_name,
+			"receipt_type": "Sale",
+			"docstatus": ["!=", 2],
+			"posting_datetime": [">=", add_days(now_datetime(), -POS_MIRROR_RETENTION_DAYS)],
+		},
 		fields=["name", "external_id", "posting_datetime", "client", "total_amount", "comment"],
 		order_by="posting_datetime desc",
 		limit_page_length=2000,
@@ -107,21 +123,71 @@ def _receipt_mirror(point_name):
 	if not rows:
 		return []
 	parents = [row.name for row in rows]
-	clients = {row.name: row.client_name for row in frappe.get_all("Client", filters={"name": ["in", [row.client for row in rows if row.client] or ["__none__"]]}, fields=["name", "client_name"], limit_page_length=2000)}
+	clients = {
+		row.name: row.client_name
+		for row in frappe.get_all(
+			"Client",
+			filters={"name": ["in", [row.client for row in rows if row.client] or ["__none__"]]},
+			fields=["name", "client_name"],
+			limit_page_length=2000,
+		)
+	}
 	items = {}
-	for item in frappe.get_all("Sales Receipt Item", filters={"parent": ["in", parents]}, fields=["parent", "item", "item_name", "quantity", "unit_price", "discount_percent"], limit_page_length=20000):
-		items.setdefault(item.parent, []).append({"id": len(items.get(item.parent, [])), "productId": item.item, "name": item.item_name, "quantity": flt(item.quantity), "unitPriceMinor": round(flt(item.unit_price) * 100), "discountPercent": flt(item.discount_percent), "returnedQuantity": 0})
+	for item in frappe.get_all(
+		"Sales Receipt Item",
+		filters={"parent": ["in", parents]},
+		fields=["parent", "item", "item_name", "quantity", "unit_price", "discount_percent"],
+		limit_page_length=20000,
+	):
+		items.setdefault(item.parent, []).append(
+			{
+				"id": len(items.get(item.parent, [])),
+				"productId": item.item,
+				"name": item.item_name,
+				"quantity": flt(item.quantity),
+				"unitPriceMinor": round(flt(item.unit_price) * 100),
+				"discountPercent": flt(item.discount_percent),
+				"returnedQuantity": 0,
+			}
+		)
 	payment_methods = {"Cash": "cash", "Card": "card", "QR": "qr"}
 	payments = {}
-	for payment in frappe.get_all("Sales Receipt Payment", filters={"parent": ["in", parents]}, fields=["parent", "payment_channel", "amount", "external_payment_id"], limit_page_length=10000):
-		payments.setdefault(payment.parent, []).append({"method": payment_methods.get(payment.payment_channel, payment.payment_channel.lower()), "amountMinor": round(flt(payment.amount) * 100), "transactionId": payment.external_payment_id})
+	for payment in frappe.get_all(
+		"Sales Receipt Payment",
+		filters={"parent": ["in", parents]},
+		fields=["parent", "payment_channel", "amount", "external_payment_id"],
+		limit_page_length=10000,
+	):
+		payments.setdefault(payment.parent, []).append(
+			{
+				"method": payment_methods.get(payment.payment_channel, payment.payment_channel.lower()),
+				"amountMinor": round(flt(payment.amount) * 100),
+				"transactionId": payment.external_payment_id,
+			}
+		)
 	result = []
 	for row in rows:
 		row_payments = payments.get(row.name, [])
 		methods = list(dict.fromkeys(payment["method"] for payment in row_payments))
 		identifier = row.external_id or f"server:{row.name}"
 		match = re.search(r"Фискальный чек:\s*([^\s]+)", str(row.comment or ""))
-		result.append({"id": identifier, "serverId": row.name, "externalId": row.external_id, "pointId": point_name, "receiptNumber": match.group(1) if match else row.name, "totalMinor": round(flt(row.total_amount) * 100), "returnedMinor": 0, "paymentMethod": methods[0] if len(methods) == 1 else "mixed", "customerName": clients.get(row.client) or "Розничный покупатель", "createdAt": str(row.posting_datetime), "status": "completed", "lines": items.get(row.name, []), "payments": row_payments})
+		result.append(
+			{
+				"id": identifier,
+				"serverId": row.name,
+				"externalId": row.external_id,
+				"pointId": point_name,
+				"receiptNumber": match.group(1) if match else row.name,
+				"totalMinor": round(flt(row.total_amount) * 100),
+				"returnedMinor": 0,
+				"paymentMethod": methods[0] if len(methods) == 1 else "mixed",
+				"customerName": clients.get(row.client) or "Розничный покупатель",
+				"createdAt": str(row.posting_datetime),
+				"status": "completed",
+				"lines": items.get(row.name, []),
+				"payments": row_payments,
+			}
+		)
 	return result
 
 
@@ -170,7 +236,7 @@ def _allocate_final_amounts(lines, total_minor):
 	gross = []
 	for row in lines:
 		quantity = flt(row.get("quantity"))
-		unit_price_minor = int(round(flt(row.get("unitPriceMinor"))))
+		unit_price_minor = round(flt(row.get("unitPriceMinor")))
 		gross_minor = max(0, round(quantity * unit_price_minor))
 		discount = min(max(flt(row.get("discountPercent")), 0), 100)
 		net_minor = max(0, round(gross_minor * (1 - discount / 100)))
@@ -211,7 +277,7 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 	)
 	if not per_review or not remaining:
 		return 0, 0, receipt_discount
-	review_count = max(0, int(round(remaining / per_review)))
+	review_count = max(0, round(remaining / per_review))
 	review_discount = min(receipt_discount, review_count * per_review)
 	other_discount = max(0, receipt_discount - review_discount)
 	return review_count, review_discount, other_discount
@@ -220,7 +286,7 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 def _sale_receipt(payload, cashier_id, connection):
 	lines = payload.get("lines") or []
 	payments_payload = payload.get("payments") or []
-	paid_total = sum(int(round(flt(payment.get("amountMinor")))) for payment in payments_payload)
+	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
 	gross, raw, allocated = _allocate_final_amounts(lines, paid_total)
 	review_count, review_discount, receipt_other_discount = _review_breakdown(
 		payload, connection, sum(raw), paid_total
@@ -280,7 +346,7 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 	if not isinstance(events, list):
 		frappe.throw(_("Ожидается список событий"))
 	if len(events) > 100:
-		frappe.throw(_("За один запрос можно передать не более 100 событий"))
+		frappe.throw(_("За один запрос можно передать не более 100 событий"))  # noqa: RUF001
 	accepted = []
 	try:
 		for event in events:
@@ -288,7 +354,7 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			event_type = str(event.get("eventType") or "").strip()
 			payload = event.get("payload") or {}
 			if not event_id or not event_type:
-				frappe.throw(_("В событии отсутствует id или eventType"))
+				frappe.throw(_("В событии отсутствует id или eventType"))  # noqa: RUF001
 			stats = {"created": 0, "duplicates": 0, "errors": []}
 			if event_type == "shift.opened":
 				sales_api._ingest_shift(base_pos._shift(payload, selected["id"]), connection, stats)

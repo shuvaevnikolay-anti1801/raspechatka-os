@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -13,7 +12,7 @@ def test_pos_bootstrap_mirrors_only_authenticated_connection_point():
 	assert '"retentionDays": POS_MIRROR_RETENTION_DAYS' in bootstrap
 	receipts = source[source.index("def _receipt_mirror") : source.index("def _rules")]
 	assert '"business_point": point_name' in receipts
-	assert 'add_days(now_datetime(), -POS_MIRROR_RETENTION_DAYS)' in receipts
+	assert "add_days(now_datetime(), -POS_MIRROR_RETENTION_DAYS)" in receipts
 
 
 def test_pos_employee_allowlist_remains_active_and_point_scoped():
