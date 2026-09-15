@@ -27,7 +27,7 @@ PROTECTED_ROLES = {
 }
 ROLE_LABELS = {
 	"Raspechatka Network Admin": "Администратор сети",
-	"Raspechatka Franchise Owner": "Владелец франчайзи",
+	"Raspechatka Franchise Owner": "Владелец партнёра",
 	"Raspechatka Point Manager": "Управляющий точками",
 	"Raspechatka Cashier": "Кассир",
 }
@@ -121,6 +121,7 @@ def get_scope(user=None):
 	if user == "Administrator" or "System Manager" in roles or "Raspechatka Network Admin" in roles:
 		return {
 			"global": True,
+			"scope_type": "Network",
 			"organization": None,
 			"business_entity": None,
 			"business_entities": [],
@@ -137,11 +138,17 @@ def get_scope(user=None):
 		if profile.scope_type == "Network":
 			return {
 				"global": True,
+				"scope_type": "Network",
 				"organization": None,
 				"business_entity": None,
 				"business_entities": [],
 				"points": [],
 			}
+		organization_active = profile.organization and frappe.db.get_value(
+			"Organization", profile.organization, "active"
+		)
+		if not organization_active:
+			return _empty_scope()
 		entities = []
 		points = []
 		if profile.scope_type == "Partner":
@@ -156,7 +163,12 @@ def get_scope(user=None):
 				pluck="name",
 			)
 		elif profile.scope_type == "Business Entity":
-			entities = [profile.business_entity] if profile.business_entity else []
+			entity = frappe.db.get_value(
+				"Business Entity", profile.business_entity, ["organization", "active"], as_dict=True
+			)
+			if not entity or not entity.active or entity.organization != profile.organization:
+				return _empty_scope()
+			entities = [profile.business_entity]
 			points = frappe.get_all(
 				"Business Point",
 				filters={
@@ -165,17 +177,37 @@ def get_scope(user=None):
 				},
 				pluck="name",
 			)
-		else:
-			points = frappe.get_all(
+		elif profile.scope_type == "Points":
+			assigned_points = frappe.get_all(
 				"Raspechatka User Point",
 				filters={"parent": profile.name},
 				pluck="business_point",
 			)
-			entities = list(
-				{frappe.db.get_value("Business Point", point, "business_entity") for point in points} - {None}
+			points = frappe.get_all(
+				"Business Point",
+				filters={
+					"name": ["in", assigned_points or ["__none__"]],
+					"business_entity": profile.business_entity,
+					"active": 1,
+				},
+				pluck="name",
 			)
+			entity = frappe.db.get_value(
+				"Business Entity", profile.business_entity, ["organization", "active"], as_dict=True
+			)
+			if (
+				not entity
+				or not entity.active
+				or entity.organization != profile.organization
+				or set(points) != set(assigned_points)
+			):
+				return _empty_scope()
+			entities = [profile.business_entity]
+		else:
+			return _empty_scope()
 		return {
 			"global": False,
+			"scope_type": profile.scope_type,
 			"organization": profile.organization,
 			"business_entity": entities[0] if len(entities) == 1 else None,
 			"business_entities": entities,
@@ -191,22 +223,55 @@ def get_scope(user=None):
 	if not employee:
 		return {
 			"global": False,
+			"scope_type": None,
 			"organization": None,
 			"business_entity": None,
 			"business_entities": [],
 			"points": [],
 		}
-	points = frappe.get_all(
+	entity = frappe.db.get_value(
+		"Business Entity", employee.business_entity, ["organization", "active"], as_dict=True
+	)
+	if (
+		not entity
+		or not entity.active
+		or not frappe.db.get_value("Organization", entity.organization, "active")
+	):
+		return _empty_scope()
+	assigned_points = frappe.get_all(
 		"Employee Point Assignment",
 		filters={"parent": employee.name},
 		pluck="business_point",
 	)
+	points = frappe.get_all(
+		"Business Point",
+		filters={
+			"name": ["in", assigned_points or ["__none__"]],
+			"business_entity": employee.business_entity,
+			"active": 1,
+		},
+		pluck="name",
+	)
+	if set(points) != set(assigned_points):
+		return _empty_scope()
 	return {
 		"global": False,
-		"organization": frappe.db.get_value("Business Entity", employee.business_entity, "organization"),
+		"scope_type": "Points",
+		"organization": entity.organization,
 		"business_entity": employee.business_entity,
 		"business_entities": [employee.business_entity],
 		"points": points,
+	}
+
+
+def _empty_scope():
+	return {
+		"global": False,
+		"scope_type": None,
+		"organization": None,
+		"business_entity": None,
+		"business_entities": [],
+		"points": [],
 	}
 
 
