@@ -53,6 +53,7 @@ export type BootState = {
   cashierId?: string
   cashierName: string
   employees: PointEmployee[]
+  accessRevoked: boolean
   online: boolean
   pendingSync: number
   lastSyncAt?: string

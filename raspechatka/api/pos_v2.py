@@ -98,7 +98,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			frappe.throw(_("Точка продаж отключена"))
 		workplace = base_pos._workplace(point.name)
 		employees = base_pos._point_employees(point.name)
-		selected = base_pos._selected_employee(employees, cashier_id)
+		selected = base_pos._bootstrap_employee(employees, cashier_id)
 		workplace_data_employee = frappe._dict(
 			name=selected["id"] if selected else "__none__",
 			employee_name=selected["name"] if selected else "",

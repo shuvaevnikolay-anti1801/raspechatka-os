@@ -232,7 +232,7 @@ scheduler_events = {
 
 # Request Events
 # ----------------
-# before_request = ["raspechatka.utils.before_request"]
+before_request = ["raspechatka.security.enforce_cashier_pos_only"]
 # after_request = ["raspechatka.utils.after_request"]
 
 # Job Events

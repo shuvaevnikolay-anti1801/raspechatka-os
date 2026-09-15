@@ -9,6 +9,8 @@ def get_context():
 		redirect = frappe.Redirect()
 		redirect.http_status_code = 302
 		raise redirect
+	if "Raspechatka Cashier" in set(frappe.get_roles(frappe.session.user)):
+		frappe.throw("Учётная запись кассира доступна только в Windows POS", frappe.PermissionError)
 
 	return {"boot": get_boot()}
 

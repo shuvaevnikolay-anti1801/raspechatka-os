@@ -152,6 +152,8 @@ def search_receipts(
 	"""Search receipts server-side and always scope results to the POS business point."""
 	connection = base_pos._authenticate(device_id, token)
 	point = connection.business_point
+	if cashier_id:
+		base_pos._selected_employee(base_pos._point_employees(point), cashier_id)
 	limit = min(max(cint(limit) or 100, 1), 200)
 	filters = [
 		["Sales Receipt", "business_point", "=", point],

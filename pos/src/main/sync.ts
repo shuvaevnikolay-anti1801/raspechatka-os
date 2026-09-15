@@ -10,6 +10,7 @@ export function buildBootState(database:PosDatabase):BootState{
     pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
     workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
     cashierId:remote.cashierId,cashierName:remote.cashierName??'Выберите сотрудника',employees:remote.employees??[],
+    accessRevoked:Boolean(remote.accessRevoked),
     online:Boolean(remote.online),pendingSync:database.pendingSyncCount(),lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
     shift:database.currentShift(),rules:remote.rules??{
       allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,
@@ -29,13 +30,14 @@ export async function performSync(database:PosDatabase,connectionStore:Connectio
 
   const applyBootstrap=async()=>{
     const remote=await loadBootstrap(config)
+    const selectedIsConfirmed=!config.cashierId||remote.employees.some((employee)=>employee.id===config.cashierId)
     database.replaceProducts(remote.products)
     database.replaceCustomers(remote.customers)
     database.setWorkplaceData(remote.workplaceData)
     database.setState('bootstrap',JSON.stringify({
       pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
       workstationName:remote.workplace.name,cashierId:remote.employee?.id,cashierName:remote.employee?.name||'Выберите сотрудника',
-      employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
+      employees:remote.employees||[],accessRevoked:!selectedIsConfirmed,online:true,lastSyncAt:buildBootState(database).lastSyncAt,
       source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
     }))
     successfulContact=true

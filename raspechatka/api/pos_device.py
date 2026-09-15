@@ -32,9 +32,33 @@ def _point_employees(point_name):
 	)
 	if not assignments:
 		return []
+	profiles = frappe.get_all(
+		"Raspechatka User Profile",
+		filters={
+			"linked_employee": ["in", assignments],
+			"active": 1,
+			"access_profile": "Raspechatka Cashier",
+		},
+		fields=["linked_employee", "system_user"],
+		limit_page_length=1000,
+	)
+	enabled_users = set(
+		frappe.get_all(
+			"User",
+			filters={
+				"name": ["in", [row.system_user for row in profiles if row.system_user] or ["__none__"]],
+				"enabled": 1,
+			},
+			pluck="name",
+			limit_page_length=1000,
+		)
+	)
+	eligible = {
+		row.linked_employee for row in profiles if row.system_user and row.system_user in enabled_users
+	}
 	rows = frappe.get_all(
 		"Employee",
-		filters={"name": ["in", assignments], "active": 1},
+		filters={"name": ["in", list(eligible) or ["__none__"]], "active": 1},
 		fields=["name", "employee_name"],
 		order_by="employee_name asc",
 		limit_page_length=1000,
@@ -85,6 +109,14 @@ def _selected_employee(employees, cashier_id):
 	return employees[0] if len(employees) == 1 else None
 
 
+def _bootstrap_employee(employees, cashier_id):
+	"""Return an authoritative selection without hiding the refreshed allowlist on revocation."""
+	cashier_id = str(cashier_id or "").strip()
+	if cashier_id:
+		return next((employee for employee in employees if employee["id"] == cashier_id), None)
+	return employees[0] if len(employees) == 1 else None
+
+
 def _workplace(point_name):
 	rows = frappe.get_all(
 		"POS Workplace",
@@ -131,7 +163,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			frappe.throw(_("Точка продаж отключена"))
 		workplace = _workplace(point.name)
 		employees = _point_employees(point.name)
-		selected = _selected_employee(employees, cashier_id)
+		selected = _bootstrap_employee(employees, cashier_id)
 		workplace_data_employee = frappe._dict(
 			name=selected["id"] if selected else "__none__",
 			employee_name=selected["name"] if selected else "",
@@ -254,11 +286,11 @@ def _return_receipt(payload, cashier_id):
 		channel = _payment_channel(payment.get("method"))
 		if channel:
 			payments.append(
-			{
-				"payment_channel": channel,
-				"amount": flt(payment.get("amountMinor")) / 100,
-				"external_payment_id": payment.get("transactionId"),
-			}
+				{
+					"payment_channel": channel,
+					"amount": flt(payment.get("amountMinor")) / 100,
+					"external_payment_id": payment.get("transactionId"),
+				}
 			)
 	return {
 		"external_id": payload.get("id"),

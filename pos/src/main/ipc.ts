@@ -35,6 +35,11 @@ export function registerIpcHandlers(dependencies:{
 }):void {
   const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics}=dependencies
   const bootState=()=>buildBootState(database)
+  const assertCashierAccess=()=>{
+    const boot=bootState()
+    if(!boot.cashierId)throw new Error('Выберите кассира из подтверждённого списка этой точки')
+    if(boot.accessRevoked)throw new Error('Доступ кассира отозван. Новые операции запрещены; открытую смену можно только закрыть.')
+  }
 
   const errorMessage=(error:unknown)=>error instanceof Error?error.message:String(error)
   const assertFiscalShiftReady=async(action:string)=>{
@@ -139,23 +144,24 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:list-diagnostic-events',(_event,limit?:number)=>diagnostics.list(limit))
 
   ipcMain.handle('pos:list-held-receipts',()=>database.listHeldReceipts())
-  ipcMain.handle('pos:hold-receipt',(_event,input:Omit<HeldReceipt,'id'|'createdAt'>)=>database.holdReceipt(input))
+  ipcMain.handle('pos:hold-receipt',(_event,input:Omit<HeldReceipt,'id'|'createdAt'>)=>{assertCashierAccess();return database.holdReceipt(input)})
   ipcMain.handle('pos:delete-held-receipt',(_event,id:string)=>database.deleteHeldReceipt(id))
   ipcMain.handle('pos:get-shift-summary',()=>database.getShiftSummary())
   ipcMain.handle('pos:list-cash-operations',()=>database.listCashOperations())
-  ipcMain.handle('pos:add-cash-operation',(_event,type:CashOperationType,amountMinor:number,reason:string)=>database.addCashOperation(type,amountMinor,reason))
+  ipcMain.handle('pos:add-cash-operation',(_event,type:CashOperationType,amountMinor:number,reason:string)=>{assertCashierAccess();return database.addCashOperation(type,amountMinor,reason)})
   ipcMain.handle('pos:get-workplace-data',()=>database.getWorkplaceData())
-  ipcMain.handle('pos:report-stock-write-off',(_event,request:StockWriteOffRequest)=>database.reportStockWriteOff(request))
-  ipcMain.handle('pos:create-supply-request',(_event,request:SupplyRequestInput)=>database.createSupplyRequest(request))
-  ipcMain.handle('pos:record-cleaner-visit',()=>database.recordCleanerVisit(bootState().cashierName))
-  ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>database.payCleaner(amountMinor))
+  ipcMain.handle('pos:report-stock-write-off',(_event,request:StockWriteOffRequest)=>{assertCashierAccess();return database.reportStockWriteOff(request)})
+  ipcMain.handle('pos:create-supply-request',(_event,request:SupplyRequestInput)=>{assertCashierAccess();return database.createSupplyRequest(request)})
+  ipcMain.handle('pos:record-cleaner-visit',()=>{assertCashierAccess();return database.recordCleanerVisit(bootState().cashierName)})
+  ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>{assertCashierAccess();return database.payCleaner(amountMinor)})
   ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>database.saveCashCount(countType,lines))
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
   ipcMain.handle('pos:list-orders',()=>database.listOrders())
-  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>database.createUnpaidOrder(request))
-  ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>database.updateOrder(request))
+  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{assertCashierAccess();return database.createUnpaidOrder(request)})
+  ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>{assertCashierAccess();return database.updateOrder(request)})
 
   ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
+    assertCashierAccess()
     diagnostics.record({source:'shift',eventType:'shift.open_started',message:'Начинаем открытие локальной и фискальной смены'})
     try{
       const shift=await shiftCoordinator.openShift(bootState().cashierName)
@@ -206,6 +212,7 @@ export function registerIpcHandlers(dependencies:{
   })
 
   ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
+    assertCashierAccess()
     const existing=database.findSaleByClientRequestId(request.clientRequestId)
     if(existing)return {...existing,changeMinor:0,queuedForSync:true}
     const shift=database.currentShift();if(!shift)throw new Error('Сначала откройте смену')
@@ -278,6 +285,7 @@ export function registerIpcHandlers(dependencies:{
   })
 
   ipcMain.handle('pos:create-return',async(_event,request:CreateReturnRequest):Promise<ReturnResult>=>{
+    assertCashierAccess()
     const existing=database.findReturnByClientRequestId(request.clientRequestId)
     if(existing)return {...existing,queuedForSync:true}
     const shift=database.currentShift();if(!shift)throw new Error('Сначала откройте смену')

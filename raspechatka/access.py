@@ -73,6 +73,8 @@ def get_access_level(area_code, user=None):
 	roles = set(frappe.get_roles(user))
 	if "System Manager" in roles:
 		return "Admin"
+	if "Raspechatka Cashier" in roles:
+		return "None"
 	level = _get_rule_level(area_code, roles)
 	if level is not None:
 		return level
