@@ -29,7 +29,11 @@ const groupedAreas = computed(() => {
 });
 
 function isProtected(role, area) {
-	return role.name === "Raspechatka Network Admin" && area.area === "page.references.access";
+	return Boolean(role.fixed_page_level || role.fixed_areas?.[area.area]);
+}
+
+function fixedAccessLevel(role, area) {
+	return role.fixed_page_level || role.fixed_areas?.[area.area] || "";
 }
 
 async function load() {
@@ -42,10 +46,17 @@ async function load() {
 		const nextMatrix = {};
 		for (const role of roles.value) {
 			nextMatrix[role.name] = {};
-			for (const area of areas.value) nextMatrix[role.name][area.area] = "None";
+			for (const area of areas.value) {
+				nextMatrix[role.name][area.area] = fixedAccessLevel(role, area) || "None";
+			}
 		}
 		for (const rule of result.rules || []) {
-			if (nextMatrix[rule.role]) nextMatrix[rule.role][rule.access_area] = rule.access_level;
+			const role = roles.value.find((item) => item.name === rule.role);
+			const area = areas.value.find((item) => item.area === rule.access_area);
+			if (role && area && nextMatrix[rule.role]) {
+				nextMatrix[rule.role][rule.access_area] =
+					fixedAccessLevel(role, area) || rule.access_level;
+			}
 		}
 		matrix.value = nextMatrix;
 	} catch (loadError) {
@@ -248,6 +259,7 @@ onMounted(load);
 										×
 									</button>
 									<button
+										v-if="role.deletable"
 										type="button"
 										class="danger"
 										title="Удалить роль"
@@ -284,6 +296,9 @@ onMounted(load);
 							<select
 								v-model="matrix[role.name][area.area]"
 								:disabled="isProtected(role, area)"
+								:title="
+									isProtected(role, area) ? 'Право зафиксировано системой' : ''
+								"
 								:aria-label="`${area.label}: ${role.label}`"
 							>
 								<option value="None">Не видно</option>
