@@ -27,13 +27,37 @@ def test_role_creation_is_server_validated_and_retry_safe():
 	assert '"created": False' in section
 
 
+def test_custom_role_management_keeps_stable_role_id_and_checks_users():
+	source = (ROOT / "raspechatka/access.py").read_text(encoding="utf-8")
+	rename = source[source.index("def rename_work_role") : source.index("def delete_work_role")]
+	delete = source[source.index("def delete_work_role") : source.index("def save_access_settings")]
+	assert "role_doc.role_name = new_label" in rename
+	assert "rename_doc" not in rename
+	assert "_validate_manageable_role(role_doc)" in rename
+	assert "_assigned_role_users(role_doc.name)" in delete
+	assert 'frappe.delete_doc("Role", role_doc.name' in delete
+	assert '"deleted": False, "users": users' in delete
+
+
+def test_access_matrix_exposes_edit_delete_controls_for_custom_roles():
+	page = (ROOT / "frontend/src/pages/AccessSettingsPage.vue").read_text(encoding="utf-8")
+	assert "role.editable" in page
+	assert "is_new: true" in page
+	assert "Новая рабочая роль" not in page
+	assert "newRoleName" not in page
+	assert "rename_work_role" in page
+	assert "create_work_role" in page
+	assert "delete_work_role" in page
+	assert "blockedUsers" in page
+
+
 def test_users_page_uses_dynamic_work_roles_only():
 	page = (ROOT / "frontend/src/pages/UsersPage.vue").read_text(encoding="utf-8")
 	api = (ROOT / "raspechatka/api/users.py").read_text(encoding="utf-8")
 	assert "options.access_roles" in page
 	assert 'value="Network Admin"' not in page
 	assert '"access_roles"' in api
-	assert "get_matrix_roles()" in api
+	assert "get_matrix_role_rows()" in api
 
 
 def test_network_admin_guard_and_sticky_header_remain():

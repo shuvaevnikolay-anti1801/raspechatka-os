@@ -4,13 +4,16 @@ import { call } from "../api";
 
 const loading = ref(true);
 const saving = ref(false);
-const creatingRole = ref(false);
-const newRoleName = ref("");
+const editingRole = ref("");
+const editingRoleName = ref("");
+const managingRole = ref(false);
+const blockedUsers = ref([]);
 const saved = ref(false);
 const error = ref("");
 const areas = ref([]);
 const roles = ref([]);
 const matrix = ref({});
+const hasDraft = computed(() => roles.value.some((role) => role.is_new));
 
 const groupedAreas = computed(() => {
 	const groups = [];
@@ -81,23 +84,94 @@ async function save() {
 	}
 }
 
-async function createRole() {
-	const roleName = newRoleName.value.trim();
-	if (!roleName || creatingRole.value) return;
-	creatingRole.value = true;
+function createRole() {
+	const currentDraft = roles.value.find((role) => role.is_new);
+	if (currentDraft) {
+		beginRoleEdit(currentDraft);
+		return;
+	}
+	const role = {
+		name: `__new_role_${Date.now()}`,
+		label: "Новая роль",
+		editable: true,
+		deletable: true,
+		is_new: true,
+	};
+	roles.value.push(role);
+	matrix.value[role.name] = {};
+	for (const area of areas.value) matrix.value[role.name][area.area] = "None";
+	beginRoleEdit(role);
+}
+
+function beginRoleEdit(role) {
+	editingRole.value = role.name;
+	editingRoleName.value = role.label;
+	blockedUsers.value = [];
+}
+
+function cancelRoleEdit(role = null) {
+	if (role?.is_new) {
+		roles.value = roles.value.filter((item) => item.name !== role.name);
+		delete matrix.value[role.name];
+	}
+	editingRole.value = "";
+	editingRoleName.value = "";
+}
+
+async function renameRole(role) {
+	const roleName = editingRoleName.value.trim();
+	if (!roleName || managingRole.value) return;
+	managingRole.value = true;
 	error.value = "";
 	try {
-		await call(
-			"raspechatka.access.create_work_role",
-			{ role_name: roleName },
+		if (role.is_new) {
+			await call(
+				"raspechatka.access.create_work_role",
+				{ role_name: roleName },
+				{ method: "POST" }
+			);
+		} else {
+			await call(
+				"raspechatka.access.rename_work_role",
+				{ role: role.name, role_name: roleName },
+				{ method: "POST" }
+			);
+		}
+		cancelRoleEdit();
+		await load();
+	} catch (renameError) {
+		error.value = renameError.message;
+	} finally {
+		managingRole.value = false;
+	}
+}
+
+async function deleteRole(role) {
+	if (role.is_new) {
+		cancelRoleEdit(role);
+		return;
+	}
+	if (managingRole.value || !confirm(`Удалить роль «${role.label}»?`)) return;
+	managingRole.value = true;
+	error.value = "";
+	blockedUsers.value = [];
+	try {
+		const result = await call(
+			"raspechatka.access.delete_work_role",
+			{ role: role.name },
 			{ method: "POST" }
 		);
-		newRoleName.value = "";
+		if (!result.deleted) {
+			blockedUsers.value = result.users || [];
+			error.value = "Удалить роль нельзя: она назначена пользователям.";
+			return;
+		}
+		cancelRoleEdit();
 		await load();
-	} catch (createError) {
-		error.value = createError.message;
+	} catch (deleteError) {
+		error.value = deleteError.message;
 	} finally {
-		creatingRole.value = false;
+		managingRole.value = false;
 	}
 }
 
@@ -114,29 +188,27 @@ onMounted(load);
 			</div>
 			<div class="heading-actions">
 				<span v-if="saved" class="save-state">Сохранено</span>
-				<button class="button button-primary" :disabled="saving || loading" @click="save">
+				<button
+					class="button button-secondary"
+					:disabled="loading || managingRole"
+					@click="createRole"
+				>
+					＋ Создать роль
+				</button>
+				<button
+					class="button button-primary"
+					:disabled="saving || loading || hasDraft"
+					@click="save"
+				>
 					{{ saving ? "Сохраняем…" : "Сохранить настройки" }}
 				</button>
 			</div>
 		</div>
 
 		<div v-if="error" class="form-error">{{ error }}</div>
-		<form class="role-creator" @submit.prevent="createRole">
-			<label>
-				<span>Новая рабочая роль</span>
-				<input
-					v-model="newRoleName"
-					maxlength="140"
-					placeholder="Например, Старший менеджер"
-				/>
-			</label>
-			<button
-				class="button button-secondary"
-				:disabled="creatingRole || !newRoleName.trim()"
-			>
-				{{ creatingRole ? "Создаём…" : "＋ Создать роль" }}
-			</button>
-		</form>
+		<ul v-if="blockedUsers.length" class="blocked-users">
+			<li v-for="user in blockedUsers" :key="user.user || user.label">{{ user.label }}</li>
+		</ul>
 		<div v-if="loading" class="table-message"><span class="loader"></span></div>
 		<div v-else-if="!roles.length" class="empty-state">
 			<b>Нет доступных ролей</b>
@@ -148,7 +220,55 @@ onMounted(load);
 					<tr>
 						<th class="page-column">Раздел / страница</th>
 						<th v-for="role in roles" :key="role.name" class="role-column">
-							<span>{{ role.label }}</span>
+							<div v-if="editingRole === role.name" class="role-editor">
+								<input
+									v-model="editingRoleName"
+									maxlength="140"
+									:aria-label="`Новое название роли ${role.label}`"
+									@keyup.enter="renameRole(role)"
+									@keyup.esc="cancelRoleEdit(role)"
+								/>
+								<div class="role-actions">
+									<button
+										type="button"
+										:title="'Сохранить название'"
+										:disabled="managingRole || !editingRoleName.trim()"
+										@click="renameRole(role)"
+									>
+										✓
+									</button>
+									<button
+										type="button"
+										title="Отменить"
+										@click="cancelRoleEdit(role)"
+									>
+										×
+									</button>
+									<button
+										type="button"
+										class="danger"
+										title="Удалить роль"
+										:disabled="managingRole"
+										@click="deleteRole(role)"
+									>
+										🗑
+									</button>
+								</div>
+							</div>
+							<div v-else class="role-heading">
+								<span>{{ role.label }}</span>
+								<button
+									v-if="role.editable"
+									type="button"
+									:title="`Редактировать роль ${role.label}`"
+									@click="beginRoleEdit(role)"
+								>
+									✎
+								</button>
+								<span v-else class="role-lock" title="Встроенная роль защищена"
+									>🔒</span
+								>
+							</div>
 						</th>
 					</tr>
 				</thead>
@@ -189,21 +309,6 @@ onMounted(load);
 .save-state {
 	color: #668600;
 	font-size: 11px;
-	font-weight: 700;
-}
-.role-creator {
-	display: flex;
-	align-items: end;
-	gap: 10px;
-	margin-bottom: 14px;
-}
-.role-creator label {
-	display: grid;
-	width: min(420px, 100%);
-	gap: 6px;
-}
-.role-creator label span {
-	font-size: 10px;
 	font-weight: 700;
 }
 .access-matrix {
@@ -248,6 +353,47 @@ onMounted(load);
 	display: block;
 	max-width: 150px;
 	line-height: 1.3;
+}
+.role-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.role-heading button,
+.role-actions button {
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 5px;
+	background: #fff;
+	cursor: pointer;
+}
+.role-lock {
+	font-size: 12px;
+}
+.role-editor {
+	display: grid;
+	gap: 6px;
+}
+.role-editor input {
+	width: 100%;
+	min-width: 0;
+}
+.role-actions {
+	display: flex;
+	gap: 5px;
+}
+.role-actions .danger {
+	color: #a02d21;
+}
+.blocked-users {
+	margin: -8px 0 14px;
+	padding: 10px 14px 10px 30px;
+	border: 1px solid #e6c7c2;
+	background: #fff7f5;
+	font-size: 11px;
 }
 .section-row th {
 	position: sticky;
