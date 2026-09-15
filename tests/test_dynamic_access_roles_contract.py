@@ -31,7 +31,9 @@ def test_custom_role_management_keeps_stable_role_id_and_checks_users():
 	source = (ROOT / "raspechatka/access.py").read_text(encoding="utf-8")
 	rename = source[source.index("def rename_work_role") : source.index("def delete_work_role")]
 	delete = source[source.index("def delete_work_role") : source.index("def save_access_settings")]
-	assert "role_doc.role_name = new_label" in rename
+	assert 'frappe.db.set_value("Role", role_doc.name, "role_name", new_label)' in rename
+	assert 'frappe.db.get_value("Role", role_doc.name, "role_name")' in rename
+	assert "saved_label != new_label" in rename
 	assert "rename_doc" not in rename
 	assert "_validate_manageable_role(role_doc)" in rename
 	assert "_assigned_role_users(role_doc.name)" in delete
@@ -48,6 +50,8 @@ def test_access_matrix_exposes_edit_delete_controls_for_work_roles():
 	assert "create_work_role" in page
 	assert "delete_work_role" in page
 	assert "blockedUsers" in page
+	assert "role.label = result.label" in page
+	assert "Сервер не подтвердил новое название роли" in page
 	assert "role-lock" not in page
 
 
