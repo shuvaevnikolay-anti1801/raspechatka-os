@@ -78,10 +78,10 @@ REFERENCE_CONFIG = {
 }
 
 AREA_BY_REFERENCE = {
-	"organizations": "references.network", "entities": "references.network", "points": "references.network", "warehouses": "references.storage",
-	"clients": "references.clients", "suppliers": "references.suppliers", "employees": "references.employees", "positions": "references.employees",
-	"catalog-groups": "references.catalog", "catalog-units": "references.catalog", "price-types": "references.catalog",
-	"payment-methods": "references.finance", "pos-workplaces": "references.finance", "cash-registers": "references.finance", "financial-articles": "references.finance",
+	"organizations": "page.references.organizations", "entities": "page.references.entities", "points": "page.references.points", "warehouses": "page.references.warehouses",
+	"clients": "page.clients.list", "suppliers": "page.references.suppliers", "employees": "page.team.employees", "positions": "page.team.positions",
+	"catalog-groups": "page.catalog", "catalog-units": "page.catalog", "price-types": "page.catalog",
+	"payment-methods": "page.finance.settings", "pos-workplaces": "page.sales.integration", "cash-registers": "page.sales.integration", "financial-articles": "page.finance.settings",
 }
 
 
@@ -177,7 +177,7 @@ def get_reference_detail(reference, name):
 
 @frappe.whitelist()
 def lookup_entity_by_inn(inn):
-	require_access("references.network", "read")
+	require_access("page.references.entities", "read")
 	inn = digits(inn)
 	if len(inn) != 12 or not is_valid_inn(inn):
 		frappe.throw(_("Укажите корректный 12-значный ИНН индивидуального предпринимателя"))
@@ -216,7 +216,7 @@ def lookup_entity_by_inn(inn):
 
 @frappe.whitelist()
 def lookup_bank_by_bic(bic):
-	require_access("references.network", "read")
+	require_access("page.references.entities", "read")
 	bic = digits(bic)
 	if not is_valid_bic(bic):
 		frappe.throw(_("БИК должен содержать 9 цифр"))
@@ -314,7 +314,7 @@ def save_reference(reference, data):
 def save_bank_account(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("references.network", "write" if name else "create")
+	require_access("page.references.entities", "write" if name else "create")
 	entity = data.get("business_entity") or (frappe.db.get_value("Business Bank Account", name, "business_entity") if name else None)
 	_ensure_scoped_name("entities", entity)
 	doc = frappe.get_doc("Business Bank Account", name) if name else frappe.new_doc("Business Bank Account")
@@ -329,7 +329,7 @@ def save_bank_account(data):
 def save_supplier_bank_account(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("references.suppliers", "write" if name else "create")
+	require_access("page.references.suppliers", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("suppliers", frappe.db.get_value("Supplier Bank Account", name, "supplier"))
 	supplier = data.get("supplier") or (frappe.db.get_value("Supplier Bank Account", name, "supplier") if name else None)
@@ -346,7 +346,7 @@ def save_supplier_bank_account(data):
 def save_item_supplier(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("references.suppliers", "write" if name else "create")
+	require_access("page.references.suppliers", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("suppliers", frappe.db.get_value("Catalog Item Supplier", name, "supplier"))
 	supplier = data.get("supplier") or (frappe.db.get_value("Catalog Item Supplier", name, "supplier") if name else None)
@@ -363,7 +363,7 @@ def save_item_supplier(data):
 def save_cabinet(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("references.storage", "write" if name else "create")
+	require_access("page.references.warehouses", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("warehouses", frappe.db.get_value("Storage Cabinet", name, "warehouse"))
 	warehouse = data.get("warehouse") or (frappe.db.get_value("Storage Cabinet", name, "warehouse") if name else None)
@@ -380,7 +380,7 @@ def save_cabinet(data):
 def save_storage_location(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("references.storage", "write" if name else "create")
+	require_access("page.references.warehouses", "write" if name else "create")
 	if name:
 		old_cabinet = frappe.db.get_value("Storage Location", name, "cabinet")
 		_ensure_scoped_name("warehouses", frappe.db.get_value("Storage Cabinet", old_cabinet, "warehouse"))
@@ -399,7 +399,7 @@ def save_storage_location(data):
 def save_item_storage(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
-	require_access("references.storage", "write" if name else "create")
+	require_access("page.references.warehouses", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("warehouses", frappe.db.get_value("Catalog Item Storage", name, "warehouse"))
 	warehouse = data.get("warehouse") or (frappe.db.get_value("Catalog Item Storage", name, "warehouse") if name else None)
@@ -457,13 +457,13 @@ def get_reference_options():
 		organization_filters["name"] = organization or "__none__"
 	supplier_filters = {"active": 1, **_scope_filters("suppliers")}
 	return {
-		"organizations": frappe.get_all("Organization", filters=organization_filters, fields=["name", "organization_name"], order_by="organization_name asc", limit_page_length=500) if LEVELS.get(get_access_level("references.network"), 0) else [],
+		"organizations": frappe.get_all("Organization", filters=organization_filters, fields=["name", "organization_name"], order_by="organization_name asc", limit_page_length=500) if LEVELS.get(get_access_level("page.references.organizations"), 0) else [],
 		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc", limit_page_length=500),
 		"bank_accounts": frappe.get_all("Business Bank Account", filters={"active": 1, **({} if scope["global"] else {"business_entity": scope["business_entity"] or "__none__"})}, fields=["name", "business_entity", "bank_name", "settlement_account"], order_by="bank_name asc", limit_page_length=500),
-		"products": frappe.get_all("Catalog Item", filters={"active": 1, "item_type": "Product"}, fields=["name", "item_name", "item_code"], order_by="item_name asc", limit_page_length=1000) if LEVELS.get(get_access_level("references.catalog"), 0) else [],
+		"products": frappe.get_all("Catalog Item", filters={"active": 1, "item_type": "Product"}, fields=["name", "item_name", "item_code"], order_by="item_name asc", limit_page_length=1000) if LEVELS.get(get_access_level("page.catalog"), 0) else [],
 		"points": frappe.get_all("Business Point", filters={"active": 1, **point_filters}, fields=["name", "point_name", "business_entity"], order_by="point_name asc", limit_page_length=500),
 		"positions": frappe.get_all("Position", filters={"active": 1}, fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500),
-		"suppliers": frappe.get_all("Catalog Supplier", filters=supplier_filters, fields=["name", "supplier_name"], order_by="supplier_name asc", limit_page_length=500) if LEVELS.get(get_access_level("references.suppliers"), 0) else [],
+		"suppliers": frappe.get_all("Catalog Supplier", filters=supplier_filters, fields=["name", "supplier_name"], order_by="supplier_name asc", limit_page_length=500) if LEVELS.get(get_access_level("page.references.suppliers"), 0) else [],
 	}
 
 

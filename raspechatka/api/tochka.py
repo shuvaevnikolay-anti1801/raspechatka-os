@@ -22,7 +22,7 @@ TOCHKA_CA_BUNDLE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cer
 
 @frappe.whitelist()
 def get_bank_workspace(business_entity=None, status=None):
-	require_access("finance.bank", "read")
+	require_access("page.finance.bank", "read")
 	filters = _entity_filters(business_entity)
 	connections = frappe.get_all("Bank Connection", filters=filters, fields=["name", "connection_name", "business_entity", "bank_name", "enabled", "status", "sync_mode", "last_sync_at", "token_expires_at", "oauth_url", "error_message"], order_by="connection_name asc")
 	operation_filters = {**filters}
@@ -36,7 +36,7 @@ def get_bank_workspace(business_entity=None, status=None):
 @frappe.whitelist(methods=["POST"])
 def save_connection(data):
 	data = frappe.parse_json(data) or {}
-	require_access("finance.bank", "write" if data.get("name") else "create")
+	require_access("page.finance.bank", "write" if data.get("name") else "create")
 	_ensure_entity(data.get("business_entity"))
 	doc = frappe.get_doc("Bank Connection", data["name"]) if data.get("name") else frappe.new_doc("Bank Connection")
 	for fieldname in ("connection_name", "business_entity", "bank_name", "enabled", "sync_mode", "sync_interval_minutes", "overlap_days"):
@@ -52,7 +52,7 @@ def save_connection(data):
 @frappe.whitelist(methods=["POST"])
 def save_rule(data):
 	data = frappe.parse_json(data) or {}
-	require_access("finance.bank", "write" if data.get("name") else "create")
+	require_access("page.finance.bank", "write" if data.get("name") else "create")
 	if data.get("business_entity"):
 		_ensure_entity(data.get("business_entity"))
 	doc = frappe.get_doc("Finance Classification Rule", data["name"]) if data.get("name") else frappe.new_doc("Finance Classification Rule")
@@ -66,7 +66,7 @@ def save_rule(data):
 
 @frappe.whitelist(methods=["POST"])
 def begin_oauth(connection):
-	require_access("finance.bank", "write")
+	require_access("page.finance.bank", "write")
 	doc = frappe.get_doc("Bank Connection", connection)
 	_ensure_entity(doc.business_entity)
 	client_id = doc.get_password("client_id")
@@ -112,7 +112,7 @@ def oauth_callback(code=None, state=None, token_id=None):
 
 @frappe.whitelist(methods=["POST"])
 def sync_now(connection):
-	require_access("finance.bank", "write")
+	require_access("page.finance.bank", "write")
 	doc = frappe.get_doc("Bank Connection", connection)
 	_ensure_entity(doc.business_entity)
 	if doc.status != "Connected":
@@ -123,7 +123,7 @@ def sync_now(connection):
 
 @frappe.whitelist(methods=["POST"])
 def refresh_accounts(connection):
-	require_access("finance.bank", "write")
+	require_access("page.finance.bank", "write")
 	doc = frappe.get_doc("Bank Connection", connection)
 	_ensure_entity(doc.business_entity)
 	result = _request_json("GET", f"{API_BASE}/open-banking/v1.0/accounts", _valid_token(doc))
@@ -202,7 +202,7 @@ def sync_connection(connection):
 
 @frappe.whitelist(methods=["POST"])
 def classify_operation(name, financial_article=None, business_point=None, result="Approve"):
-	require_access("finance.bank", "write")
+	require_access("page.finance.bank", "write")
 	operation = frappe.get_doc("Bank Operation", name)
 	_ensure_entity(operation.business_entity)
 	if result == "Ignore":

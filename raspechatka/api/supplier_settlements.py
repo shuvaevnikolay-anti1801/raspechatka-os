@@ -19,6 +19,9 @@ def get_payment_context(order_name):
 def link_payment(order_name, payment_name, allocated_amount):
 	require_access("page.warehouse.purchase_orders", "write")
 	order = _get_order(order_name)
+	payment = _get_payment(payment_name)
+	if payment.business_entity != order.business_entity or payment.supplier != order.supplier:
+		frappe.throw(_("Оплата не относится к юридическому лицу и поставщику заказа."), frappe.PermissionError)
 	if order.docstatus != 1:
 		frappe.throw(_("Оплаты можно связывать только с проведённым заказом."))
 
@@ -165,6 +168,16 @@ def _get_order(order_name):
 	if allowed_points is not None and order.business_point not in allowed_points:
 		frappe.throw(_("Заказ недоступен."), frappe.PermissionError)
 	return order
+
+
+def _get_payment(payment_name):
+	if not payment_name:
+		frappe.throw(_("Укажите оплату."))
+	payment = frappe.get_doc("Finance Transaction", payment_name)
+	allowed_points = _scope_points()
+	if allowed_points is not None and payment.business_point not in allowed_points:
+		frappe.throw(_("Оплата недоступна."), frappe.PermissionError)
+	return payment
 
 
 def _payment_context(order):

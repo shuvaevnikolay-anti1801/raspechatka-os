@@ -50,13 +50,13 @@ class MoySkladCatalogImportError(Exception):
 
 @frappe.whitelist()
 def get_settings():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	return _safe_settings(frappe.get_single("MoySklad Settings"))
 
 
 @frappe.whitelist(methods=["POST"])
 def save_settings(data):
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	data = frappe.parse_json(data) or {}
 	doc = frappe.get_single("MoySklad Settings")
 	# МойСклад используется только для разового импорта по явному действию.
@@ -69,7 +69,7 @@ def save_settings(data):
 
 @frappe.whitelist(methods=["POST"])
 def test_connection():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	doc = frappe.get_single("MoySklad Settings")
 	try:
 		employee = _request(doc, "context/employee")
@@ -83,7 +83,7 @@ def test_connection():
 
 @frappe.whitelist(methods=["POST"])
 def read_preview():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	doc = frappe.get_single("MoySklad Settings")
 	try:
 		result = _collect_preview(doc)
@@ -96,7 +96,7 @@ def read_preview():
 
 @frappe.whitelist(methods=["POST"])
 def start_catalog_sync():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	return enqueue_catalog_sync()
 
 

@@ -14,7 +14,7 @@ def get_catalog_items(
 	limit_page_length=50,
 ):
 	"""Return the catalog rows used by the standalone frontend."""
-	require_access("references.catalog", "read")
+	require_access("page.catalog", "read")
 
 	limit_start = max(cint(limit_start), 0)
 	limit_page_length = min(max(cint(limit_page_length), 1), 100)
@@ -81,7 +81,7 @@ def get_catalog_items(
 
 @frappe.whitelist()
 def get_catalog_filters(include_archived=0):
-	require_access("references.catalog", "read")
+	require_access("page.catalog", "read")
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
@@ -164,7 +164,7 @@ def _catalog_group_branch(root, active_only=True):
 @frappe.whitelist(methods=["POST"])
 def save_catalog_group(data):
 	data = frappe.parse_json(data)
-	require_access("references.catalog", "write" if data.get("name") else "create")
+	require_access("page.catalog", "write" if data.get("name") else "create")
 	group_name = (data.get("group_name") or "").strip()
 	if not group_name:
 		frappe.throw("Укажите название группы")
@@ -198,7 +198,7 @@ def _refresh_group_flags():
 
 @frappe.whitelist()
 def get_catalog_item(name=None, item_type="Product"):
-	require_access("references.catalog", "read")
+	require_access("page.catalog", "read")
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 	warehouse_filters = {"active": 1} if scope["global"] else {"active": 1, "business_point": ["in", scope["points"] or ["__none__"]]}
@@ -299,7 +299,7 @@ def get_catalog_item(name=None, item_type="Product"):
 @frappe.whitelist(methods=["POST"])
 def save_catalog_item(data):
 	data = frappe.parse_json(data)
-	require_access("references.catalog", "write" if data.get("name") else "create")
+	require_access("page.catalog", "write" if data.get("name") else "create")
 	doc = frappe.get_doc("Catalog Item", data["name"]) if data.get("name") else frappe.new_doc("Catalog Item")
 	if data.get("default_supplier") and not frappe.db.exists("Catalog Supplier", {"name": data.get("default_supplier"), **_supplier_filters()}):
 		frappe.throw("Поставщик недоступен", frappe.PermissionError)
@@ -347,7 +347,7 @@ def _archive_values(active, reason=None, batch_id=None):
 @frappe.whitelist(methods=["POST"])
 def archive_catalog_item(name, reason=None):
 	"""Archive an item without breaking links from historical documents."""
-	require_access("references.catalog", "write")
+	require_access("page.catalog", "write")
 	if not frappe.db.exists("Catalog Item", name):
 		frappe.throw("Позиция каталога не найдена")
 	batch_id = frappe.generate_hash(length=20)
@@ -376,7 +376,7 @@ def archive_catalog_item(name, reason=None):
 @frappe.whitelist(methods=["POST"])
 def restore_catalog_item(name):
 	"""Restore an item only when all of its dependencies are active."""
-	require_access("references.catalog", "write")
+	require_access("page.catalog", "write")
 	doc = frappe.get_doc("Catalog Item", name)
 	if doc.catalog_group and not frappe.db.get_value("Catalog Group", doc.catalog_group, "active"):
 		frappe.throw("Сначала восстановите группу этой позиции")
@@ -405,7 +405,7 @@ def _refresh_variant_flag(parent):
 @frappe.whitelist(methods=["POST"])
 def archive_catalog_group(name, reason=None):
 	"""Atomically archive a group branch and every item inside it."""
-	require_access("references.catalog", "write")
+	require_access("page.catalog", "write")
 	if not frappe.db.exists("Catalog Group", name):
 		frappe.throw("Группа каталога не найдена")
 	batch_id = frappe.generate_hash(length=20)
@@ -444,7 +444,7 @@ def archive_catalog_group(name, reason=None):
 @frappe.whitelist(methods=["POST"])
 def restore_catalog_group(name):
 	"""Restore only records archived by the same cascading operation."""
-	require_access("references.catalog", "write")
+	require_access("page.catalog", "write")
 	doc = frappe.get_doc("Catalog Group", name)
 	if doc.parent_catalog_group and not frappe.db.get_value("Catalog Group", doc.parent_catalog_group, "active"):
 		frappe.throw("Сначала восстановите родительскую группу")

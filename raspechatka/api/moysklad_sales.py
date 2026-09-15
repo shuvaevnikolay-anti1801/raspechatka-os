@@ -43,7 +43,7 @@ ENDPOINTS = (
 
 @frappe.whitelist()
 def get_sales_sync_settings():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	stats = _load_json(settings.sales_sync_stats_json)
 	return {
@@ -72,7 +72,7 @@ def get_sales_sync_settings():
 
 @frappe.whitelist(methods=["POST"])
 def discover_sales_sources():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	payload = _request(settings, "entity/retailstore", params={"limit": 100, "offset": 0})
 	return {
@@ -90,7 +90,7 @@ def discover_sales_sources():
 
 @frappe.whitelist(methods=["POST"])
 def save_sales_sync_settings(data):
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	data = frappe.parse_json(data) or {}
 	settings = frappe.get_single("MoySklad Settings")
 	settings.sales_sync_enabled = cint(data.get("enabled"))
@@ -123,14 +123,14 @@ def save_sales_sync_settings(data):
 
 @frappe.whitelist(methods=["POST"])
 def start_sales_sync(full=0):
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	return enqueue_sales_sync(full=bool(cint(full)))
 
 
 @frappe.whitelist(methods=["POST"])
 def start_sales_recovery():
 	"""Rebuild catalog links and then safely replay all retail history."""
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	if not settings.get_password("access_token", raise_exception=False):
 		return {"queued": False, "reason": "token_missing"}

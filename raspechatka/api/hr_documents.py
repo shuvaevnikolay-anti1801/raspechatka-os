@@ -52,7 +52,7 @@ DEFAULT_TEMPLATES_FILE = Path(__file__).resolve().parents[1] / "hr_default_templ
 
 
 def _require_network_admin():
-	require_access("team.hr", "write")
+	require_access("page.team.hr", "write")
 	if not get_scope()["global"]:
 		frappe.throw(_("Шаблоны кадровых документов изменяет только администратор сети"), frappe.PermissionError)
 
@@ -166,7 +166,7 @@ def _employee_variables(employee):
 
 @frappe.whitelist()
 def get_hr_template_settings():
-	require_access("team.hr", "read")
+	require_access("page.team.hr", "read")
 	return {
 		"variables": VARIABLES,
 		"templates": frappe.get_all(
@@ -238,7 +238,7 @@ def create_default_hr_templates():
 
 @frappe.whitelist()
 def lookup_employee_bank(bic):
-	require_access("team.employees", "read")
+	require_access("page.team.employees", "read")
 	bic = digits(bic)
 	if not is_valid_bic(bic):
 		frappe.throw(_("БИК должен содержать 9 цифр"))
@@ -254,7 +254,7 @@ def lookup_employee_bank(bic):
 
 @frappe.whitelist(methods=["POST"])
 def validate_employee_requisites(data):
-	require_access("team.employees", "write")
+	require_access("page.team.employees", "write")
 	data = frappe.parse_json(data)
 	errors = []
 	if data.get("inn") and not is_valid_inn(data.get("inn")):
@@ -274,7 +274,7 @@ def validate_employee_requisites(data):
 
 @frappe.whitelist(methods=["POST"])
 def generate_employment_documents(employee, force=0):
-	require_access("team.hr", "write")
+	require_access("page.team.hr", "write")
 	doc = frappe.get_doc("Employee", employee)
 	_assert_employee_access(doc)
 	variables = _employee_variables(doc)
