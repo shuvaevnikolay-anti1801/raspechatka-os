@@ -195,7 +195,15 @@ export function registerIpcHandlers(dependencies:{
 
   ipcMain.handle('pos:get-connection-status',()=>connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
-    connectionStore.save(config);database.setState('sync_error','')
+    const previous=connectionStore.load()
+    const normalizeServer=(value?:string)=>value?.trim().replace(/\/+$/,'')??''
+    const identityChanged=Boolean(previous)&&(
+      normalizeServer(previous?.serverUrl)!==normalizeServer(config.serverUrl)||
+      (previous?.deviceId??'')!==(config.deviceId??'')
+    )
+    if(identityChanged&&database.currentShift())throw new Error('Нельзя изменить подключение к точке во время открытой смены')
+    if(identityChanged)database.clearConfirmedPointData()
+    connectionStore.save(identityChanged?{...config,cashierId:undefined}:config);database.setState('sync_error','')
     diagnostics.record({source:'sync',eventType:'sync.connection_saved',message:'Настройки подключения к Raspechatka OS сохранены'})
     return connectionStore.status(bootState().lastSyncAt)
   })
@@ -269,15 +277,7 @@ export function registerIpcHandlers(dependencies:{
     try{
       const result=await transactionEngine.completeSale({...normalizedRequest,receiptDiscountPercent:discount},shift.id,totalMinor)
       diagnostics.record({source:'fiscal',eventType:'sale.completed',message:`Продажа завершена, чек ${result.receiptNumber}`,operationId:request.clientRequestId,details:{saleId:result.saleId,totalMinor}})
-      try{
-        await printQueue.printSale(result.saleId)
-        diagnostics.record({source:'printer',eventType:'commodity_print.completed',message:'Товарный чек напечатан',operationId:request.clientRequestId})
-        return result
-      }catch(error){
-        const message=errorMessage(error)
-        diagnostics.record({source:'printer',level:'warning',eventType:'commodity_print.failed',message,operationId:request.clientRequestId,details:{saleId:result.saleId}})
-        return {...result,commodityPrintWarning:message}
-      }
+      return result
     }catch(error){
       diagnostics.record({source:'fiscal',level:'error',eventType:'sale.failed',message:errorMessage(error),operationId:request.clientRequestId,details:{totalMinor}})
       throw error

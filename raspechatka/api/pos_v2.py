@@ -4,12 +4,15 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import add_days, cint, flt, now_datetime
 
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
 from raspechatka.sales import log_cashier_action, update_shift_totals
+
+
+POS_MIRROR_RETENTION_DAYS = 60
 
 
 def _point_pos_groups(point_name):
@@ -60,10 +63,21 @@ def _products(point_name):
 	return [row for row in products if item_groups.get(row["id"]) in allowed_groups]
 
 
-def _customers():
+def _customers(point_name):
 	rows = base_pos._customers()
 	if not rows:
 		return rows
+	registered = set(frappe.get_all("Client", filters={"registration_point": point_name, "active": 1}, pluck="name", limit_page_length=10000))
+	point_purchases = frappe.get_all("Client Purchase", filters={"business_point": point_name}, fields=["client", "net_amount", "returned_amount"], limit_page_length=10000)
+	stats = {}
+	for purchase in point_purchases:
+		bucket = stats.setdefault(purchase.client, {"count": 0, "total": 0.0})
+		bucket["count"] += 1
+		bucket["total"] += flt(purchase.net_amount) - flt(purchase.returned_amount)
+	rows = [row for row in rows if row["id"] in registered | set(stats)]
+	for row in rows:
+		row["purchaseCount"] = stats.get(row["id"], {}).get("count", 0)
+		row["totalSpentMinor"] = round(flt(stats.get(row["id"], {}).get("total")) * 100)
 	club = {
 		row.name: row.club_status
 		for row in frappe.get_all(
@@ -80,6 +94,35 @@ def _customers():
 		if not row["isClubMember"]:
 			row["discountPercent"] = 0
 	return rows
+
+
+def _receipt_mirror(point_name):
+	rows = frappe.get_all(
+		"Sales Receipt",
+		filters={"business_point": point_name, "receipt_type": "Sale", "docstatus": ["!=", 2], "posting_datetime": [">=", add_days(now_datetime(), -POS_MIRROR_RETENTION_DAYS)]},
+		fields=["name", "external_id", "posting_datetime", "client", "total_amount", "comment"],
+		order_by="posting_datetime desc",
+		limit_page_length=2000,
+	)
+	if not rows:
+		return []
+	parents = [row.name for row in rows]
+	clients = {row.name: row.client_name for row in frappe.get_all("Client", filters={"name": ["in", [row.client for row in rows if row.client] or ["__none__"]]}, fields=["name", "client_name"], limit_page_length=2000)}
+	items = {}
+	for item in frappe.get_all("Sales Receipt Item", filters={"parent": ["in", parents]}, fields=["parent", "item", "item_name", "quantity", "unit_price", "discount_percent"], limit_page_length=20000):
+		items.setdefault(item.parent, []).append({"id": len(items.get(item.parent, [])), "productId": item.item, "name": item.item_name, "quantity": flt(item.quantity), "unitPriceMinor": round(flt(item.unit_price) * 100), "discountPercent": flt(item.discount_percent), "returnedQuantity": 0})
+	payment_methods = {"Cash": "cash", "Card": "card", "QR": "qr"}
+	payments = {}
+	for payment in frappe.get_all("Sales Receipt Payment", filters={"parent": ["in", parents]}, fields=["parent", "payment_channel", "amount", "external_payment_id"], limit_page_length=10000):
+		payments.setdefault(payment.parent, []).append({"method": payment_methods.get(payment.payment_channel, payment.payment_channel.lower()), "amountMinor": round(flt(payment.amount) * 100), "transactionId": payment.external_payment_id})
+	result = []
+	for row in rows:
+		row_payments = payments.get(row.name, [])
+		methods = list(dict.fromkeys(payment["method"] for payment in row_payments))
+		identifier = row.external_id or f"server:{row.name}"
+		match = re.search(r"Фискальный чек:\s*([^\s]+)", str(row.comment or ""))
+		result.append({"id": identifier, "serverId": row.name, "externalId": row.external_id, "pointId": point_name, "receiptNumber": match.group(1) if match else row.name, "totalMinor": round(flt(row.total_amount) * 100), "returnedMinor": 0, "paymentMethod": methods[0] if len(methods) == 1 else "mixed", "customerName": clients.get(row.client) or "Розничный покупатель", "createdAt": str(row.posting_datetime), "status": "completed", "lines": items.get(row.name, []), "payments": row_payments})
+	return result
 
 
 def _rules(point):
@@ -110,8 +153,10 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			"employees": employees,
 			"rules": _rules(point),
 			"products": _products(point.name),
-			"customers": _customers(),
+			"customers": _customers(point.name),
 			"workplaceData": legacy_pos._get_workplace_data(workplace_data_employee, point, workplace),
+			"receiptMirror": _receipt_mirror(point.name),
+			"retentionDays": POS_MIRROR_RETENTION_DAYS,
 		}
 		base_pos._touch(connection)
 		return result

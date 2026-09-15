@@ -1,4 +1,4 @@
-import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptSummary, Product, WorkplaceData } from '../shared/contracts'
+import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptSummary, Product, ReceiptMirror, WorkplaceData } from '../shared/contracts'
 
 type BootstrapResponse = {
   point: { id:string; name:string }
@@ -9,6 +9,8 @@ type BootstrapResponse = {
   products: Product[]
   customers: Customer[]
   workplaceData: WorkplaceData
+  receiptMirror: ReceiptMirror[]
+  retentionDays: number
 }
 
 type ReceiptSearchFilters={

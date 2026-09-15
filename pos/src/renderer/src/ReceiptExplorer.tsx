@@ -60,7 +60,7 @@ export default function ReceiptExplorer(){
             {details.lines.map((line)=><article key={line.id}><div><b>{line.name}</b><small>{line.quantity} × {money(line.unitPriceMinor)}{line.discountPercent?` · скидка ${line.discountPercent}%`:''}</small></div><strong>{money(Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent||0)/100)))}</strong>{line.returnedQuantity>0&&<span>Возвращено: {line.returnedQuantity}</span>}</article>)}
           </div>
           {details.remotePaymentConfirmation&&<div className="remote-audit"><b>Удалённая оплата подтверждена кассиром</b><span>{new Date(details.remotePaymentConfirmation.confirmedAt).toLocaleString('ru-RU')}{details.remotePaymentConfirmation.confirmedBy?' · '+details.remotePaymentConfirmation.confirmedBy:''}</span>{details.remotePaymentConfirmation.note&&<small>{details.remotePaymentConfirmation.note}</small>}</div>}
-          <div className="receipt-detail-actions"><button onClick={()=>setDetails(null)}>← К списку</button><button onClick={()=>void print('commodity')}>Товарный чек</button><button onClick={()=>void print('fiscal-copy')}>Копия фискального</button></div>
+          <div className="receipt-detail-actions"><button onClick={()=>setDetails(null)}>← К списку</button><button onClick={()=>void print('commodity')}>Товарный чек</button>{details.source!=='server'&&<button onClick={()=>void print('fiscal-copy')}>Копия фискального</button>}</div>
         </>}
         {message&&<div className="pilot-message">{message}</div>}
       </section>

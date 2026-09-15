@@ -3,7 +3,7 @@ import { calculateSubtotalMinor, calculateTotalMinor } from '../../shared/cart'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import type {
   BootState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
-  Customer, HeldReceipt, Order, OrderStatus, PaymentMethod, PaymentPart, PointReceiptSummary, Product,
+  Customer, HeldReceipt, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, ReturnSummary, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, WorkplaceData
 } from '../../shared/contracts'
@@ -13,7 +13,6 @@ const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maxim
 const formatMoney=(minor:number)=>money.format(minor/100)
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
-const remotePaymentNames:Record<string,string>={Cash:'Наличные',Card:'Карта',QR:'QR / СБП'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,averageCheckBeforeDiscountMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
 const emptyWorkplace:WorkplaceData={schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 
@@ -46,9 +45,6 @@ export default function AppV2(){
   const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
   const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
   const [receiptQuery,setReceiptQuery]=useState('')
-  const [pointReceipts,setPointReceipts]=useState<PointReceiptSummary[]>([])
-  const [receiptSearchBusy,setReceiptSearchBusy]=useState(false)
-  const [receiptSearchError,setReceiptSearchError]=useState('')
 
   const refresh=async()=>{
     const result=await Promise.all([
@@ -64,23 +60,6 @@ export default function AppV2(){
     setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11])
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
-
-  useEffect(()=>{
-    if(screen!=='receipts'||!connection?.configured||!boot?.online){
-      setPointReceipts([]);setReceiptSearchError('');setReceiptSearchBusy(false);return
-    }
-    let cancelled=false
-    const timer=window.setTimeout(async()=>{
-      setReceiptSearchBusy(true);setReceiptSearchError('')
-      try{
-        const rows=await window.raspechatkaPos.searchPointReceipts(receiptQuery.trim())
-        if(!cancelled)setPointReceipts(rows)
-      }catch(error){
-        if(!cancelled){setPointReceipts([]);setReceiptSearchError(error instanceof Error?error.message:String(error))}
-      }finally{if(!cancelled)setReceiptSearchBusy(false)}
-    },250)
-    return()=>{cancelled=true;window.clearTimeout(timer)}
-  },[screen,receiptQuery,connection?.configured,boot?.online])
 
   const categories=useMemo(()=>['Все',...new Set(products.map((p)=>p.category))],[products])
   const visible=useMemo(()=>{
@@ -134,7 +113,7 @@ export default function AppV2(){
       })
       clear();setPayment(null);await refresh()
       const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
-      setMessage(result.commodityPrintWarning?baseMessage+'. Товарный чек ожидает повторной печати: '+result.commodityPrintWarning:baseMessage)
+      setMessage(baseMessage)
     }catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
   }
   const startReturn=async(sale:SaleSummary)=>{
@@ -199,10 +178,9 @@ export default function AppV2(){
     </main>}
 
     {screen==='receipts'&&<Page title="Чеки и возвраты" kicker="">
-      <div className="receipt-search"><label><span>⌕</span><input autoFocus value={receiptQuery} onChange={(e)=>setReceiptQuery(e.target.value)} placeholder="Номер чека, телефон, клиент или товар"/></label><div><b>История текущей точки</b><small>{boot.online?'Поиск по Распечатка OS':'Локально: текущая касса'}</small></div></div>
-      {receiptSearchError&&<div className="error-note">История OS недоступна: {receiptSearchError}. Показаны локальные чеки.</div>}
+      <div className="receipt-search"><label><span>⌕</span><input autoFocus value={receiptQuery} onChange={(e)=>setReceiptQuery(e.target.value)} placeholder="Номер чека, телефон, клиент или товар"/></label><div><b>Локальная история текущей точки</b><small>{boot.online?'Кэш обновлён с сервера':'Нет сети · доступны сохранённые чеки'}</small></div></div>
       {held.length>0&&<section className="held"><h3>Отложенные</h3>{held.map((r)=><article key={r.id}><div><b>{r.label}</b><small>{r.lines.length} поз. · {new Date(r.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div><button onClick={()=>restoreReceipt(r)}>Продолжить</button></article>)}</section>}
-      {boot.online&&!receiptSearchError?<PointReceiptTable rows={pointReceipts} loading={receiptSearchBusy} localSales={sales} shiftOpen={Boolean(boot.shift)} onPrint={printSale} onReturn={startReturn}/>:<LocalReceiptTable rows={localFilteredSales} onPrint={printSale} onReturn={startReturn}/>} 
+      <LocalReceiptTable rows={localFilteredSales} onPrint={printSale} onReturn={startReturn}/>
       {returns.length>0&&<section className="return-history"><h3>Оформленные возвраты этой кассы</h3>{returns.map((x)=><article key={x.id}><div><b>{x.receiptNumber}</b><small>к чеку {x.originalReceiptNumber} · {new Date(x.createdAt).toLocaleString('ru-RU')}</small></div><strong>− {formatMoney(x.totalMinor)}</strong></article>)}</section>}
     </Page>}
 
@@ -225,13 +203,8 @@ export default function AppV2(){
   </div>
 }
 
-function PointReceiptTable({rows,loading,localSales,shiftOpen,onPrint,onReturn}:{rows:PointReceiptSummary[];loading:boolean;localSales:SaleSummary[];shiftOpen:boolean;onPrint:(id:string,kind:'fiscal-copy'|'commodity')=>Promise<void>;onReturn:(sale:SaleSummary)=>Promise<void>}){
-  const localById=new Map(localSales.map((sale)=>[sale.id,sale]))
-  return <div className="data-table receipts-table pos-v2-history"><header><span>Чек</span><span>Дата</span><span>Покупатель</span><span>Оплата</span><span>Сумма</span><span/></header>{loading?<Empty title="Ищем чеки" text="Запрашиваем историю этой точки в Распечатка OS."/>:rows.length?rows.map((row)=>{const local=row.externalId?localById.get(row.externalId):undefined;return <div key={row.id}><b>{row.receiptNumber}{row.reviewDiscountMinor>0&&<small>Отзывы: − {formatMoney(row.reviewDiscountMinor)}</small>}</b><span>{new Date(row.createdAt).toLocaleString('ru-RU')}</span><span>{row.customerName}<small>{row.customerPhone||''}{row.cashierName?` · ${row.cashierName}`:''}</small></span><span>{row.paymentLabel.split(' + ').map((x)=>remotePaymentNames[x]||x).join(' + ')}</span><strong>{formatMoney(row.totalMinor)}{row.discountMinor>0&&<small>скидка {formatMoney(row.discountMinor)}</small>}</strong><div className="sale-actions">{local?<><button onClick={()=>onPrint(local.id,'fiscal-copy')}>Копия чека</button><button onClick={()=>onPrint(local.id,'commodity')}>Товарный</button><button disabled={!shiftOpen||local.status==='returned'} onClick={()=>onReturn(local)}>Возврат</button></>:<span className="history-readonly">История OS</span>}</div></div>}):<Empty title="Чеки не найдены" text="Измените запрос или очистите строку поиска."/>}</div>
-}
-
 function LocalReceiptTable({rows,onPrint,onReturn}:{rows:SaleSummary[];onPrint:(id:string,kind:'fiscal-copy'|'commodity')=>Promise<void>;onReturn:(sale:SaleSummary)=>Promise<void>}){
-  return <div className="data-table receipts-table"><header><span>Чек</span><span>Дата</span><span>Покупатель</span><span>Оплата</span><span>Сумма</span><span/></header>{rows.length?rows.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]||s.paymentMethod}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small>− {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions"><button onClick={()=>onPrint(s.id,'fiscal-copy')}>Копия чека</button><button onClick={()=>onPrint(s.id,'commodity')}>Товарный</button><button disabled={s.status==='returned'} onClick={()=>onReturn(s)}>Возврат</button></div></div>):<Empty title="Чеки не найдены" text="На этой кассе подходящих чеков нет."/>}</div>
+  return <div className="data-table receipts-table"><header><span>Чек</span><span>Дата</span><span>Покупатель</span><span>Оплата</span><span>Сумма</span><span/></header>{rows.length?rows.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':s.source==='server'?'Синхронизирован':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]||s.paymentMethod}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small>− {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions">{s.source!=='server'&&<button onClick={()=>onPrint(s.id,'fiscal-copy')}>Копия чека</button>}<button onClick={()=>onPrint(s.id,'commodity')}>Товарный чек</button><button disabled={s.status==='returned'||s.returnable===false} onClick={()=>onReturn(s)}>Возврат</button></div></div>):<Empty title="Чеки не найдены" text="В локальном кэше текущей точки подходящих чеков нет."/>}</div>
 }
 
 function OrderModal({draft,total,onClose,onPay,onSave}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onClose:()=>void;onPay:()=>void;onSave:(draft:{phone:string;comment?:string;dueAt?:string})=>Promise<void>}){
@@ -267,9 +240,10 @@ function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;on
 
 function CustomerModal({customers,selected,onClose,onSelect}:{customers:Customer[];selected:Customer|null;onClose:()=>void;onSelect:(value:Customer|null)=>void}){
   const [query,setQuery]=useState('')
-  const normalized=query.replace(/\D/g,'')
-  const visible=customers.filter((x)=>!query||(x.name+' '+(x.phone||'')).toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru'))||(normalized&&(x.phone||'').replace(/\D/g,'').includes(normalized))).slice(0,50)
-  return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>БАЗА КЛИЕНТОВ OS</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите телефон или имя"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{visible.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone||'Телефон не указан'} · {x.purchaseCount||0} покупок</small></div>{x.isClubMember?<strong className="club-badge">Клуб · −{x.discountPercent}%</strong>:<span className="club-status">{x.clubStatus||'Не в клубе'}</span>}</button>)}</div></div></div>
+  const [visible,setVisible]=useState<Customer[]>(customers)
+  const [searching,setSearching]=useState(false)
+  useEffect(()=>{let cancelled=false;const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(query);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)}},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[query])
+  return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>ЛОКАЛЬНАЯ БАЗА КЛИЕНТОВ</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите телефон или имя"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{visible.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone||'Телефон не указан'} · {x.purchaseCount||0} покупок</small></div>{x.isClubMember?<strong className="club-badge">Клуб · −{x.discountPercent}%</strong>:<span className="club-status">{x.clubStatus||'Не в клубе'}</span>}</button>)}{!searching&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div></div></div>
 }
 
 function FreePriceModal({onClose,onAdd}:{onClose:()=>void;onAdd:(name:string,price:number)=>void}){
