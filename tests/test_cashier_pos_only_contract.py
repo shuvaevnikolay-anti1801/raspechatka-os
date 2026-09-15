@@ -9,6 +9,8 @@ def test_cashier_web_access_is_denied_before_routing():
 	web = (ROOT / "raspechatka/www/raspechatka.py").read_text(encoding="utf-8")
 	assert 'before_request = ["raspechatka.security.enforce_cashier_pos_only"]' in hooks
 	assert 'CASHIER_ROLE = "Raspechatka Cashier"' in security
+	assert 'NETWORK_ADMIN_ROLE = "Raspechatka Network Admin"' in security
+	assert "SYSTEM_WORK_ROLES = frozenset" in security
 	assert "def is_cashier_pos_only(user)" in security
 	assert '"access_profile": CASHIER_ROLE' in security
 	assert '"active": 1' in security and '"linked_employee"' in security
