@@ -542,9 +542,12 @@ def rename_work_role(role, role_name):
 		frappe.throw(_("Рабочая роль с таким названием уже существует"))  # noqa: RUF001
 	if role_doc.role_name == new_label:
 		return {"name": role_doc.name, "label": new_label, "renamed": False}
-	role_doc.role_name = new_label
-	role_doc.save(ignore_permissions=True)
-	return {"name": role_doc.name, "label": role_doc.role_name, "renamed": True}
+	frappe.db.set_value("Role", role_doc.name, "role_name", new_label)
+	saved_label = frappe.db.get_value("Role", role_doc.name, "role_name")
+	if saved_label != new_label:
+		frappe.throw(_("Не удалось сохранить новое название роли"))  # noqa: RUF001
+	frappe.clear_cache()
+	return {"name": role_doc.name, "label": saved_label, "renamed": True}
 
 
 @frappe.whitelist(methods=["POST"])
