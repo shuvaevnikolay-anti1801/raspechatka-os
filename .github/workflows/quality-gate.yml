@@ -21,6 +21,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
 
       - name: Check branch and generated assets
         if: github.event_name == 'pull_request'
@@ -55,6 +58,11 @@ jobs:
               raise SystemExit("Duplicate patch entries: " + ", ".join(duplicates))
           print(f"Patch registry OK: {len(lines)} entries")
           PY
+
+      - name: Check access control contract
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: python scripts/check_access_contract.py
 
   static-validation:
     name: Python and JSON

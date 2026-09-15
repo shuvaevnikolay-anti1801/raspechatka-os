@@ -72,6 +72,20 @@ Do not keep expanding one undifferentiated `team.py`. When the Team area grows, 
 
 If an implementation task exposes a necessary structural refactor that is larger than the current task, do not silently expand scope. Record it as a follow-up in **«Архитектор ОС» → «02 План»** when that project source is accessible; otherwise record it explicitly in the PR handoff/final report so it can be added to the plan. Small safe extractions required to keep the current change inside the rules above are allowed.
 
+## Access control contract — mandatory
+
+Raspechatka OS uses one mandatory two-layer model for Web OS access. **Role** answers which `page.*` page/action is allowed (`None`, `View`, `Edit`, `Admin`). **Scope** answers which business data is visible (`Network`, `Partner`, `Business Entity`, `Points`). Do not introduce a parallel third access model without an ADR.
+
+1. `frontend/src/access-pages.json` is the canonical Web OS page registry. Every new Web OS page must have a unique `page.*` access area and route. Ordinary work roles are deny-by-default for new pages.
+2. Every new or materially changed `@frappe.whitelist` endpoint must declare `@access_contract(...)`. Session endpoints declare `area`, `action`, and `scope`; POS/webhook/OAuth/public endpoints declare their explicit alternative `auth` type. Quality Gate enforces this contract.
+3. Session `@access_contract` enforces the declared `require_access(area, action)` at the backend boundary. Frontend route/menu hiding is UX only and is never the security boundary.
+4. Scope filtering must use shared helpers from `raspechatka.scope` (or a domain-owned wrapper that is at least as strict). Prefer point scope for point-owned documents.
+5. Partner scope is always potentially multi-entity. Never assume `scope["business_entity"]` is populated for a Partner. Use `business_entities` or `scope["points"]`.
+6. List, detail, create, update, delete, options, dashboards, aggregates, and reports must apply the same scope boundary. Client-supplied object IDs, entity IDs, or point IDs are never proof of authorization.
+7. Guest/POS/webhook/OAuth endpoints must bind authorization to trusted server-side context such as authenticated POS Connection point, verified webhook secret, signed OAuth state, or a server-issued client token.
+8. Scoped modules must cover negative access: foreign partner/entity/point/document IDs. The standard regression case is Partner A with two entities and three points versus Partner B with another entity/point.
+9. Read `docs/access-control-contract.md` before adding or changing an external API. Untouched legacy endpoints remain covered by `docs/api-authorization-inventory.md` and migrate to explicit contracts when touched.
+
 ## External integrations and graceful degradation
 
 Treat every external HTTP API, SaaS, webhook source, payment/fiscal device provider, and similar dependency as potentially slow, unavailable, duplicated, or capable of returning an unknown outcome. An external outage must not become an outage of unrelated Raspechatka OS functions.
@@ -143,6 +157,7 @@ print("Python and JSON validation passed")
 PY
 
 python -m tabnanny raspechatka
+python scripts/check_access_contract.py
 
 cd frontend
 npm ci
