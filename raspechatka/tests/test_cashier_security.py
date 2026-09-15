@@ -7,7 +7,9 @@ from raspechatka.www import raspechatka as web
 
 
 class TestCashierSecurity(TestCase):
-	def _frappe(self, user="cashier@example.test", roles=(), linked_employee="EMP-1", path="/raspechatka", cmd=""):
+	def _frappe(
+		self, user="cashier@example.test", roles=(), linked_employee="EMP-1", path="/raspechatka", cmd=""
+	):
 		permission_error = type("PermissionError", (Exception,), {})
 		throw = Mock(side_effect=permission_error)
 		return SimpleNamespace(
