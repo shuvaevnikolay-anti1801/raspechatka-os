@@ -101,3 +101,11 @@ class TestCashierSecurity(TestCase):
 			patch.object(access, "is_cashier_pos_only", return_value=True),
 		):
 			self.assertEqual(access.get_access_level("page.dashboard", "cashier@example.test"), "None")
+
+	def test_cashier_and_network_admin_matrix_levels_are_fixed_by_internal_role_id(self):
+		self.assertEqual(access._required_page_level(security.CASHIER_ROLE, "page.dashboard"), "None")
+		self.assertEqual(
+			access._required_page_level(security.NETWORK_ADMIN_ROLE, access.ACCESS_SETTINGS_AREA),
+			"Admin",
+		)
+		self.assertIsNone(access._required_page_level(security.FRANCHISE_OWNER_ROLE, "page.dashboard"))

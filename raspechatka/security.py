@@ -1,7 +1,18 @@
 import frappe
 from frappe import _
 
+NETWORK_ADMIN_ROLE = "Raspechatka Network Admin"
+FRANCHISE_OWNER_ROLE = "Raspechatka Franchise Owner"
+POINT_MANAGER_ROLE = "Raspechatka Point Manager"
 CASHIER_ROLE = "Raspechatka Cashier"
+SYSTEM_WORK_ROLES = frozenset(
+	{
+		NETWORK_ADMIN_ROLE,
+		FRANCHISE_OWNER_ROLE,
+		POINT_MANAGER_ROLE,
+		CASHIER_ROLE,
+	}
+)
 CASHIER_ALLOWED_METHODS = {
 	"login",
 	"logout",
@@ -9,7 +20,7 @@ CASHIER_ALLOWED_METHODS = {
 	"raspechatka.api.pos_v2.push_events",
 	"raspechatka.api.receipt_search.search_receipts",
 }
-PRIVILEGED_ROLES = {"System Manager", "Raspechatka Network Admin"}
+PRIVILEGED_ROLES = {"System Manager", NETWORK_ADMIN_ROLE}
 
 
 def is_cashier_pos_only(user):
