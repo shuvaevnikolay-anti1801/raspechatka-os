@@ -6,8 +6,6 @@ on:
       - version-16
     types:
       - closed
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
