@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_first_day, now_datetime, nowdate
 
-from raspechatka.access import get_scope, require_access
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
 
@@ -17,7 +17,7 @@ def get_sales_options():
 	scope = get_scope()
 	employee_filters = {"active": 1}
 	if not scope["global"]:
-		employee_filters["business_entity"] = scope["business_entity"] or "__none__"
+		employee_filters["business_entity"] = ["in", get_allowed_entities(scope) or ["__none__"]]
 	return {
 		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc"),
 		"points": frappe.get_all("Business Point", filters=point_filters, fields=["name", "point_name", "business_entity", "city"], order_by="point_name asc"),
@@ -272,15 +272,16 @@ def _document_filters(date_field, from_date=None, to_date=None, business_entity=
 def _scope_filters():
 	scope = get_scope()
 	if scope["global"]: return {"active": 1}, {"active": 1}
-	return {"active": 1, "name": scope["business_entity"] or "__none__"}, {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
+	return {"active": 1, "name": ["in", get_allowed_entities(scope) or ["__none__"]]}, {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
 
 def _business_point_filters(business_entity=None, business_point=None):
 	scope = get_scope(); filters = {}
 	if not scope["global"]:
-		if business_entity and business_entity != scope["business_entity"]: frappe.throw(_("ИП недоступно"), frappe.PermissionError)
-		filters["business_entity"] = scope["business_entity"] or "__none__"
-		filters["name"] = business_point if business_point in (scope["points"] or []) else ["in", scope["points"] or ["__none__"]]
+		allowed_entities = get_allowed_entities(scope)
+		if business_entity and business_entity not in allowed_entities: frappe.throw(_("ИП недоступно"), frappe.PermissionError)
+		filters["business_entity"] = business_entity or ["in", allowed_entities or ["__none__"]]
+		filters["name"] = ["in", scope["points"] or ["__none__"]]
 	elif business_entity: filters["business_entity"] = business_entity
 	if business_point:
 		_ensure_point(business_point, business_entity); filters["name"] = business_point
@@ -290,9 +291,10 @@ def _business_point_filters(business_entity=None, business_point=None):
 def _scope_point_filter(business_entity=None, business_point=None):
 	scope = get_scope(); filters = {}
 	if not scope["global"]:
-		if business_entity and business_entity != scope["business_entity"]: frappe.throw(_("ИП недоступно"), frappe.PermissionError)
-		filters["business_entity"] = scope["business_entity"] or "__none__"
-		filters["business_point"] = business_point if business_point in (scope["points"] or []) else ["in", scope["points"] or ["__none__"]]
+		allowed_entities = get_allowed_entities(scope)
+		if business_entity and business_entity not in allowed_entities: frappe.throw(_("ИП недоступно"), frappe.PermissionError)
+		if business_entity: filters["business_entity"] = business_entity
+		filters["business_point"] = ["in", scope["points"] or ["__none__"]]
 	elif business_entity: filters["business_entity"] = business_entity
 	if business_point:
 		_ensure_point(business_point, business_entity); filters["business_point"] = business_point

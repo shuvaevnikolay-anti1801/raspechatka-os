@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
-from raspechatka.access import get_scope, require_access
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 
 
 @frappe.whitelist()
@@ -258,9 +258,7 @@ def _scope_filters(business_entity=None, business_point=None):
 	scope = get_scope()
 	filters = {}
 	if not scope["global"]:
-		entities = scope.get("business_entities") or (
-			[scope.get("business_entity")] if scope.get("business_entity") else []
-		)
+		entities = get_allowed_entities(scope)
 		if business_entity and business_entity not in entities:
 			frappe.throw(_("Юридическое лицо недоступно."), frappe.PermissionError)
 		filters["business_entity"] = (

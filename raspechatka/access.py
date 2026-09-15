@@ -274,6 +274,18 @@ def get_scope(user=None):
 	}
 
 
+def get_allowed_entities(scope=None):
+	"""Return the concrete Business Entities allowed by a resolved data scope."""
+	scope = scope or get_scope()
+	if scope.get("global"):
+		return None
+	entities = scope.get("business_entities") or []
+	if entities:
+		return list(dict.fromkeys(entities))
+	entity = scope.get("business_entity")
+	return [entity] if entity else []
+
+
 def _empty_scope():
 	return {
 		"global": False,

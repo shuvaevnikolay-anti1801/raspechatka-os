@@ -1,8 +1,7 @@
 import frappe
 from frappe import _
 
-from raspechatka.access import get_scope, require_access
-
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 
 DOCUMENT_AREAS = {
 	"Organization": "page.references.organizations",
@@ -189,9 +188,9 @@ def _scope_filters(doctype, meta):
 	if scope["global"]:
 		return {}
 	points = scope["points"] or ["__none__"]
-	entity = scope["business_entity"] or "__none__"
+	entities = get_allowed_entities(scope) or ["__none__"]
 	if doctype == "Business Entity":
-		return {"name": entity}
+		return {"name": ["in", entities]}
 	if doctype == "Business Point":
 		return {"name": ["in", points]}
 	if doctype == "Client":
@@ -202,7 +201,7 @@ def _scope_filters(doctype, meta):
 	if meta.has_field("business_point"):
 		return {"business_point": ["in", points]}
 	if meta.has_field("business_entity"):
-		return {"business_entity": entity}
+		return {"business_entity": ["in", entities]}
 	if meta.has_field("warehouse"):
 		warehouses = frappe.get_all("Catalog Warehouse", filters={"business_point": ["in", points]}, pluck="name", limit_page_length=1000)
 		return {"warehouse": ["in", warehouses or ["__none__"]]}

@@ -10,10 +10,9 @@ from frappe.utils import cint, flt, formatdate, getdate, now_datetime
 from frappe.utils.file_manager import save_file
 from frappe.utils.pdf import get_pdf
 
-from raspechatka.access import get_scope, require_access
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 from raspechatka.dadata import find_bank
 from raspechatka.requisites import digits, is_valid_bank_account, is_valid_bic, is_valid_inn, is_valid_snils
-
 
 VARIABLES = [
 	{"key": "FIO_FULL", "label": "ФИО полностью"},
@@ -61,7 +60,7 @@ def _assert_employee_access(employee):
 	scope = get_scope()
 	if scope["global"]:
 		return
-	allowed_entities = scope.get("business_entities") or [scope.get("business_entity")]
+	allowed_entities = get_allowed_entities(scope)
 	if employee.business_entity not in allowed_entities:
 		frappe.throw(_("Сотрудник недоступен"), frappe.PermissionError)
 

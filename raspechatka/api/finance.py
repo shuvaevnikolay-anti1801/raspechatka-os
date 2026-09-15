@@ -14,7 +14,8 @@ from frappe.utils import (
 	nowdate,
 	nowtime,
 )
-from raspechatka.access import get_scope, require_access
+
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 from raspechatka.stock import effective_ledger_condition
 
 
@@ -26,7 +27,7 @@ def get_finance_options():
 	account_filters = {"active": 1}
 	point_names = frappe.get_all("Business Point", filters=point_filters, pluck="name")
 	if not scope["global"]:
-		entities = scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else [])
+		entities = get_allowed_entities(scope)
 		account_filters["business_entity"] = ["in", entities or ["__none__"]]
 	return {
 		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc"),
@@ -711,14 +712,14 @@ def _scope_filters():
 	scope = get_scope()
 	if scope["global"]:
 		return {"active": 1}, {"active": 1}
-	entities = scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else [])
+	entities = get_allowed_entities(scope)
 	return {"active": 1, "name": ["in", entities or ["__none__"]]}, {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 
 
 def _scope_entity_filter(business_entity=None):
 	scope = get_scope()
 	if not scope["global"]:
-		entities = scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else [])
+		entities = get_allowed_entities(scope)
 		if business_entity and business_entity not in entities:
 			frappe.throw(_("ИП недоступно"), frappe.PermissionError)
 		if business_entity:

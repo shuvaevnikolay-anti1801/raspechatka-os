@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_url, getdate, now_datetime, time_diff_in_hours
 
-from raspechatka.access import get_scope, require_access
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 from raspechatka.requisites import digits
 
 
@@ -26,7 +26,7 @@ def _point_filters(scope):
 def _employee_filters(scope, business_point=None):
 	filters = {"active": 1}
 	if not scope["global"]:
-		filters["business_entity"] = scope["business_entity"] or "__none__"
+		filters["business_entity"] = ["in", get_allowed_entities(scope) or ["__none__"]]
 	if business_point:
 		parents = frappe.get_all(
 			"Employee Point Assignment",
@@ -107,7 +107,7 @@ def get_team_overview(business_point=None, month=None):
 		payroll_filters["business_point"] = ["in", ["", business_point]]
 		payroll_filters["business_entity"] = frappe.db.get_value("Business Point", business_point, "business_entity")
 	elif not scope["global"]:
-		payroll_filters["business_entity"] = scope["business_entity"] or "__none__"
+		payroll_filters["business_entity"] = ["in", get_allowed_entities(scope) or ["__none__"]]
 	payroll_components = frappe.get_all(
 		"Payroll Accrual Type",
 		filters=payroll_filters,
@@ -772,7 +772,7 @@ def get_hr_overview(business_point=None):
 	return {"employees": employees, "leaves": leaves, "employee_names": _employee_name_map(names)}
 
 def _allowed_employee_entities(scope):
-	return None if scope["global"] else (scope.get("business_entities") or ([scope.get("business_entity")] if scope.get("business_entity") else []))
+	return get_allowed_entities(scope)
 
 
 def _assert_employee_scope(employee=None, business_entity=None):
@@ -1110,4 +1110,3 @@ def create_default_payroll_components(business_point, position):
 		}).insert(ignore_permissions=True)
 		created += 1
 	return {"created": created}
-
