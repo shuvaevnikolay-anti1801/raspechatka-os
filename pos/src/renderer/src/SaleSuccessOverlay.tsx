@@ -32,10 +32,9 @@ export default function SaleSuccessOverlay(){
         <div><span>Оплата</span><b>{payments.map((p)=>paymentName(p.method)).join(' + ')||'—'}</b></div>
         <div><span>Сдача</span><b className={result.changeMinor?'change':''}>{result.changeMinor?money(result.changeMinor):'Без сдачи'}</b></div>
         <div><span>Фискальный чек</span><b>Сформирован</b></div>
-        <div><span>Товарный чек</span><b className={result.commodityPrintWarning?'warning':''}>{result.commodityPrintWarning?'Нужна повторная печать':'Напечатан'}</b></div>
+        <div><span>Товарный чек</span><b>По кнопке в «Чеках»</b></div>
       </div>
       {result.changeMinor>0&&<div className="change-callout"><span>Сдача клиенту</span><strong>{money(result.changeMinor)}</strong></div>}
-      {result.commodityPrintWarning&&<div className="pilot-message warning">Продажа уже завершена. Товарный чек можно повторно напечатать через «Оборудование».</div>}
       <button autoFocus className="primary new-sale-button" onClick={()=>setPayload(null)}>Новая продажа</button>
       <small className="hotkey-hint">Enter — новая продажа</small>
     </section>

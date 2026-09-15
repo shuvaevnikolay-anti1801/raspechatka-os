@@ -96,7 +96,7 @@ export default function App(){
       })
       clear();setPayment(null);await refresh()
       const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
-      setMessage(result.commodityPrintWarning?baseMessage+'. Товарный чек ожидает повторной печати: '+result.commodityPrintWarning:baseMessage)
+      setMessage(baseMessage)
     }catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
   }
   const startReturn=async(sale:SaleSummary)=>{
@@ -226,8 +226,8 @@ function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;on
 
 function CustomerModal({customers,selected,onClose,onSelect}:{customers:Customer[];selected:Customer|null;onClose:()=>void;onSelect:(value:Customer|null)=>void}){
   const [query,setQuery]=useState('')
-  const normalized=query.replace(/\D/g,'')
-  const visible=customers.filter((x)=>!query||(x.name+' '+(x.phone||'')).toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru'))||(normalized&&(x.phone||'').replace(/\D/g,'').includes(normalized))).slice(0,50)
+  const [visible,setVisible]=useState<Customer[]>(customers)
+  useEffect(()=>{let cancelled=false;const timer=window.setTimeout(async()=>{const rows=await window.raspechatkaPos.listCustomers(query);if(!cancelled)setVisible(rows)},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[query])
   return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>БАЗА КЛИЕНТОВ OS</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите телефон или имя"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{visible.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone||'Телефон не указан'} · {x.purchaseCount||0} покупок</small></div><strong>−{x.discountPercent}%</strong></button>)}</div></div></div>
 }
 

@@ -33,6 +33,7 @@ export type PaymentPart = { method: PaymentMethod; amountMinor: number; transact
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
 export type PointEmployee = { id:string; name:string }
+export type ReceiptMirror = SaleDetails & { pointId:string; serverId:string; externalId?:string }
 export type PointRules = {
   allowFreePrice: boolean
   allowRemoveCartItem: boolean
@@ -76,8 +77,8 @@ export type CompleteSaleRequest = {
   order?: { phone:string; comment?:string; dueAt?:string }
 }
 
-export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order; commodityPrintWarning?: string }
-export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned' }
+export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order }
+export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned'; returnable?:boolean; source?:'local'|'server' }
 export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[]; remotePaymentConfirmation?: RemotePaymentConfirmation }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
 export type PointReceiptSummary = {

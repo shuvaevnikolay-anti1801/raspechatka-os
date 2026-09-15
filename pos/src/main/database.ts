@@ -6,6 +6,8 @@ import type {
   SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
+import type { PointEmployee, ReceiptMirror } from '../shared/contracts'
+import { normalizeRussianPhone } from '../shared/phone'
 
 const emptySummary=():ShiftSummary=>({
   receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,
@@ -39,6 +41,7 @@ export class PosDatabase {
       );
       CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT,
+        normalized_phone TEXT NOT NULL DEFAULT '',
         discount_percent REAL NOT NULL DEFAULT 0, purchase_count INTEGER NOT NULL DEFAULT 0,
         total_spent_minor INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
       );
@@ -107,6 +110,18 @@ export class PosDatabase {
         status TEXT NOT NULL DEFAULT 'new', comment TEXT, due_at TEXT,
         source_sale_id TEXT, fiscal_number TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS point_employees (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, confirmed_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS receipt_mirror (
+        id TEXT PRIMARY KEY, server_id TEXT NOT NULL UNIQUE, external_id TEXT,
+        point_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_customers_active_name ON customers(active,name);
+      CREATE INDEX IF NOT EXISTS idx_customers_active_phone ON customers(active,normalized_phone);
+      CREATE INDEX IF NOT EXISTS idx_receipt_mirror_point_created ON receipt_mirror(point_id,created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
     `)
     this.ensureColumn('products', 'item_type', "TEXT NOT NULL DEFAULT 'service'")
     this.ensureColumn('products', 'uom', "TEXT NOT NULL DEFAULT 'шт'")
@@ -124,6 +139,12 @@ export class PosDatabase {
     this.ensureColumn('sales', 'status', "TEXT NOT NULL DEFAULT 'completed'")
     this.ensureColumn('customers', 'purchase_count', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('customers', 'total_spent_minor', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('customers', 'normalized_phone', "TEXT NOT NULL DEFAULT ''")
+    this.ensureColumn('orders', 'origin', "TEXT NOT NULL DEFAULT 'local'")
+    this.ensureColumn('orders', 'point_id', 'TEXT')
+    const legacyPhones=this.db.prepare("SELECT id,phone FROM customers WHERE normalized_phone='' AND phone IS NOT NULL").all() as Array<{id:string;phone:string}>
+    const updatePhone=this.db.prepare('UPDATE customers SET normalized_phone=? WHERE id=?')
+    legacyPhones.forEach((row)=>updatePhone.run(normalizeRussianPhone(row.phone),row.id))
     this.ensureColumn('sale_items', 'discount_percent', 'REAL NOT NULL DEFAULT 0')
     this.ensureColumn('sale_items', 'line_total_minor', 'INTEGER NOT NULL DEFAULT 0')
   }
@@ -178,17 +199,18 @@ export class PosDatabase {
       x.trackInventory?1:0,x.allowNegativeStock?1:0,x.minimumSalePriceMinor??0,x.preventDiscounts?1:0,x.storageAddress??null));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
-  listCustomers(query=''):Customer[]{const q=`%${query}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
+  listCustomers(query=''):Customer[]{const text=query.trim();const q=`%${text}%`;const phone=(normalizeRussianPhone(text)||text.replace(/\D/g,'')).replace(/^\+/,'');const phoneQuery=`%${phone}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
     purchase_count AS purchaseCount,total_spent_minor AS totalSpentMinor
-    FROM customers WHERE active=1 AND (name LIKE ? OR phone LIKE ?) ORDER BY name LIMIT 50`).all(q,q) as Customer[]}
+    FROM customers WHERE active=1 AND (name LIKE ? COLLATE NOCASE OR (?<>'' AND normalized_phone LIKE ?)) ORDER BY name LIMIT 50`).all(q,phone,phoneQuery) as Customer[]}
   replaceCustomers(customers:Customer[]):void {
     const upsert=this.db.prepare(`INSERT INTO customers
-      (id,name,phone,discount_percent,purchase_count,total_spent_minor,active) VALUES (?,?,?,?,?,?,1)
+      (id,name,phone,normalized_phone,discount_percent,purchase_count,total_spent_minor,active) VALUES (?,?,?,?,?,?,?,1)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,
+      normalized_phone=excluded.normalized_phone,
       discount_percent=excluded.discount_percent,purchase_count=excluded.purchase_count,
       total_spent_minor=excluded.total_spent_minor,active=1`)
     this.db.exec('BEGIN')
-    try{this.db.exec('UPDATE customers SET active=0');customers.forEach((x)=>upsert.run(x.id,x.name,x.phone??null,x.discountPercent,x.purchaseCount??0,x.totalSpentMinor??0));this.db.exec('COMMIT')}
+    try{this.db.exec('UPDATE customers SET active=0');customers.forEach((x)=>upsert.run(x.id,x.name,x.phone??null,normalizeRussianPhone(x.phone),x.discountPercent,x.purchaseCount??0,x.totalSpentMinor??0));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
@@ -254,12 +276,22 @@ export class PosDatabase {
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
-  listSales():SaleSummary[]{return this.db.prepare(`SELECT sales.id,fiscal_number receiptNumber,total_minor totalMinor,
+  listSales():SaleSummary[]{const local=this.db.prepare(`SELECT sales.id,fiscal_number receiptNumber,total_minor totalMinor,
     COALESCE((SELECT SUM(line_total_minor) FROM return_items JOIN returns ON returns.id=return_items.return_id WHERE returns.sale_id=sales.id),0) returnedMinor,
     payment_method paymentMethod,customer_name customerName,created_at createdAt,status
-    FROM sales ORDER BY created_at DESC LIMIT 100`).all() as SaleSummary[]}
+    FROM sales ORDER BY created_at DESC LIMIT 2000`).all().map((row:any)=>({...row,returnable:true,source:'local'})) as SaleSummary[]
+    const localIds=new Set(local.map((row)=>row.id))
+    const mirrored=(this.db.prepare('SELECT id,payload_json payload FROM receipt_mirror ORDER BY created_at DESC LIMIT 2000').all() as Array<{id:string;payload:string}>)
+      .filter((row)=>!localIds.has(row.id)).map((row)=>({...JSON.parse(row.payload),returnable:false,source:'server'} as SaleSummary))
+    return [...local,...mirrored].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,2000)}
 
   getSale(id:string):SaleDetails {
+    const localExists=this.db.prepare('SELECT 1 value FROM sales WHERE id=?').get(id)
+    if(!localExists){
+      const mirrored=this.db.prepare('SELECT payload_json payload FROM receipt_mirror WHERE id=?').get(id) as {payload:string}|undefined
+      if(mirrored)return {...JSON.parse(mirrored.payload),returnable:false,source:'server'} as SaleDetails
+      throw new Error('Чек не найден')
+    }
     const sale=this.listSales().find((x)=>x.id===id);if(!sale)throw new Error('Чек не найден')
     const lines=this.db.prepare(`SELECT sale_items.id,product_id productId,name,quantity,unit_price_minor unitPriceMinor,
       discount_percent discountPercent,COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
@@ -267,6 +299,49 @@ export class PosDatabase {
     const payments=this.db.prepare('SELECT method,amount_minor amountMinor,transaction_id transactionId FROM sale_payments WHERE sale_id=? ORDER BY id').all(id) as PaymentPart[]
     const rawRemote=(this.db.prepare('SELECT remote_payment_confirmation_json value FROM sales WHERE id=?').get(id) as {value:string|null}|undefined)?.value
     return {...sale,lines,payments,remotePaymentConfirmation:rawRemote?JSON.parse(rawRemote) as RemotePaymentConfirmation:undefined}
+  }
+
+  replacePointEmployees(employees:PointEmployee[]):void {
+    const insert=this.db.prepare('INSERT INTO point_employees (id,name,confirmed_at) VALUES (?,?,?)')
+    const now=new Date().toISOString();this.db.exec('BEGIN')
+    try{this.db.exec('DELETE FROM point_employees');employees.forEach((row)=>insert.run(row.id,row.name,now));this.db.exec('COMMIT')}
+    catch(error){this.db.exec('ROLLBACK');throw error}
+  }
+  listPointEmployees():PointEmployee[]{return this.db.prepare('SELECT id,name FROM point_employees ORDER BY name').all() as PointEmployee[]}
+
+  replaceReceiptMirror(pointId:string,receipts:ReceiptMirror[],retentionDays=60):void {
+    const upsert=this.db.prepare(`INSERT INTO receipt_mirror (id,server_id,external_id,point_id,created_at,payload_json,synced_at)
+      VALUES (?,?,?,?,?,?,?) ON CONFLICT(server_id) DO UPDATE SET id=excluded.id,external_id=excluded.external_id,
+      point_id=excluded.point_id,created_at=excluded.created_at,payload_json=excluded.payload_json,synced_at=excluded.synced_at`)
+    const now=new Date().toISOString();const cutoff=new Date(Date.now()-retentionDays*86400000).toISOString();this.db.exec('BEGIN')
+    try{
+      this.db.exec('DELETE FROM receipt_mirror')
+      receipts.forEach((row)=>{if(row.pointId!==pointId)throw new Error('Сервер вернул чек другой точки');upsert.run(row.id,row.serverId,row.externalId??null,pointId,row.createdAt,JSON.stringify(row),now)})
+      this.db.prepare('DELETE FROM receipt_mirror WHERE point_id=? AND created_at<?').run(pointId,cutoff)
+      this.db.exec('COMMIT')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
+  }
+
+  replaceServerOrders(pointId:string,orders:Order[],retentionDays=60):void {
+    const now=new Date().toISOString();const cutoff=new Date(Date.now()-retentionDays*86400000).toISOString();this.db.exec('BEGIN')
+    try{
+      const previous=(this.db.prepare("SELECT id,order_number orderNumber,source_sale_id sourceSaleId FROM orders WHERE origin='server'").all() as Array<{id:string;orderNumber:string;sourceSaleId?:string}>)
+      const previousByOrder=new Map(previous.map((row)=>[row.orderNumber,row.id]))
+      const previousBySale=new Map(previous.filter((row)=>row.sourceSaleId).map((row)=>[row.sourceSaleId as string,row.id]))
+      this.db.prepare("DELETE FROM orders WHERE origin='server'").run()
+      for(const row of orders){
+        const existing=this.db.prepare('SELECT id FROM orders WHERE order_number=? OR (source_sale_id IS NOT NULL AND source_sale_id=?) LIMIT 1').get(row.orderNumber,row.sourceSaleId??'__none__') as {id:string}|undefined
+        const id=existing?.id||previousByOrder.get(row.orderNumber)||(row.sourceSaleId?previousBySale.get(row.sourceSaleId):undefined)||row.id
+        this.db.prepare(`INSERT INTO orders (id,order_number,phone,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at,origin,point_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET order_number=excluded.order_number,phone=excluded.phone,
+          customer_name=excluded.customer_name,lines_json=excluded.lines_json,total_minor=excluded.total_minor,paid_minor=excluded.paid_minor,
+          status=excluded.status,comment=excluded.comment,due_at=excluded.due_at,source_sale_id=excluded.source_sale_id,
+          fiscal_number=excluded.fiscal_number,updated_at=excluded.updated_at,origin='server',point_id=excluded.point_id`)
+          .run(id,row.orderNumber,row.phone,row.customerName??null,JSON.stringify(row.lines),row.totalMinor,row.paidMinor,row.status,row.comment??null,row.dueAt??null,row.sourceSaleId??null,row.fiscalNumber??null,row.createdAt,now,'server',pointId)
+      }
+      this.db.prepare("DELETE FROM orders WHERE origin='server' AND (point_id<>? OR created_at<?)").run(pointId,cutoff)
+      this.db.exec('COMMIT')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
   findReturnByClientRequestId(id:string):{returnId:string;receiptNumber:string;totalMinor:number}|null {
@@ -320,6 +395,21 @@ export class PosDatabase {
     return raw?JSON.parse(raw) as WorkplaceData:{schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
   }
   setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(value))}
+  clearConfirmedPointData():void {
+    this.db.exec('BEGIN')
+    try {
+      this.db.exec(`
+        DELETE FROM point_employees;
+        UPDATE customers SET active=0;
+        UPDATE products SET active=0;
+        DELETE FROM receipt_mirror;
+        DELETE FROM orders WHERE origin='server';
+        DELETE FROM app_state WHERE key IN ('bootstrap','workplace_data','point_employees_initialized');
+      `)
+      this.db.exec('COMMIT')
+      this.setState('point_employees_initialized','1')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
+  }
   reportStockWriteOff(request:StockWriteOffRequest):void {
     const product=this.listProducts().find((x)=>x.id===request.productId)
     if(!product)throw new Error('Товар не найден')
@@ -375,7 +465,7 @@ export class PosDatabase {
   listOrders():Order[] {
     return (this.db.prepare(`SELECT id,order_number orderNumber,phone,customer_name customerName,lines_json lines,
       total_minor totalMinor,paid_minor paidMinor,status,comment,created_at createdAt,due_at dueAt,
-      source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 200`).all() as any[])
+      source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 5000`).all() as any[])
       .map((x)=>({...x,lines:JSON.parse(x.lines),paymentStatus:x.paidMinor>=x.totalMinor?'paid':x.paidMinor>0?'partial':'unpaid'})) as Order[]
   }
   private createOrderFromSale(input:any, meta:{phone:string;comment?:string;dueAt?:string}):Order {

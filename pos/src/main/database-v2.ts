@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { Customer, ShiftSummary } from '../shared/contracts'
+import { normalizeRussianPhone } from '../shared/phone'
 import { PosDatabase } from './database'
 
 export class PosDatabaseV2 extends PosDatabase {
@@ -30,12 +31,13 @@ export class PosDatabaseV2 extends PosDatabase {
   }
 
   override listCustomers(query=''):Customer[]{
-    const q=`%${query}%`
+    const text=query.trim();const q=`%${text}%`;const normalized=(normalizeRussianPhone(text)||text.replace(/\D/g,'')).replace(/^\+/,'')
+    const phoneQuery=`%${normalized}%`
     return this.v2db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
       purchase_count AS purchaseCount,total_spent_minor AS totalSpentMinor,
       club_status AS clubStatus,is_club_member AS isClubMember
-      FROM customers WHERE active=1 AND (name LIKE ? OR phone LIKE ?) ORDER BY name LIMIT 50`)
-      .all(q,q).map((row:any)=>({...row,isClubMember:Number(row.isClubMember)||0})) as Customer[]
+      FROM customers WHERE active=1 AND (name LIKE ? COLLATE NOCASE OR (?<>'' AND normalized_phone LIKE ?)) ORDER BY name LIMIT 50`)
+      .all(q,normalized,phoneQuery).map((row:any)=>({...row,isClubMember:Number(row.isClubMember)||0})) as Customer[]
   }
 
   override replaceCustomers(customers:Customer[]):void{

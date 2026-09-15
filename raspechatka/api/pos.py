@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import frappe
-from frappe.utils import flt, get_datetime, getdate, now, nowdate
+from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
 from raspechatka.pricing import resolve_item_price
 
@@ -50,7 +50,7 @@ def push_events(workplace_code=None, events=None):
 	if not isinstance(events, list):
 		frappe.throw("Ожидается список событий")
 	if len(events) > 100:
-		frappe.throw("За один запрос можно передать не более 100 событий")
+		frappe.throw("За один запрос можно передать не более 100 событий")  # noqa: RUF001
 
 	employee = _get_employee()
 	workplace = _get_workplace(workplace_code, _employee_points(employee))
@@ -59,7 +59,7 @@ def push_events(workplace_code=None, events=None):
 		event_id = str(event.get("id") or "").strip()
 		event_type = str(event.get("eventType") or "").strip()
 		if not event_id or not event_type:
-			frappe.throw("В событии отсутствует id или eventType")
+			frappe.throw("В событии отсутствует id или eventType")  # noqa: RUF001
 		if not frappe.db.exists("POS Event", event_id):
 			frappe.get_doc({
 				"doctype": "POS Event",
@@ -537,9 +537,69 @@ def _get_workplace_data(employee, point, workplace):
 def _get_orders(point_name):
 	if not _doctype_exists("POS Order"):
 		return []
-	rows = frappe.get_all("POS Order", filters={"business_point": point_name}, fields=["name", "order_number", "phone", "customer_name", "total_amount", "paid_amount", "status", "comment", "due_at", "creation", "source_sale_id", "fiscal_number"], order_by="creation desc", limit_page_length=200)
-	status = {"New": "new", "In Progress": "in_progress", "Ready": "ready", "Issued": "issued", "Cancelled": "cancelled"}
-	return [{"id": x.name, "orderNumber": x.order_number, "phone": x.phone, "customerName": x.customer_name, "lines": [], "totalMinor": int(flt(x.total_amount) * 100), "paidMinor": int(flt(x.paid_amount) * 100), "paymentStatus": "paid" if flt(x.paid_amount) >= flt(x.total_amount) else ("partial" if flt(x.paid_amount) else "unpaid"), "status": status.get(x.status, "new"), "comment": x.comment, "createdAt": str(x.creation), "dueAt": x.due_at, "sourceSaleId": x.source_sale_id, "fiscalNumber": x.fiscal_number} for x in rows]
+	rows = frappe.get_all(
+		"POS Order",
+		filters={"business_point": point_name, "creation": [">=", add_days(now_datetime(), -60)]},
+		fields=[
+			"name",
+			"order_number",
+			"phone",
+			"customer_name",
+			"total_amount",
+			"paid_amount",
+			"status",
+			"comment",
+			"due_at",
+			"creation",
+			"source_sale_id",
+			"fiscal_number",
+		],
+		order_by="creation desc",
+		limit_page_length=5000,
+	)
+	items = {}
+	for item in frappe.get_all(
+		"POS Order Item",
+		filters={"parent": ["in", [row.name for row in rows] or ["__none__"]]},
+		fields=["parent", "item", "item_name", "quantity", "rate"],
+		limit_page_length=5000,
+	):
+		items.setdefault(item.parent, []).append(
+			{
+				"productId": item.item,
+				"name": item.item_name,
+				"quantity": flt(item.quantity),
+				"unitPriceMinor": round(flt(item.rate) * 100),
+			}
+		)
+	status = {
+		"New": "new",
+		"In Progress": "in_progress",
+		"Ready": "ready",
+		"Issued": "issued",
+		"Cancelled": "cancelled",
+	}
+	return [
+		{
+			"id": x.name,
+			"orderNumber": x.order_number,
+			"phone": x.phone,
+			"customerName": x.customer_name,
+			"lines": items.get(x.name, []),
+			"totalMinor": int(flt(x.total_amount) * 100),
+			"paidMinor": int(flt(x.paid_amount) * 100),
+			"paymentStatus": "paid"
+			if flt(x.paid_amount) >= flt(x.total_amount)
+			else ("partial" if flt(x.paid_amount) else "unpaid"),
+			"status": status.get(x.status, "new"),
+			"comment": x.comment,
+			"createdAt": str(x.creation),
+			"dueAt": x.due_at,
+			"sourceSaleId": x.source_sale_id,
+			"fiscalNumber": x.fiscal_number,
+		}
+		for x in rows
+	]
 
 
 def _doctype_exists(name):
