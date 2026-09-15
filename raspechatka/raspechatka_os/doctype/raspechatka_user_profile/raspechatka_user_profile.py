@@ -26,6 +26,7 @@ def normalize_phone(value):
 class RaspechatkaUserProfile(Document):
 	def validate(self):
 		self.access_profile = ROLE_BY_PROFILE.get(self.access_profile, self.access_profile)
+		self._validate_open_cashier_shift()
 		from raspechatka.access import get_matrix_roles
 
 		if self.access_profile not in get_matrix_roles():
@@ -42,6 +43,15 @@ class RaspechatkaUserProfile(Document):
 			)
 			if duplicate:
 				frappe.throw(_("Сотрудник уже связан с другим пользователем"))  # noqa: RUF001
+
+	def _validate_open_cashier_shift(self):
+		previous = self.get_doc_before_save()
+		if not previous or previous.access_profile != "Raspechatka Cashier" or not previous.linked_employee:
+			return
+		if self.active and self.access_profile == "Raspechatka Cashier":
+			return
+		if frappe.db.exists("Sales Shift", {"cashier": previous.linked_employee, "status": "Open"}):
+			frappe.throw(_("Сначала закройте открытую смену кассира, затем отзывайте POS-доступ"))
 
 	def after_insert(self):
 		self.ensure_system_user()

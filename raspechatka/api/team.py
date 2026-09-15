@@ -882,6 +882,7 @@ def save_employee(data):
 		_assert_employee_scope(employee=name)
 	_assert_employee_scope(business_entity=data.get("business_entity"))
 	doc = frappe.get_doc("Employee", name) if name else frappe.new_doc("Employee")
+	previous_points = {row.business_point for row in doc.assigned_points} if name else set()
 	for fieldname in (
 		"active", "last_name", "first_name", "middle_name", "birth_date", "gender", "phone", "email",
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
@@ -917,6 +918,13 @@ def save_employee(data):
 		frappe.throw(_("Основной может быть только одна точка"))
 	if doc.assigned_points and not any(cint(row.is_default) for row in doc.assigned_points):
 		doc.assigned_points[0].is_default = 1
+	removed_points = previous_points - {row.business_point for row in doc.assigned_points}
+	if name and (not cint(doc.active) or removed_points):
+		open_shift_filters = {"cashier": name, "status": "Open"}
+		if cint(doc.active):
+			open_shift_filters["business_point"] = ["in", list(removed_points)]
+		if frappe.db.exists("Sales Shift", open_shift_filters):
+			frappe.throw(_("Сначала закройте открытую смену кассира, затем меняйте его назначение"))
 	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
@@ -1102,5 +1110,4 @@ def create_default_payroll_components(business_point, position):
 		}).insert(ignore_permissions=True)
 		created += 1
 	return {"created": created}
-
 
