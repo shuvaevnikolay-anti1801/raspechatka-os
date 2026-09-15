@@ -4,6 +4,8 @@ import { call } from "../api";
 
 const loading = ref(true);
 const saving = ref(false);
+const creatingRole = ref(false);
+const newRoleName = ref("");
 const saved = ref(false);
 const error = ref("");
 const areas = ref([]);
@@ -79,6 +81,26 @@ async function save() {
 	}
 }
 
+async function createRole() {
+	const roleName = newRoleName.value.trim();
+	if (!roleName || creatingRole.value) return;
+	creatingRole.value = true;
+	error.value = "";
+	try {
+		await call(
+			"raspechatka.access.create_work_role",
+			{ role_name: roleName },
+			{ method: "POST" }
+		);
+		newRoleName.value = "";
+		await load();
+	} catch (createError) {
+		error.value = createError.message;
+	} finally {
+		creatingRole.value = false;
+	}
+}
+
 onMounted(load);
 </script>
 
@@ -99,6 +121,22 @@ onMounted(load);
 		</div>
 
 		<div v-if="error" class="form-error">{{ error }}</div>
+		<form class="role-creator" @submit.prevent="createRole">
+			<label>
+				<span>Новая рабочая роль</span>
+				<input
+					v-model="newRoleName"
+					maxlength="140"
+					placeholder="Например, Старший менеджер"
+				/>
+			</label>
+			<button
+				class="button button-secondary"
+				:disabled="creatingRole || !newRoleName.trim()"
+			>
+				{{ creatingRole ? "Создаём…" : "＋ Создать роль" }}
+			</button>
+		</form>
 		<div v-if="loading" class="table-message"><span class="loader"></span></div>
 		<div v-else-if="!roles.length" class="empty-state">
 			<b>Нет доступных ролей</b>
@@ -139,10 +177,6 @@ onMounted(load);
 				</tbody>
 			</table>
 		</div>
-		<p class="settings-note">
-			Новые рабочие роли и страницы меню добавляются в матрицу автоматически. Ограничения по
-			партнёрам, юридическим лицам и точкам применяются дополнительно.
-		</p>
 	</section>
 </template>
 
@@ -155,6 +189,21 @@ onMounted(load);
 .save-state {
 	color: #668600;
 	font-size: 11px;
+	font-weight: 700;
+}
+.role-creator {
+	display: flex;
+	align-items: end;
+	gap: 10px;
+	margin-bottom: 14px;
+}
+.role-creator label {
+	display: grid;
+	width: min(420px, 100%);
+	gap: 6px;
+}
+.role-creator label span {
+	font-size: 10px;
 	font-weight: 700;
 }
 .access-matrix {

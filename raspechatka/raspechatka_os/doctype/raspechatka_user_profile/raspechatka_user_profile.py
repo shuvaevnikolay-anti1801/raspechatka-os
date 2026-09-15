@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-
 ROLE_BY_PROFILE = {
 	"Network Admin": "Raspechatka Network Admin",
 	"Franchise Owner": "Raspechatka Franchise Owner",
@@ -26,9 +25,12 @@ def normalize_phone(value):
 
 class RaspechatkaUserProfile(Document):
 	def validate(self):
-		self.full_name = " ".join(
-			filter(None, (self.last_name, self.first_name, self.middle_name))
-		).strip()
+		self.access_profile = ROLE_BY_PROFILE.get(self.access_profile, self.access_profile)
+		from raspechatka.access import get_matrix_roles
+
+		if self.access_profile not in get_matrix_roles():
+			frappe.throw(_("Выберите действующую рабочую роль"))
+		self.full_name = " ".join(filter(None, (self.last_name, self.first_name, self.middle_name))).strip()
 		self.phone = normalize_phone(self.phone)
 		self._validate_scope()
 		self._validate_points()
@@ -48,9 +50,9 @@ class RaspechatkaUserProfile(Document):
 		self.ensure_system_user()
 
 	def _validate_scope(self):
-		if self.access_profile == "Network Admin":
+		if self.access_profile == "Raspechatka Network Admin":
 			self.scope_type = "Network"
-		if self.access_profile == "Franchise Owner" and self.scope_type != "Partner":
+		if self.access_profile == "Raspechatka Franchise Owner" and self.scope_type != "Partner":
 			frappe.throw(_("Для владельца франчайзи выберите область доступа «Партнёр»"))
 		if self.scope_type == "Partner" and not self.organization:
 			frappe.throw(_("Выберите партнёра"))
@@ -113,9 +115,11 @@ class RaspechatkaUserProfile(Document):
 		user_doc.first_name = self.first_name
 		user_doc.last_name = self.last_name or ""
 		user_doc.enabled = self.active
-		managed_roles = set(ROLE_BY_PROFILE.values())
+		from raspechatka.access import get_matrix_roles
+
+		managed_roles = set(get_matrix_roles()) | set(ROLE_BY_PROFILE.values())
 		user_doc.roles = [row for row in user_doc.roles if row.role not in managed_roles]
-		user_doc.append("roles", {"role": ROLE_BY_PROFILE[self.access_profile]})
+		user_doc.append("roles", {"role": self.access_profile})
 		user_doc.save(ignore_permissions=True)
 		if self.system_user != system_user:
 			frappe.db.set_value(

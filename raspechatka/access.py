@@ -1,4 +1,5 @@
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -32,6 +33,7 @@ ROLE_LABELS = {
 }
 ROLE_ORDER = tuple(ROLE_LABELS)
 ACCESS_SETTINGS_AREA = "page.references.access"
+MAX_ROLE_NAME_LENGTH = 140
 
 
 @lru_cache(maxsize=1)
@@ -228,6 +230,47 @@ def get_matrix_roles():
 	)
 
 
+def _normalize_role_name(value):
+	role_name = re.sub(r"\s+", " ", (value or "").strip())
+	if not role_name:
+		frappe.throw(_("Введите название роли"))
+	if len(role_name) > MAX_ROLE_NAME_LENGTH:
+		frappe.throw(_("Название роли не должно превышать {0} символов").format(MAX_ROLE_NAME_LENGTH))
+	if any(ord(character) < 32 for character in role_name):
+		frappe.throw(_("Название роли содержит недопустимые символы"))
+	return role_name
+
+
+def _get_existing_role(role_name):
+	name = frappe.db.get_value("Role", {"name": role_name}, "name")
+	return frappe.get_doc("Role", name) if name else None
+
+
+def _validate_work_role(role_doc):
+	if role_doc.name in PROTECTED_ROLES or not role_doc.is_custom:
+		frappe.throw(_("Служебную роль нельзя использовать как рабочую"), frappe.PermissionError)
+	if role_doc.disabled:
+		frappe.throw(_("Отключённую роль нельзя использовать как рабочую"))
+
+
+def _ensure_role_page_rules(role_name, pages):
+	doc = frappe.get_single("Raspechatka Access Settings")
+	existing = {(row.role, row.access_area) for row in doc.rules}
+	changed = False
+	for page in pages:
+		key = (role_name, page["area"])
+		if key not in existing:
+			doc.append(
+				"rules",
+				{"role": role_name, "access_area": page["area"], "access_level": "None"},
+			)
+			existing.add(key)
+			changed = True
+	if changed:
+		doc.save(ignore_permissions=True)
+	return changed
+
+
 def synchronize_access_pages(copy_legacy_rules=True):
 	pages = get_access_pages()
 	for index, page in enumerate(pages, start=1):
@@ -299,6 +342,49 @@ def get_access_settings():
 		"roles": [{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()],
 		"rules": [row.as_dict() for row in rules if row.access_area in visible_areas],
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def create_work_role(role_name):
+	"""Create one matrix role; the role name is also the idempotency key for retries."""
+	_require_access_settings_admin()
+	role_name = _normalize_role_name(role_name)
+	existing = _get_existing_role(role_name)
+	if existing:
+		_validate_work_role(existing)
+		pages = synchronize_access_pages(copy_legacy_rules=False)
+		_ensure_role_page_rules(existing.name, pages)
+		return {
+			"name": existing.name,
+			"label": ROLE_LABELS.get(existing.name, existing.name),
+			"created": False,
+		}
+
+	if role_name in PROTECTED_ROLES:
+		frappe.throw(_("Служебную роль нельзя создавать или изменять"), frappe.PermissionError)
+
+	try:
+		role = frappe.get_doc(
+			{
+				"doctype": "Role",
+				"role_name": role_name,
+				"desk_access": 1,
+				"is_custom": 1,
+			}
+		).insert(ignore_permissions=True)
+	except frappe.DuplicateEntryError:
+		# A concurrent retry may have committed the same uniquely named Role first.
+		role = _get_existing_role(role_name)
+		if not role:
+			raise
+		_validate_work_role(role)
+		created = False
+	else:
+		created = True
+
+	pages = synchronize_access_pages(copy_legacy_rules=False)
+	_ensure_role_page_rules(role.name, pages)
+	return {"name": role.name, "label": ROLE_LABELS.get(role.name, role.name), "created": created}
 
 
 @frappe.whitelist(methods=["POST"])

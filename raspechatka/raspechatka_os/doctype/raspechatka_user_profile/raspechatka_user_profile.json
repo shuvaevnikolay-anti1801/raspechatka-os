@@ -19,7 +19,7 @@
   {"fieldname": "middle_name", "fieldtype": "Data", "label": "Отчество"},
   {"fieldname": "phone", "fieldtype": "Data", "label": "Телефон — логин", "reqd": 1, "unique": 1, "in_list_view": 1, "in_global_search": 1},
   {"fieldname": "access_tab", "fieldtype": "Tab Break", "label": "Права доступа"},
-  {"fieldname": "access_profile", "fieldtype": "Select", "label": "Профиль доступа", "options": "Network Admin\nFranchise Owner\nPoint Manager\nCashier", "default": "Cashier", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "access_profile", "fieldtype": "Link", "label": "Рабочая роль", "options": "Role", "default": "Raspechatka Cashier", "reqd": 1, "in_list_view": 1},
   {"fieldname": "scope_type", "fieldtype": "Select", "label": "Область доступа", "options": "Network\nPartner\nBusiness Entity\nPoints", "default": "Points", "reqd": 1, "in_list_view": 1},
   {"fieldname": "organization", "fieldtype": "Link", "label": "Партнёр", "options": "Organization"},
   {"fieldname": "business_entity", "fieldtype": "Link", "label": "ИП", "options": "Business Entity"},
