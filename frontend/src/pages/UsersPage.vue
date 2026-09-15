@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { call } from "../api";
 import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
@@ -45,14 +45,46 @@ const filterFields = [
 	},
 ];
 const availableEntities = computed(() =>
-	options.entities.filter(
-		(item) => !form.organization || item.organization === form.organization
-	)
+	options.entities.filter((item) => form.organization && item.organization === form.organization)
 );
 const availablePoints = computed(() =>
 	options.points.filter(
-		(item) => !form.business_entity || item.business_entity === form.business_entity
+		(item) => form.business_entity && item.business_entity === form.business_entity
 	)
+);
+
+watch(
+	() => form.organization,
+	() => {
+		if (!availableEntities.value.some((item) => item.name === form.business_entity)) {
+			form.business_entity = "";
+			form.assigned_points = [];
+		}
+	}
+);
+watch(
+	() => form.business_entity,
+	() => {
+		const allowed = new Set(availablePoints.value.map((item) => item.name));
+		form.assigned_points = (form.assigned_points || []).filter((row) =>
+			allowed.has(row.business_point)
+		);
+	}
+);
+watch(
+	() => form.scope_type,
+	(scopeType) => {
+		if (scopeType === "Network") {
+			form.organization = "";
+			form.business_entity = "";
+			form.assigned_points = [];
+		} else if (scopeType === "Partner") {
+			form.business_entity = "";
+			form.assigned_points = [];
+		} else if (scopeType === "Business Entity") {
+			form.assigned_points = [];
+		}
+	}
 );
 
 function reset(values = {}) {
@@ -244,7 +276,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 								<option value="Points">Выбранные точки</option>
 							</select>
 						</label>
-						<label v-if="form.scope_type === 'Partner'"
+						<label v-if="form.scope_type !== 'Network'"
 							>Партнёр
 							<select v-model="form.organization" required>
 								<option value="">Не выбран</option>
@@ -263,10 +295,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 								form.scope_type === 'Points'
 							"
 							>Юридическое лицо
-							<select
-								v-model="form.business_entity"
-								:required="form.scope_type === 'Business Entity'"
-							>
+							<select v-model="form.business_entity" required>
 								<option value="">Не выбрано</option>
 								<option
 									v-for="item in availableEntities"
@@ -306,6 +335,9 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 				</div>
 				<div v-if="form.scope_type === 'Points'" class="form-section">
 					<h3>Доступные точки</h3>
+					<p v-if="!form.business_entity" class="form-hint">
+						Сначала выберите партнёра и юридическое лицо.
+					</p>
 					<div class="point-picker">
 						<label v-for="point in availablePoints" :key="point.name">
 							<input

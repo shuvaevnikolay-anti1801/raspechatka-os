@@ -53,11 +53,34 @@ class RaspechatkaUserProfile(Document):
 		if self.access_profile == "Raspechatka Network Admin":
 			self.scope_type = "Network"
 		if self.access_profile == "Raspechatka Franchise Owner" and self.scope_type != "Partner":
-			frappe.throw(_("Для владельца франчайзи выберите область доступа «Партнёр»"))
-		if self.scope_type == "Partner" and not self.organization:
+			frappe.throw(_("Для владельца партнёра выберите область доступа «Партнёр»"))
+		if self.scope_type not in {"Network", "Partner", "Business Entity", "Points"}:
+			frappe.throw(_("Выберите допустимую область доступа"))
+		if self.scope_type == "Network":
+			self.organization = None
+			self.business_entity = None
+			self.set("assigned_points", [])
+			return
+		if not self.organization:
 			frappe.throw(_("Выберите партнёра"))
-		if self.scope_type == "Business Entity" and not self.business_entity:
-			frappe.throw(_("Выберите ИП"))
+		if not frappe.db.get_value("Organization", self.organization, "active"):
+			frappe.throw(_("Выбранный партнёр неактивен или не существует"))
+		if self.scope_type == "Partner":
+			self.business_entity = None
+			self.set("assigned_points", [])
+			return
+		if not self.business_entity:
+			frappe.throw(_("Выберите юридическое лицо"))
+		entity = frappe.db.get_value(
+			"Business Entity", self.business_entity, ["organization", "active"], as_dict=True
+		)
+		if not entity or not entity.active:
+			frappe.throw(_("Выбранное юридическое лицо неактивно или не существует"))
+		if entity.organization != self.organization:
+			frappe.throw(_("Юридическое лицо должно относиться к выбранному партнёру"))
+		if self.scope_type == "Business Entity":
+			self.set("assigned_points", [])
+			return
 		if self.scope_type == "Points" and not self.assigned_points:
 			frappe.throw(_("Выберите хотя бы одну точку продаж"))
 
@@ -67,17 +90,14 @@ class RaspechatkaUserProfile(Document):
 			frappe.throw(_("Точку можно назначить пользователю только один раз"))
 		if sum(int(row.is_default or 0) for row in self.assigned_points) > 1:
 			frappe.throw(_("Основной может быть только одна точка"))
-		if self.scope_type == "Business Entity":
-			for point in points:
-				entity = frappe.db.get_value("Business Point", point, "business_entity")
-				if entity != self.business_entity:
-					frappe.throw(_("Все выбранные точки должны относиться к указанному ИП"))  # noqa: RUF001
-		if self.scope_type == "Partner":
-			for point in points:
-				entity = frappe.db.get_value("Business Point", point, "business_entity")
-				organization = frappe.db.get_value("Business Entity", entity, "organization")
-				if organization != self.organization:
-					frappe.throw(_("Все выбранные точки должны относиться к указанному партнёру"))  # noqa: RUF001
+		if self.scope_type != "Points":
+			return
+		for point in points:
+			values = frappe.db.get_value("Business Point", point, ["business_entity", "active"], as_dict=True)
+			if not values or not values.active:
+				frappe.throw(_("Выбранная точка неактивна или не существует"))
+			if values.business_entity != self.business_entity:
+				frappe.throw(_("Все выбранные точки должны относиться к выбранному юридическому лицу"))
 
 	def ensure_system_user(self):
 		system_user = self.system_user
