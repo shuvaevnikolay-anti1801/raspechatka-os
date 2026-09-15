@@ -35,3 +35,4 @@ raspechatka.patches.v1_0.add_club_and_review_plans
 raspechatka.patches.v1_0.assign_legacy_moysklad_stock_batch
 raspechatka.patches.v1_0.backfill_catalog_assortments_for_active_points
 raspechatka.patches.v1_0.migrate_user_profiles_to_dynamic_roles
+raspechatka.patches.v1_0.enforce_cashier_web_page_none
