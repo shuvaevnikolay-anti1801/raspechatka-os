@@ -2,7 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_url, now_datetime
 
-from raspechatka.access import require_access
+from raspechatka.access import ROLE_LABELS, get_matrix_roles, require_access
 
 
 def _require_admin():
@@ -53,6 +53,9 @@ def get_user_profile(name):
 def get_user_options():
 	_require_admin()
 	return {
+		"access_roles": [
+			{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()
+		],
 		"organizations": frappe.get_all(
 			"Organization",
 			filters={"active": 1},

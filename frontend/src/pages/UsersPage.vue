@@ -14,7 +14,7 @@ const saving = ref(false);
 const formError = ref("");
 const invitation = ref("");
 const filters = ref({ search: "", active: "" });
-const options = reactive({ organizations: [], entities: [], points: [], employees: [] });
+const options = reactive({ organizations: [], entities: [], points: [], employees: [], access_roles: [] });
 const form = reactive({});
 
 const columns = [
@@ -43,7 +43,8 @@ function reset(values = {}) {
 	Object.keys(form).forEach((key) => delete form[key]);
 	Object.assign(form, {
 		active: 1,
-		access_profile: "Cashier",
+		access_profile: options.access_roles.find((role) => role.name === "Raspechatka Cashier")?.name
+			|| options.access_roles[0]?.name || "",
 		scope_type: "Points",
 		assigned_points: [],
 		...values,
@@ -180,12 +181,9 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 						<label>Имя<input v-model="form.first_name" required /></label>
 						<label>Отчество<input v-model="form.middle_name" /></label>
 						<label>Номер телефона — логин<input v-model="form.phone" type="tel" placeholder="+7 900 000-00-00" required /></label>
-						<label>Профиль доступа
+						<label>Рабочая роль
 							<select v-model="form.access_profile" required>
-								<option value="Network Admin">Администратор сети</option>
-								<option value="Franchise Owner">Владелец франчайзи</option>
-								<option value="Point Manager">Управляющий точками</option>
-								<option value="Cashier">Кассир</option>
+								<option v-for="role in options.access_roles" :key="role.name" :value="role.name">{{ role.label }}</option>
 							</select>
 						</label>
 						<label>Область доступа
