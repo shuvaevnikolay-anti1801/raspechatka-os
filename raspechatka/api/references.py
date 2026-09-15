@@ -3,10 +3,10 @@ import json
 import frappe
 from frappe import _
 from frappe.utils import cint
-from raspechatka.access import LEVELS, get_access_level, get_scope, require_access
+
+from raspechatka.access import LEVELS, get_access_level, get_allowed_entities, get_scope, require_access
 from raspechatka.dadata import find_bank, find_party
 from raspechatka.requisites import digits, is_valid_bic, is_valid_inn
-
 
 REFERENCE_CONFIG = {
 	"organizations": {
@@ -449,17 +449,17 @@ def get_reference_options():
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Требуется вход в систему"), frappe.PermissionError)
 	scope = get_scope()
+	allowed_entities = get_allowed_entities(scope)
 	point_filters = {} if scope["global"] else {"name": ["in", scope["points"] or ["__none__"]]}
-	entity_filters = {"active": 1} if scope["global"] else {"active": 1, "name": scope["business_entity"] or "__none__"}
+	entity_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", allowed_entities or ["__none__"]]}
 	organization_filters = {"active": 1}
 	if not scope["global"]:
-		organization = frappe.db.get_value("Business Entity", scope["business_entity"], "organization") if scope["business_entity"] else None
-		organization_filters["name"] = organization or "__none__"
+		organization_filters["name"] = scope.get("organization") or "__none__"
 	supplier_filters = {"active": 1, **_scope_filters("suppliers")}
 	return {
 		"organizations": frappe.get_all("Organization", filters=organization_filters, fields=["name", "organization_name"], order_by="organization_name asc", limit_page_length=500) if LEVELS.get(get_access_level("page.references.organizations"), 0) else [],
 		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc", limit_page_length=500),
-		"bank_accounts": frappe.get_all("Business Bank Account", filters={"active": 1, **({} if scope["global"] else {"business_entity": scope["business_entity"] or "__none__"})}, fields=["name", "business_entity", "bank_name", "settlement_account"], order_by="bank_name asc", limit_page_length=500),
+		"bank_accounts": frappe.get_all("Business Bank Account", filters={"active": 1, **({} if scope["global"] else {"business_entity": ["in", allowed_entities or ["__none__"]]})}, fields=["name", "business_entity", "bank_name", "settlement_account"], order_by="bank_name asc", limit_page_length=500),
 		"products": frappe.get_all("Catalog Item", filters={"active": 1, "item_type": "Product"}, fields=["name", "item_name", "item_code"], order_by="item_name asc", limit_page_length=1000) if LEVELS.get(get_access_level("page.catalog"), 0) else [],
 		"points": frappe.get_all("Business Point", filters={"active": 1, **point_filters}, fields=["name", "point_name", "business_entity"], order_by="point_name asc", limit_page_length=500),
 		"positions": frappe.get_all("Position", filters={"active": 1}, fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500),
@@ -510,15 +510,14 @@ def _validate_payload_scope(reference, data, name=None):
 	scope = get_scope()
 	if scope["global"]:
 		return
-	entity = scope["business_entity"]
+	allowed_entities = set(get_allowed_entities(scope) or [])
 	points = set(scope["points"] or [])
 	if reference == "organizations" and not name:
 		frappe.throw(_("Создавать участников сети может только администратор сети"), frappe.PermissionError)
 	if reference == "entities":
-		organization = frappe.db.get_value("Business Entity", entity, "organization") if entity else None
-		if data.get("organization") != organization:
+		if data.get("organization") != scope.get("organization"):
 			frappe.throw(_("Можно использовать только свою организацию"), frappe.PermissionError)
-	if reference == "points" and data.get("business_entity") != entity:
+	if reference == "points" and data.get("business_entity") not in allowed_entities:
 		frappe.throw(_("Можно использовать только своё юридическое лицо"), frappe.PermissionError)
 	if reference == "clients" and data.get("registration_point") not in points:
 		frappe.throw(_("Можно выбрать только назначенную точку"), frappe.PermissionError)
@@ -526,10 +525,10 @@ def _validate_payload_scope(reference, data, name=None):
 		old_scope = frappe.db.get_value("Catalog Supplier", name, "scope") if name else None
 		if old_scope == "Network" or data.get("scope") == "Network":
 			frappe.throw(_("Общесетевых поставщиков изменяет только администратор сети"), frappe.PermissionError)
-		if data.get("business_entity") != entity:
+		if data.get("business_entity") not in allowed_entities:
 			frappe.throw(_("Можно использовать только своё юридическое лицо"), frappe.PermissionError)
 	if reference == "employees":
-		if data.get("business_entity") != entity or data.get("access_profile") == "Network Admin":
+		if data.get("business_entity") not in allowed_entities or data.get("access_profile") == "Network Admin":
 			frappe.throw(_("Недопустимое назначение сотрудника"), frappe.PermissionError)
 		assigned = {row.get("business_point") for row in data.get("assigned_points") or []}
 		if not assigned.issubset(points):
@@ -538,23 +537,23 @@ def _validate_payload_scope(reference, data, name=None):
 
 def _scope_filters(reference):
 	scope = get_scope()
+	allowed_entities = get_allowed_entities(scope)
 	if reference == "organizations":
 		filters = {"organization_type": "Franchisee"}
 		if not scope["global"]:
-			organization = frappe.db.get_value("Business Entity", scope["business_entity"], "organization") if scope["business_entity"] else None
-			filters["name"] = organization or "__none__"
+			filters["name"] = scope.get("organization") or "__none__"
 		return filters
 	if scope["global"]:
 		return {}
 	if reference == "entities":
-		return {"name": scope["business_entity"] or "__none__"}
+		return {"name": ["in", allowed_entities or ["__none__"]]}
 	if reference == "points":
 		return {"name": ["in", scope["points"] or ["__none__"]]}
 	if reference in ("warehouses", "pos-workplaces", "cash-registers"):
 		return {"business_point": ["in", scope["points"] or ["__none__"]]}
 	if reference == "suppliers":
-		allowed = frappe.get_all("Catalog Supplier", or_filters={"scope": "Network", "business_entity": scope["business_entity"] or "__none__"}, pluck="name")
+		allowed = frappe.get_all("Catalog Supplier", or_filters={"scope": "Network", "business_entity": ["in", allowed_entities or ["__none__"]]}, pluck="name")
 		return {"name": ["in", allowed or ["__none__"]]}
 	if reference == "employees":
-		return {"business_entity": scope["business_entity"] or "__none__"}
+		return {"business_entity": ["in", allowed_entities or ["__none__"]]}
 	return {}

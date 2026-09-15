@@ -1,6 +1,7 @@
 import frappe
 from frappe.utils import cint
-from raspechatka.access import get_scope, require_access
+
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 
 
 @frappe.whitelist()
@@ -478,7 +479,7 @@ def _supplier_filters():
 	scope = get_scope()
 	filters = {"active": 1}
 	if not scope["global"]:
-		allowed = frappe.get_all("Catalog Supplier", or_filters={"scope": "Network", "business_entity": scope["business_entity"] or "__none__"}, pluck="name")
+		allowed = frappe.get_all("Catalog Supplier", or_filters={"scope": "Network", "business_entity": ["in", get_allowed_entities(scope) or ["__none__"]]}, pluck="name")
 		filters["name"] = ["in", allowed or ["__none__"]]
 	return filters
 

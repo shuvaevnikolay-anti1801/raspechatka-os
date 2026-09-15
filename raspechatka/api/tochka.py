@@ -10,7 +10,8 @@ import frappe
 import requests
 from frappe import _
 from frappe.utils import add_days, flt, get_datetime, now_datetime, nowdate
-from raspechatka.access import get_scope, require_access
+
+from raspechatka.access import get_allowed_entities, get_scope, require_access
 
 TOKEN_URL = "https://enter.tochka.com/connect/token"
 CONSENT_URL = "https://enter.tochka.com/uapi/consent/v1.0/consents"
@@ -432,8 +433,9 @@ def _digits(value):
 def _entity_filters(entity=None):
 	scope = get_scope()
 	if not scope["global"]:
-		if entity and entity != scope["business_entity"]: frappe.throw(_("ИП недоступно"), frappe.PermissionError)
-		return {"business_entity": scope["business_entity"] or "__none__"}
+		allowed_entities = get_allowed_entities(scope)
+		if entity and entity not in allowed_entities: frappe.throw(_("ИП недоступно"), frappe.PermissionError)
+		return {"business_entity": entity or ["in", allowed_entities or ["__none__"]]}
 	return {"business_entity": entity} if entity else {}
 
 
