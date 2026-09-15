@@ -56,6 +56,11 @@ jobs:
           print(f"Patch registry OK: {len(lines)} entries")
           PY
 
+      - name: Check access control contract
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: python scripts/check_access_contract.py
+
   static-validation:
     name: Python and JSON
     runs-on: ubuntu-latest
