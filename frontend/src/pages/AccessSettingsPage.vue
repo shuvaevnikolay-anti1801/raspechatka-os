@@ -87,7 +87,11 @@ async function createRole() {
 	creatingRole.value = true;
 	error.value = "";
 	try {
-		await call("raspechatka.access.create_work_role", { role_name: roleName }, { method: "POST" });
+		await call(
+			"raspechatka.access.create_work_role",
+			{ role_name: roleName },
+			{ method: "POST" }
+		);
 		newRoleName.value = "";
 		await load();
 	} catch (createError) {
@@ -120,9 +124,16 @@ onMounted(load);
 		<form class="role-creator" @submit.prevent="createRole">
 			<label>
 				<span>Новая рабочая роль</span>
-				<input v-model="newRoleName" maxlength="140" placeholder="Например, Старший менеджер" />
+				<input
+					v-model="newRoleName"
+					maxlength="140"
+					placeholder="Например, Старший менеджер"
+				/>
 			</label>
-			<button class="button button-secondary" :disabled="creatingRole || !newRoleName.trim()">
+			<button
+				class="button button-secondary"
+				:disabled="creatingRole || !newRoleName.trim()"
+			>
 				{{ creatingRole ? "Создаём…" : "＋ Создать роль" }}
 			</button>
 		</form>
