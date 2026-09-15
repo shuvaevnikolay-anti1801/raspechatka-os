@@ -26,7 +26,7 @@ MARKETING_TYPES = {
 		],
 		"search": ("segment_name", "notes"),
 		"order_by": "segment_name asc",
-		"area": "clients.marketing",
+		"area": "page.clients.segments",
 	},
 	"campaigns": {
 		"doctype": "Promo Campaign",
@@ -47,7 +47,7 @@ MARKETING_TYPES = {
 		],
 		"search": ("campaign_name", "message_text", "notes"),
 		"order_by": "modified desc",
-		"area": "clients.marketing",
+		"area": "page.clients.campaigns",
 	},
 	"promo-codes": {
 		"doctype": "Promo Code",
@@ -66,7 +66,7 @@ MARKETING_TYPES = {
 		],
 		"search": ("code", "notes"),
 		"order_by": "valid_from desc",
-		"area": "clients.loyalty",
+		"area": "page.clients.promo_codes",
 	},
 	"calendar": {
 		"doctype": "Promo Occasion",
@@ -82,7 +82,7 @@ MARKETING_TYPES = {
 		],
 		"search": ("occasion_name", "notes"),
 		"order_by": "event_date asc",
-		"area": "clients.marketing",
+		"area": "page.clients.calendar",
 	},
 }
 
@@ -119,6 +119,19 @@ def _require_client_visible(name):
 	names = _visible_client_names()
 	if names is not None and name not in names:
 		frappe.throw(_("Клиент недоступен для вашей точки"), frappe.PermissionError)
+
+
+def _require_point_visible(point):
+	if point and not frappe.db.get_value("Business Point", point, "active"):
+		frappe.throw(_("Выберите активную точку"))
+	scope = get_scope()
+	if point and not scope.get("global") and point not in scope.get("points", []):
+		frappe.throw(_("Точка недоступна"), frappe.PermissionError)
+
+
+def _require_network_scope():
+	if not get_scope().get("global"):
+		frappe.throw(_("Раздел доступен только на уровне всей сети"), frappe.PermissionError)
 
 
 def _log(
@@ -265,7 +278,8 @@ def club_gateway(data=None, **kwargs):
 
 @frappe.whitelist()
 def get_clients(search=None, club_status=None, business_point=None, channel=None):
-	require_access("clients.base", "read")
+	require_access("page.clients.list", "read")
+	_require_point_visible(business_point)
 	filters = {}
 	visible = _visible_client_names()
 	if visible is not None:
@@ -309,7 +323,7 @@ def get_clients(search=None, club_status=None, business_point=None, channel=None
 
 @frappe.whitelist()
 def get_client(name):
-	require_access("clients.base", "read")
+	require_access("page.clients.list", "read")
 	_require_client_visible(name)
 	doc = frappe.get_doc("Client", name)
 	result = doc.as_dict(no_nulls=False)
@@ -368,7 +382,7 @@ def get_client(name):
 
 @frappe.whitelist(methods=["POST"])
 def save_client(data):
-	require_access("clients.base", "write")
+	require_access("page.clients.list", "write")
 	data = frappe.parse_json(data)
 	name = data.get("name")
 	if name:
@@ -440,37 +454,53 @@ def save_client(data):
 
 @frappe.whitelist()
 def get_client_options():
-	require_access("clients.base", "read")
+	require_access("page.clients.list", "read")
+	scope = get_scope()
+	point_filters = {"active": 1}
+	if not scope.get("global"):
+		point_filters["name"] = ["in", scope.get("points") or ["__none__"]]
+	network_options = scope.get("global")
 	return {
 		"points": frappe.get_all(
 			"Business Point",
-			filters={"active": 1},
+			filters=point_filters,
 			fields=["name", "point_name", "point_code"],
 			order_by="point_name asc",
 		),
 		"segments": frappe.get_all(
 			"Client Segment",
-			filters={"active": 1},
+			filters={"active": 1} if network_options else {"name": "__none__"},
 			fields=["name", "segment_name"],
 			order_by="segment_name asc",
 		),
 		"occasions": frappe.get_all(
 			"Promo Occasion",
-			filters={"active": 1},
+			filters={"active": 1} if network_options else {"name": "__none__"},
 			fields=["name", "occasion_name", "event_date"],
 			order_by="event_date asc",
 		),
-		"promo_codes": frappe.get_all("Promo Code", fields=["name", "code", "active"], order_by="code asc"),
+		"promo_codes": frappe.get_all(
+			"Promo Code",
+			filters={} if network_options else {"name": "__none__"},
+			fields=["name", "code", "active"],
+			order_by="code asc",
+		),
 	}
 
 
 @frappe.whitelist()
 def get_club_dashboard():
-	require_access("clients.base", "read")
+	require_access("page.clients.club", "read")
 	now = getdate(today())
 	month_start = now.replace(day=1)
+	client_filters = {}
+	visible = _visible_client_names()
+	if visible is not None:
+		client_filters["name"] = ["in", visible]
 	rows = frappe.get_all(
-		"Client", fields=["name", "birth_date", "registered_at", "club_status", "marketing_consent"]
+		"Client",
+		filters=client_filters,
+		fields=["name", "birth_date", "registered_at", "club_status", "marketing_consent"],
 	)
 	this_month = sum(1 for row in rows if row.registered_at and getdate(row.registered_at) >= month_start)
 	birthdays_month = sum(1 for row in rows if row.birth_date and getdate(row.birth_date).month == now.month)
@@ -481,23 +511,30 @@ def get_club_dashboard():
 		"awaiting_channel": sum(1 for row in rows if row.club_status == "Ожидает мессенджер"),
 		"marketing_allowed": sum(1 for row in rows if row.marketing_consent),
 		"birthdays_this_month": birthdays_month,
-		"campaigns_planned": frappe.db.count("Promo Campaign", {"status": "Запланирована"}),
-		"sent_total": _sum_field("Promo Campaign", "sent_count"),
+		"campaigns_planned": frappe.db.count("Promo Campaign", {"status": "Запланирована"}) if visible is None else 0,
+		"sent_total": _sum_field("Promo Campaign", "sent_count") if visible is None else 0,
 		"purchases_from_campaigns": frappe.db.count(
-			"Client Purchase", {"campaign": ["is", "set"], "cancelled": 0}
+			"Client Purchase",
+			{
+				"campaign": ["is", "set"],
+				"cancelled": 0,
+				**({} if visible is None else {"business_point": ["in", get_scope().get("points") or ["__none__"]]}),
+			},
 		),
 	}
 
 
 @frappe.whitelist()
 def get_loyalty_settings():
-	require_access("clients.loyalty", "read")
+	require_access("page.clients.club", "read")
+	_require_network_scope()
 	return frappe.get_single("Loyalty Settings").as_dict(no_nulls=False)
 
 
 @frappe.whitelist(methods=["POST"])
 def save_loyalty_settings(data):
-	require_access("clients.loyalty", "write")
+	require_access("page.clients.club", "write")
+	_require_network_scope()
 	data = frappe.parse_json(data)
 	doc = frappe.get_single("Loyalty Settings")
 	for fieldname in (
@@ -549,6 +586,9 @@ def recalculate_all_discounts():
 
 def _segment_members(doc):
 	filters = {"active": 1}
+	visible = _visible_client_names()
+	if visible is not None:
+		filters["name"] = ["in", visible]
 	if doc.marketing_consent_only:
 		filters["marketing_consent"] = 1
 	if doc.business_point:
@@ -605,6 +645,7 @@ def get_marketing_records(kind, search=None, status=None):
 	if not config:
 		frappe.throw(_("Неизвестный раздел"))
 	require_access(config["area"], "read")
+	_require_network_scope()
 	filters = {}
 	if status:
 		filters["status" if kind == "campaigns" else "active"] = status
@@ -638,6 +679,7 @@ def get_marketing_record(kind, name):
 	if not config:
 		frappe.throw(_("Неизвестный раздел"))
 	require_access(config["area"], "read")
+	_require_network_scope()
 	doc = frappe.get_doc(config["doctype"], name)
 	result = doc.as_dict(no_nulls=False)
 	if kind == "segments":
@@ -656,6 +698,7 @@ def save_marketing_record(kind, data):
 	if not config:
 		frappe.throw(_("Неизвестный раздел"))
 	require_access(config["area"], "write")
+	_require_network_scope()
 	data = frappe.parse_json(data)
 	name = data.get("name")
 	doc = frappe.get_doc(config["doctype"], name) if name else frappe.new_doc(config["doctype"])
@@ -991,12 +1034,13 @@ def bothelp_webhook(data=None, **kwargs):
 
 @frappe.whitelist()
 def lookup_client(phone):
-	require_access("clients.base", "read")
+	require_access("page.clients.list", "read")
 	phone = normalize_phone(phone)
 	name = frappe.db.get_value("Client", {"phone": phone, "active": 1}, "name") if phone else None
 	if not name:
 		return {"found": False}
 	doc = frappe.get_doc("Client", name)
+	_require_client_visible(doc.name)
 	return {
 		"found": True,
 		"name": doc.name,
@@ -1010,7 +1054,9 @@ def lookup_client(phone):
 
 @frappe.whitelist()
 def validate_promo_code(code, client=None, amount=0):
-	require_access("clients.base", "read")
+	require_access("page.clients.list", "read")
+	if client:
+		_require_client_visible(client)
 	now = now_datetime()
 	name = frappe.db.get_value("Promo Code", {"code": str(code or "").strip().upper(), "active": 1}, "name")
 	if not name:
@@ -1043,13 +1089,15 @@ def validate_promo_code(code, client=None, amount=0):
 
 @frappe.whitelist(methods=["POST"])
 def record_purchase(data):
-	require_access("clients.base", "write")
+	require_access("page.clients.list", "write")
 	data = frappe.parse_json(data)
 	client = data.get("client") or frappe.db.get_value(
 		"Client", {"phone": normalize_phone(data.get("phone"))}, "name"
 	)
 	if not client:
 		frappe.throw(_("Клиент не найден"))
+	_require_client_visible(client)
+	_require_point_visible(data.get("business_point"))
 	doc = frappe.get_doc(
 		{
 			"doctype": "Client Purchase",

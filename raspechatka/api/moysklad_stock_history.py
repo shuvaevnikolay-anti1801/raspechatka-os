@@ -49,7 +49,7 @@ STOCK_DOCUMENTS = (
 
 @frappe.whitelist()
 def get_stock_history_settings():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	from raspechatka.stock import get_active_import_batch
 
@@ -82,7 +82,7 @@ def get_stock_history_settings():
 
 @frappe.whitelist(methods=["POST"])
 def save_stock_sync_settings(data):
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	data = frappe.parse_json(data) or {}
 	settings = frappe.get_single("MoySklad Settings")
 	enabled = cint(data.get("enabled"))
@@ -105,7 +105,7 @@ def save_stock_sync_settings(data):
 
 @frappe.whitelist(methods=["POST"])
 def start_stock_document_sync():
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	return enqueue_stock_document_sync()
 
 
@@ -283,7 +283,7 @@ def _touch_stock_sync_heartbeat():
 @frappe.whitelist(methods=["POST"])
 def start_stock_history_import():
 	"""Queue the explicit first import; periodic synchronization is a later mode."""
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	if not settings.get_password("access_token", raise_exception=False):
 		return {"queued": False, "reason": "token_missing"}
@@ -307,7 +307,7 @@ def start_stock_history_import():
 @frappe.whitelist(methods=["POST"])
 def start_stock_history_rebuild():
 	"""Build a new immutable version and switch it on only after success."""
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	if not settings.get_password("access_token", raise_exception=False):
 		return {"queued": False, "reason": "token_missing"}
@@ -953,7 +953,7 @@ def _money(value):
 @frappe.whitelist(methods=["POST"])
 def audit_stock_history():
 	"""Read source metadata and mapping coverage without changing business data."""
-	require_access("settings.access", "admin")
+	require_access("page.references.moysklad", "admin")
 	settings = frappe.get_single("MoySklad Settings")
 	if not settings.get_password("access_token", raise_exception=False):
 		frappe.throw(_("Сначала сохраните токен МоегоСклада."))

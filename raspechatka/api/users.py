@@ -6,7 +6,7 @@ from raspechatka.access import get_matrix_role_rows, get_scope, require_access
 
 
 def _require_admin():
-	require_access("settings.access", "admin")
+	require_access("page.references.users", "admin")
 
 
 def _assigned_points(profile):

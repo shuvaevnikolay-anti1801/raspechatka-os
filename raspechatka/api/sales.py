@@ -12,7 +12,7 @@ from raspechatka.sales import log_cashier_action, update_shift_totals
 
 @frappe.whitelist()
 def get_sales_options():
-	require_access("sales.analytics", "read")
+	require_access("page.sales.overview", "read")
 	entity_filters, point_filters = _scope_filters()
 	scope = get_scope()
 	employee_filters = {"active": 1}
@@ -27,7 +27,7 @@ def get_sales_options():
 
 @frappe.whitelist()
 def get_points_overview(from_date=None, to_date=None, business_entity=None, business_point=None):
-	require_access("sales.analytics", "read")
+	require_access("page.sales.overview", "read")
 	from_date, to_date = from_date or str(get_first_day(nowdate())), to_date or nowdate()
 	filters = _business_point_filters(business_entity, business_point)
 	points = frappe.get_all("Business Point", filters={"active": 1, **filters}, fields=["name", "point_name", "city", "business_entity"], order_by="point_name asc")
@@ -47,7 +47,7 @@ def get_points_overview(from_date=None, to_date=None, business_entity=None, busi
 
 @frappe.whitelist()
 def get_shifts(from_date=None, to_date=None, business_entity=None, business_point=None, status=None, cashier=None, search=None, limit_page_length=100):
-	require_access("sales.shifts", "read")
+	require_access("page.sales.shifts", "read")
 	filters = _document_filters("opened_at", from_date, to_date, business_entity, business_point)
 	if status: filters["status"] = status
 	if cashier: filters["cashier"] = cashier
@@ -58,7 +58,7 @@ def get_shifts(from_date=None, to_date=None, business_entity=None, business_poin
 
 @frappe.whitelist()
 def get_shift(name):
-	require_access("sales.shifts", "read")
+	require_access("page.sales.shifts", "read")
 	doc = frappe.get_doc("Sales Shift", name)
 	_ensure_point(doc.business_point, doc.business_entity)
 	result = doc.as_dict(no_nulls=False)
@@ -70,7 +70,7 @@ def get_shift(name):
 
 @frappe.whitelist()
 def get_receipts(receipt_type="Sale", from_date=None, to_date=None, business_entity=None, business_point=None, shift=None, cashier=None, payment_channel=None, search=None, limit_page_length=100):
-	require_access("sales.receipts", "read")
+	require_access("page.sales.receipts", "read")
 	filters = _document_filters("posting_datetime", from_date, to_date, business_entity, business_point)
 	filters.update({"receipt_type": receipt_type, "docstatus": ["!=", 2]})
 	if shift: filters["shift"] = shift
@@ -88,7 +88,7 @@ def get_receipts(receipt_type="Sale", from_date=None, to_date=None, business_ent
 
 @frappe.whitelist()
 def get_receipt(name):
-	require_access("sales.receipts", "read")
+	require_access("page.sales.receipts", "read")
 	doc = frappe.get_doc("Sales Receipt", name)
 	_ensure_point(doc.business_point, doc.business_entity)
 	return doc.as_dict(no_nulls=False)
@@ -96,7 +96,7 @@ def get_receipt(name):
 
 @frappe.whitelist()
 def get_cash_movements(from_date=None, to_date=None, business_entity=None, business_point=None, movement_type=None, search=None, limit_page_length=100):
-	require_access("sales.cash", "read")
+	require_access("page.sales.cash", "read")
 	filters = _document_filters("posting_datetime", from_date, to_date, business_entity, business_point)
 	filters["docstatus"] = ["!=", 2]
 	if movement_type: filters["movement_type"] = movement_type
@@ -107,7 +107,7 @@ def get_cash_movements(from_date=None, to_date=None, business_entity=None, busin
 
 @frappe.whitelist()
 def get_cashier_actions(from_date=None, to_date=None, business_entity=None, business_point=None, action_type=None, cashier=None, limit_page_length=200):
-	require_access("sales.audit", "read")
+	require_access("page.sales.audit", "read")
 	filters = _document_filters("action_datetime", from_date, to_date, business_entity, business_point)
 	if action_type: filters["action_type"] = action_type
 	if cashier: filters["cashier"] = cashier
@@ -117,7 +117,7 @@ def get_cashier_actions(from_date=None, to_date=None, business_entity=None, busi
 
 @frappe.whitelist()
 def get_connections():
-	require_access("sales.integration", "read")
+	require_access("page.sales.integration", "read")
 	filters = _scope_point_filter()
 	rows = frappe.get_all("POS Connection", filters=filters, fields=["name", "business_point", "business_entity", "device_id", "enabled", "status", "last_sync_at", "last_seen_at", "app_version", "last_error"], order_by="business_point asc")
 	for row in rows:
@@ -127,7 +127,7 @@ def get_connections():
 
 @frappe.whitelist(methods=["POST"])
 def provision_connection(business_point, rotate=0):
-	require_access("sales.integration", "admin")
+	require_access("page.sales.integration", "admin")
 	_ensure_point(business_point)
 	name = frappe.db.get_value("POS Connection", {"business_point": business_point}, "name")
 	doc = frappe.get_doc("POS Connection", name) if name else frappe.new_doc("POS Connection")

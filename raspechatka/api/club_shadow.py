@@ -13,7 +13,7 @@ from raspechatka.raspechatka_os.doctype.client.client import normalize_phone
 
 
 def _admin():
-	require_access("clients.loyalty", "admin")
+	require_access("page.clients.club", "admin")
 	if not get_scope().get("global"):
 		frappe.throw("Настройка доступна только администратору сети", frappe.PermissionError)
 

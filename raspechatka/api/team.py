@@ -39,7 +39,7 @@ def _employee_filters(scope, business_point=None):
 
 @frappe.whitelist()
 def get_team_overview(business_point=None, month=None):
-	require_access("team.employees", "read")
+	require_access("page.team.employees", "read")
 	scope = _scope_point(business_point)
 	month = getdate(month or date.today().replace(day=1))
 	month = month.replace(day=1)
@@ -147,7 +147,7 @@ def get_team_overview(business_point=None, month=None):
 
 @frappe.whitelist()
 def get_schedule(business_point, month=None):
-	require_access("team.schedule", "read")
+	require_access("page.team.schedule", "read")
 	_scope_point(business_point)
 	month = getdate(month or date.today().replace(day=1)).replace(day=1)
 	name = frappe.db.get_value(
@@ -207,7 +207,7 @@ def _actual_shift_summary(shifts):
 @frappe.whitelist()
 def recalculate_motivation(period):
 	"""Rebuild employee motivation results from confirmed POS shifts and cashier actions."""
-	require_access("team.motivation", "write")
+	require_access("page.team.bonuses", "write")
 	doc = frappe.get_doc("Motivation Period", period)
 	_scope_point(doc.business_point)
 	period_start = get_datetime(f"{doc.start_date} 00:00:00")
@@ -336,7 +336,7 @@ def get_game_data(period=None, business_point=None):
 	A separate token-protected integration endpoint will be needed before Tilda can
 	call this method without a Raspechatka OS session.
 	"""
-	require_access("team.motivation", "read")
+	require_access("page.team.bonuses", "read")
 	scope = _scope_point(business_point)
 	if period:
 		filters = {"name": period}
@@ -475,7 +475,7 @@ def _employee_name_map(employee_ids):
 @frappe.whitelist()
 def save_schedule(business_point, month, entries=None, publish=0, allow_past=0):
 	"""Save the current monthly schedule. Entries are [{date, employee, shift_template}]."""
-	require_access("team.schedule", "write")
+	require_access("page.team.schedule", "write")
 	_scope_point(business_point)
 	month = getdate(month).replace(day=1)
 	entries = frappe.parse_json(entries) if isinstance(entries, str) else (entries or [])
@@ -705,7 +705,7 @@ def _payroll_rows(business_point, period_start, period_end):
 
 @frappe.whitelist()
 def calculate_payroll(business_point, period_start=None, period_end=None, save=0):
-	require_access("team.payroll", "write" if cint(save) else "read")
+	require_access("page.team.payroll", "write" if cint(save) else "read")
 	period_start, period_end = _payroll_period_defaults(period_start, period_end)
 	if period_end < period_start:
 		frappe.throw(_("Дата окончания периода не может быть раньше даты начала"))
@@ -751,7 +751,7 @@ def calculate_payroll(business_point, period_start=None, period_end=None, save=0
 
 @frappe.whitelist()
 def get_hr_overview(business_point=None):
-	require_access("team.hr", "read")
+	require_access("page.team.hr", "read")
 	scope = _scope_point(business_point)
 	employee_filters = _employee_filters(scope, business_point)
 	employees = frappe.get_all(
@@ -788,7 +788,7 @@ def _assert_employee_scope(employee=None, business_entity=None):
 
 @frappe.whitelist()
 def get_employee_registry(search=None, active=None):
-	require_access("team.employees", "read")
+	require_access("page.team.employees", "read")
 	scope = get_scope()
 	filters = {}
 	if active not in (None, ""):
@@ -830,7 +830,7 @@ def get_employee_registry(search=None, active=None):
 
 @frappe.whitelist()
 def get_employee_editor(name=None):
-	require_access("team.employees", "read")
+	require_access("page.team.employees", "read")
 	scope = get_scope()
 	allowed_entities = _allowed_employee_entities(scope)
 	entity_filters = {"active": 1}
@@ -875,7 +875,7 @@ def get_employee_editor(name=None):
 
 @frappe.whitelist(methods=["POST"])
 def save_employee(data):
-	require_access("team.employees", "write")
+	require_access("page.team.employees", "write")
 	data = frappe.parse_json(data)
 	name = data.get("name")
 	if name:
@@ -931,7 +931,7 @@ def save_employee(data):
 
 @frappe.whitelist(methods=["POST"])
 def grant_employee_access(employee, access_profile="Cashier", assigned_points=None):
-	require_access("team.employees", "write")
+	require_access("page.team.employees", "write")
 	scope = _assert_employee_scope(employee=employee)
 	if access_profile not in ("Cashier", "Point Manager"):
 		frappe.throw(_("Из карточки сотрудника можно выдать только доступ кассира или управляющего"))
@@ -981,7 +981,7 @@ def grant_employee_access(employee, access_profile="Cashier", assigned_points=No
 
 @frappe.whitelist(methods=["POST"])
 def set_employee_access_active(employee, active):
-	require_access("team.employees", "write")
+	require_access("page.team.employees", "write")
 	_assert_employee_scope(employee=employee)
 	profile_name = frappe.db.get_value("Employee", employee, "system_user_profile")
 	if not profile_name:
@@ -995,7 +995,7 @@ def set_employee_access_active(employee, active):
 
 @frappe.whitelist()
 def get_payroll_settings_options():
-	require_access("team.payroll", "read")
+	require_access("page.team.settings", "read")
 	scope = get_scope()
 	return frappe.get_all(
 		"Business Point",
@@ -1008,7 +1008,7 @@ def get_payroll_settings_options():
 
 @frappe.whitelist()
 def get_payroll_settings(business_point, position=None):
-	require_access("team.payroll", "read")
+	require_access("page.team.settings", "read")
 	_scope_point(business_point)
 	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
 	policy_name = frappe.db.get_value("Payroll Policy", {"business_point": business_point}, "name")
@@ -1039,7 +1039,7 @@ def get_payroll_settings(business_point, position=None):
 
 @frappe.whitelist(methods=["POST"])
 def save_payroll_policy(data):
-	require_access("team.payroll", "write")
+	require_access("page.team.settings", "write")
 	data = frappe.parse_json(data)
 	point = data.get("business_point")
 	_scope_point(point)
@@ -1056,7 +1056,7 @@ def save_payroll_policy(data):
 
 @frappe.whitelist(methods=["POST"])
 def save_payroll_component(data):
-	require_access("team.payroll", "write")
+	require_access("page.team.settings", "write")
 	data = frappe.parse_json(data)
 	point = data.get("business_point")
 	_scope_point(point)
@@ -1086,7 +1086,7 @@ def save_payroll_component(data):
 
 @frappe.whitelist(methods=["POST"])
 def create_default_payroll_components(business_point, position):
-	require_access("team.payroll", "write")
+	require_access("page.team.settings", "write")
 	_scope_point(business_point)
 	entity = frappe.db.get_value("Business Point", business_point, "business_entity")
 	if not position or not frappe.db.exists("Position", position):

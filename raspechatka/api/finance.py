@@ -20,7 +20,7 @@ from raspechatka.stock import effective_ledger_condition
 
 @frappe.whitelist()
 def get_finance_options():
-	require_access("finance.operations", "read")
+	require_access("page.finance.payments", "read")
 	entity_filters, point_filters = _scope_filters()
 	scope = get_scope()
 	account_filters = {"active": 1}
@@ -34,13 +34,7 @@ def get_finance_options():
 		"accounts": frappe.get_all("Business Bank Account", filters=account_filters, fields=["name", "bank_name", "settlement_account", "business_entity"], order_by="bank_name asc"),
 		"articles": frappe.get_all("Financial Article", filters={"active": 1, "is_group": 0}, fields=["name", "article_name", "article_type", "cash_flow_type", "include_in_pnl", "include_in_cash_flow"], order_by="article_type asc, article_name asc"),
 		"payment_methods": _get_payment_method_options(),
-		"suppliers": frappe.get_all(
-			"Catalog Supplier",
-			filters={"active": 1},
-			fields=["name", "supplier_name"],
-			order_by="supplier_name asc",
-			limit_page_length=0,
-		),
+		"suppliers": _get_allowed_suppliers(),
 		"cash_registers": frappe.get_all(
 			"Cash Register",
 			filters={"active": 1, "business_point": ["in", point_names or ["__none__"]]},
@@ -65,7 +59,7 @@ def _get_payment_method_options():
 
 @frappe.whitelist()
 def get_payments(from_date=None, to_date=None, business_entity=None, business_point=None, direction=None, financial_article=None, status=None, search=None, limit_start=0, limit_page_length=100):
-	require_access("finance.operations", "read")
+	require_access("page.finance.payments", "read")
 	filters = _transaction_filters(from_date, to_date, business_entity, business_point, direction, financial_article, status)
 	query = (search or "").strip()
 	or_filters = None
@@ -80,7 +74,7 @@ def get_payments(from_date=None, to_date=None, business_entity=None, business_po
 
 @frappe.whitelist()
 def get_payment(name=None, direction="Expense"):
-	require_access("finance.operations", "read")
+	require_access("page.finance.payments", "read")
 	if name:
 		doc = frappe.get_doc("Finance Transaction", name)
 		_ensure_entity(doc.business_entity)
@@ -93,16 +87,20 @@ def save_payment(data, submit=0):
 	data = frappe.parse_json(data) or {}
 	if not data.get("name"):
 		frappe.throw(_("Ручное создание произвольных платежей отключено. Используйте «Наличный расход»."))
-	require_access("finance.operations", "write")
+	require_access("page.finance.payments", "write")
+	doc = frappe.get_doc("Finance Transaction", data["name"])
+	# Object authorization must use persisted values before any client-controlled field is applied.
+	_ensure_entity(doc.business_entity)
+	_ensure_point(doc.business_point, doc.business_entity)
 	_ensure_entity(data.get("business_entity"))
 	_ensure_point(data.get("business_point"), data.get("business_entity"))
-	doc = frappe.get_doc("Finance Transaction", data["name"]) if data.get("name") else frappe.new_doc("Finance Transaction")
 	if doc.docstatus:
 		frappe.throw(_("Проведённый платёж нельзя редактировать. Отмените его и создайте новый."))
 	allowed = ("posting_date", "posting_time", "direction", "amount", "currency", "business_entity", "business_point", "bank_account", "financial_article", "cash_flow_type", "counterparty_type", "supplier", "client", "employee", "counterparty_name", "purpose", "document_number", "payment_method", "comment")
 	for fieldname in allowed:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
+	_validate_payment_scope_links(doc)
 	doc.source = doc.source or "Manual"
 	doc.save(ignore_permissions=True)
 	if cint(submit):
@@ -113,7 +111,7 @@ def save_payment(data, submit=0):
 
 @frappe.whitelist()
 def get_cash_expense():
-	require_access("finance.cash_expense", "create")
+	require_access("page.finance.payments", "create")
 	return {
 		"posting_date": nowdate(),
 		"posting_time": nowtime(),
@@ -130,7 +128,7 @@ def get_cash_expense():
 @frappe.whitelist(methods=["POST"])
 def create_cash_expense(data):
 	"""Post one controlled cash expense and its matching finance transaction."""
-	require_access("finance.cash_expense", "create")
+	require_access("page.finance.payments", "create")
 	data = frappe.parse_json(data) or {}
 	entity = data.get("business_entity")
 	point = data.get("business_point")
@@ -138,6 +136,8 @@ def create_cash_expense(data):
 	amount = flt(data.get("amount"))
 	_ensure_entity(entity)
 	_ensure_point(point, entity)
+	supplier = data.get("supplier")
+	_ensure_supplier(supplier, entity)
 	if amount <= 0:
 		frappe.throw(_("Сумма расхода должна быть больше нуля"))
 	article = frappe.db.get_value(
@@ -183,12 +183,6 @@ def create_cash_expense(data):
 	).insert(ignore_permissions=True)
 	movement.submit()
 	payment_method = frappe.db.get_value("Payment Method", {"method_name": ["like", "%налич%"], "active": 1}, "name")
-	supplier = data.get("supplier")
-	if supplier and not frappe.db.exists(
-		"Catalog Supplier",
-		{"name": supplier, "active": 1},
-	):
-		frappe.throw(_("Выберите активного поставщика"))  # noqa: RUF001
 	counterparty_name = (
 		frappe.db.get_value("Catalog Supplier", supplier, "supplier_name")
 		if supplier
@@ -266,9 +260,9 @@ def record_cash_collection(movement):
 def cancel_payment(name):
 	doc = frappe.get_doc("Finance Transaction", name)
 	if doc.source == "Cash":
-		require_access("finance.cash_expense", "write")
+		require_access("page.finance.payments", "write")
 	else:
-		require_access("finance.operations", "write")
+		require_access("page.finance.payments", "write")
 	_ensure_entity(doc.business_entity)
 	if doc.docstatus == 1:
 		doc.cancel()
@@ -281,7 +275,7 @@ def cancel_payment(name):
 
 @frappe.whitelist()
 def get_payment_calendar(month=None, business_entity=None, business_point=None, status=None):
-	require_access("finance.planning", "read")
+	require_access("page.finance.calendar", "read")
 	month = getdate(month or get_first_day(nowdate())).replace(day=1)
 	filters = {"planned_date": ["between", [get_first_day(month), get_last_day(month)]]}
 	filters.update(_scope_entity_filter(business_entity))
@@ -300,10 +294,15 @@ def get_payment_calendar(month=None, business_entity=None, business_point=None, 
 @frappe.whitelist(methods=["POST"])
 def save_plan_item(data):
 	data = frappe.parse_json(data) or {}
-	require_access("finance.planning", "write" if data.get("name") else "create")
+	require_access("page.finance.calendar", "write" if data.get("name") else "create")
+	if data.get("name"):
+		doc = frappe.get_doc("Finance Plan Item", data["name"])
+		_ensure_entity(doc.business_entity)
+		_ensure_point(doc.business_point, doc.business_entity)
+	else:
+		doc = frappe.new_doc("Finance Plan Item")
 	_ensure_entity(data.get("business_entity"))
 	_ensure_point(data.get("business_point"), data.get("business_entity"))
-	doc = frappe.get_doc("Finance Plan Item", data["name"]) if data.get("name") else frappe.new_doc("Finance Plan Item")
 	allowed = ("title", "planned_date", "direction", "amount", "currency", "status", "business_entity", "business_point", "bank_account", "financial_article", "counterparty_name", "recurrence", "recurrence_day", "recurrence_until", "comment")
 	for fieldname in allowed:
 		if fieldname in data:
@@ -314,7 +313,7 @@ def save_plan_item(data):
 
 @frappe.whitelist(methods=["POST"])
 def delete_plan_item(name):
-	require_access("finance.planning", "write")
+	require_access("page.finance.calendar", "write")
 	doc = frappe.get_doc("Finance Plan Item", name)
 	_ensure_entity(doc.business_entity)
 	if doc.status == "Paid":
@@ -325,7 +324,7 @@ def delete_plan_item(name):
 
 @frappe.whitelist()
 def get_financial_report(month=None, business_entity=None, business_point=None):
-	require_access("finance.reporting", "read")
+	require_access("page.finance.report", "read")
 	month = getdate(month or get_first_day(nowdate())).replace(day=1)
 	start, end = get_first_day(month), get_last_day(month)
 	filters = _transaction_filters(start, end, business_entity, business_point, status="Posted")
@@ -391,7 +390,7 @@ def get_financial_report(month=None, business_entity=None, business_point=None):
 
 @frappe.whitelist()
 def get_budget(month=None, business_entity=None, business_point=None):
-	require_access("finance.planning", "read")
+	require_access("page.finance.planning", "read")
 	month = getdate(month or get_first_day(nowdate())).replace(day=1)
 	budget = _get_budget(month, business_entity, business_point)
 	return budget.as_dict(no_nulls=False) if budget else {"month": str(month), "business_entity": business_entity, "business_point": business_point, "revenue_plan": 0, "checks_plan": 0, "average_check_plan": 0, "net_profit_plan": 0, "club_members_plan": 0, "reviews_plan": 0, "opening_cash_plan": 0, "equipment_value": 0, "loan_balance": 0, "other_liabilities": 0, "lines": []}
@@ -400,10 +399,15 @@ def get_budget(month=None, business_entity=None, business_point=None):
 @frappe.whitelist(methods=["POST"])
 def save_budget(data):
 	data = frappe.parse_json(data) or {}
-	require_access("finance.planning", "write" if data.get("name") else "create")
+	require_access("page.finance.planning", "write" if data.get("name") else "create")
+	if data.get("name"):
+		doc = frappe.get_doc("Finance Budget", data["name"])
+		_ensure_entity(doc.business_entity)
+		_ensure_point(doc.business_point, doc.business_entity)
+	else:
+		doc = frappe.new_doc("Finance Budget")
 	_ensure_entity(data.get("business_entity"))
 	_ensure_point(data.get("business_point"), data.get("business_entity"))
-	doc = frappe.get_doc("Finance Budget", data["name"]) if data.get("name") else frappe.new_doc("Finance Budget")
 	for fieldname in ("month", "business_entity", "business_point", "revenue_plan", "checks_plan", "average_check_plan", "net_profit_plan", "club_members_plan", "reviews_plan", "opening_cash_plan", "equipment_value", "loan_balance", "other_liabilities", "comment"):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
@@ -416,7 +420,7 @@ def save_budget(data):
 
 @frappe.whitelist()
 def get_settlements(from_date=None, to_date=None, business_entity=None, business_point=None, search=None):
-	require_access("finance.reporting", "read")
+	require_access("page.finance.settlements", "read")
 	filters = _transaction_filters(from_date, to_date, business_entity, business_point, status="Posted")
 	rows = frappe.get_all("Finance Transaction", filters=filters, fields=["counterparty_name", "counterparty_type", "supplier", "client", "employee", "direction", "amount"], limit_page_length=100000)
 	result = {}
@@ -439,7 +443,7 @@ def get_settlements(from_date=None, to_date=None, business_entity=None, business
 
 @frappe.whitelist()
 def get_profitability(from_date=None, to_date=None, business_entity=None, business_point=None, catalog_group=None, search=None):
-	require_access("finance.reporting", "read")
+	require_access("page.finance.profitability", "read")
 	filters = {"posting_date": ["between", [from_date or get_first_day(nowdate()), to_date or nowdate()]]}
 	filters.update(_scope_entity_filter(business_entity))
 	if business_point:
@@ -469,7 +473,7 @@ def get_profitability(from_date=None, to_date=None, business_entity=None, busine
 
 @frappe.whitelist()
 def get_finance_settings():
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	entity_filters, point_filters = _scope_filters()
 	return {
 		"articles": frappe.get_all(
@@ -506,7 +510,7 @@ def get_finance_settings():
 
 @frappe.whitelist(methods=["POST"])
 def save_financial_article(data):
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	data = frappe.parse_json(data) or {}
 	name = data.get("name")
 	if name:
@@ -531,7 +535,7 @@ def save_financial_article(data):
 
 @frappe.whitelist(methods=["POST"])
 def delete_financial_article(name):
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	doc = frappe.get_doc("Financial Article", name)
 	if doc.system_article:
 		frappe.throw(_("Системную финансовую статью нельзя архивировать"))
@@ -541,10 +545,17 @@ def delete_financial_article(name):
 
 @frappe.whitelist(methods=["POST"])
 def save_classification_rule(data):
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	data = frappe.parse_json(data) or {}
 	name = data.get("name")
-	doc = frappe.get_doc("Finance Classification Rule", name) if name else frappe.new_doc("Finance Classification Rule")
+	if name:
+		doc = frappe.get_doc("Finance Classification Rule", name)
+		if doc.business_entity:
+			_ensure_entity(doc.business_entity)
+		if doc.business_point:
+			_ensure_point(doc.business_point, doc.business_entity)
+	else:
+		doc = frappe.new_doc("Finance Classification Rule")
 	allowed = (
 		"rule_name", "priority", "enabled", "stop_processing", "business_entity", "bank_account",
 		"direction", "counterparty_inn", "counterparty_account", "counterparty_contains",
@@ -571,7 +582,7 @@ def save_classification_rule(data):
 
 @frappe.whitelist(methods=["POST"])
 def archive_classification_rule(name):
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	doc = frappe.get_doc("Finance Classification Rule", name)
 	if doc.business_entity:
 		_ensure_entity(doc.business_entity)
@@ -582,7 +593,7 @@ def archive_classification_rule(name):
 @frappe.whitelist(methods=["POST"])
 def classify_bank_operation(name, financial_article=None, business_point=None, result="Approve", remember=0):
 	"""Turn a reviewed bank row into one immutable, idempotent payment."""
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	operation = frappe.get_doc("Bank Operation", name)
 	_ensure_entity(operation.business_entity)
 	if operation.processing_status not in ("New", "Review", "Error"):
@@ -657,7 +668,7 @@ def _remember_operation_rule(operation, financial_article, business_point, cash_
 
 @frappe.whitelist(methods=["POST"])
 def reprocess_bank_operations(limit=500):
-	require_access("finance.operations", "admin")
+	require_access("page.finance.settings", "admin")
 	from raspechatka.api.tochka import _process_operation
 
 	processed = 0
@@ -719,7 +730,7 @@ def _scope_entity_filter(business_entity=None):
 
 
 def _ensure_entity(entity):
-	if not entity or not frappe.db.exists("Business Entity", entity):
+	if not entity or not frappe.db.get_value("Business Entity", entity, "active"):
 		frappe.throw(_("Выберите ИП"))
 	_scope_entity_filter(entity)
 
@@ -727,12 +738,65 @@ def _ensure_entity(entity):
 def _ensure_point(point, entity=None):
 	if not point:
 		return
+	point_values = frappe.db.get_value(
+		"Business Point", point, ["business_entity", "active"], as_dict=True
+	)
+	if not point_values or not point_values.active:
+		frappe.throw(_("Выберите активную точку продаж"))
 	scope = get_scope()
 	if not scope["global"] and point not in (scope["points"] or []):
 		frappe.throw(_("Точка недоступна"), frappe.PermissionError)
-	point_entity = frappe.db.get_value("Business Point", point, "business_entity")
-	if entity and point_entity != entity:
+	if entity and point_values.business_entity != entity:
 		frappe.throw(_("Точка продаж должна относиться к выбранному ИП"))
+
+
+def _get_allowed_suppliers():
+	rows = frappe.get_all(
+		"Catalog Supplier",
+		filters={"active": 1},
+		fields=["name", "supplier_name", "scope", "business_entity"],
+		order_by="supplier_name asc",
+		limit_page_length=0,
+	)
+	scope = get_scope()
+	if scope["global"]:
+		return rows
+	entities = set(scope.get("business_entities") or [])
+	return [
+		row
+		for row in rows
+		if row.scope == "Network" or (row.scope == "Business Entity" and row.business_entity in entities)
+	]
+
+
+def _ensure_supplier(supplier, business_entity=None):
+	if not supplier:
+		return
+	row = frappe.db.get_value(
+		"Catalog Supplier", supplier, ["active", "scope", "business_entity"], as_dict=True
+	)
+	if not row or not row.active:
+		frappe.throw(_("Выберите активного поставщика"))
+	scope = get_scope()
+	allowed_entities = set(scope.get("business_entities") or [])
+	if row.scope not in {"Network", "Business Entity"} or (
+		row.scope == "Business Entity"
+		and (
+			row.business_entity != business_entity
+			or (not scope["global"] and row.business_entity not in allowed_entities)
+		)
+	):
+		frappe.throw(_("Поставщик недоступен для выбранного юридического лица"), frappe.PermissionError)
+
+
+def _validate_payment_scope_links(doc):
+	_ensure_entity(doc.business_entity)
+	_ensure_point(doc.business_point, doc.business_entity)
+	_ensure_supplier(doc.supplier, doc.business_entity)
+	if doc.bank_account:
+		account_entity = frappe.db.get_value("Business Bank Account", doc.bank_account, "business_entity")
+		if account_entity != doc.business_entity:
+			frappe.throw(_("Расчётный счёт не относится к выбранному юридическому лицу"), frappe.PermissionError)
 
 
 def _payment_totals(rows):

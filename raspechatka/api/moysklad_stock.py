@@ -14,7 +14,7 @@ from raspechatka.api.moysklad import API_BASE, PAGE_SIZE, _money, _ref_id, _requ
 
 @frappe.whitelist()
 def get_opening_stock_settings():
-    require_access("settings.access", "admin")
+    require_access("page.references.moysklad", "admin")
     settings = frappe.get_single("MoySklad Settings")
     snapshot = _loads(settings.opening_stock_preview_json)
     return {
@@ -41,7 +41,7 @@ def get_opening_stock_settings():
 
 @frappe.whitelist(methods=["POST"])
 def discover_stock_sources():
-    require_access("settings.access", "admin")
+    require_access("page.references.moysklad", "admin")
     settings = frappe.get_single("MoySklad Settings")
     rows = _paged_rows(settings, "entity/store")
     return {
@@ -59,7 +59,7 @@ def discover_stock_sources():
 
 @frappe.whitelist(methods=["POST"])
 def save_stock_mappings(data):
-    require_access("settings.access", "admin")
+    require_access("page.references.moysklad", "admin")
     settings = frappe.get_single("MoySklad Settings")
     if settings.opening_stock_status == "Imported":
         frappe.throw(_("Начальные остатки уже перенесены. Сопоставления менять нельзя."))
@@ -99,7 +99,7 @@ def save_stock_mappings(data):
 
 @frappe.whitelist(methods=["POST"])
 def preview_opening_stock():
-    require_access("settings.access", "admin")
+    require_access("page.references.moysklad", "admin")
     settings = frappe.get_single("MoySklad Settings")
     if settings.opening_stock_status == "Imported":
         frappe.throw(_("Начальные остатки уже перенесены."))
@@ -121,7 +121,7 @@ def preview_opening_stock():
 
 @frappe.whitelist(methods=["POST"])
 def import_opening_stock(preview_token):
-    require_access("settings.access", "admin")
+    require_access("page.references.moysklad", "admin")
     settings = frappe.get_single("MoySklad Settings")
     if settings.opening_stock_status == "Imported":
         return {
