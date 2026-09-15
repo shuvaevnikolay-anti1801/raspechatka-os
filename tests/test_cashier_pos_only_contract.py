@@ -10,13 +10,16 @@ def test_cashier_web_access_is_denied_before_routing():
 	web = (ROOT / "raspechatka/www/raspechatka.py").read_text(encoding="utf-8")
 	assert 'before_request = ["raspechatka.security.enforce_cashier_pos_only"]' in hooks
 	assert 'CASHIER_ROLE = "Raspechatka Cashier"' in security
+	assert "def is_cashier_pos_only(user)" in security
+	assert '"access_profile": CASHIER_ROLE' in security
+	assert '"active": 1' in security and '"linked_employee"' in security
 	assert 'frappe.PermissionError' in security
 	assert '"raspechatka.api.pos_v2.get_bootstrap"' in security
 	assert '"raspechatka.api.pos_v2.push_events"' in security
 	assert '"raspechatka.api.receipt_search.search_receipts"' in security
 	assert '"raspechatka.api.pos.get_bootstrap"' not in security
 	assert '"raspechatka.api.pos.push_events"' not in security
-	assert '"Raspechatka Cashier"' in web and "frappe.PermissionError" in web
+	assert "is_cashier_pos_only(frappe.session.user)" in web and "frappe.PermissionError" in web
 
 
 def test_pos_cashier_list_requires_active_cashier_profile_user_and_point_assignment():

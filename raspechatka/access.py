@@ -6,6 +6,8 @@ from pathlib import Path
 import frappe
 from frappe import _
 
+from raspechatka.security import is_cashier_pos_only
+
 LEVELS = {"None": 0, "View": 1, "Edit": 2, "Admin": 3}
 ACTION_LEVEL = {"read": 1, "create": 2, "write": 2, "delete": 3, "admin": 3}
 
@@ -73,7 +75,7 @@ def get_access_level(area_code, user=None):
 	roles = set(frappe.get_roles(user))
 	if "System Manager" in roles:
 		return "Admin"
-	if "Raspechatka Cashier" in roles:
+	if is_cashier_pos_only(user):
 		return "None"
 	level = _get_rule_level(area_code, roles)
 	if level is not None:
