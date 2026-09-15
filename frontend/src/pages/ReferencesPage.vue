@@ -9,7 +9,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import PayrollSettingsPanel from "../components/PayrollSettingsPanel.vue";
 
 const route = useRoute();
-const reference = computed(() => route.params.reference || "entities");
+const reference = computed(() => route.meta.reference || route.params.reference || "entities");
 const rows = ref([]);
 const loading = ref(true);
 const saving = ref(false);
@@ -59,7 +59,7 @@ const configs = {
     ],
   },
   warehouses: {
-    eyebrow: "СПРАВОЧНИКИ / ХРАНЕНИЕ",
+    eyebrow: "СКЛАД / СПРАВОЧНИКИ",
     title: "Склады",
     description: "Один склад на точку, шкафы и места хранения",
     columns: [

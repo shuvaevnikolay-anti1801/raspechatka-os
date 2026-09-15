@@ -19,6 +19,7 @@ const submenus = Object.fromEntries(
 				to: page.route,
 				area: page.area,
 				minimum: page.minimum || "View",
+				group: page.submenu_group || "main",
 			})),
 	])
 );
@@ -39,7 +40,15 @@ const submenuItems = computed(() =>
 		<TopNavigation />
 		<nav class="subnav" aria-label="Подразделы">
 			<template v-for="(item, index) in submenuItems" :key="item.label">
-				<router-link v-if="item.to" :to="item.to" :class="{ active: route.path === item.to }">
+				<router-link
+					v-if="item.to"
+					:to="item.to"
+					:class="{
+						active: route.path === item.to,
+						'subnav-service': item.group === 'service',
+						'subnav-service-start': item.group === 'service' && submenuItems[index - 1]?.group !== 'service',
+					}"
+				>
 					<span class="subnav-label">{{ item.label }}</span>
 					<strong class="subnav-measure" aria-hidden="true">{{ item.label }}</strong>
 				</router-link>
@@ -59,5 +68,9 @@ const submenuItems = computed(() =>
 .subnav-label, .subnav-measure { grid-area: 1 / 1; }
 .subnav-measure { visibility: hidden; font-weight: 650; pointer-events: none; }
 .subnav :is(a, button).active::after { background: var(--green); }
-@media (max-width: 760px) { .subnav { top: 64px; } }
+.subnav .subnav-service-start { margin-left: auto; padding-left: 24px; border-left: 1px solid var(--line); }
+@media (max-width: 760px) {
+	.subnav { top: 64px; }
+	.subnav .subnav-service-start { margin-left: 8px; padding-left: 18px; }
+}
 </style>

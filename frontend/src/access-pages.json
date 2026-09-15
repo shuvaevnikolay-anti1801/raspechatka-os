@@ -54,7 +54,9 @@
       { "area": "page.warehouse.purchase_orders", "label": "Заказы поставщикам", "route": "/warehouse/purchase-orders", "legacy_area": "warehouse.operations", "order": 40 },
       { "area": "page.warehouse.balances", "label": "Остатки", "route": "/warehouse/balances", "legacy_area": "warehouse.operations", "order": 50 },
       { "area": "page.warehouse.turnover", "label": "Обороты", "route": "/warehouse/turnover", "legacy_area": "warehouse.operations", "order": 60 },
-      { "area": "page.warehouse.movements", "label": "Движения товаров", "route": "/warehouse/movements", "legacy_area": "warehouse.operations", "order": 70 }
+      { "area": "page.warehouse.movements", "label": "Движения товаров", "route": "/warehouse/movements", "legacy_area": "warehouse.operations", "order": 70 },
+      { "area": "page.references.suppliers", "label": "Поставщики", "route": "/references/suppliers", "legacy_area": "references.suppliers", "submenu_group": "service", "order": 80 },
+      { "area": "page.references.warehouses", "label": "Склады", "route": "/references/warehouses", "legacy_area": "references.storage", "submenu_group": "service", "order": 90 }
     ]
   },
   {
@@ -95,8 +97,6 @@
       { "area": "page.references.organizations", "label": "Партнёры", "route": "/references/organizations", "legacy_area": "references.network", "order": 10 },
       { "area": "page.references.entities", "label": "Юридические лица", "route": "/references/entities", "legacy_area": "references.network", "order": 20 },
       { "area": "page.references.points", "label": "Точки продаж", "route": "/references/points", "legacy_area": "references.network", "order": 30 },
-      { "area": "page.references.warehouses", "label": "Склады", "route": "/references/warehouses", "legacy_area": "references.storage", "order": 40 },
-      { "area": "page.references.suppliers", "label": "Поставщики", "route": "/references/suppliers", "legacy_area": "references.suppliers", "order": 50 },
       { "area": "page.references.users", "label": "Пользователи", "route": "/references/users", "legacy_area": "settings.access", "minimum": "Admin", "order": 60 },
       { "area": "page.references.moysklad", "label": "МойСклад", "route": "/settings/moysklad", "legacy_area": "settings.access", "minimum": "Admin", "order": 70 },
       { "area": "page.references.access", "label": "Права доступа", "route": "/settings/access", "legacy_area": "settings.access", "minimum": "Admin", "order": 80 }
