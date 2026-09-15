@@ -53,9 +53,7 @@ def get_user_profile(name):
 def get_user_options():
 	_require_admin()
 	return {
-		"access_roles": [
-			{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()
-		],
+		"access_roles": [{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()],
 		"organizations": frappe.get_all(
 			"Organization",
 			filters={"active": 1},

@@ -354,7 +354,11 @@ def create_work_role(role_name):
 		_validate_work_role(existing)
 		pages = synchronize_access_pages(copy_legacy_rules=False)
 		_ensure_role_page_rules(existing.name, pages)
-		return {"name": existing.name, "label": ROLE_LABELS.get(existing.name, existing.name), "created": False}
+		return {
+			"name": existing.name,
+			"label": ROLE_LABELS.get(existing.name, existing.name),
+			"created": False,
+		}
 
 	if role_name in PROTECTED_ROLES:
 		frappe.throw(_("Служебную роль нельзя создавать или изменять"), frappe.PermissionError)

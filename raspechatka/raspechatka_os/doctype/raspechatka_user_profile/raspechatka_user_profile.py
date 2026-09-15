@@ -30,9 +30,7 @@ class RaspechatkaUserProfile(Document):
 
 		if self.access_profile not in get_matrix_roles():
 			frappe.throw(_("Выберите действующую рабочую роль"))
-		self.full_name = " ".join(
-			filter(None, (self.last_name, self.first_name, self.middle_name))
-		).strip()
+		self.full_name = " ".join(filter(None, (self.last_name, self.first_name, self.middle_name))).strip()
 		self.phone = normalize_phone(self.phone)
 		self._validate_scope()
 		self._validate_points()
