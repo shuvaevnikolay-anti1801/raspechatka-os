@@ -258,16 +258,12 @@ onMounted(load);
 							<div v-else class="role-heading">
 								<span>{{ role.label }}</span>
 								<button
-									v-if="role.editable"
 									type="button"
 									:title="`Редактировать роль ${role.label}`"
 									@click="beginRoleEdit(role)"
 								>
 									✎
 								</button>
-								<span v-else class="role-lock" title="Встроенная роль защищена"
-									>🔒</span
-								>
 							</div>
 						</th>
 					</tr>
@@ -369,9 +365,6 @@ onMounted(load);
 	border-radius: 5px;
 	background: #fff;
 	cursor: pointer;
-}
-.role-lock {
-	font-size: 12px;
 }
 .role-editor {
 	display: grid;

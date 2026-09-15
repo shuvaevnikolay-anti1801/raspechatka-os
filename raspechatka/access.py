@@ -34,7 +34,6 @@ ROLE_LABELS = {
 ROLE_ORDER = tuple(ROLE_LABELS)
 ACCESS_SETTINGS_AREA = "page.references.access"
 MAX_ROLE_NAME_LENGTH = 140
-IMMUTABLE_ROLE_IDS = PROTECTED_ROLES | set(ROLE_ORDER)
 
 
 @lru_cache(maxsize=1)
@@ -310,9 +309,13 @@ def get_matrix_role_rows():
 	return [
 		{
 			"name": role_id,
-			"label": ROLE_LABELS.get(role_id, labels.get(role_id, role_id)),
-			"editable": role_id not in IMMUTABLE_ROLE_IDS,
-			"deletable": role_id not in IMMUTABLE_ROLE_IDS,
+			"label": (
+				labels.get(role_id, role_id)
+				if labels.get(role_id, role_id) != role_id
+				else ROLE_LABELS.get(role_id, role_id)
+			),
+			"editable": True,
+			"deletable": True,
 		}
 		for role_id in role_ids
 	]
@@ -344,9 +347,10 @@ def _validate_work_role(role_doc):
 
 
 def _validate_manageable_role(role_doc):
-	_validate_work_role(role_doc)
-	if role_doc.name in IMMUTABLE_ROLE_IDS:
-		frappe.throw(_("Встроенную роль нельзя переименовать или удалить"), frappe.PermissionError)
+	if role_doc.name not in get_matrix_roles() or role_doc.name in PROTECTED_ROLES:
+		frappe.throw(_("Служебную роль нельзя переименовать или удалить"), frappe.PermissionError)
+	if role_doc.disabled:
+		frappe.throw(_("Отключённую роль нельзя переименовать или удалить"))
 
 
 def _assigned_role_users(role_id):

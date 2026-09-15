@@ -39,9 +39,8 @@ def test_custom_role_management_keeps_stable_role_id_and_checks_users():
 	assert '"deleted": False, "users": users' in delete
 
 
-def test_access_matrix_exposes_edit_delete_controls_for_custom_roles():
+def test_access_matrix_exposes_edit_delete_controls_for_work_roles():
 	page = (ROOT / "frontend/src/pages/AccessSettingsPage.vue").read_text(encoding="utf-8")
-	assert "role.editable" in page
 	assert "is_new: true" in page
 	assert "Новая рабочая роль" not in page
 	assert "newRoleName" not in page
@@ -49,6 +48,19 @@ def test_access_matrix_exposes_edit_delete_controls_for_custom_roles():
 	assert "create_work_role" in page
 	assert "delete_work_role" in page
 	assert "blockedUsers" in page
+	assert "role-lock" not in page
+
+
+def test_base_raspechatka_roles_can_be_renamed_and_deleted():
+	source = (ROOT / "raspechatka/access.py").read_text(encoding="utf-8")
+	rows = source[source.index("def get_matrix_role_rows") : source.index("def _normalize_role_name")]
+	validation = source[
+		source.index("def _validate_manageable_role") : source.index("def _assigned_role_users")
+	]
+	assert '"editable": True' in rows
+	assert '"deletable": True' in rows
+	assert "IMMUTABLE_ROLE_IDS" not in source
+	assert "role_doc.name not in get_matrix_roles()" in validation
 
 
 def test_users_page_uses_dynamic_work_roles_only():
