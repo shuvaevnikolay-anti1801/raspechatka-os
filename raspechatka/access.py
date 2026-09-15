@@ -34,6 +34,7 @@ ROLE_LABELS = {
 ROLE_ORDER = tuple(ROLE_LABELS)
 ACCESS_SETTINGS_AREA = "page.references.access"
 MAX_ROLE_NAME_LENGTH = 140
+IMMUTABLE_ROLE_IDS = PROTECTED_ROLES | set(ROLE_ORDER)
 
 
 @lru_cache(maxsize=1)
@@ -230,6 +231,28 @@ def get_matrix_roles():
 	)
 
 
+def get_matrix_role_rows():
+	role_ids = get_matrix_roles()
+	labels = {
+		row.name: row.role_name or row.name
+		for row in frappe.get_all(
+			"Role",
+			filters={"name": ["in", role_ids or ["__none__"]]},
+			fields=["name", "role_name"],
+			limit_page_length=1000,
+		)
+	}
+	return [
+		{
+			"name": role_id,
+			"label": ROLE_LABELS.get(role_id, labels.get(role_id, role_id)),
+			"editable": role_id not in IMMUTABLE_ROLE_IDS,
+			"deletable": role_id not in IMMUTABLE_ROLE_IDS,
+		}
+		for role_id in role_ids
+	]
+
+
 def _normalize_role_name(value):
 	role_name = re.sub(r"\s+", " ", (value or "").strip())
 	if not role_name:
@@ -242,7 +265,9 @@ def _normalize_role_name(value):
 
 
 def _get_existing_role(role_name):
-	name = frappe.db.get_value("Role", {"name": role_name}, "name")
+	name = frappe.db.get_value("Role", {"name": role_name}, "name") or frappe.db.get_value(
+		"Role", {"role_name": role_name}, "name"
+	)
 	return frappe.get_doc("Role", name) if name else None
 
 
@@ -251,6 +276,48 @@ def _validate_work_role(role_doc):
 		frappe.throw(_("Служебную роль нельзя использовать как рабочую"), frappe.PermissionError)
 	if role_doc.disabled:
 		frappe.throw(_("Отключённую роль нельзя использовать как рабочую"))
+
+
+def _validate_manageable_role(role_doc):
+	_validate_work_role(role_doc)
+	if role_doc.name in IMMUTABLE_ROLE_IDS:
+		frappe.throw(_("Встроенную роль нельзя переименовать или удалить"), frappe.PermissionError)
+
+
+def _assigned_role_users(role_id):
+	profiles = frappe.get_all(
+		"Raspechatka User Profile",
+		filters={"access_profile": role_id},
+		fields=["system_user", "full_name", "phone"],
+		order_by="full_name asc",
+		limit_page_length=100000,
+	)
+	result = []
+	seen = set()
+	for profile in profiles:
+		key = profile.system_user or profile.phone or profile.full_name
+		if key in seen:
+			continue
+		seen.add(key)
+		result.append(
+			{
+				"user": profile.system_user,
+				"label": profile.full_name or profile.phone or profile.system_user,
+			}
+		)
+
+	for user in frappe.get_all(
+		"Has Role",
+		filters={"parenttype": "User", "role": role_id},
+		pluck="parent",
+		limit_page_length=100000,
+	):
+		if user in seen:
+			continue
+		seen.add(user)
+		user_label = frappe.db.get_value("User", user, "full_name") or user
+		result.append({"user": user, "label": user_label})
+	return result
 
 
 def _ensure_role_page_rules(role_name, pages):
@@ -339,7 +406,7 @@ def get_access_settings():
 	rules = frappe.get_single("Raspechatka Access Settings").get("rules")
 	return {
 		"areas": pages,
-		"roles": [{"name": role, "label": ROLE_LABELS.get(role, role)} for role in get_matrix_roles()],
+		"roles": get_matrix_role_rows(),
 		"rules": [row.as_dict() for row in rules if row.access_area in visible_areas],
 	}
 
@@ -356,7 +423,7 @@ def create_work_role(role_name):
 		_ensure_role_page_rules(existing.name, pages)
 		return {
 			"name": existing.name,
-			"label": ROLE_LABELS.get(existing.name, existing.name),
+			"label": ROLE_LABELS.get(existing.name, existing.role_name or existing.name),
 			"created": False,
 		}
 
@@ -384,7 +451,43 @@ def create_work_role(role_name):
 
 	pages = synchronize_access_pages(copy_legacy_rules=False)
 	_ensure_role_page_rules(role.name, pages)
-	return {"name": role.name, "label": ROLE_LABELS.get(role.name, role.name), "created": created}
+	return {
+		"name": role.name,
+		"label": ROLE_LABELS.get(role.name, role.role_name or role.name),
+		"created": created,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def rename_work_role(role, role_name):
+	_require_access_settings_admin()
+	role_doc = frappe.get_doc("Role", role)
+	_validate_manageable_role(role_doc)
+	new_label = _normalize_role_name(role_name)
+	existing = _get_existing_role(new_label)
+	if existing and existing.name != role_doc.name:
+		frappe.throw(_("Рабочая роль с таким названием уже существует"))  # noqa: RUF001
+	if role_doc.role_name == new_label:
+		return {"name": role_doc.name, "label": new_label, "renamed": False}
+	role_doc.role_name = new_label
+	role_doc.save(ignore_permissions=True)
+	return {"name": role_doc.name, "label": role_doc.role_name, "renamed": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_work_role(role):
+	_require_access_settings_admin()
+	role_doc = frappe.get_doc("Role", role)
+	_validate_manageable_role(role_doc)
+	users = _assigned_role_users(role_doc.name)
+	if users:
+		return {"deleted": False, "users": users}
+
+	settings = frappe.get_single("Raspechatka Access Settings")
+	settings.set("rules", [row for row in settings.rules if row.role != role_doc.name])
+	settings.save(ignore_permissions=True)
+	frappe.delete_doc("Role", role_doc.name, ignore_permissions=True)
+	return {"deleted": True, "name": role_doc.name}
 
 
 @frappe.whitelist(methods=["POST"])
