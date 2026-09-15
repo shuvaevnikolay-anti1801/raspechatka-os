@@ -286,11 +286,11 @@ def _return_receipt(payload, cashier_id):
 		channel = _payment_channel(payment.get("method"))
 		if channel:
 			payments.append(
-			{
-				"payment_channel": channel,
-				"amount": flt(payment.get("amountMinor")) / 100,
-				"external_payment_id": payment.get("transactionId"),
-			}
+				{
+					"payment_channel": channel,
+					"amount": flt(payment.get("amountMinor")) / 100,
+					"external_payment_id": payment.get("transactionId"),
+				}
 			)
 	return {
 		"external_id": payload.get("id"),

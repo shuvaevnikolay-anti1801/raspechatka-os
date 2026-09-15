@@ -1,7 +1,6 @@
 import frappe
 from frappe import _
 
-
 CASHIER_ROLE = "Raspechatka Cashier"
 CASHIER_ALLOWED_METHODS = {
 	"logout",
