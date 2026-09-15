@@ -6,7 +6,14 @@ from pathlib import Path
 import frappe
 from frappe import _
 
-from raspechatka.security import is_cashier_pos_only
+from raspechatka.security import (
+	CASHIER_ROLE,
+	FRANCHISE_OWNER_ROLE,
+	NETWORK_ADMIN_ROLE,
+	POINT_MANAGER_ROLE,
+	SYSTEM_WORK_ROLES,
+	is_cashier_pos_only,
+)
 
 LEVELS = {"None": 0, "View": 1, "Edit": 2, "Admin": 3}
 ACTION_LEVEL = {"read": 1, "create": 2, "write": 2, "delete": 3, "admin": 3}
@@ -28,10 +35,10 @@ PROTECTED_ROLES = {
 	"Workspace Manager",
 }
 ROLE_LABELS = {
-	"Raspechatka Network Admin": "Администратор сети",
-	"Raspechatka Franchise Owner": "Владелец партнёра",
-	"Raspechatka Point Manager": "Управляющий точками",
-	"Raspechatka Cashier": "Кассир",
+	NETWORK_ADMIN_ROLE: "Администратор сети",
+	FRANCHISE_OWNER_ROLE: "Владелец партнёра",
+	POINT_MANAGER_ROLE: "Управляющий точками",
+	CASHIER_ROLE: "Кассир",
 }
 ROLE_ORDER = tuple(ROLE_LABELS)
 ACCESS_SETTINGS_AREA = "page.references.access"
@@ -319,7 +326,9 @@ def get_matrix_role_rows():
 				else ROLE_LABELS.get(role_id, role_id)
 			),
 			"editable": True,
-			"deletable": True,
+			"deletable": role_id not in SYSTEM_WORK_ROLES,
+			"fixed_page_level": "None" if role_id == CASHIER_ROLE else None,
+			"fixed_areas": {ACCESS_SETTINGS_AREA: "Admin"} if role_id == NETWORK_ADMIN_ROLE else {},
 		}
 		for role_id in role_ids
 	]
@@ -435,7 +444,7 @@ def synchronize_access_pages(copy_legacy_rules=True):
 
 def _sync_missing_page_rules(pages):
 	doc = frappe.get_single("Raspechatka Access Settings")
-	existing = {(row.role, row.access_area) for row in doc.rules}
+	existing = {(row.role, row.access_area): row for row in doc.rules}
 	legacy_levels = {
 		(row.role, row.access_area): row.access_level
 		for row in doc.rules
@@ -446,10 +455,15 @@ def _sync_missing_page_rules(pages):
 		for page in pages:
 			key = (role, page["area"])
 			if key in existing:
+				required_level = _required_page_level(role, page["area"])
+				if required_level is not None and existing[key].access_level != required_level:
+					existing[key].access_level = required_level
+					changed = True
 				continue
 			level = legacy_levels.get((role, page.get("legacy_area")), "None")
-			if role == "Raspechatka Network Admin":
-				level = "Admin"
+			required_level = _required_page_level(role, page["area"])
+			if required_level is not None:
+				level = required_level
 			doc.append(
 				"rules",
 				{"role": role, "access_area": page["area"], "access_level": level},
@@ -458,6 +472,14 @@ def _sync_missing_page_rules(pages):
 			changed = True
 	if changed:
 		doc.save(ignore_permissions=True)
+
+
+def _required_page_level(role, area):
+	if role == CASHIER_ROLE and area.startswith("page."):
+		return "None"
+	if role == NETWORK_ADMIN_ROLE and area == ACCESS_SETTINGS_AREA:
+		return "Admin"
+	return None
 
 
 def _require_access_settings_admin():
@@ -555,6 +577,8 @@ def delete_work_role(role):
 	_require_access_settings_admin()
 	role_doc = frappe.get_doc("Role", role)
 	_validate_manageable_role(role_doc)
+	if role_doc.name in SYSTEM_WORK_ROLES:
+		frappe.throw(_("Системную рабочую роль нельзя удалить"), frappe.PermissionError)
 	users = _assigned_role_users(role_doc.name)
 	if users:
 		return {"deleted": False, "users": users}
@@ -592,11 +616,23 @@ def save_access_settings(rules):
 		level = row.get("access_level")
 		if role not in allowed_roles or area not in allowed_areas or level not in LEVELS:
 			frappe.throw(_("Некорректное правило доступа"))
+		if role == CASHIER_ROLE and level != "None":
+			frappe.throw(
+				_("Роль кассира предназначена только для POS: доступ к Web OS должен быть «Не видно»")  # noqa: RUF001
+			)
 		if (role, area) in seen:
 			continue
 		seen.add((role, area))
-		if role == "Raspechatka Network Admin" and area == ACCESS_SETTINGS_AREA:
-			level = "Admin"
+		required_level = _required_page_level(role, area)
+		if required_level is not None:
+			level = required_level
 		doc.append("rules", {"role": role, "access_area": area, "access_level": level})
+	if CASHIER_ROLE in allowed_roles:
+		for area in allowed_areas:
+			if (CASHIER_ROLE, area) not in seen:
+				doc.append(
+					"rules",
+					{"role": CASHIER_ROLE, "access_area": area, "access_level": "None"},
+				)
 	doc.save(ignore_permissions=True)
 	return {"saved": True}
