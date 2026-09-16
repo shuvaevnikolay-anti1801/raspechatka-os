@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -10,14 +9,16 @@ def read(relative):
 
 def test_doctype_metadata_does_not_publish_technical_ui_fields():
 	source = read("raspechatka/api/list_filters.py")
-	function = source[source.index("def get_doctype_filter_fields"):source.index("def filter_document_names")]
+	function = source[
+		source.index("def get_doctype_filter_fields") : source.index("def filter_document_names")
+	]
 	assert "STANDARD_FIELDS.items()" not in function
 	assert "FILTER_FIELD_ALLOWLIST" in function
 
 
 def test_dynamic_filter_execution_rejects_fields_outside_allowlist():
 	source = read("raspechatka/api/list_filters.py")
-	function = source[source.index("def filter_document_names"):source.index("def _field_definition")]
+	function = source[source.index("def filter_document_names") : source.index("def _field_definition")]
 	assert "field_key not in FILTER_FIELD_ALLOWLIST" in function
 	assert "frappe.PermissionError" in function
 	assert "_scope_filters(doctype, meta)" in function
@@ -25,7 +26,7 @@ def test_dynamic_filter_execution_rejects_fields_outside_allowlist():
 
 def test_partner_control_page_uses_one_descriptor_for_form_filter_and_table():
 	source = read("frontend/src/pages/MasterDataPage.vue")
-	organization = source[source.index("organizations:"):source.index("clients:")]
+	organization = source[source.index("organizations:") : source.index("clients:")]
 	assert "entityFields: defineEntityFields" in organization
 	assert "columns:" not in organization
 	assert "fields:" not in organization

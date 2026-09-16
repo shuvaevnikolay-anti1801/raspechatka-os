@@ -1,4 +1,11 @@
-const TECHNICAL_FIELDS = new Set(["name", "owner", "creation", "modified", "modified_by", "docstatus"]);
+const TECHNICAL_FIELDS = new Set([
+	"name",
+	"owner",
+	"creation",
+	"modified",
+	"modified_by",
+	"docstatus",
+]);
 
 function viewOptions(field, view) {
 	const value = field?.[view];
@@ -10,7 +17,8 @@ function viewOptions(field, view) {
 export function defineEntityFields(fields) {
 	const keys = new Set();
 	return fields.map((field) => {
-		if (!field?.key || keys.has(field.key)) throw new Error(`Duplicate or empty entity field: ${field?.key || "<empty>"}`);
+		if (!field?.key || keys.has(field.key))
+			throw new Error(`Duplicate or empty entity field: ${field?.key || "<empty>"}`);
 		keys.add(field.key);
 		return Object.freeze({ ...field });
 	});
@@ -29,9 +37,10 @@ export function mergeEntityFields(filterFields = [], columns = []) {
 	}
 	for (const column of columns) {
 		const filterField = byKey.get(column.key);
-		byKey.set(column.key, filterField
-			? { ...filterField, ...column, table: true }
-			: { ...column, form: false });
+		byKey.set(
+			column.key,
+			filterField ? { ...filterField, ...column, table: true } : { ...column, form: false }
+		);
 	}
 	return defineEntityFields([...byKey.values()]);
 }
@@ -75,14 +84,20 @@ export function reconcileKeys(saved, canonical) {
 }
 
 export function reconcileColumnOrder(saved, columns) {
-	const fixed = columns.filter((column) => column.fixed === "left" || column.fixed === true).map((column) => column.key);
-	const movable = columns.filter((column) => !fixed.includes(column.key)).map((column) => column.key);
+	const fixed = columns
+		.filter((column) => column.fixed === "left" || column.fixed === true)
+		.map((column) => column.key);
+	const movable = columns
+		.filter((column) => !fixed.includes(column.key))
+		.map((column) => column.key);
 	return [...fixed, ...reconcileKeys(saved, movable)];
 }
 
 export function reconcileVisible(saved, fields, view, previousSchema = null) {
 	const available = fields.filter((field) => viewOptions(field, view)).map((field) => field.key);
-	const defaults = fields.filter((field) => viewOptions(field, view) && field.default !== false).map((field) => field.key);
+	const defaults = fields
+		.filter((field) => viewOptions(field, view) && field.default !== false)
+		.map((field) => field.key);
 	const valid = (Array.isArray(saved) ? saved : []).filter((key) => available.includes(key));
 	if (!Array.isArray(saved)) return defaults;
 	if (!Array.isArray(previousSchema)) return valid.length ? valid : defaults;
