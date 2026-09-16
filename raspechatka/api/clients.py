@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import add_days, cint, date_diff, flt, getdate, now_datetime, today
 
 from raspechatka.access import get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.raspechatka_os.doctype.client.client import CHANNELS, normalize_phone
 
 MARKETING_TYPES = {
@@ -277,6 +278,7 @@ def club_gateway(data=None, **kwargs):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_clients(search=None, club_status=None, business_point=None, channel=None):
 	require_access("page.clients.list", "read")
 	_require_point_visible(business_point)
@@ -294,7 +296,7 @@ def get_clients(search=None, club_status=None, business_point=None, channel=None
 	if search:
 		value = f"%{search.strip()}%"
 		or_filters = {field: ["like", value] for field in ("client_id", "client_name", "phone", "email")}
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Client",
 		filters=filters,
 		or_filters=or_filters,
@@ -319,6 +321,19 @@ def get_clients(search=None, club_status=None, business_point=None, channel=None
 		order_by="registered_at desc",
 		limit_page_length=1000,
 	)
+	point_names = {row.registration_point for row in rows if row.registration_point}
+	point_labels = {
+		row.name: row.point_name
+		for row in frappe.get_all(
+			"Business Point",
+			filters={"name": ["in", list(point_names)]},
+			fields=["name", "point_name"],
+			limit_page_length=0,
+		)
+	} if point_names else {}
+	for row in rows:
+		row["registration_point_label"] = point_labels.get(row.registration_point)
+	return rows
 
 
 @frappe.whitelist()

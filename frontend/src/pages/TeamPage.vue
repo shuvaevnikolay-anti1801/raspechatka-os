@@ -40,10 +40,10 @@ const title = computed(
 			payroll: "Зарплата",
 			bonuses: "Премии и игра",
 			hr: "Кадры и документы",
-		}[section.value])
+		})[section.value],
 );
 const pointNames = computed(() =>
-	Object.fromEntries(data.value.points.map((item) => [item.name, item.point_name]))
+	Object.fromEntries(data.value.points.map((item) => [item.name, item.point_name])),
 );
 const days = computed(() =>
 	Array.from(
@@ -53,16 +53,16 @@ const days = computed(() =>
 				new Date(
 					Number(month.value.slice(0, 4)),
 					Number(month.value.slice(5, 7)),
-					0
+					0,
 				).getDate(),
 		},
-		(_, i) => i + 1
-	)
+		(_, i) => i + 1,
+	),
 );
 const selectedPointEmployees = computed(() =>
 	point.value
 		? data.value.employees.filter((e) => (e.points || []).includes(point.value))
-		: data.value.employees
+		: data.value.employees,
 );
 const baseShifts = computed(() => data.value.shift_templates.slice(0, 2));
 const morningShift = computed(() => baseShifts.value[0]);
@@ -87,11 +87,11 @@ const dayCoverage = computed(() =>
 					evening += 1;
 			}
 			return [day, { morning, evening, ok: morning === 1 && evening === 1 }];
-		})
-	)
+		}),
+	),
 );
 const completeDays = computed(
-	() => Object.values(dayCoverage.value).filter((item) => item.ok).length
+	() => Object.values(dayCoverage.value).filter((item) => item.ok).length,
 );
 const plannedHours = computed(() =>
 	Object.fromEntries(
@@ -104,19 +104,19 @@ const plannedHours = computed(() =>
 						sum +
 						baseShifts.value.reduce(
 							(total, shift) => total + Number(shift?.paid_hours || 0),
-							0
+							0,
 						)
 					);
 				return (
 					sum +
 					Number(
 						data.value.shift_templates.find((shift) => shift.name === value)
-							?.paid_hours || 0
+							?.paid_hours || 0,
 					)
 				);
 			}, 0),
-		])
-	)
+		]),
+	),
 );
 const filterModel = computed({
 	get: () => ({ business_point: point.value, month: month.value }),
@@ -140,8 +140,13 @@ const filterFields = computed(() => [
 ]);
 const employeeColumns = computed(() => [
 	{ key: "employee_name", label: "Сотрудник", primary: true, width: 260 },
-	{ key: "position", label: "Должность", width: 180 },
-	{ key: "business_entity", label: "Работодатель", width: 200 },
+	{ key: "position", label: "Должность", width: 180, displayKey: "position_label" },
+	{
+		key: "business_entity",
+		label: "Работодатель",
+		width: 200,
+		displayKey: "business_entity_label",
+	},
 	{
 		key: "default_point",
 		label: "Основная точка",
@@ -181,10 +186,10 @@ const sectionColumns = computed(() =>
 	section.value === "employees"
 		? employeeColumns.value
 		: section.value === "payroll"
-		? payrollColumns
-		: section.value === "hr"
-		? leaveColumns.value
-		: []
+			? payrollColumns
+			: section.value === "hr"
+				? leaveColumns.value
+				: [],
 );
 const entityFields = computed(() => mergeEntityFields(filterFields.value, sectionColumns.value));
 
@@ -305,7 +310,7 @@ async function saveSchedule() {
 				entries: JSON.stringify(entries),
 				allow_past: allowPastEditing.value ? 1 : 0,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		allowPastEditing.value = false;
 		await load();
@@ -331,7 +336,7 @@ async function calculatePayroll(save = false) {
 				period_end: payrollEnd.value,
 				save: save ? 1 : 0,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 	} catch (e) {
 		error.value = e.message;

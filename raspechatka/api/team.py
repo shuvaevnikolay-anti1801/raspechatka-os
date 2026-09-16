@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_url, getdate, now_datetime, time_diff_in_hours
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.requisites import digits
 
 
@@ -38,6 +39,7 @@ def _employee_filters(scope, business_point=None):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_team_overview(business_point=None, month=None):
 	require_access("page.team.employees", "read")
 	scope = _scope_point(business_point)
@@ -61,6 +63,29 @@ def get_team_overview(business_point=None, month=None):
 		order_by="employee_name asc",
 		limit_page_length=500,
 	)
+	entity_names = {row.business_entity for row in employees if row.business_entity}
+	position_names = {row.position for row in employees if row.position}
+	entity_labels = {
+		row.name: row.short_name
+		for row in frappe.get_all(
+			"Business Entity",
+			filters={"name": ["in", list(entity_names)]},
+			fields=["name", "short_name"],
+			limit_page_length=0,
+		)
+	} if entity_names else {}
+	position_labels = {
+		row.name: row.position_name
+		for row in frappe.get_all(
+			"Position",
+			filters={"name": ["in", list(position_names)]},
+			fields=["name", "position_name"],
+			limit_page_length=0,
+		)
+	} if position_names else {}
+	for employee in employees:
+		employee["business_entity_label"] = entity_labels.get(employee.business_entity)
+		employee["position_label"] = position_labels.get(employee.position)
 
 	assignments = frappe.get_all(
 		"Employee Point Assignment",
@@ -787,6 +812,7 @@ def _assert_employee_scope(employee=None, business_entity=None):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_employee_registry(search=None, active=None):
 	require_access("page.team.employees", "read")
 	scope = get_scope()
@@ -823,8 +849,30 @@ def get_employee_registry(search=None, active=None):
 				limit_page_length=1000,
 			)
 		}
+	entity_names = {row.business_entity for row in rows if row.business_entity}
+	position_names = {row.position for row in rows if row.position}
+	entity_labels = {
+		row.name: row.short_name
+		for row in frappe.get_all(
+			"Business Entity",
+			filters={"name": ["in", list(entity_names)]},
+			fields=["name", "short_name"],
+			limit_page_length=0,
+		)
+	} if entity_names else {}
+	position_labels = {
+		row.name: row.position_name
+		for row in frappe.get_all(
+			"Position",
+			filters={"name": ["in", list(position_names)]},
+			fields=["name", "position_name"],
+			limit_page_length=0,
+		)
+	} if position_names else {}
 	for row in rows:
 		row["access"] = profiles.get(row.system_user_profile)
+		row["business_entity_label"] = entity_labels.get(row.business_entity)
+		row["position_label"] = position_labels.get(row.position)
 	return rows
 
 

@@ -8,6 +8,8 @@ import {
 	reconcileColumnOrder,
 	reconcileKeys,
 	reconcileVisible,
+	resolveDisplayValue,
+	resolveSortValue,
 	searchKeys,
 } from "../src/entityListSchema.js";
 
@@ -117,4 +119,51 @@ test("technical fields are not automatically added", () => {
 	);
 	for (const key of ["owner", "creation", "modified", "modified_by", "docstatus"])
 		assert.doesNotMatch(filter, new RegExp(`key:\\s*["']${key}`));
+});
+
+test("standard table values use business labels without changing raw values", () => {
+	const row = {
+		organization: "ORG-0001",
+		organization_label: "Партнёр Иванов",
+		scope_type: "Business Entity",
+		confirmed: 1,
+	};
+	assert.equal(
+		resolveDisplayValue(row, { key: "organization", displayKey: "organization_label" }),
+		"Партнёр Иванов",
+	);
+	assert.equal(row.organization, "ORG-0001");
+	assert.equal(
+		resolveDisplayValue(row, {
+			key: "scope_type",
+			type: "select",
+			options: [{ value: "Business Entity", label: "Юридическое лицо" }],
+		}),
+		"Юридическое лицо",
+	);
+	assert.equal(resolveDisplayValue(row, { key: "confirmed", type: "check" }), "Да");
+	assert.equal(
+		resolveDisplayValue({ confirmed: 0 }, { key: "confirmed", type: "check" }),
+		"Нет",
+	);
+});
+
+test("custom format wins and sorting uses displayed link and select labels", () => {
+	const link = { key: "organization", displayKey: "organization_label" };
+	const select = {
+		key: "scope_type",
+		options: [
+			{ value: "Partner", label: "Партнёр" },
+			{ value: "Network", label: "Вся сеть" },
+		],
+	};
+	assert.equal(
+		resolveDisplayValue({ status: "raw" }, { key: "status", format: () => "Готово" }),
+		"Готово",
+	);
+	assert.equal(
+		resolveSortValue({ organization: "ORG-9", organization_label: "Иванов" }, link),
+		"Иванов",
+	);
+	assert.equal(resolveSortValue({ scope_type: "Network" }, select), "Вся сеть");
 });

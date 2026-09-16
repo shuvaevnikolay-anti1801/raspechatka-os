@@ -53,7 +53,7 @@ const typeLabels = {
 };
 const inventoryType = computed(() => ["Product", "Variant"].includes(itemForm.item_type));
 const currentVariants = computed(() =>
-	itemOptions.items.filter((item) => item.variant_of === itemForm.name)
+	itemOptions.items.filter((item) => item.variant_of === itemForm.name),
 );
 const groupOptions = computed(() => {
 	const byParent = new Map();
@@ -99,8 +99,18 @@ const filterFields = computed(() => [
 const tableColumns = computed(() => [
 	{ key: "item_type", label: "Тип", width: 130, format: (value) => typeLabels[value] || value },
 	{ key: "item_name", label: "Наименование", primary: true, width: 330 },
-	{ key: "catalog_group", label: "Группа", width: 220 },
-	{ key: "variant_of", label: "Основной товар", width: 220 },
+	{
+		key: "catalog_group",
+		label: "Группа",
+		width: 220,
+		displayKey: "catalog_group_label",
+	},
+	{
+		key: "variant_of",
+		label: "Основной товар",
+		width: 220,
+		displayKey: "variant_of_label",
+	},
 	{ key: "stock_uom", label: "Ед. изм.", width: 100 },
 	{
 		key: "active",
@@ -177,7 +187,7 @@ async function saveItem() {
 		const result = await call(
 			"raspechatka.api.frontend.save_catalog_item",
 			{ data: JSON.stringify(itemForm) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		await loadItems();
 		await loadEditor(result.name);
@@ -221,13 +231,13 @@ function openGroupEditor(group = null) {
 					group_name: group.group_name,
 					parent_catalog_group: group.parent_catalog_group || "",
 					active: group.active ?? 1,
-			  }
+				}
 			: {
 					name: "",
 					group_name: "",
 					parent_catalog_group: filters.catalog_group || "",
 					active: 1,
-			  }
+				},
 	);
 	groupEditorOpen.value = true;
 }
@@ -239,7 +249,7 @@ async function saveGroup() {
 		const result = await call(
 			"raspechatka.api.frontend.save_catalog_group",
 			{ data: JSON.stringify(groupForm) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		await loadFilters();
 		filters.catalog_group = result.name;
@@ -267,7 +277,7 @@ async function changeItemArchiveState() {
 		await call(
 			"raspechatka.api.frontend." + method,
 			{ name: itemForm.name },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		await loadItems();
 		await loadEditor(itemForm.name);
@@ -289,7 +299,7 @@ async function changeGroupArchiveState() {
 		await call(
 			"raspechatka.api.frontend." + method,
 			{ name: groupForm.name },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		groupEditorOpen.value = false;
 		filters.catalog_group = "";
@@ -428,7 +438,7 @@ async function initializeCatalog(size) {
 								<option value="">Верхний уровень</option>
 								<option
 									v-for="group in groups.filter(
-										(row) => row.name !== groupForm.name
+										(row) => row.name !== groupForm.name,
 									)"
 									:key="group.name"
 									:value="group.name"
@@ -742,7 +752,7 @@ async function initializeCatalog(size) {
 							<header>
 								<strong>{{
 									itemOptions.points.find(
-										(point) => point.name === row.business_point
+										(point) => point.name === row.business_point,
 									)?.point_name || row.business_point
 								}}</strong
 								><label class="switch-line"
@@ -776,7 +786,7 @@ async function initializeCatalog(size) {
 										<option
 											v-for="warehouse in itemOptions.warehouses.filter(
 												(item) =>
-													item.business_point === row.business_point
+													item.business_point === row.business_point,
 											)"
 											:key="warehouse.name"
 											:value="warehouse.name"

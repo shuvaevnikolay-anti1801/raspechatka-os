@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import cint
 
 from raspechatka.access import LEVELS, get_access_level, get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.dadata import find_bank, find_party
 from raspechatka.requisites import digits, is_valid_bic, is_valid_inn
 
@@ -77,6 +78,27 @@ REFERENCE_CONFIG = {
 	},
 }
 
+REFERENCE_LINK_DISPLAYS = {
+	"clients": {"registration_point": ("Business Point", "point_name")},
+	"suppliers": {"business_entity": ("Business Entity", "short_name")},
+	"employees": {
+		"business_entity": ("Business Entity", "short_name"),
+		"position": ("Position", "position_name"),
+	},
+	"pos-workplaces": {"business_point": ("Business Point", "point_name")},
+	"cash-registers": {
+		"business_point": ("Business Point", "point_name"),
+		"pos_workplace": ("POS Workplace", "workplace_name"),
+	},
+	"financial-articles": {
+		"parent_financial_article": ("Financial Article", "article_name")
+	},
+	"catalog-groups": {"parent_catalog_group": ("Catalog Group", "group_name")},
+	"entities": {"organization": ("Organization", "organization_name")},
+	"points": {"business_entity": ("Business Entity", "short_name")},
+	"warehouses": {"business_point": ("Business Point", "point_name")},
+}
+
 AREA_BY_REFERENCE = {
 	"organizations": "page.references.organizations", "entities": "page.references.entities", "points": "page.references.points", "warehouses": "page.references.warehouses",
 	"clients": "page.clients.list", "suppliers": "page.references.suppliers", "employees": "page.team.employees", "positions": "page.team.positions",
@@ -86,6 +108,7 @@ AREA_BY_REFERENCE = {
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_reference_list(reference, search=None, active=None):
 	config = _get_config(reference)
 	require_access(AREA_BY_REFERENCE[reference], "read")
@@ -109,6 +132,7 @@ def get_reference_list(reference, search=None, active=None):
 		order_by=config["order_by"],
 		limit_page_length=500,
 	)
+	_hydrate_reference_labels(reference, rows)
 
 	if reference == "points":
 		warehouses = {
@@ -125,6 +149,25 @@ def get_reference_list(reference, search=None, active=None):
 			row["cabinet_count"] = count_by_warehouse.get(row.name, 0)
 
 	return rows
+
+
+def _hydrate_reference_labels(reference, rows):
+	"""Add display labels in batched queries while preserving raw Link values."""
+	for key, (doctype, label_field) in REFERENCE_LINK_DISPLAYS.get(reference, {}).items():
+		names = {row.get(key) for row in rows if row.get(key)}
+		if not names:
+			continue
+		labels = {
+			row.name: row.get(label_field)
+			for row in frappe.get_all(
+				doctype,
+				filters={"name": ["in", list(names)]},
+				fields=["name", label_field],
+				limit_page_length=0,
+			)
+		}
+		for row in rows:
+			row[f"{key}_label"] = labels.get(row.get(key))
 
 
 @frappe.whitelist()

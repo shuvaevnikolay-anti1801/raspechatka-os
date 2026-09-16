@@ -24,14 +24,39 @@ const options = reactive({
 });
 const form = reactive({});
 
-const columns = [
+const columns = computed(() => [
 	{ key: "full_name", label: "ФИО", primary: true },
 	{ key: "phone", label: "Телефон / логин" },
-	{ key: "access_profile", label: "Профиль доступа" },
-	{ key: "scope_type", label: "Область доступа" },
-	{ key: "invitation_status", label: "Приглашение" },
+	{
+		key: "access_profile",
+		label: "Профиль доступа",
+		type: "select",
+		displayKey: "access_profile_label",
+		options: options.access_roles.map((role) => ({ value: role.name, label: role.label })),
+	},
+	{
+		key: "scope_type",
+		label: "Область доступа",
+		type: "select",
+		options: [
+			{ value: "Network", label: "Вся сеть" },
+			{ value: "Partner", label: "Партнёр" },
+			{ value: "Business Entity", label: "Юридическое лицо" },
+			{ value: "Points", label: "Выбранные точки" },
+		],
+	},
+	{
+		key: "invitation_status",
+		label: "Приглашение",
+		type: "select",
+		options: [
+			{ value: "Not Generated", label: "Не создано" },
+			{ value: "Generated", label: "Приглашение создано" },
+			{ value: "Activated", label: "Пользователь активирован" },
+		],
+	},
 	{ key: "active", label: "Статус" },
-];
+]);
 const filterFields = [
 	{ key: "search", label: "Поиск", placeholder: "ФИО или номер телефона", wide: true },
 	{
@@ -45,14 +70,16 @@ const filterFields = [
 		],
 	},
 ];
-const entityFields = mergeEntityFields(filterFields, columns);
+const entityFields = computed(() => mergeEntityFields(filterFields, columns.value));
 const availableEntities = computed(() =>
-	options.entities.filter((item) => form.organization && item.organization === form.organization)
+	options.entities.filter(
+		(item) => form.organization && item.organization === form.organization,
+	),
 );
 const availablePoints = computed(() =>
 	options.points.filter(
-		(item) => form.business_entity && item.business_entity === form.business_entity
-	)
+		(item) => form.business_entity && item.business_entity === form.business_entity,
+	),
 );
 
 watch(
@@ -62,16 +89,16 @@ watch(
 			form.business_entity = "";
 			form.assigned_points = [];
 		}
-	}
+	},
 );
 watch(
 	() => form.business_entity,
 	() => {
 		const allowed = new Set(availablePoints.value.map((item) => item.name));
 		form.assigned_points = (form.assigned_points || []).filter((row) =>
-			allowed.has(row.business_point)
+			allowed.has(row.business_point),
 		);
-	}
+	},
 );
 watch(
 	() => form.scope_type,
@@ -86,7 +113,7 @@ watch(
 		} else if (scopeType === "Business Entity") {
 			form.assigned_points = [];
 		}
-	}
+	},
 );
 
 function reset(values = {}) {
@@ -153,7 +180,7 @@ async function save() {
 			{
 				data: JSON.stringify(form),
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		await Promise.all([load(), loadOptions()]);
 		await open({ name: result.name });
@@ -171,7 +198,7 @@ async function setActive(active) {
 				profile: form.name,
 				active,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		detail.value = null;
 		await load();
@@ -187,7 +214,7 @@ async function generateInvitation() {
 			{
 				profile: form.name,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		invitation.value = result.message;
 		form.invitation_status = "Generated";
@@ -207,7 +234,7 @@ async function closeSessions() {
 			{
 				profile: form.name,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 	} catch (exception) {
 		formError.value = exception.message;

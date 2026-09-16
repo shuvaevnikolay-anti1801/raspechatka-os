@@ -16,6 +16,7 @@ from frappe.utils import (
 )
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.stock import effective_ledger_condition
 
 
@@ -59,6 +60,7 @@ def _get_payment_method_options():
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_payments(from_date=None, to_date=None, business_entity=None, business_point=None, direction=None, financial_article=None, status=None, search=None, limit_start=0, limit_page_length=100):
 	require_access("page.finance.payments", "read")
 	filters = _transaction_filters(from_date, to_date, business_entity, business_point, direction, financial_article, status)
@@ -70,6 +72,7 @@ def get_payments(from_date=None, to_date=None, business_entity=None, business_po
 	limit = min(max(cint(limit_page_length), 1), 500)
 	rows = frappe.get_all("Finance Transaction", filters=filters, or_filters=or_filters, fields=["name", "posting_date", "posting_time", "direction", "amount", "currency", "status", "processing_status", "docstatus", "business_entity", "business_point", "bank_account", "financial_article", "cash_flow_type", "counterparty_name", "purpose", "source", "document_number", "bank_operation", "cash_movement"], order_by="posting_date desc, posting_time desc, creation desc", limit_start=max(cint(limit_start), 0), limit_page_length=limit + 1)
 	visible = rows[:limit]
+	_hydrate_finance_labels(visible)
 	return {"rows": visible, "has_more": len(rows) > limit, "totals": _payment_totals(visible)}
 
 
@@ -275,6 +278,7 @@ def cancel_payment(name):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_payment_calendar(month=None, business_entity=None, business_point=None, status=None):
 	require_access("page.finance.calendar", "read")
 	month = getdate(month or get_first_day(nowdate())).replace(day=1)
@@ -286,10 +290,34 @@ def get_payment_calendar(month=None, business_entity=None, business_point=None, 
 	if status:
 		filters["status"] = status
 	rows = frappe.get_all("Finance Plan Item", filters=filters, fields=["name", "title", "planned_date", "direction", "amount", "currency", "status", "business_entity", "business_point", "bank_account", "financial_article", "counterparty_name", "recurrence", "paid_transaction", "comment"], order_by="planned_date asc, creation asc", limit_page_length=1000)
+	_hydrate_finance_labels(rows)
 	today = getdate(nowdate())
 	for row in rows:
 		row["display_status"] = "Overdue" if row.status == "Planned" and getdate(row.planned_date) < today else row.status
 	return {"rows": rows, "totals": {"planned": sum(flt(row.amount) for row in rows), "paid": sum(flt(row.amount) for row in rows if row.status == "Paid"), "remaining": sum(flt(row.amount) for row in rows if row.status == "Planned")}, "month": str(month)}
+
+
+def _hydrate_finance_labels(rows):
+	"""Hydrate visible Link labels with one query per linked DocType."""
+	links = {
+		"business_point": ("Business Point", "point_name"),
+		"financial_article": ("Financial Article", "article_name"),
+	}
+	for key, (doctype, label_field) in links.items():
+		names = {row.get(key) for row in rows if row.get(key)}
+		if not names:
+			continue
+		labels = {
+			row.name: row.get(label_field)
+			for row in frappe.get_all(
+				doctype,
+				filters={"name": ["in", list(names)]},
+				fields=["name", label_field],
+				limit_page_length=0,
+			)
+		}
+		for row in rows:
+			row[f"{key}_label"] = labels.get(row.get(key))
 
 
 @frappe.whitelist(methods=["POST"])

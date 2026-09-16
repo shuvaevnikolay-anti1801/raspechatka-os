@@ -45,7 +45,7 @@ const configs = {
 		columns: [
 			{ key: "short_name", label: "Наименование", primary: true },
 			{ key: "inn", label: "ИНН" },
-			{ key: "organization", label: "Партнёр" },
+			{ key: "organization", label: "Партнёр", displayKey: "organization_label" },
 			{ key: "tax_system", label: "Налоговый режим" },
 			{ key: "phone", label: "Телефон", default: false },
 			{ key: "email", label: "E-mail", default: false },
@@ -59,7 +59,11 @@ const configs = {
 		create: "Добавить точку",
 		columns: [
 			{ key: "point_name", label: "Точка продаж", primary: true },
-			{ key: "business_entity", label: "Юридическое лицо" },
+			{
+				key: "business_entity",
+				label: "Юридическое лицо",
+				displayKey: "business_entity_label",
+			},
 			{ key: "city", label: "Город" },
 			{ key: "address", label: "Адрес" },
 			{ key: "phone", label: "Телефон", default: false },
@@ -74,7 +78,11 @@ const configs = {
 		description: "Один склад на точку, шкафы и места хранения",
 		columns: [
 			{ key: "warehouse_name", label: "Склад", primary: true },
-			{ key: "business_point", label: "Точка продаж" },
+			{
+				key: "business_point",
+				label: "Точка продаж",
+				displayKey: "business_point_label",
+			},
 			{ key: "cabinet_count", label: "Шкафов" },
 			{ key: "active", label: "Статус" },
 		],
@@ -97,13 +105,15 @@ const filterFields = computed(() => [
 ]);
 const entityFields = computed(() => mergeEntityFields(filterFields.value, config.value.columns));
 const title = computed(() =>
-	detail.value ? form.short_name || form.point_name || form.warehouse_name : config.value?.create
+	detail.value
+		? form.short_name || form.point_name || form.warehouse_name
+		: config.value?.create,
 );
 const entityAccounts = computed(() =>
-	options.bank_accounts.filter((account) => account.business_entity === form.business_entity)
+	options.bank_accounts.filter((account) => account.business_entity === form.business_entity),
 );
 const warehouseLocations = computed(() =>
-	(detail.value?.cabinets || []).flatMap((cabinet) => cabinet.locations || [])
+	(detail.value?.cabinets || []).flatMap((cabinet) => cabinet.locations || []),
 );
 const weekdayLabels = [
 	"Понедельник",
@@ -249,7 +259,7 @@ async function lookupBic() {
 	try {
 		Object.assign(
 			bankForm,
-			await call("raspechatka.api.references.lookup_bank_by_bic", { bic: bankForm.bic })
+			await call("raspechatka.api.references.lookup_bank_by_bic", { bic: bankForm.bic }),
 		);
 	} catch (exception) {
 		formError.value = `${exception.message} Реквизиты банка можно заполнить вручную.`;
@@ -265,7 +275,7 @@ async function saveReference() {
 		const result = await call(
 			"raspechatka.api.references.save_reference",
 			{ reference: reference.value, data: JSON.stringify(form) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		await Promise.all([loadRows(), loadOptions()]);
 		await openReference({ name: result.name });
@@ -280,7 +290,7 @@ async function setActive(value) {
 	await call(
 		"raspechatka.api.references.archive_reference",
 		{ reference: reference.value, name: form.name, active: value },
-		{ method: "POST" }
+		{ method: "POST" },
 	);
 	detail.value = null;
 	await loadRows();
@@ -292,7 +302,7 @@ async function saveBank() {
 		await call(
 			"raspechatka.api.references.save_bank_account",
 			{ data: JSON.stringify({ ...bankForm, business_entity: form.name }) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		resetObject(bankForm, {
 			name: "",
@@ -320,7 +330,7 @@ async function setBankActive(account, active) {
 		await call(
 			"raspechatka.api.references.save_bank_account",
 			{ data: JSON.stringify({ ...account, active }) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		await Promise.all([openReference({ name: form.name }), loadOptions()]);
 	} catch (exception) {
@@ -333,7 +343,7 @@ async function saveCabinet() {
 		await call(
 			"raspechatka.api.references.save_cabinet",
 			{ data: JSON.stringify({ ...cabinetForm, warehouse: form.name }) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		resetObject(cabinetForm, { cabinet_number: "", active: 1 });
 		await openReference({ name: form.name });
@@ -347,7 +357,7 @@ async function saveLocation() {
 		await call(
 			"raspechatka.api.references.save_storage_location",
 			{ data: JSON.stringify(locationForm) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		resetObject(locationForm, { cabinet: "", location_name: "", active: 1 });
 		await openReference({ name: form.name });
@@ -361,7 +371,7 @@ async function saveStorage() {
 		await call(
 			"raspechatka.api.references.save_item_storage",
 			{ data: JSON.stringify({ ...storageForm, warehouse: form.name }) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		resetObject(storageForm, { item: "", storage_location: "", active: 1 });
 		await openReference({ name: form.name });
