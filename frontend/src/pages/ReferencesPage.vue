@@ -6,7 +6,6 @@ import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
-import PayrollSettingsPanel from "../components/PayrollSettingsPanel.vue";
 import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute();
@@ -107,9 +106,6 @@ const entityFields = computed(() => mergeEntityFields(filterFields.value, config
 const title = computed(() =>
 	detail.value ? form.short_name || form.point_name || form.warehouse_name : config.value?.create
 );
-const entityAccounts = computed(() =>
-	options.bank_accounts.filter((account) => account.business_entity === form.business_entity)
-);
 const warehouseLocations = computed(() =>
 	(detail.value?.cabinets || []).flatMap((cabinet) => cabinet.locations || [])
 );
@@ -122,6 +118,19 @@ const weekdayLabels = [
 	"Суббота",
 	"Воскресенье",
 ];
+const timezoneOptions = [
+	["Europe/Kaliningrad", "Калининград (МСК−1)"],
+	["Europe/Moscow", "Москва (МСК)"],
+	["Europe/Samara", "Самара (МСК+1)"],
+	["Asia/Yekaterinburg", "Екатеринбург (МСК+2)"],
+	["Asia/Omsk", "Омск (МСК+3)"],
+	["Asia/Krasnoyarsk", "Красноярск (МСК+4)"],
+	["Asia/Irkutsk", "Иркутск (МСК+5)"],
+	["Asia/Yakutsk", "Якутск (МСК+6)"],
+	["Asia/Vladivostok", "Владивосток (МСК+7)"],
+	["Asia/Magadan", "Магадан (МСК+8)"],
+	["Asia/Kamchatka", "Камчатка (МСК+9)"],
+].map(([value, label]) => ({ value, label }));
 
 function emptyHours() {
 	return weekdayLabels.map((weekday, index) => ({
@@ -180,7 +189,6 @@ function newReference() {
 			ogrnip: "",
 			okpo: "",
 			registration_address: "",
-			registration_status: "",
 			phone: "",
 			email: "",
 			tax_system: "Патент",
@@ -195,17 +203,14 @@ function newReference() {
 			address: "",
 			phone: "",
 			email: "",
+			telegram: "",
+			max_messenger: "",
+			vk: "",
+			whatsapp: "",
+			yandex_reviews_url: "",
+			twogis_reviews_url: "",
 			timezone: "Europe/Moscow",
 			working_hours: emptyHours(),
-			allow_free_price: 0,
-			allow_discounts: 1,
-			max_discount_percent: 100,
-			allow_remove_cart_item: 1,
-			accepts_cash: 1,
-			accepts_card: 1,
-			card_bank_account: "",
-			accepts_qr: 1,
-			qr_bank_account: "",
 		});
 	}
 }
@@ -231,6 +236,12 @@ async function openReference(row) {
 		});
 		if (reference.value === "points" && !form.working_hours?.length)
 			form.working_hours = emptyHours();
+		if (reference.value === "points")
+			form.working_hours = form.working_hours.map((day) => ({
+				...day,
+				opens_at: day.opens_at ? String(day.opens_at).slice(0, 5) : "",
+				closes_at: day.closes_at ? String(day.closes_at).slice(0, 5) : "",
+			}));
 	} catch (exception) {
 		error.value = exception.message;
 	}
@@ -445,11 +456,6 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 							</select></label
 						>
 						<label
-							>Внутренний код<input
-								:value="form.internal_code || 'Будет создан автоматически'"
-								disabled
-						/></label>
-						<label
 							>Краткое наименование<input v-model="form.short_name" required
 						/></label>
 						<label class="span-2"
@@ -482,11 +488,6 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 							Автозаполнение помогает внести реквизиты, но все поля можно заполнить и
 							исправить вручную.
 						</p>
-						<label
-							>Статус по реестру<input
-								:value="form.registration_status || 'Не проверен'"
-								disabled
-						/></label>
 						<label
 							>ОГРНИП<input v-model="form.ogrnip" inputmode="numeric" maxlength="15"
 						/></label>
@@ -636,7 +637,10 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 					<h3>Основное</h3>
 					<div class="form-grid">
 						<label class="span-2"
-							>Название точки<input v-model="form.point_name" required
+							>Название точки<input
+								v-model="form.point_name"
+								placeholder="Ярославль, Комсомольская, 12"
+								required
 						/></label>
 						<label
 							>Юридическое лицо<select v-model="form.business_entity" required>
@@ -649,15 +653,6 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 								</option>
 							</select></label
 						>
-						<label class="check-field"
-							><input
-								v-model="form.active"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Активна</label
-						>
 					</div>
 				</div>
 				<div class="form-section">
@@ -669,7 +664,26 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 						</label>
 						<label>Телефон<input v-model="form.phone" /></label
 						><label>E-mail<input v-model="form.email" type="email" /></label
-						><label>Часовой пояс<input v-model="form.timezone" /></label>
+						><label>Telegram<input v-model="form.telegram" /></label
+						><label>MAX<input v-model="form.max_messenger" /></label
+						><label>VK<input v-model="form.vk" /></label
+						><label>WhatsApp<input v-model="form.whatsapp" /></label
+						><label class="span-2"
+							>Яндекс.Карты (отзывы)<input
+								v-model="form.yandex_reviews_url" /></label
+						><label class="span-2"
+							>2ГИС (отзывы)<input v-model="form.twogis_reviews_url" /></label
+						><label
+							>Часовой пояс<select v-model="form.timezone" required>
+								<option
+									v-for="item in timezoneOptions"
+									:key="item.value"
+									:value="item.value"
+								>
+									{{ item.label }}
+								</option>
+							</select></label
+						>
 					</div>
 				</div>
 				<div class="form-section">
@@ -696,110 +710,6 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 							/>
 						</div>
 					</div>
-				</div>
-				<div class="form-section">
-					<h3>Продажи</h3>
-					<div class="form-grid checks-grid">
-						<label class="check-field"
-							><input
-								v-model="form.allow_free_price"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Свободная цена</label
-						>
-						<label class="check-field"
-							><input
-								v-model="form.allow_discounts"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Разрешить скидки</label
-						>
-						<label
-							>Максимальная скидка, %<input
-								v-model.number="form.max_discount_percent"
-								type="number"
-								min="0"
-								max="100"
-						/></label>
-						<label class="check-field"
-							><input
-								v-model="form.allow_remove_cart_item"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Удаление из корзины</label
-						>
-					</div>
-				</div>
-				<div class="form-section">
-					<h3>Оплата</h3>
-					<div class="form-grid payment-grid">
-						<label class="check-field"
-							><input
-								v-model="form.accepts_cash"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Наличные</label
-						>
-						<label class="check-field"
-							><input
-								v-model="form.accepts_card"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Карта</label
-						>
-						<label
-							>Счёт для эквайринга<select
-								v-model="form.card_bank_account"
-								:disabled="!form.accepts_card"
-							>
-								<option value="">Не выбран</option>
-								<option
-									v-for="item in entityAccounts"
-									:key="item.name"
-									:value="item.name"
-								>
-									{{ item.bank_name }} · {{ item.settlement_account }}
-								</option>
-							</select></label
-						>
-						<label class="check-field"
-							><input
-								v-model="form.accepts_qr"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							QR-код</label
-						>
-						<label
-							>Счёт для QR<select
-								v-model="form.qr_bank_account"
-								:disabled="!form.accepts_qr"
-							>
-								<option value="">Не выбран</option>
-								<option
-									v-for="item in entityAccounts"
-									:key="item.name"
-									:value="item.name"
-								>
-									{{ item.bank_name }} · {{ item.settlement_account }}
-								</option>
-							</select></label
-						>
-					</div>
-				</div>
-				<div v-if="form.name" class="form-section">
-					<PayrollSettingsPanel :business-point="form.name" compact />
 				</div>
 				<p v-if="formError" class="form-error">{{ formError }}</p>
 			</form>
@@ -917,7 +827,7 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 						type="button"
 						@click="setActive(form.active ? 0 : 1)"
 					>
-						{{ form.active ? "Архивировать" : "Восстановить" }}</button
+						{{ form.active ? "Архивировать" : "Вернуть в активные" }}</button
 					><span v-if="reference === 'entities'" class="muted-note"
 						>Запись сохраняется в истории и не удаляется.</span
 					>

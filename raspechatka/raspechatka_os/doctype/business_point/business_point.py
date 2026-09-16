@@ -1,9 +1,8 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
-from frappe.utils import flt
-
 
 WEEKDAYS = ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
 
@@ -14,12 +13,15 @@ class BusinessPoint(Document):
 			self.point_code = make_autoname("POINT-.#####")
 		if not self.working_hours:
 			for weekday in WEEKDAYS:
-				self.append("working_hours", {
-					"weekday": weekday,
-					"is_working": weekday not in ("Суббота", "Воскресенье"),
-					"opens_at": "09:00:00" if weekday not in ("Суббота", "Воскресенье") else None,
-					"closes_at": "20:00:00" if weekday not in ("Суббота", "Воскресенье") else None,
-				})
+				self.append(
+					"working_hours",
+					{
+						"weekday": weekday,
+						"is_working": weekday not in ("Суббота", "Воскресенье"),
+						"opens_at": "09:00:00" if weekday not in ("Суббота", "Воскресенье") else None,
+						"closes_at": "20:00:00" if weekday not in ("Суббота", "Воскресенье") else None,
+					},
+				)
 
 	def validate(self):
 		if self.business_entity:
@@ -33,48 +35,55 @@ class BusinessPoint(Document):
 			if row.is_working and row.opens_at and row.closes_at and row.opens_at >= row.closes_at:
 				frappe.throw(_("Время закрытия должно быть позже времени открытия: {0}").format(row.weekday))
 
-		if self.allow_discounts and not 0 <= flt(self.max_discount_percent) <= 100:
-			frappe.throw(_("Максимальная скидка должна быть от 0 до 100%"))
-
-		for fieldname in ("card_bank_account", "qr_bank_account"):
-			account = self.get(fieldname)
-			if account and frappe.db.get_value("Business Bank Account", account, "business_entity") != self.business_entity:
-				frappe.throw(_("Выбранный банковский счёт должен принадлежать ИП точки"))
-
 	def after_insert(self):
 		if not frappe.db.exists("Catalog Warehouse", {"business_point": self.name}):
-			frappe.get_doc({
-				"doctype": "Catalog Warehouse",
-				"warehouse_name": f"Склад — {self.point_name}",
-				"business_point": self.name,
-				"active": self.active,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Catalog Warehouse",
+					"warehouse_name": f"Склад — {self.point_name}",
+					"business_point": self.name,
+					"active": self.active,
+				}
+			).insert(ignore_permissions=True)
 		self._ensure_cash_infrastructure()
 
 	def on_update(self):
 		warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": self.name}, "name")
 		if warehouse:
-			frappe.db.set_value("Catalog Warehouse", warehouse, {
-				"warehouse_name": f"Склад — {self.point_name}",
-				"active": self.active,
-			}, update_modified=False)
+			frappe.db.set_value(
+				"Catalog Warehouse",
+				warehouse,
+				{
+					"warehouse_name": f"Склад — {self.point_name}",
+					"active": self.active,
+				},
+				update_modified=False,
+			)
 		self._ensure_cash_infrastructure()
 
 	def _ensure_cash_infrastructure(self):
 		workplace = frappe.db.get_value("POS Workplace", {"business_point": self.name}, "name")
 		if not workplace:
-			workplace = frappe.get_doc({
-				"doctype": "POS Workplace",
-				"workplace_name": f"Касса — {self.point_name}",
-				"business_point": self.name,
-				"active": self.active,
-			}).insert(ignore_permissions=True).name
+			workplace = (
+				frappe.get_doc(
+					{
+						"doctype": "POS Workplace",
+						"workplace_name": f"Касса — {self.point_name}",
+						"business_point": self.name,
+						"active": self.active,
+					}
+				)
+				.insert(ignore_permissions=True)
+				.name
+			)
 		if not frappe.db.exists("Cash Register", {"business_point": self.name}):
-			frappe.get_doc({
-				"doctype": "Cash Register",
-				"register_name": f"Наличные — {self.point_name}",
-				"business_point": self.name,
-				"pos_workplace": workplace,
-				"currency": "RUB",
-				"active": self.active,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Cash Register",
+					"register_name": f"Наличные — {self.point_name}",
+					"business_point": self.name,
+					"pos_workplace": workplace,
+					"currency": "RUB",
+					"active": self.active,
+				}
+			).insert(ignore_permissions=True)

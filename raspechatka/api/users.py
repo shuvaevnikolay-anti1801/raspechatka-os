@@ -238,6 +238,7 @@ def get_user_options():
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.references.users", action="admin", scope="user")
 def save_user_profile(data):
 	_require_admin()
 	data = frappe.parse_json(data)
@@ -245,7 +246,6 @@ def save_user_profile(data):
 	doc = _get_manageable_profile(name) if name else frappe.new_doc("Raspechatka User Profile")
 	old_employee = doc.linked_employee if name else None
 	for fieldname in (
-		"active",
 		"last_name",
 		"first_name",
 		"middle_name",
@@ -255,7 +255,6 @@ def save_user_profile(data):
 		"organization",
 		"business_entity",
 		"linked_employee",
-		"notes",
 	):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))

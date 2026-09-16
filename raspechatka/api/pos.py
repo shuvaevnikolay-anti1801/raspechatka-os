@@ -3,10 +3,13 @@ from __future__ import annotations
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
+from raspechatka.access_contract import access_contract
+from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
 from raspechatka.pricing import resolve_item_price
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_bootstrap(workplace_code=None):
 	"""Return the cashier, point rules and point-specific catalog for POS."""
 	if frappe.session.user == "Guest":
@@ -18,18 +21,13 @@ def get_bootstrap(workplace_code=None):
 	point = frappe.get_doc("Business Point", workplace.business_point)
 
 	return {
-		"employee": {"id": employee.get("name"), "name": employee.get("employee_name") or frappe.session.user},
+		"employee": {
+			"id": employee.get("name"),
+			"name": employee.get("employee_name") or frappe.session.user,
+		},
 		"point": {"id": point.name, "name": point.point_name},
 		"workplace": {"id": workplace.name, "name": workplace.workplace_name},
-		"rules": {
-			"allowFreePrice": bool(point.allow_free_price),
-			"allowRemoveCartItem": bool(point.allow_remove_cart_item),
-			"allowDiscounts": bool(point.allow_discounts),
-			"maxDiscountPercent": flt(point.max_discount_percent),
-			"acceptsCash": bool(point.accepts_cash),
-			"acceptsCard": bool(point.accepts_card),
-			"acceptsQr": bool(point.accepts_qr),
-		},
+		"rules": get_pos_sales_rules(),
 		"products": _get_products(point.name),
 		"customers": _get_customers(),
 		"workplaceData": _get_workplace_data(employee, point, workplace),
@@ -61,17 +59,19 @@ def push_events(workplace_code=None, events=None):
 		if not event_id or not event_type:
 			frappe.throw("В событии отсутствует id или eventType")  # noqa: RUF001
 		if not frappe.db.exists("POS Event", event_id):
-			frappe.get_doc({
-				"doctype": "POS Event",
-				"event_id": event_id,
-				"event_type": event_type,
-				"business_point": workplace.business_point,
-				"pos_workplace": workplace.name,
-				"cashier_user": frappe.session.user,
-				"occurred_at": get_datetime(event.get("createdAt")) if event.get("createdAt") else now(),
-				"payload_json": frappe.as_json(event.get("payload"), indent=2),
-				"received_at": now(),
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "POS Event",
+					"event_id": event_id,
+					"event_type": event_type,
+					"business_point": workplace.business_point,
+					"pos_workplace": workplace.name,
+					"cashier_user": frappe.session.user,
+					"occurred_at": get_datetime(event.get("createdAt")) if event.get("createdAt") else now(),
+					"payload_json": frappe.as_json(event.get("payload"), indent=2),
+					"received_at": now(),
+				}
+			).insert(ignore_permissions=True)
 			_apply_pos_event(event_type, event_id, workplace, event.get("payload") or {})
 		accepted.append(event_id)
 
@@ -129,7 +129,8 @@ def _get_products(point_name):
 		limit_page_length=5000,
 	)
 	assortments = [
-		row for row in assortments
+		row
+		for row in assortments
 		if (not row.valid_from or getdate(row.valid_from) <= today)
 		and (not row.valid_upto or getdate(row.valid_upto) >= today)
 	]
@@ -182,7 +183,12 @@ def _get_products(point_name):
 		row.name: row.group_name
 		for row in frappe.get_all(
 			"Catalog Group",
-			filters={"name": ["in", list({row.catalog_group for row in items.values() if row.catalog_group}) or ["__none__"]]},
+			filters={
+				"name": [
+					"in",
+					list({row.catalog_group for row in items.values() if row.catalog_group}) or ["__none__"],
+				]
+			},
 			fields=["name", "group_name"],
 			limit_page_length=1000,
 		)
@@ -199,7 +205,7 @@ def _get_products(point_name):
 			uom=item.stock_uom,
 			required=False,
 		)
-		if not resolved_price and not frappe.db.get_value("Business Point", point_name, "allow_free_price"):
+		if not resolved_price and not get_pos_sales_settings()["allow_free_price"]:
 			continue
 		price = resolved_price["rate"] if resolved_price else 0
 		barcode = frappe.db.get_value(
@@ -207,27 +213,29 @@ def _get_products(point_name):
 			{"parent": item.name, "parenttype": "Catalog Item", "parentfield": "barcodes"},
 			"barcode",
 		)
-		result.append({
-			"id": item.name,
-			"name": item.item_name,
-			"sku": item.item_code,
-			"category": group_names.get(item.catalog_group) or "Без группы",
-			"type": {
-				"Product": "product",
-				"Variant": "product",
-				"Service": "service",
-				"Bundle": "bundle",
-			}.get(item.item_type, "service"),
-			"uom": item.stock_uom or "шт",
-			"priceMinor": round(price * 100),
-			"barcode": barcode,
-			"stock": flt(balances.get(item.name)) if item.track_inventory else None,
-			"trackInventory": bool(item.track_inventory),
-			"allowNegativeStock": False,
-			"minimumSalePriceMinor": 0,
-			"preventDiscounts": bool(item.prevent_discounts),
-			"storageAddress": storage.get(item.name) or "",
-		})
+		result.append(
+			{
+				"id": item.name,
+				"name": item.item_name,
+				"sku": item.item_code,
+				"category": group_names.get(item.catalog_group) or "Без группы",
+				"type": {
+					"Product": "product",
+					"Variant": "product",
+					"Service": "service",
+					"Bundle": "bundle",
+				}.get(item.item_type, "service"),
+				"uom": item.stock_uom or "шт",
+				"priceMinor": round(price * 100),
+				"barcode": barcode,
+				"stock": flt(balances.get(item.name)) if item.track_inventory else None,
+				"trackInventory": bool(item.track_inventory),
+				"allowNegativeStock": False,
+				"minimumSalePriceMinor": 0,
+				"preventDiscounts": bool(item.prevent_discounts),
+				"storageAddress": storage.get(item.name) or "",
+			}
+		)
 	return sorted(result, key=lambda row: (row["category"], row["name"]))
 
 
@@ -236,7 +244,11 @@ def _get_customers():
 		row.client: row
 		for row in frappe.get_all(
 			"Client Purchase",
-			fields=["client", "count(name) as purchase_count", "sum(net_amount - returned_amount) as total_spent"],
+			fields=[
+				"client",
+				"count(name) as purchase_count",
+				"sum(net_amount - returned_amount) as total_spent",
+			],
 			group_by="client",
 			limit_page_length=10000,
 		)
@@ -284,15 +296,42 @@ def _apply_pos_event(event_type, event_id, workplace, payload):
 def _apply_order_created(event_id, workplace, payload):
 	if not _doctype_exists("POS Order") or frappe.db.exists("POS Order", {"source_pos_event": event_id}):
 		return
-	status = {"new": "New", "in_progress": "In Progress", "ready": "Ready", "issued": "Issued", "cancelled": "Cancelled"}.get(payload.get("status"), "New")
-	doc = frappe.get_doc({"doctype": "POS Order", "order_number": payload.get("orderNumber"), "phone": payload.get("phone"),
-		"customer_name": payload.get("customerName"), "business_point": workplace.business_point,
-		"source_pos_event": event_id, "source_sale_id": payload.get("sourceSaleId"), "fiscal_number": payload.get("fiscalNumber"),
-		"total_amount": flt(payload.get("totalMinor")) / 100, "paid_amount": flt(payload.get("paidMinor")) / 100,
-		"status": status, "comment": payload.get("comment"), "due_at": payload.get("dueAt"),
-		"items": [{"item": x.get("productId") if frappe.db.exists("Catalog Item", x.get("productId")) else None,
-			"item_name": x.get("name"), "quantity": flt(x.get("quantity")), "rate": flt(x.get("unitPriceMinor")) / 100,
-			"amount": flt(x.get("quantity")) * flt(x.get("unitPriceMinor")) / 100} for x in payload.get("lines", [])]})
+	status = {
+		"new": "New",
+		"in_progress": "In Progress",
+		"ready": "Ready",
+		"issued": "Issued",
+		"cancelled": "Cancelled",
+	}.get(payload.get("status"), "New")
+	doc = frappe.get_doc(
+		{
+			"doctype": "POS Order",
+			"order_number": payload.get("orderNumber"),
+			"phone": payload.get("phone"),
+			"customer_name": payload.get("customerName"),
+			"business_point": workplace.business_point,
+			"source_pos_event": event_id,
+			"source_sale_id": payload.get("sourceSaleId"),
+			"fiscal_number": payload.get("fiscalNumber"),
+			"total_amount": flt(payload.get("totalMinor")) / 100,
+			"paid_amount": flt(payload.get("paidMinor")) / 100,
+			"status": status,
+			"comment": payload.get("comment"),
+			"due_at": payload.get("dueAt"),
+			"items": [
+				{
+					"item": x.get("productId")
+					if frappe.db.exists("Catalog Item", x.get("productId"))
+					else None,
+					"item_name": x.get("name"),
+					"quantity": flt(x.get("quantity")),
+					"rate": flt(x.get("unitPriceMinor")) / 100,
+					"amount": flt(x.get("quantity")) * flt(x.get("unitPriceMinor")) / 100,
+				}
+				for x in payload.get("lines", [])
+			],
+		}
+	)
 	doc.insert(ignore_permissions=True)
 
 
@@ -307,7 +346,13 @@ def _apply_order_updated(event_id, workplace, payload):
 		if field in payload:
 			setattr(doc, field, payload.get(field))
 	if payload.get("status"):
-		doc.status = {"new": "New", "in_progress": "In Progress", "ready": "Ready", "issued": "Issued", "cancelled": "Cancelled"}.get(payload["status"], doc.status)
+		doc.status = {
+			"new": "New",
+			"in_progress": "In Progress",
+			"ready": "Ready",
+			"issued": "Issued",
+			"cancelled": "Cancelled",
+		}.get(payload["status"], doc.status)
 	doc.save(ignore_permissions=True)
 
 
@@ -316,7 +361,9 @@ def _apply_sale(event_id, workplace, payload):
 	if frappe.db.exists("Sales Receipt", {"external_id": sale_id}):
 		return
 
-	posting_datetime = get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+	posting_datetime = (
+		get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
 	doc.external_id = sale_id
@@ -354,7 +401,9 @@ def _apply_return(event_id, workplace, payload):
 	if not original_receipt:
 		frappe.throw(f"Исходная продажа {sale_id or 'не указана'} не найдена")
 
-	posting_datetime = get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+	posting_datetime = (
+		get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
 	doc.external_id = return_id
@@ -617,54 +666,98 @@ def _get_employee_schedule(employee, point_name):
 		where entry.employee=%s and schedule.business_point=%s and schedule.status='Published'
 		and entry.work_date between curdate() and date_add(curdate(), interval 31 day)
 		order by entry.work_date, entry.start_time""",
-		(employee.name, point_name), as_dict=True,
+		(employee.name, point_name),
+		as_dict=True,
 	)
-	return [{
-		"id": row.name, "date": str(row.work_date), "shiftName": row.shift_template,
-		"startTime": str(row.start_time or ""), "endTime": str(row.end_time or ""),
-		"plannedHours": flt(row.planned_hours),
-	} for row in rows]
+	return [
+		{
+			"id": row.name,
+			"date": str(row.work_date),
+			"shiftName": row.shift_template,
+			"startTime": str(row.start_time or ""),
+			"endTime": str(row.end_time or ""),
+			"plannedHours": flt(row.planned_hours),
+		}
+		for row in rows
+	]
 
 
 def _get_delivery_notices(point_name):
 	rows = frappe.get_all(
 		"Purchase Order",
 		filters={"business_point": point_name, "docstatus": 1, "order_status": ["!=", "Принято"]},
-		fields=["name", "supplier", "expected_date", "order_status", "delivery_company", "delivery_code", "delivery_note", "remarks"],
-		order_by="expected_date asc, creation asc", limit_page_length=50,
+		fields=[
+			"name",
+			"supplier",
+			"expected_date",
+			"order_status",
+			"delivery_company",
+			"delivery_code",
+			"delivery_note",
+			"remarks",
+		],
+		order_by="expected_date asc, creation asc",
+		limit_page_length=50,
 	)
-	return [{
-		"id": row.name, "supplier": row.supplier, "expectedDate": str(row.expected_date or ""),
-		"deliveryCompany": row.delivery_company or "", "deliveryCode": row.delivery_code or "",
-		"details": row.delivery_note or row.remarks or "", "status": row.order_status,
-	} for row in rows]
+	return [
+		{
+			"id": row.name,
+			"supplier": row.supplier,
+			"expectedDate": str(row.expected_date or ""),
+			"deliveryCompany": row.delivery_company or "",
+			"deliveryCode": row.delivery_code or "",
+			"details": row.delivery_note or row.remarks or "",
+			"status": row.order_status,
+		}
+		for row in rows
+	]
 
 
 def _get_supply_requests(point_name):
 	if not _doctype_exists("Point Supply Request"):
 		return []
-	return [{
-		"id": row.name, "createdAt": str(row.creation), "itemName": row.item_name,
-		"quantity": flt(row.quantity), "status": row.status, "comment": row.comment or "",
-	} for row in frappe.get_all(
-		"Point Supply Request", filters={"business_point": point_name, "status": ["not in", ["Закрыта", "Отклонена"]]},
-		fields=["name", "creation", "item_name", "quantity", "status", "comment"],
-		order_by="creation desc", limit_page_length=50,
-	)]
+	return [
+		{
+			"id": row.name,
+			"createdAt": str(row.creation),
+			"itemName": row.item_name,
+			"quantity": flt(row.quantity),
+			"status": row.status,
+			"comment": row.comment or "",
+		}
+		for row in frappe.get_all(
+			"Point Supply Request",
+			filters={"business_point": point_name, "status": ["not in", ["Закрыта", "Отклонена"]]},
+			fields=["name", "creation", "item_name", "quantity", "status", "comment"],
+			order_by="creation desc",
+			limit_page_length=50,
+		)
+	]
 
 
 def _get_cleaner_status(point_name):
 	if not _doctype_exists("Cleaner Visit"):
 		return {"visitsSincePayment": 0, "paymentDueMinor": 0, "recentVisits": []}
 	rows = frappe.get_all(
-		"Cleaner Visit", filters={"business_point": point_name},
+		"Cleaner Visit",
+		filters={"business_point": point_name},
 		fields=["name", "visit_date", "recorded_by_name", "paid"],
-		order_by="visit_date desc, creation desc", limit_page_length=12,
+		order_by="visit_date desc, creation desc",
+		limit_page_length=12,
 	)
 	unpaid = frappe.db.count("Cleaner Visit", {"business_point": point_name, "paid": 0})
 	return {
-		"visitsSincePayment": unpaid, "paymentDueMinor": 200000 if unpaid >= 4 else 0,
-		"recentVisits": [{"id": row.name, "visitDate": str(row.visit_date), "recordedBy": row.recorded_by_name, "paid": bool(row.paid)} for row in rows],
+		"visitsSincePayment": unpaid,
+		"paymentDueMinor": 200000 if unpaid >= 4 else 0,
+		"recentVisits": [
+			{
+				"id": row.name,
+				"visitDate": str(row.visit_date),
+				"recordedBy": row.recorded_by_name,
+				"paid": bool(row.paid),
+			}
+			for row in rows
+		],
 	}
 
 
@@ -679,14 +772,28 @@ def _apply_stock_write_off(event_id, workplace, payload):
 	item = payload.get("productId")
 	if not warehouse or not frappe.db.exists("Catalog Item", item):
 		frappe.throw("Для списания не найден товар или склад точки")
-	doc = frappe.get_doc({
-		"doctype": "Stock Write Off", "posting_datetime": now(),
-		"business_entity": point.business_entity, "business_point": point.name,
-		"warehouse": warehouse, "reason": payload.get("reason") or "Другое",
-		"remarks": (payload.get("comment") or "") + f"\nPOS event: {event_id}",
-		"items": [{"item": item, "quantity": flt(payload.get("quantity")),
-			"storage_location": frappe.db.get_value("Catalog Item Storage", {"item": item, "warehouse": warehouse, "active": 1}, "storage_location")}],
-	}).insert(ignore_permissions=True)
+	doc = frappe.get_doc(
+		{
+			"doctype": "Stock Write Off",
+			"posting_datetime": now(),
+			"business_entity": point.business_entity,
+			"business_point": point.name,
+			"warehouse": warehouse,
+			"reason": payload.get("reason") or "Другое",
+			"remarks": (payload.get("comment") or "") + f"\nPOS event: {event_id}",
+			"items": [
+				{
+					"item": item,
+					"quantity": flt(payload.get("quantity")),
+					"storage_location": frappe.db.get_value(
+						"Catalog Item Storage",
+						{"item": item, "warehouse": warehouse, "active": 1},
+						"storage_location",
+					),
+				}
+			],
+		}
+	).insert(ignore_permissions=True)
 	doc.submit()
 
 
@@ -694,46 +801,74 @@ def _apply_supply_request(event_id, workplace, payload):
 	if frappe.db.exists("Point Supply Request", {"source_pos_event": event_id}):
 		return
 	point, warehouse = _point_context(workplace)
-	frappe.get_doc({
-		"doctype": "Point Supply Request", "request_date": nowdate(),
-		"business_entity": point.business_entity, "business_point": point.name, "warehouse": warehouse,
-		"item": payload.get("productId") if payload.get("productId") and frappe.db.exists("Catalog Item", payload.get("productId")) else None,
-		"item_name": payload.get("itemName"), "quantity": flt(payload.get("quantity")),
-		"comment": payload.get("comment") or "", "requested_by": frappe.session.user,
-		"source_pos_event": event_id,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Point Supply Request",
+			"request_date": nowdate(),
+			"business_entity": point.business_entity,
+			"business_point": point.name,
+			"warehouse": warehouse,
+			"item": payload.get("productId")
+			if payload.get("productId") and frappe.db.exists("Catalog Item", payload.get("productId"))
+			else None,
+			"item_name": payload.get("itemName"),
+			"quantity": flt(payload.get("quantity")),
+			"comment": payload.get("comment") or "",
+			"requested_by": frappe.session.user,
+			"source_pos_event": event_id,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _apply_cleaner_visit(event_id, workplace, payload):
 	if frappe.db.exists("Cleaner Visit", {"source_pos_event": event_id}):
 		return
-	frappe.get_doc({
-		"doctype": "Cleaner Visit", "business_point": workplace.business_point,
-		"visit_date": getdate(payload.get("visitDate") or nowdate()), "recorded_by": frappe.session.user,
-		"recorded_by_name": payload.get("recordedBy") or frappe.session.user, "source_pos_event": event_id,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Cleaner Visit",
+			"business_point": workplace.business_point,
+			"visit_date": getdate(payload.get("visitDate") or nowdate()),
+			"recorded_by": frappe.session.user,
+			"recorded_by_name": payload.get("recordedBy") or frappe.session.user,
+			"source_pos_event": event_id,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _apply_cleaner_payment(event_id, workplace, payload):
 	visits = frappe.get_all(
-		"Cleaner Visit", filters={"business_point": workplace.business_point, "paid": 0},
-		pluck="name", order_by="visit_date asc, creation asc", limit_page_length=4,
+		"Cleaner Visit",
+		filters={"business_point": workplace.business_point, "paid": 0},
+		pluck="name",
+		order_by="visit_date asc, creation asc",
+		limit_page_length=4,
 	)
 	if len(visits) < 4:
 		frappe.throw("Для выплаты должно быть зарегистрировано четыре неоплаченных посещения")
 	for visit in visits:
-		frappe.db.set_value("Cleaner Visit", visit, {"paid": 1, "paid_at": now(), "payment_pos_event": event_id})
+		frappe.db.set_value(
+			"Cleaner Visit", visit, {"paid": 1, "paid_at": now(), "payment_pos_event": event_id}
+		)
 
 
 def _apply_cash_count(event_id, workplace, payload):
 	if frappe.db.exists("POS Cash Count", {"source_pos_event": event_id}):
 		return
-	frappe.get_doc({
-		"doctype": "POS Cash Count", "business_point": workplace.business_point,
-		"pos_workplace": workplace.name, "counted_at": get_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
-		"count_type": payload.get("countType"), "cashier_user": frappe.session.user,
-		"expected_amount": flt(payload.get("expectedMinor")) / 100,
-		"counted_amount": flt(payload.get("totalMinor")) / 100,
-		"difference": flt(payload.get("differenceMinor")) / 100, "source_pos_event": event_id,
-		"lines": [{"denomination": flt(row.get("denominationMinor")) / 100, "quantity": row.get("quantity")} for row in payload.get("lines") or []],
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "POS Cash Count",
+			"business_point": workplace.business_point,
+			"pos_workplace": workplace.name,
+			"counted_at": get_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
+			"count_type": payload.get("countType"),
+			"cashier_user": frappe.session.user,
+			"expected_amount": flt(payload.get("expectedMinor")) / 100,
+			"counted_amount": flt(payload.get("totalMinor")) / 100,
+			"difference": flt(payload.get("differenceMinor")) / 100,
+			"source_pos_event": event_id,
+			"lines": [
+				{"denomination": flt(row.get("denominationMinor")) / 100, "quantity": row.get("quantity")}
+				for row in payload.get("lines") or []
+			],
+		}
+	).insert(ignore_permissions=True)
