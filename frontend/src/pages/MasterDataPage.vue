@@ -84,7 +84,7 @@ const configs = {
 			],
 			["personal_data_consent", "Персональные данные"],
 			["marketing_consent", "Рассылка"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("last_name", "Фамилия"),
@@ -108,7 +108,7 @@ const configs = {
 			["scope", "Доступность"],
 			["business_entity", "Владелец-ИП", 0, { displayKey: "business_entity_label" }],
 			["inn", "ИНН"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("supplier_name", "Наименование", "text", 1),
@@ -129,7 +129,7 @@ const configs = {
 				"entities",
 				"short_name",
 				"scope",
-				"Business Entity",
+				"Business Entity"
 			),
 			f("legal_name", "Полное наименование"),
 			f("inn", "ИНН"),
@@ -156,7 +156,7 @@ const configs = {
 			["position", "Должность", 0, { displayKey: "position_label" }],
 			["employment_type", "Оформление"],
 			["phone", "Телефон"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("last_name", "Фамилия", "text", 1),
@@ -190,7 +190,7 @@ const configs = {
 		columns: cols(
 			["position_name", "Должность", 1],
 			["description", "Описание"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("position_name", "Должность", "text", 1),
@@ -205,7 +205,7 @@ const configs = {
 			["group_name", "Группа", 1],
 			["parent_catalog_group", "Родитель", 0, { displayKey: "parent_catalog_group_label" }],
 			["is_group", "Содержит группы"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("group_name", "Название", "text", 1),
@@ -221,7 +221,7 @@ const configs = {
 			["unit_name", "Единица", 1],
 			["symbol", "Обозначение"],
 			["allow_fraction", "Дробная"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("unit_name", "Название", "text", 1),
@@ -237,7 +237,7 @@ const configs = {
 			["price_type_name", "Тип цены", 1],
 			["purpose", "Назначение"],
 			["currency", "Валюта"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("price_type_name", "Название", "text", 1),
@@ -262,7 +262,7 @@ const configs = {
 				{ displayKey: "parent_financial_article_label" },
 			],
 			["is_group", "Это группа"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 		fields: [
 			f("article_name", "Название", "text", 1),
@@ -293,7 +293,7 @@ const configs = {
 					],
 				},
 			],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 	},
 	"pos-workplaces": {
@@ -302,7 +302,7 @@ const configs = {
 		columns: cols(
 			["workplace_name", "Рабочее место", 1],
 			["business_point", "Точка", 0, { displayKey: "business_point_label" }],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 	},
 	"cash-registers": {
@@ -312,7 +312,7 @@ const configs = {
 			["register_name", "Касса", 1],
 			["business_point", "Точка", 0, { displayKey: "business_point_label" }],
 			["currency", "Валюта"],
-			["active", "Статус"],
+			["active", "Статус"]
 		),
 	},
 };
@@ -332,7 +332,7 @@ function f(
 	values = null,
 	labelKey = null,
 	depends = null,
-	equals = null,
+	equals = null
 ) {
 	return { key, label, type, required: !!required, values, labelKey, depends, equals };
 }
@@ -391,8 +391,8 @@ const canEdit = computed(() => canAccess(areas[reference.value], "Edit"));
 const canAdmin = computed(() => canAccess(areas[reference.value], "Admin"));
 const visibleFields = computed(() =>
 	deriveFormFields(entityFields.value).filter(
-		(field) => !field.depends || form[field.depends] === field.equals,
-	),
+		(field) => !field.depends || form[field.depends] === field.equals
+	)
 );
 function reset(values = {}) {
 	Object.keys(form).forEach((k) => delete form[k]);
@@ -465,7 +465,7 @@ async function save() {
 		const r = await call(
 			"raspechatka.api.references.save_reference",
 			{ reference: reference.value, data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		await Promise.all([load(), loadOptions()]);
 		await open({ name: r.name });
@@ -480,7 +480,7 @@ async function addBank() {
 		await call(
 			"raspechatka.api.references.save_supplier_bank_account",
 			{ data: JSON.stringify({ ...supplierBank, supplier: form.name }) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		Object.assign(supplierBank, {
 			bank_name: "",
@@ -499,7 +499,7 @@ async function addItem() {
 		await call(
 			"raspechatka.api.references.save_item_supplier",
 			{ data: JSON.stringify({ ...supplierItem, supplier: form.name }) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		Object.assign(supplierItem, { item: "", is_primary: 0, active: 1 });
 		await open({ name: form.name });
@@ -512,7 +512,7 @@ async function setActive(value) {
 		await call(
 			"raspechatka.api.references.archive_reference",
 			{ reference: reference.value, name: form.name, active: value },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		detail.value = null;
 		await load();
@@ -526,7 +526,7 @@ async function remove() {
 		await call(
 			"raspechatka.api.references.delete_reference",
 			{ reference: reference.value, name: form.name },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		detail.value = null;
 		await load();

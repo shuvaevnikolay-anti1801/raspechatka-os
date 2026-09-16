@@ -39,7 +39,7 @@ export function mergeEntityFields(filterFields = [], columns = []) {
 		const filterField = byKey.get(column.key);
 		byKey.set(
 			column.key,
-			filterField ? { ...filterField, ...column, table: true } : { ...column, form: false },
+			filterField ? { ...filterField, ...column, table: true } : { ...column, form: false }
 		);
 	}
 	return defineEntityFields([...byKey.values()]);

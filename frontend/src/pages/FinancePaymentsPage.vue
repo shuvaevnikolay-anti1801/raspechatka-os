@@ -41,7 +41,7 @@ const canCreateCashExpense = computed(() => canAccess("finance.cash_expense", "E
 const pointsFor = (entity) =>
 	options.points.filter((row) => !entity || row.business_entity === entity);
 const expenseArticles = computed(() =>
-	options.articles.filter((row) => row.article_type === "Expense"),
+	options.articles.filter((row) => row.article_type === "Expense")
 );
 const money = (value) =>
 	`${new Intl.NumberFormat("ru-RU", {
@@ -60,9 +60,9 @@ const sourceLabel = (value) =>
 		Warehouse: "Склад",
 		Payroll: "Зарплата",
 		Manual: "Ранее вручную",
-	})[value] ||
+	}[value] ||
 	value ||
-	"—";
+	"—");
 const statusLabel = (row) => {
 	if (row.docstatus === 2) return "Отменён";
 	if (row.processing_status === "Auto Posted") return "Учтён автоматически";
@@ -197,7 +197,7 @@ async function saveCashExpense() {
 		await call(
 			"raspechatka.api.finance.create_cash_expense",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		cashExpenseOpen.value = false;
 		await load();
@@ -213,7 +213,7 @@ async function cancelPayment() {
 		await call(
 			"raspechatka.api.finance.cancel_payment",
 			{ name: form.name },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		editorOpen.value = false;
 		await load();

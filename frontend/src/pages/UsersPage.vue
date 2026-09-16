@@ -72,14 +72,12 @@ const filterFields = [
 ];
 const entityFields = computed(() => mergeEntityFields(filterFields, columns.value));
 const availableEntities = computed(() =>
-	options.entities.filter(
-		(item) => form.organization && item.organization === form.organization,
-	),
+	options.entities.filter((item) => form.organization && item.organization === form.organization)
 );
 const availablePoints = computed(() =>
 	options.points.filter(
-		(item) => form.business_entity && item.business_entity === form.business_entity,
-	),
+		(item) => form.business_entity && item.business_entity === form.business_entity
+	)
 );
 
 watch(
@@ -89,16 +87,16 @@ watch(
 			form.business_entity = "";
 			form.assigned_points = [];
 		}
-	},
+	}
 );
 watch(
 	() => form.business_entity,
 	() => {
 		const allowed = new Set(availablePoints.value.map((item) => item.name));
 		form.assigned_points = (form.assigned_points || []).filter((row) =>
-			allowed.has(row.business_point),
+			allowed.has(row.business_point)
 		);
-	},
+	}
 );
 watch(
 	() => form.scope_type,
@@ -113,7 +111,7 @@ watch(
 		} else if (scopeType === "Business Entity") {
 			form.assigned_points = [];
 		}
-	},
+	}
 );
 
 function reset(values = {}) {
@@ -180,7 +178,7 @@ async function save() {
 			{
 				data: JSON.stringify(form),
 			},
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		await Promise.all([load(), loadOptions()]);
 		await open({ name: result.name });
@@ -198,7 +196,7 @@ async function setActive(active) {
 				profile: form.name,
 				active,
 			},
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		detail.value = null;
 		await load();
@@ -214,7 +212,7 @@ async function generateInvitation() {
 			{
 				profile: form.name,
 			},
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		invitation.value = result.message;
 		form.invitation_status = "Generated";
@@ -234,7 +232,7 @@ async function closeSessions() {
 			{
 				profile: form.name,
 			},
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 	} catch (exception) {
 		formError.value = exception.message;

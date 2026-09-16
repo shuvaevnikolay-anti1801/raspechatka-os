@@ -556,9 +556,7 @@ a {
 	padding: 2px 5px;
 	border: 1px solid var(--line);
 	color: #a1a59f;
-	font:
-		9px Inter,
-		sans-serif;
+	font: 9px Inter, sans-serif;
 }
 .catalog-toolbar select {
 	height: 40px;
@@ -2230,10 +2228,9 @@ td.item-name {
 }
 .operation-line.inventories {
 	min-width: 1120px;
-	grid-template-columns: minmax(220px, 2fr) 65px minmax(
-			165px,
-			1.2fr
-		) 85px 90px 80px 105px 120px 34px;
+	grid-template-columns:
+		minmax(220px, 2fr) 65px minmax(165px, 1.2fr)
+		85px 90px 80px 105px 120px 34px;
 }
 .operation-line.purchase-orders {
 	grid-template-columns: minmax(250px, 2fr) 70px 90px 85px 110px 125px 34px;

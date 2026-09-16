@@ -73,12 +73,12 @@ const entityFields = defineEntityFields([
 ]);
 const availablePoints = computed(() =>
 	options.points.filter(
-		(p) => !form.business_entity || p.business_entity === form.business_entity,
-	),
+		(p) => !form.business_entity || p.business_entity === form.business_entity
+	)
 );
 const selectedPoints = computed(() => (form.assigned_points || []).map((x) => x.business_point));
 const employeePoints = computed(() =>
-	availablePoints.value.filter((p) => selectedPoints.value.includes(p.name)),
+	availablePoints.value.filter((p) => selectedPoints.value.includes(p.name))
 );
 function labelProfile(v) {
 	return v === "Point Manager" ? "Управляющий" : "Кассир";
@@ -140,7 +140,7 @@ function togglePoint(point) {
 	if (i >= 0) list.splice(i, 1);
 	else list.push({ business_point: point.name, is_default: list.length ? 0 : 1 });
 	accessForm.points = accessForm.points.filter((x) =>
-		(form.assigned_points || []).some((p) => p.business_point === x),
+		(form.assigned_points || []).some((p) => p.business_point === x)
 	);
 }
 function toggleAccessPoint(name) {
@@ -155,13 +155,13 @@ async function save() {
 		const check = await call(
 			"raspechatka.api.hr_documents.validate_employee_requisites",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		if (!check.valid) throw new Error(check.errors.join(". "));
 		const r = await call(
 			"raspechatka.api.team.save_employee",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		const step = currentStep.value;
 		await load();
@@ -212,7 +212,7 @@ async function grant() {
 				access_profile: accessForm.access_profile,
 				assigned_points: JSON.stringify(accessForm.points),
 			},
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		invitation.value = r.message;
 		await load();
@@ -232,7 +232,7 @@ async function setAccess(active) {
 		await call(
 			"raspechatka.api.team.set_employee_access_active",
 			{ employee: form.name, active },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		await Promise.all([refreshAccess(), load()]);
 	} catch (e) {
@@ -284,7 +284,7 @@ async function lookupBank() {
 			form,
 			await call("raspechatka.api.hr_documents.lookup_employee_bank", {
 				bic: form.salary_bic,
-			}),
+			})
 		);
 	} catch (e) {
 		formError.value = `${e.message} Реквизиты можно заполнить вручную.`;
@@ -299,7 +299,7 @@ async function generateDocuments() {
 		const result = await call(
 			"raspechatka.api.hr_documents.generate_employment_documents",
 			{ employee: form.name },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		if (!result.count) throw new Error("Комплект этой версии уже сформирован.");
 		await open({ name: form.name });
@@ -696,8 +696,8 @@ onMounted(load);
 							saving
 								? "Сохраняем…"
 								: currentStep === 2 && !form.name
-									? "Создать карточку и продолжить"
-									: "Сохранить и продолжить →"
+								? "Создать карточку и продолжить"
+								: "Сохранить и продолжить →"
 						}}</button
 					><button v-else class="button button-primary" :disabled="saving" @click="save">
 						{{ saving ? "Сохраняем…" : "Сохранить сотрудника" }}

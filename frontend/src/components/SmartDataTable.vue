@@ -46,12 +46,12 @@ const selected = ref([]),
 const pageSizes = [25, 50, 100];
 const preferenceKey = computed(() => `${props.viewKey}.table`);
 const availableColumns = computed(() =>
-	props.entityFields ? deriveTableColumns(props.entityFields) : props.columns,
+	props.entityFields ? deriveTableColumns(props.entityFields) : props.columns
 );
 const visibleColumns = computed(() =>
 	columnOrder.value
 		.map((key) => availableColumns.value.find((column) => column.key === key))
-		.filter((column) => column && selected.value.includes(column.key)),
+		.filter((column) => column && selected.value.includes(column.key))
 );
 const filteredRows = computed(() => {
 	const names = documentFilterMatches[props.viewKey];
@@ -60,7 +60,7 @@ const filteredRows = computed(() => {
 	return props.rows.filter((row) => allowed.has(row[props.rowKey]));
 });
 const rowCount = computed(() =>
-	props.serverPagination ? props.totalRows : filteredRows.value.length,
+	props.serverPagination ? props.totalRows : filteredRows.value.length
 );
 const pageCount = computed(() => Math.max(1, Math.ceil(rowCount.value / pageSize.value)));
 const sortedRows = computed(() => {
@@ -81,13 +81,13 @@ const sortedRows = computed(() => {
 const pageRows = computed(() =>
 	props.serverPagination
 		? sortedRows.value
-		: sortedRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value),
+		: sortedRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
 );
 const from = computed(() => (rowCount.value ? (page.value - 1) * pageSize.value + 1 : 0));
 const to = computed(() =>
 	props.serverPagination
 		? Math.min(from.value + filteredRows.value.length - 1, rowCount.value)
-		: Math.min(page.value * pageSize.value, rowCount.value),
+		: Math.min(page.value * pageSize.value, rowCount.value)
 );
 const effectiveTotals = computed(() => {
 	if (!Array.isArray(documentFilterMatches[props.viewKey])) return props.totals;
@@ -97,7 +97,7 @@ const effectiveTotals = computed(() => {
 			.map((column) => [
 				column.key,
 				filteredRows.value.reduce((total, row) => total + Number(row[column.key] || 0), 0),
-			]),
+			])
 	);
 });
 let resizing = null,
@@ -120,7 +120,7 @@ async function savePreference() {
 				pageSize: pageSize.value,
 			}),
 		},
-		{ method: "POST" },
+		{ method: "POST" }
 	);
 }
 async function loadPreference() {
@@ -140,16 +140,16 @@ async function loadPreference() {
 			preference.columns,
 			availableColumns.value,
 			"table",
-			preference.schema,
+			preference.schema
 		);
 		columnOrder.value = reconcileColumnOrder(
 			preference.columnOrder || preference.columns,
-			availableColumns.value,
+			availableColumns.value
 		);
 		widths.value = Object.fromEntries(
 			Object.entries(preference.widths || {}).filter(([key]) =>
-				availableColumns.value.some((column) => column.key === key),
-			),
+				availableColumns.value.some((column) => column.key === key)
+			)
 		);
 		if (pageSizes.includes(Number(preference.pageSize)))
 			pageSize.value = Number(preference.pageSize);
@@ -243,7 +243,7 @@ watch(availableColumns, () => {
 		selected.value,
 		availableColumns.value,
 		"table",
-		columnOrder.value,
+		columnOrder.value
 	);
 	columnOrder.value = reconcileColumnOrder(columnOrder.value, availableColumns.value);
 });
@@ -251,13 +251,13 @@ watch(
 	() => props.currentPage,
 	(value) => {
 		page.value = value;
-	},
+	}
 );
 watch(
 	() => filteredRows.value.length,
 	() => {
 		if (page.value > pageCount.value) page.value = pageCount.value;
-	},
+	}
 );
 onMounted(loadPreference);
 onBeforeUnmount(() => window.removeEventListener("pointermove", resize));

@@ -28,13 +28,13 @@ const money = (value) =>
 	}).format(Number(value || 0))} ₽`;
 const date = (value) =>
 	new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(
-		new Date(`${value}T00:00:00`),
+		new Date(`${value}T00:00:00`)
 	);
 const pointsFor = (entity) =>
 	options.points.filter((item) => !entity || item.business_entity === entity);
 const articlesFor = (direction) =>
 	options.articles.filter(
-		(item) => item.article_type === (direction === "Income" ? "Income" : "Expense"),
+		(item) => item.article_type === (direction === "Income" ? "Income" : "Expense")
 	);
 const filterFields = computed(() => [
 	{ key: "month", label: "Месяц", type: "month" },
@@ -117,7 +117,7 @@ function edit(row = null) {
 						filters.value.business_entity || options.entities[0]?.name || "",
 					business_point: filters.value.business_point || "",
 					recurrence: "Once",
-				},
+			  }
 	);
 	open.value = true;
 }
@@ -127,7 +127,7 @@ async function save() {
 		await call(
 			"raspechatka.api.finance.save_plan_item",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		open.value = false;
 		await load();
@@ -142,7 +142,7 @@ async function remove() {
 	await call(
 		"raspechatka.api.finance.delete_plan_item",
 		{ name: form.name },
-		{ method: "POST" },
+		{ method: "POST" }
 	);
 	open.value = false;
 	await load();
@@ -197,10 +197,10 @@ onMounted(init);
 						row.display_status === "Overdue"
 							? "Просрочено"
 							: row.display_status === "Paid"
-								? "Оплачено"
-								: row.display_status === "Cancelled"
-									? "Отменено"
-									: "Запланировано"
+							? "Оплачено"
+							: row.display_status === "Cancelled"
+							? "Отменено"
+							: "Запланировано"
 					}}</span
 				></template
 			>

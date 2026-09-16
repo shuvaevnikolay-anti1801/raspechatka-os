@@ -22,11 +22,11 @@ const fields = defineEntityFields([
 test("one descriptor produces the same filter and table field set", () => {
 	assert.deepEqual(
 		deriveFilterFields(fields).map(({ key }) => key),
-		["a", "b", "c"],
+		["a", "b", "c"]
 	);
 	assert.deepEqual(
 		deriveTableColumns(fields).map(({ key }) => key),
-		["a", "b", "c"],
+		["a", "b", "c"]
 	);
 	assert.deepEqual(searchKeys(fields), ["a"]);
 });
@@ -55,12 +55,12 @@ test("fixed columns remain first while user order is restored", () => {
 test("different view keys use isolated preference namespaces", () => {
 	const table = readFileSync(
 		new URL("../src/components/SmartDataTable.vue", import.meta.url),
-		"utf8",
+		"utf8"
 	);
 	assert.match(table, /`\$\{props\.viewKey\}\.table`/);
 	const filter = readFileSync(
 		new URL("../src/components/SmartFilterBar.vue", import.meta.url),
-		"utf8",
+		"utf8"
 	);
 	assert.match(filter, /`\$\{props\.viewKey\}\.filters`/);
 });
@@ -68,7 +68,7 @@ test("different view keys use isolated preference namespaces", () => {
 test("search is permanent, separate from settings, applies on Enter and resets", () => {
 	const source = readFileSync(
 		new URL("../src/components/SmartFilterBar.vue", import.meta.url),
-		"utf8",
+		"utf8"
 	);
 	assert.match(source, /class="smart-filter-search"/);
 	assert.match(source, /placeholder="Поиск\.\.\."/);
@@ -89,7 +89,7 @@ test("search is permanent, separate from settings, applies on Enter and resets",
 test("table keeps sorting, resizing, pagination, slots and selection with drag reorder", () => {
 	const source = readFileSync(
 		new URL("../src/components/SmartDataTable.vue", import.meta.url),
-		"utf8",
+		"utf8"
 	);
 	for (const contract of [
 		"beginResize",
@@ -108,14 +108,14 @@ test("table keeps sorting, resizing, pagination, slots and selection with drag r
 	const header = source.slice(source.indexOf("<thead>"), source.indexOf("</thead>"));
 	assert.ok(
 		header.indexOf('v-if="selectable" class="select-cell"') <
-			header.indexOf('v-for="column in visibleColumns"'),
+			header.indexOf('v-for="column in visibleColumns"')
 	);
 });
 
 test("technical fields are not automatically added", () => {
 	const filter = readFileSync(
 		new URL("../src/components/SmartFilterBar.vue", import.meta.url),
-		"utf8",
+		"utf8"
 	);
 	for (const key of ["owner", "creation", "modified", "modified_by", "docstatus"])
 		assert.doesNotMatch(filter, new RegExp(`key:\\s*["']${key}`));
@@ -130,7 +130,7 @@ test("standard table values use business labels without changing raw values", ()
 	};
 	assert.equal(
 		resolveDisplayValue(row, { key: "organization", displayKey: "organization_label" }),
-		"Партнёр Иванов",
+		"Партнёр Иванов"
 	);
 	assert.equal(row.organization, "ORG-0001");
 	assert.equal(
@@ -139,12 +139,12 @@ test("standard table values use business labels without changing raw values", ()
 			type: "select",
 			options: [{ value: "Business Entity", label: "Юридическое лицо" }],
 		}),
-		"Юридическое лицо",
+		"Юридическое лицо"
 	);
 	assert.equal(resolveDisplayValue(row, { key: "confirmed", type: "check" }), "Да");
 	assert.equal(
 		resolveDisplayValue({ confirmed: 0 }, { key: "confirmed", type: "check" }),
-		"Нет",
+		"Нет"
 	);
 });
 
@@ -159,11 +159,11 @@ test("custom format wins and sorting uses displayed link and select labels", () 
 	};
 	assert.equal(
 		resolveDisplayValue({ status: "raw" }, { key: "status", format: () => "Готово" }),
-		"Готово",
+		"Готово"
 	);
 	assert.equal(
 		resolveSortValue({ organization: "ORG-9", organization_label: "Иванов" }, link),
-		"Иванов",
+		"Иванов"
 	);
 	assert.equal(resolveSortValue({ scope_type: "Network" }, select), "Вся сеть");
 });
