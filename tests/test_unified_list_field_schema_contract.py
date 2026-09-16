@@ -39,6 +39,8 @@ def test_filter_never_appends_undeclared_doctype_fields():
 	assert "configuredFields" in source
 	assert "...schemaFields.value.filter" not in source
 	assert 'class="smart-filter-search"' in source
+	assert 'placeholder="Поиск..."' in source
+	assert "searchDefinition.placeholder" not in source
 
 
 def test_table_preference_contains_order_and_reconciliation():
