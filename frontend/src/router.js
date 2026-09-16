@@ -4,6 +4,7 @@ import accessSections from "./access-pages.json";
 import DashboardPage from "./pages/DashboardPage.vue";
 import IAssistantPage from "./pages/IAssistantPage.vue";
 import CatalogPage from "./pages/CatalogPage.vue";
+import CatalogPointLayerPage from "./pages/CatalogPointLayerPage.vue";
 import ReferencesPage from "./pages/ReferencesPage.vue";
 import MasterDataPage from "./pages/MasterDataPage.vue";
 import AccessSettingsPage from "./pages/AccessSettingsPage.vue";
@@ -31,6 +32,9 @@ const routes = [
   { path: "/", name: "dashboard", component: DashboardPage, meta: { module: "dashboard" } },
   { path: "/assistant", name: "i-assistant", component: IAssistantPage, meta: { module: "dashboard" } },
   { path: "/catalog", name: "catalog", component: CatalogPage, meta: { module: "catalog" } },
+  { path: "/catalog/assortment", name: "catalog-assortment", component: CatalogPointLayerPage, meta: { module: "catalog", layer: "assortment" } },
+  { path: "/catalog/prices", name: "catalog-prices", component: CatalogPointLayerPage, meta: { module: "catalog", layer: "prices" } },
+  { path: "/catalog/minimum-stock", name: "catalog-minimum-stock", component: CatalogPointLayerPage, meta: { module: "catalog", layer: "minimum_stock" } },
   { path: "/catalog/groups", redirect: "/catalog" },
   { path: "/catalog/units", name: "catalog-units", component: MasterDataPage, meta: { module: "catalog", reference: "catalog-units" } },
   { path: "/catalog/price-types", name: "catalog-price-types", component: MasterDataPage, meta: { module: "catalog", reference: "price-types" } },
