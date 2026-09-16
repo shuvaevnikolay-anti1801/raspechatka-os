@@ -20,11 +20,11 @@ const fields = defineEntityFields([
 test("one descriptor produces the same filter and table field set", () => {
 	assert.deepEqual(
 		deriveFilterFields(fields).map(({ key }) => key),
-		["a", "b", "c"]
+		["a", "b", "c"],
 	);
 	assert.deepEqual(
 		deriveTableColumns(fields).map(({ key }) => key),
-		["a", "b", "c"]
+		["a", "b", "c"],
 	);
 	assert.deepEqual(searchKeys(fields), ["a"]);
 });
@@ -53,12 +53,12 @@ test("fixed columns remain first while user order is restored", () => {
 test("different view keys use isolated preference namespaces", () => {
 	const table = readFileSync(
 		new URL("../src/components/SmartDataTable.vue", import.meta.url),
-		"utf8"
+		"utf8",
 	);
 	assert.match(table, /`\$\{props\.viewKey\}\.table`/);
 	const filter = readFileSync(
 		new URL("../src/components/SmartFilterBar.vue", import.meta.url),
-		"utf8"
+		"utf8",
 	);
 	assert.match(filter, /`\$\{props\.viewKey\}\.filters`/);
 });
@@ -66,9 +66,11 @@ test("different view keys use isolated preference namespaces", () => {
 test("search is permanent, separate from settings, applies on Enter and resets", () => {
 	const source = readFileSync(
 		new URL("../src/components/SmartFilterBar.vue", import.meta.url),
-		"utf8"
+		"utf8",
 	);
 	assert.match(source, /class="smart-filter-search"/);
+	assert.match(source, /placeholder="Поиск\.\.\."/);
+	assert.doesNotMatch(source, /searchDefinition\.placeholder/);
 	assert.match(source, /@keyup\.enter="apply"/);
 	assert.match(source, /const empty = \{\s+search: ""/);
 	assert.doesNotMatch(source, /schemaFields\.value\.filter\(\(field\) => !keys/);
@@ -85,7 +87,7 @@ test("search is permanent, separate from settings, applies on Enter and resets",
 test("table keeps sorting, resizing, pagination, slots and selection with drag reorder", () => {
 	const source = readFileSync(
 		new URL("../src/components/SmartDataTable.vue", import.meta.url),
-		"utf8"
+		"utf8",
 	);
 	for (const contract of [
 		"beginResize",
@@ -104,14 +106,14 @@ test("table keeps sorting, resizing, pagination, slots and selection with drag r
 	const header = source.slice(source.indexOf("<thead>"), source.indexOf("</thead>"));
 	assert.ok(
 		header.indexOf('v-if="selectable" class="select-cell"') <
-			header.indexOf('v-for="column in visibleColumns"')
+			header.indexOf('v-for="column in visibleColumns"'),
 	);
 });
 
 test("technical fields are not automatically added", () => {
 	const filter = readFileSync(
 		new URL("../src/components/SmartFilterBar.vue", import.meta.url),
-		"utf8"
+		"utf8",
 	);
 	for (const key of ["owner", "creation", "modified", "modified_by", "docstatus"])
 		assert.doesNotMatch(filter, new RegExp(`key:\\s*["']${key}`));
