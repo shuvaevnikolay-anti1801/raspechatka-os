@@ -98,8 +98,18 @@ const filterFields = computed(() => [
 const tableColumns = computed(() => [
 	{ key: "item_type", label: "Тип", width: 130, format: (value) => typeLabels[value] || value },
 	{ key: "item_name", label: "Наименование", primary: true, width: 330 },
-	{ key: "catalog_group", label: "Группа", width: 220 },
-	{ key: "variant_of", label: "Основной товар", width: 220 },
+	{
+		key: "catalog_group",
+		label: "Группа",
+		width: 220,
+		displayKey: "catalog_group_label",
+	},
+	{
+		key: "variant_of",
+		label: "Основной товар",
+		width: 220,
+		displayKey: "variant_of_label",
+	},
 	{ key: "stock_uom", label: "Ед. изм.", width: 100 },
 	{
 		key: "active",
@@ -606,7 +616,6 @@ async function initializeCatalog(size) {
 						Запретить скидки для позиции</label
 					>
 				</div>
-
 				<div v-if="itemForm.item_type === 'Bundle'" class="form-section">
 					<div class="section-heading">
 						<div>
