@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 
 DOCUMENT_AREAS = {
 	"Organization": "page.references.organizations",
@@ -38,64 +39,201 @@ DOCUMENT_AREAS = {
 }
 
 SCALAR_TYPES = {
-	"Attach", "Attach Image", "Barcode", "Check", "Code", "Color", "Currency", "Data",
-	"Date", "Datetime", "Duration", "Dynamic Link", "Float", "Geolocation", "HTML Editor",
-	"Int", "JSON", "Link", "Long Text", "Markdown Editor", "Percent", "Phone",
-	"Rating", "Read Only", "Select", "Small Text", "Text", "Text Editor", "Time",
+	"Attach",
+	"Attach Image",
+	"Barcode",
+	"Check",
+	"Code",
+	"Color",
+	"Currency",
+	"Data",
+	"Date",
+	"Datetime",
+	"Duration",
+	"Dynamic Link",
+	"Float",
+	"Geolocation",
+	"HTML Editor",
+	"Int",
+	"JSON",
+	"Link",
+	"Long Text",
+	"Markdown Editor",
+	"Percent",
+	"Phone",
+	"Rating",
+	"Read Only",
+	"Select",
+	"Small Text",
+	"Text",
+	"Text Editor",
+	"Time",
 }
 NUMBER_TYPES = {"Currency", "Float", "Int", "Percent", "Rating", "Duration"}
 TEXT_TYPES = {
-	"Attach", "Attach Image", "Barcode", "Code", "Color", "Data", "Dynamic Link", "Geolocation",
-	"HTML Editor", "JSON", "Link", "Long Text", "Markdown Editor", "Phone",
-	"Read Only", "Small Text", "Text", "Text Editor",
+	"Attach",
+	"Attach Image",
+	"Barcode",
+	"Code",
+	"Color",
+	"Data",
+	"Dynamic Link",
+	"Geolocation",
+	"HTML Editor",
+	"JSON",
+	"Link",
+	"Long Text",
+	"Markdown Editor",
+	"Phone",
+	"Read Only",
+	"Small Text",
+	"Text",
+	"Text Editor",
 }
 
-STANDARD_FIELDS = {
-	"name": {"label": _("Номер / ID"), "fieldtype": "Data", "type": "text", "options": []},
-	"owner": {"label": _("Создал"), "fieldtype": "Link", "type": "text", "options": []},
-	"creation": {"label": _("Дата создания"), "fieldtype": "Datetime", "type": "datetime-local", "options": []},
-	"modified": {"label": _("Дата изменения"), "fieldtype": "Datetime", "type": "datetime-local", "options": []},
-	"modified_by": {"label": _("Изменил"), "fieldtype": "Link", "type": "text", "options": []},
+FILTER_FIELD_ALLOWLIST = {
+	"Organization": {"organization_name", "phone", "email", "address", "active"},
+	"Business Entity": {
+		"short_name",
+		"full_name",
+		"organization",
+		"inn",
+		"tax_system",
+		"phone",
+		"email",
+		"active",
+	},
+	"Business Point": {
+		"point_name",
+		"business_entity",
+		"city",
+		"address",
+		"phone",
+		"email",
+		"timezone",
+		"active",
+	},
+	"Catalog Warehouse": {"warehouse_name", "business_point", "active"},
+	"Catalog Item": {"item_name", "sku", "barcode", "catalog_group", "unit", "item_type", "active"},
+	"Catalog Group": {"group_name", "parent_catalog_group", "is_group", "active"},
+	"Catalog Unit": {"unit_name", "symbol", "allow_fraction", "active"},
+	"Catalog Price Type": {"price_type_name", "purpose", "currency", "active"},
+	"Catalog Supplier": {
+		"supplier_name",
+		"supplier_type",
+		"scope",
+		"business_entity",
+		"inn",
+		"phone",
+		"email",
+		"active",
+	},
+	"Client": {
+		"client_name",
+		"last_name",
+		"first_name",
+		"middle_name",
+		"phone",
+		"email",
+		"registration_point",
+		"personal_data_consent",
+		"marketing_consent",
+		"active",
+	},
+	"Client Segment": {"segment_name", "description", "active"},
+	"Promo Campaign": {"campaign_name", "status", "starts_on", "ends_on", "active"},
+	"Promo Code": {"promo_code", "campaign", "status", "active"},
+	"Promo Occasion": {"occasion_name", "occasion_date", "active"},
+	"Employee": {
+		"employee_name",
+		"business_entity",
+		"position",
+		"employment_type",
+		"phone",
+		"email",
+		"hire_date",
+		"dismissal_date",
+		"active",
+	},
+	"Position": {"position_name", "description", "active"},
+	"Payment Method": {"method_name", "method_type", "active"},
+	"POS Workplace": {"workplace_name", "business_point", "active"},
+	"Cash Register": {"register_name", "business_point", "currency", "active"},
+	"Financial Article": {"article_name", "article_type", "parent_financial_article", "is_group", "active"},
+	"Stock Receipt": {"posting_date", "business_point", "warehouse", "supplier", "status", "total_amount"},
+	"Stock Write Off": {"posting_date", "business_point", "warehouse", "status", "total_amount"},
+	"Stock Inventory": {"posting_date", "business_point", "warehouse", "status"},
+	"Purchase Order": {"posting_date", "business_point", "warehouse", "supplier", "status", "total_amount"},
+	"Finance Transaction": {
+		"posting_date",
+		"business_entity",
+		"business_point",
+		"transaction_type",
+		"article",
+		"status",
+		"amount",
+		"description",
+	},
+	"Finance Plan Item": {
+		"plan_date",
+		"business_entity",
+		"business_point",
+		"article",
+		"status",
+		"amount",
+		"description",
+	},
+	"Bank Operation": {
+		"posting_date",
+		"business_entity",
+		"bank_account",
+		"operation_type",
+		"processing_status",
+		"amount",
+		"description",
+	},
+	"Sales Shift": {"shift_type", "opened_at", "closed_at", "business_point", "cashier", "status"},
+	"Sales Receipt": {
+		"posting_datetime",
+		"business_point",
+		"cashier",
+		"receipt_type",
+		"payment_method",
+		"status",
+		"total",
+	},
+	"Cash Movement": {"posting_datetime", "movement_type", "business_point", "cashier", "amount", "reason"},
+	"Cashier Action": {"action_datetime", "action_type", "business_point", "cashier", "shift", "details"},
 }
 OPERATORS = {
-	"equals": "=", "not_equals": "!=", "contains": "like", "not_contains": "not like",
-	"greater_than": ">", "greater_or_equal": ">=", "less_than": "<", "less_or_equal": "<=",
-	"is_set": "is", "is_not_set": "is",
+	"equals": "=",
+	"not_equals": "!=",
+	"contains": "like",
+	"not_contains": "not like",
+	"greater_than": ">",
+	"greater_or_equal": ">=",
+	"less_than": "<",
+	"less_or_equal": "<=",
+	"is_set": "is",
+	"is_not_set": "is",
 }
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_doctype_filter_fields(doctype):
 	_require_doctype(doctype)
 	meta = frappe.get_meta(doctype)
-	fields = [{"key": key, **definition} for key, definition in STANDARD_FIELDS.items()]
-	if meta.is_submittable:
-		fields.append({
-			"key": "docstatus",
-			"label": _("Статус документа"),
-			"fieldtype": "Int",
-			"type": "select",
-			"options": [
-				{"value": "0", "label": _("Черновик")},
-				{"value": "1", "label": _("Проведён")},
-				{"value": "2", "label": _("Отменён")},
-			],
-		})
-	fields.extend(_field_definition(field) for field in meta.fields if field.fieldtype in SCALAR_TYPES and not field.hidden)
-	for table_field in (field for field in meta.fields if field.fieldtype in {"Table", "Table MultiSelect"} and field.options):
-		child_meta = frappe.get_meta(table_field.options)
-		for child_field in child_meta.fields:
-			if child_field.fieldtype not in SCALAR_TYPES or child_field.hidden:
-				continue
-			definition = _field_definition(child_field)
-			definition["key"] = f"{table_field.fieldname}.{child_field.fieldname}"
-			definition["label"] = f"{table_field.label or table_field.fieldname} → {child_field.label or child_field.fieldname}"
-			definition["child_table"] = table_field.fieldname
-			fields.append(definition)
-	return fields
+	allowed = FILTER_FIELD_ALLOWLIST.get(doctype, set())
+	return [
+		_field_definition(field)
+		for field in meta.fields
+		if field.fieldname in allowed and field.fieldtype in SCALAR_TYPES and not field.hidden
+	]
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def filter_document_names(doctype, filters=None):
 	_require_doctype(doctype)
 	criteria = frappe.parse_json(filters) if isinstance(filters, str) else (filters or [])
@@ -109,30 +247,38 @@ def filter_document_names(doctype, filters=None):
 		value = criterion.get("value")
 		if not field_key or operator_key not in OPERATORS:
 			continue
+		if field_key not in FILTER_FIELD_ALLOWLIST.get(doctype, set()):
+			frappe.throw(_("Поле недоступно для фильтрации в этом списке"), frappe.PermissionError)
 		if "." in field_key:
 			table_fieldname, child_fieldname = field_key.split(".", 1)
 			table_field = meta.get_field(table_fieldname)
-			if not table_field or table_field.fieldtype not in {"Table", "Table MultiSelect"} or not table_field.options:
+			if (
+				not table_field
+				or table_field.fieldtype not in {"Table", "Table MultiSelect"}
+				or not table_field.options
+			):
 				frappe.throw(_("Недопустимое поле фильтра"), frappe.ValidationError)
 			child_meta = frappe.get_meta(table_field.options)
 			child_field = child_meta.get_field(child_fieldname)
 			if not child_field or child_field.fieldtype not in SCALAR_TYPES:
 				frappe.throw(_("Недопустимое поле фильтра"), frappe.ValidationError)
 			condition = _condition(child_fieldname, child_field.fieldtype, operator_key, value)
-			child_names = set(frappe.get_all(
-				table_field.options,
-				filters={"parenttype": doctype, "parentfield": table_fieldname, child_fieldname: condition},
-				pluck="parent",
-				limit_page_length=10000,
-			))
+			child_names = set(
+				frappe.get_all(
+					table_field.options,
+					filters={
+						"parenttype": doctype,
+						"parentfield": table_fieldname,
+						child_fieldname: condition,
+					},
+					pluck="parent",
+					limit_page_length=10000,
+				)
+			)
 			matching_names = child_names if matching_names is None else matching_names & child_names
 			continue
 		field = meta.get_field(field_key)
-		if field_key in STANDARD_FIELDS:
-			fieldtype = STANDARD_FIELDS[field_key]["fieldtype"]
-		elif field_key == "docstatus" and meta.is_submittable:
-			fieldtype = "Int"
-		elif field and field.fieldtype in SCALAR_TYPES:
+		if field and field.fieldtype in SCALAR_TYPES:
 			fieldtype = field.fieldtype
 		else:
 			frappe.throw(_("Недопустимое поле фильтра"), frappe.ValidationError)
@@ -146,7 +292,11 @@ def filter_document_names(doctype, filters=None):
 def _field_definition(field):
 	if field.fieldtype == "Select":
 		input_type = "select"
-		options = [{"value": value, "label": value} for value in (field.options or "").splitlines() if value and not value.startswith("eval:")]
+		options = [
+			{"value": value, "label": value}
+			for value in (field.options or "").splitlines()
+			if value and not value.startswith("eval:")
+		]
 	elif field.fieldtype == "Check":
 		input_type = "select"
 		options = [{"value": "1", "label": _("Да")}, {"value": "0", "label": _("Нет")}]
@@ -160,7 +310,13 @@ def _field_definition(field):
 		input_type, options = "time", []
 	else:
 		input_type, options = "text", []
-	return {"key": field.fieldname, "label": field.label or field.fieldname, "type": input_type, "fieldtype": field.fieldtype, "options": options}
+	return {
+		"key": field.fieldname,
+		"label": field.label or field.fieldname,
+		"type": input_type,
+		"fieldtype": field.fieldtype,
+		"options": options,
+	}
 
 
 def _condition(fieldname, fieldtype, operator_key, value):
@@ -196,13 +352,23 @@ def _scope_filters(doctype, meta):
 	if doctype == "Client":
 		return {"registration_point": ["in", points]}
 	if doctype == "Catalog Item":
-		items = frappe.get_all("Catalog Assortment", filters={"business_point": ["in", points], "enabled": 1}, pluck="item", limit_page_length=10000)
+		items = frappe.get_all(
+			"Catalog Assortment",
+			filters={"business_point": ["in", points], "enabled": 1},
+			pluck="item",
+			limit_page_length=10000,
+		)
 		return {"name": ["in", items or ["__none__"]]}
 	if meta.has_field("business_point"):
 		return {"business_point": ["in", points]}
 	if meta.has_field("business_entity"):
 		return {"business_entity": ["in", entities]}
 	if meta.has_field("warehouse"):
-		warehouses = frappe.get_all("Catalog Warehouse", filters={"business_point": ["in", points]}, pluck="name", limit_page_length=1000)
+		warehouses = frappe.get_all(
+			"Catalog Warehouse",
+			filters={"business_point": ["in", points]},
+			pluck="name",
+			limit_page_length=1000,
+		)
 		return {"warehouse": ["in", warehouses or ["__none__"]]}
 	return {}

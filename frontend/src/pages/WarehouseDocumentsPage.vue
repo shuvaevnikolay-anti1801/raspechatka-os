@@ -6,6 +6,7 @@ import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute(),
 	router = useRouter();
@@ -183,6 +184,7 @@ const listColumns = computed(() => {
 	columns.push({ key: "docstatus", label: "Статус", format: statusLabel, width: 130 });
 	return columns;
 });
+const entityFields = computed(() => mergeEntityFields(filterFields.value, listColumns.value));
 const listTotals = computed(() =>
 	kind.value === "inventories"
 		? {
@@ -484,14 +486,14 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 		<SmartFilterBar
 			v-model="filters"
 			:key="kind"
-			:fields="filterFields"
+			:entity-fields="entityFields"
 			:view-key="`warehouse.${kind}`"
 			@apply="load(1)"
 			@reset="load(1)"
 		/>
 		<SmartDataTable
 			:rows="rows"
-			:columns="listColumns"
+			:entity-fields="entityFields"
 			:totals="listTotals"
 			:view-key="`warehouse.${kind}`"
 			:loading="loading"

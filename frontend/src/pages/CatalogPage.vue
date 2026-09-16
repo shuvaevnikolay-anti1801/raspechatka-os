@@ -6,6 +6,7 @@ import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const items = ref([]);
 const groups = ref([]);
@@ -17,7 +18,13 @@ const catalogPageSize = ref(25);
 const totalItems = ref(0);
 const catalogReady = ref(false);
 let itemsRequestId = 0;
-const filters = reactive({ search: "", item_type: "", catalog_group: "", active: "", business_point: "" });
+const filters = reactive({
+	search: "",
+	item_type: "",
+	catalog_group: "",
+	active: "",
+	business_point: "",
+});
 const editorOpen = ref(false);
 const saving = ref(false);
 const editorError = ref("");
@@ -46,7 +53,7 @@ const typeLabels = {
 };
 const inventoryType = computed(() => ["Product", "Variant"].includes(itemForm.item_type));
 const currentVariants = computed(() =>
-	itemOptions.items.filter((item) => item.variant_of === itemForm.name),
+	itemOptions.items.filter((item) => item.variant_of === itemForm.name)
 );
 const groupOptions = computed(() => {
 	const byParent = new Map();
@@ -95,8 +102,14 @@ const tableColumns = computed(() => [
 	{ key: "catalog_group", label: "Группа", width: 220 },
 	{ key: "variant_of", label: "Основной товар", width: 220 },
 	{ key: "stock_uom", label: "Ед. изм.", width: 100 },
-	{ key: "active", label: "Статус", width: 120, format: (value) => (value ? "Активен" : "В архиве") },
+	{
+		key: "active",
+		label: "Статус",
+		width: 120,
+		format: (value) => (value ? "Активен" : "В архиве"),
+	},
 ]);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, tableColumns.value));
 
 async function loadItems() {
 	const requestId = ++itemsRequestId;
@@ -144,7 +157,10 @@ async function loadWorkspace() {
 async function loadEditor(name, type = "Product") {
 	editorError.value = "";
 	try {
-		const result = await call("raspechatka.api.frontend.get_catalog_item", { name, item_type: type });
+		const result = await call("raspechatka.api.frontend.get_catalog_item", {
+			name,
+			item_type: type,
+		});
 		Object.keys(itemForm).forEach((key) => delete itemForm[key]);
 		Object.assign(itemForm, JSON.parse(JSON.stringify(result.doc)));
 		Object.assign(itemOptions, result.options);
@@ -161,7 +177,7 @@ async function saveItem() {
 		const result = await call(
 			"raspechatka.api.frontend.save_catalog_item",
 			{ data: JSON.stringify(itemForm) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		await loadItems();
 		await loadEditor(result.name);
@@ -205,13 +221,13 @@ function openGroupEditor(group = null) {
 					group_name: group.group_name,
 					parent_catalog_group: group.parent_catalog_group || "",
 					active: group.active ?? 1,
-				}
+			  }
 			: {
 					name: "",
 					group_name: "",
 					parent_catalog_group: filters.catalog_group || "",
 					active: 1,
-				},
+			  }
 	);
 	groupEditorOpen.value = true;
 }
@@ -223,7 +239,7 @@ async function saveGroup() {
 		const result = await call(
 			"raspechatka.api.frontend.save_catalog_group",
 			{ data: JSON.stringify(groupForm) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		await loadFilters();
 		filters.catalog_group = result.name;
@@ -239,12 +255,20 @@ async function saveGroup() {
 async function changeItemArchiveState() {
 	if (!itemForm.name) return;
 	const archiving = Boolean(itemForm.active);
-	if (archiving && !window.confirm("Перенести позицию в архив? Исторические документы сохранятся.")) return;
+	if (
+		archiving &&
+		!window.confirm("Перенести позицию в архив? Исторические документы сохранятся.")
+	)
+		return;
 	saving.value = true;
 	editorError.value = "";
 	try {
 		const method = archiving ? "archive_catalog_item" : "restore_catalog_item";
-		await call("raspechatka.api.frontend." + method, { name: itemForm.name }, { method: "POST" });
+		await call(
+			"raspechatka.api.frontend." + method,
+			{ name: itemForm.name },
+			{ method: "POST" }
+		);
 		await loadItems();
 		await loadEditor(itemForm.name);
 	} catch (exception) {
@@ -262,7 +286,11 @@ async function changeGroupArchiveState() {
 	groupError.value = "";
 	try {
 		const method = archiving ? "archive_catalog_group" : "restore_catalog_group";
-		await call("raspechatka.api.frontend." + method, { name: groupForm.name }, { method: "POST" });
+		await call(
+			"raspechatka.api.frontend." + method,
+			{ name: groupForm.name },
+			{ method: "POST" }
+		);
 		groupEditorOpen.value = false;
 		filters.catalog_group = "";
 		await loadWorkspace();
@@ -323,7 +351,13 @@ async function initializeCatalog(size) {
 		<ListPageHeader title="Товары и Цены">
 			<template #actions>
 				<div v-if="canEdit" class="create-actions">
-					<button class="button button-primary" type="button" @click="loadEditor(null, 'Product')">＋ Создать товар</button>
+					<button
+						class="button button-primary"
+						type="button"
+						@click="loadEditor(null, 'Product')"
+					>
+						＋ Создать товар
+					</button>
 				</div>
 			</template>
 		</ListPageHeader>
@@ -340,7 +374,7 @@ async function initializeCatalog(size) {
 			<div class="catalog-main">
 				<SmartFilterBar
 					:model-value="filters"
-					:fields="filterFields"
+					:entity-fields="entityFields"
 					view-key="catalog.items"
 					@update:model-value="Object.assign(filters, $event)"
 					@apply="applyCatalogFilters"
@@ -348,7 +382,7 @@ async function initializeCatalog(size) {
 				/>
 				<SmartDataTable
 					:rows="items"
-					:columns="tableColumns"
+					:entity-fields="entityFields"
 					view-key="catalog.items"
 					:loading="loading"
 					:error="error"
@@ -363,21 +397,44 @@ async function initializeCatalog(size) {
 					@page-change="changeCatalogPage"
 					@page-size-change="changeCatalogPageSize"
 				>
-					<template #cell-item_type="{ row }"><span class="type-chip" :class="row.item_type.toLowerCase()">{{ typeLabels[row.item_type] || row.item_type }}</span></template>
-					<template #cell-active="{ row }"><span class="state" :class="{ inactive: !row.active }"><i></i>{{ row.active ? "Активен" : "В архиве" }}</span></template>
+					<template #cell-item_type="{ row }"
+						><span class="type-chip" :class="row.item_type.toLowerCase()">{{
+							typeLabels[row.item_type] || row.item_type
+						}}</span></template
+					>
+					<template #cell-active="{ row }"
+						><span class="state" :class="{ inactive: !row.active }"
+							><i></i>{{ row.active ? "Активен" : "В архиве" }}</span
+						></template
+					>
 				</SmartDataTable>
 			</div>
 		</div>
 
-		<AppModal v-if="groupEditorOpen" :title="groupForm.name ? 'Группа каталога' : 'Новая группа'" @close="groupEditorOpen = false">
+		<AppModal
+			v-if="groupEditorOpen"
+			:title="groupForm.name ? 'Группа каталога' : 'Новая группа'"
+			@close="groupEditorOpen = false"
+		>
 			<form class="editor-form" @submit.prevent="saveGroup">
 				<div class="form-section">
 					<div class="form-grid">
-						<label class="span-2">Название<input v-model="groupForm.group_name" required autofocus /></label>
-						<label>Родительская группа
+						<label class="span-2"
+							>Название<input v-model="groupForm.group_name" required autofocus
+						/></label>
+						<label
+							>Родительская группа
 							<select v-model="groupForm.parent_catalog_group">
 								<option value="">Верхний уровень</option>
-								<option v-for="group in groups.filter((row) => row.name !== groupForm.name)" :key="group.name" :value="group.name">{{ group.group_name }}</option>
+								<option
+									v-for="group in groups.filter(
+										(row) => row.name !== groupForm.name
+									)"
+									:key="group.name"
+									:value="group.name"
+								>
+									{{ group.group_name }}
+								</option>
 							</select>
 						</label>
 					</div>
@@ -385,48 +442,109 @@ async function initializeCatalog(size) {
 				<p v-if="groupError" class="form-error">{{ groupError }}</p>
 			</form>
 			<template #footer>
-				<button v-if="groupForm.name && canEdit" class="button button-secondary" :disabled="groupSaving" @click="changeGroupArchiveState">{{ groupForm.active ? "В архив" : "Восстановить" }}</button>
+				<button
+					v-if="groupForm.name && canEdit"
+					class="button button-secondary"
+					:disabled="groupSaving"
+					@click="changeGroupArchiveState"
+				>
+					{{ groupForm.active ? "В архив" : "Восстановить" }}
+				</button>
 				<div class="footer-actions">
-					<button class="button button-secondary" @click="groupEditorOpen = false">Отмена</button>
-					<button class="button button-primary" :disabled="groupSaving" @click="saveGroup">{{ groupSaving ? "Сохраняем…" : "Сохранить группу" }}</button>
+					<button class="button button-secondary" @click="groupEditorOpen = false">
+						Отмена
+					</button>
+					<button
+						class="button button-primary"
+						:disabled="groupSaving"
+						@click="saveGroup"
+					>
+						{{ groupSaving ? "Сохраняем…" : "Сохранить группу" }}
+					</button>
 				</div>
 			</template>
 		</AppModal>
 
-		<AppModal v-if="editorOpen" :title="itemForm.item_name || 'Новая позиция'" wide @close="editorOpen = false">
+		<AppModal
+			v-if="editorOpen"
+			:title="itemForm.item_name || 'Новая позиция'"
+			wide
+			@close="editorOpen = false"
+		>
 			<form class="editor-form catalog-editor" @submit.prevent="saveItem">
 				<div class="form-section">
 					<div class="section-heading">
 						<div><h3>Основное</h3></div>
 					</div>
 					<div class="form-grid">
-						<label>Тип
+						<label
+							>Тип
 							<select v-model="itemForm.item_type">
-								<option v-for="(label, value) in typeLabels" :key="value" :value="value">{{ label }}</option>
+								<option
+									v-for="(label, value) in typeLabels"
+									:key="value"
+									:value="value"
+								>
+									{{ label }}
+								</option>
 							</select>
 						</label>
-						<label class="span-2">Наименование<input v-model="itemForm.item_name" required /></label>
-						<label>Группа
+						<label class="span-2"
+							>Наименование<input v-model="itemForm.item_name" required
+						/></label>
+						<label
+							>Группа
 							<select v-model="itemForm.catalog_group">
 								<option value="">Без группы</option>
-								<option v-for="group in groupOptions" :key="group.name" :value="group.name">{{ group.label }}</option>
+								<option
+									v-for="group in groupOptions"
+									:key="group.name"
+									:value="group.name"
+								>
+									{{ group.label }}
+								</option>
 							</select>
 						</label>
-						<label>Единица измерения
+						<label
+							>Единица измерения
 							<select v-model="itemForm.stock_uom" required>
-								<option v-for="unit in itemOptions.units" :key="unit.name" :value="unit.name">{{ unit.unit_name }}</option>
+								<option
+									v-for="unit in itemOptions.units"
+									:key="unit.name"
+									:value="unit.name"
+								>
+									{{ unit.unit_name }}
+								</option>
 							</select>
 						</label>
-						<label>Основной поставщик
+						<label
+							>Основной поставщик
 							<select v-model="itemForm.default_supplier">
 								<option value="">Не выбран</option>
-								<option v-for="supplier in itemOptions.suppliers" :key="supplier.name" :value="supplier.name">{{ supplier.supplier_name }}</option>
+								<option
+									v-for="supplier in itemOptions.suppliers"
+									:key="supplier.name"
+									:value="supplier.name"
+								>
+									{{ supplier.supplier_name }}
+								</option>
 							</select>
 						</label>
-						<label v-if="itemForm.item_type === 'Variant'" class="span-2">Основной товар
-							<select v-model="itemForm.variant_of" required @change="selectVariantParent">
+						<label v-if="itemForm.item_type === 'Variant'" class="span-2"
+							>Основной товар
+							<select
+								v-model="itemForm.variant_of"
+								required
+								@change="selectVariantParent"
+							>
 								<option value="">Выберите товар</option>
-								<option v-for="parent in itemOptions.variant_parents" :key="parent.name" :value="parent.name">{{ parent.item_name }}</option>
+								<option
+									v-for="parent in itemOptions.variant_parents"
+									:key="parent.name"
+									:value="parent.name"
+								>
+									{{ parent.item_name }}
+								</option>
 							</select>
 						</label>
 					</div>
@@ -434,15 +552,27 @@ async function initializeCatalog(size) {
 
 				<div v-if="itemForm.item_type === 'Variant'" class="form-section">
 					<div class="section-heading">
-						<div><h3>Параметры модификации</h3><p>Например: цвет — белый, размер — M.</p></div>
-						<button v-if="canEdit" class="text-button" type="button" @click="addVariantValue">＋ Параметр</button>
+						<div>
+							<h3>Параметры модификации</h3>
+							<p>Например: цвет — белый, размер — M.</p>
+						</div>
+						<button
+							v-if="canEdit"
+							class="text-button"
+							type="button"
+							@click="addVariantValue"
+						>
+							＋ Параметр
+						</button>
 					</div>
 					<div class="editable-rows">
 						<div v-for="(row, index) in itemForm.variant_values" :key="index">
 							<input v-model="row.attribute_name" placeholder="Параметр" />
 							<input v-model="row.attribute_value" placeholder="Значение" />
 							<span></span>
-							<button type="button" @click="removeRow('variant_values', index)">×</button>
+							<button type="button" @click="removeRow('variant_values', index)">
+								×
+							</button>
 						</div>
 					</div>
 				</div>
@@ -450,11 +580,24 @@ async function initializeCatalog(size) {
 				<div v-if="itemForm.item_type === 'Product' && itemForm.name" class="form-section">
 					<div class="section-heading">
 						<div><h3>Модификации</h3></div>
-						<button v-if="canEdit" class="text-button" type="button" @click="createVariantFrom(itemForm.name)">＋ Модификация</button>
+						<button
+							v-if="canEdit"
+							class="text-button"
+							type="button"
+							@click="createVariantFrom(itemForm.name)"
+						>
+							＋ Модификация
+						</button>
 					</div>
 					<div v-if="currentVariants.length" class="variant-list">
-						<button v-for="variant in currentVariants" :key="variant.name" type="button" @click="loadEditor(variant.name)">
-							<span>{{ variant.item_name }}</span><small>{{ variant.stock_uom }}</small>
+						<button
+							v-for="variant in currentVariants"
+							:key="variant.name"
+							type="button"
+							@click="loadEditor(variant.name)"
+						>
+							<span>{{ variant.item_name }}</span
+							><small>{{ variant.stock_uom }}</small>
 						</button>
 					</div>
 					<p v-else class="muted-copy">Модификаций пока нет.</p>
@@ -463,16 +606,63 @@ async function initializeCatalog(size) {
 				<div class="form-section">
 					<div class="section-heading">
 						<div><h3>Цены</h3></div>
-						<button v-if="canEdit" class="text-button" type="button" @click="addPrice">＋ Добавить цену</button>
+						<button v-if="canEdit" class="text-button" type="button" @click="addPrice">
+							＋ Добавить цену
+						</button>
 					</div>
-					<label class="check-field compact-check"><input v-model="itemForm.prevent_discounts" type="checkbox" :true-value="1" :false-value="0" /> Запретить скидки для позиции</label>
+					<label class="check-field compact-check"
+						><input
+							v-model="itemForm.prevent_discounts"
+							type="checkbox"
+							:true-value="1"
+							:false-value="0"
+						/>
+						Запретить скидки для позиции</label
+					>
 					<div class="editable-rows price-rows">
 						<div v-for="(row, index) in itemForm.prices" :key="index">
-							<select v-model="row.price_type"><option v-for="priceType in itemOptions.price_types" :key="priceType.name" :value="priceType.name">{{ priceType.price_type_name }}</option></select>
-							<select v-model="row.business_point"><option value="">Все точки</option><option v-for="point in itemOptions.points" :key="point.name" :value="point.name">{{ point.point_name }}</option></select>
-							<select v-model="row.uom"><option v-for="unit in itemOptions.units" :key="unit.name" :value="unit.name">{{ unit.unit_name }}</option></select>
-							<input v-model.number="row.rate" type="number" min="0" step="0.01" placeholder="Цена" />
-							<input v-model.number="row.minimum_quantity" type="number" min="0.0001" step="any" placeholder="От количества" />
+							<select v-model="row.price_type">
+								<option
+									v-for="priceType in itemOptions.price_types"
+									:key="priceType.name"
+									:value="priceType.name"
+								>
+									{{ priceType.price_type_name }}
+								</option>
+							</select>
+							<select v-model="row.business_point">
+								<option value="">Все точки</option>
+								<option
+									v-for="point in itemOptions.points"
+									:key="point.name"
+									:value="point.name"
+								>
+									{{ point.point_name }}
+								</option>
+							</select>
+							<select v-model="row.uom">
+								<option
+									v-for="unit in itemOptions.units"
+									:key="unit.name"
+									:value="unit.name"
+								>
+									{{ unit.unit_name }}
+								</option>
+							</select>
+							<input
+								v-model.number="row.rate"
+								type="number"
+								min="0"
+								step="0.01"
+								placeholder="Цена"
+							/>
+							<input
+								v-model.number="row.minimum_quantity"
+								type="number"
+								min="0.0001"
+								step="any"
+								placeholder="От количества"
+							/>
 							<input v-model="row.valid_from" type="date" title="Действует с" />
 							<input v-model="row.valid_upto" type="date" title="Действует до" />
 							<button type="button" @click="removeRow('prices', index)">×</button>
@@ -482,51 +672,167 @@ async function initializeCatalog(size) {
 
 				<div v-if="itemForm.item_type === 'Bundle'" class="form-section">
 					<div class="section-heading">
-						<div><h3>Состав комплекта</h3><p>Комплект доступен, только когда доступны его компоненты.</p></div>
-						<button v-if="canEdit" class="text-button" type="button" @click="addBundleComponent">＋ Компонент</button>
+						<div>
+							<h3>Состав комплекта</h3>
+							<p>Комплект доступен, только когда доступны его компоненты.</p>
+						</div>
+						<button
+							v-if="canEdit"
+							class="text-button"
+							type="button"
+							@click="addBundleComponent"
+						>
+							＋ Компонент
+						</button>
 					</div>
 					<div class="editable-rows bundle-rows">
 						<div v-for="(row, index) in itemForm.bundle_components" :key="index">
-							<select v-model="row.item"><option value="">Товар или услуга</option><option v-for="item in itemOptions.items" :key="item.name" :value="item.name">{{ item.item_name }}</option></select>
-							<input v-model.number="row.quantity" type="number" min="0.0001" step="any" placeholder="Количество" />
-							<select v-model="row.uom"><option v-for="unit in itemOptions.units" :key="unit.name" :value="unit.name">{{ unit.unit_name }}</option></select>
+							<select v-model="row.item">
+								<option value="">Товар или услуга</option>
+								<option
+									v-for="item in itemOptions.items"
+									:key="item.name"
+									:value="item.name"
+								>
+									{{ item.item_name }}
+								</option>
+							</select>
+							<input
+								v-model.number="row.quantity"
+								type="number"
+								min="0.0001"
+								step="any"
+								placeholder="Количество"
+							/>
+							<select v-model="row.uom">
+								<option
+									v-for="unit in itemOptions.units"
+									:key="unit.name"
+									:value="unit.name"
+								>
+									{{ unit.unit_name }}
+								</option>
+							</select>
 							<input v-model="row.notes" placeholder="Комментарий" />
-							<button type="button" @click="removeRow('bundle_components', index)">×</button>
+							<button type="button" @click="removeRow('bundle_components', index)">
+								×
+							</button>
 						</div>
 					</div>
 				</div>
 
 				<div class="form-section">
 					<div class="section-heading">
-						<div><h3>{{ inventoryType ? "Остатки и доступность в точках" : "Доступность в точках" }}</h3></div>
+						<div>
+							<h3>
+								{{
+									inventoryType
+										? "Остатки и доступность в точках"
+										: "Доступность в точках"
+								}}
+							</h3>
+						</div>
 					</div>
 					<div class="point-grid">
-						<article v-for="row in itemForm.assortments" :key="row.business_point" class="point-card">
-							<header><strong>{{ itemOptions.points.find((point) => point.name === row.business_point)?.point_name || row.business_point }}</strong><label class="switch-line"><input v-model="row.enabled" type="checkbox" :true-value="1" :false-value="0" /> Доступен</label></header>
+						<article
+							v-for="row in itemForm.assortments"
+							:key="row.business_point"
+							class="point-card"
+						>
+							<header>
+								<strong>{{
+									itemOptions.points.find(
+										(point) => point.name === row.business_point
+									)?.point_name || row.business_point
+								}}</strong
+								><label class="switch-line"
+									><input
+										v-model="row.enabled"
+										type="checkbox"
+										:true-value="1"
+										:false-value="0"
+									/>
+									Доступен</label
+								>
+							</header>
 							<div class="point-card__fields">
-								<label class="check-field"><input v-model="row.visible_in_pos" type="checkbox" :true-value="1" :false-value="0" :disabled="!row.enabled" /> Показывать в кассе</label>
-								<label>Склад
-									<select v-model="row.default_warehouse" :disabled="!row.enabled">
+								<label class="check-field"
+									><input
+										v-model="row.visible_in_pos"
+										type="checkbox"
+										:true-value="1"
+										:false-value="0"
+										:disabled="!row.enabled"
+									/>
+									Показывать в кассе</label
+								>
+								<label
+									>Склад
+									<select
+										v-model="row.default_warehouse"
+										:disabled="!row.enabled"
+									>
 										<option value="">Не выбран</option>
-										<option v-for="warehouse in itemOptions.warehouses.filter((item) => item.business_point === row.business_point)" :key="warehouse.name" :value="warehouse.name">{{ warehouse.warehouse_name }}</option>
+										<option
+											v-for="warehouse in itemOptions.warehouses.filter(
+												(item) =>
+													item.business_point === row.business_point
+											)"
+											:key="warehouse.name"
+											:value="warehouse.name"
+										>
+											{{ warehouse.warehouse_name }}
+										</option>
 									</select>
 								</label>
-								<label v-if="inventoryType">Минимальный остаток<input v-model.number="row.minimum_stock" type="number" min="0" step="any" /></label>
-								<label v-if="inventoryType">Пополнить на<input v-model.number="row.reorder_quantity" type="number" min="0" step="any" /></label>
-								<label class="point-note">Заметка<input v-model="row.notes" placeholder="Необязательно" /></label>
+								<label v-if="inventoryType"
+									>Минимальный остаток<input
+										v-model.number="row.minimum_stock"
+										type="number"
+										min="0"
+										step="any"
+								/></label>
+								<label v-if="inventoryType"
+									>Пополнить на<input
+										v-model.number="row.reorder_quantity"
+										type="number"
+										min="0"
+										step="any"
+								/></label>
+								<label class="point-note"
+									>Заметка<input v-model="row.notes" placeholder="Необязательно"
+								/></label>
 							</div>
 						</article>
 					</div>
-					<p v-if="!itemForm.assortments?.length" class="muted-copy">Нет доступных активных точек продаж.</p>
+					<p v-if="!itemForm.assortments?.length" class="muted-copy">
+						Нет доступных активных точек продаж.
+					</p>
 				</div>
 
 				<p v-if="editorError" class="form-error">{{ editorError }}</p>
 			</form>
 			<template #footer>
-				<button v-if="itemForm.name && canEdit" class="button button-secondary" :disabled="saving" @click="changeItemArchiveState">{{ itemForm.active ? "В архив" : "Восстановить" }}</button>
+				<button
+					v-if="itemForm.name && canEdit"
+					class="button button-secondary"
+					:disabled="saving"
+					@click="changeItemArchiveState"
+				>
+					{{ itemForm.active ? "В архив" : "Восстановить" }}
+				</button>
 				<div class="footer-actions">
-					<button class="button button-secondary" @click="editorOpen = false">Закрыть</button>
-					<button v-if="canEdit && itemForm.active !== 0" class="button button-primary" :disabled="saving" @click="saveItem">{{ saving ? "Сохраняем…" : "Сохранить" }}</button>
+					<button class="button button-secondary" @click="editorOpen = false">
+						Закрыть
+					</button>
+					<button
+						v-if="canEdit && itemForm.active !== 0"
+						class="button button-primary"
+						:disabled="saving"
+						@click="saveItem"
+					>
+						{{ saving ? "Сохраняем…" : "Сохранить" }}
+					</button>
 				</div>
 			</template>
 		</AppModal>
@@ -534,25 +840,115 @@ async function initializeCatalog(size) {
 </template>
 
 <style scoped>
-.catalog-workspace { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
-.catalog-main { flex: 1; min-width: 0; display: grid; gap: 12px; }
-.catalog-editor { display: grid; gap: 14px; }
-.section-heading > div > p, .muted-copy { margin: 4px 0 0; color: var(--muted); }
-.compact-check { margin: 10px 0 12px; }
-.price-rows > div { grid-template-columns: 1.2fr 1.2fr .7fr .8fr .8fr 1fr 1fr 34px; }
-.bundle-rows > div { grid-template-columns: 2fr .65fr .8fr 1.4fr 34px; }
-.point-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 10px; }
-.point-card { border: 1px solid var(--border); border-radius: 12px; padding: 13px; background: #fff; }
-.point-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.switch-line { display: flex; align-items: center; gap: 7px; font-size: 13px; }
-.point-card__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.point-card__fields label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
-.point-card__fields .check-field { display: flex; align-items: center; color: var(--text); }
-.point-note { grid-column: 1 / -1; }
-.variant-list { display: grid; gap: 7px; }
-.variant-list button { display: flex; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; text-align: left; cursor: pointer; }
-.variant-list button:hover { border-color: var(--green); background: var(--green-soft); }
-.variant-list small { color: var(--muted); }
-@media (max-width: 1100px) { .price-rows > div { grid-template-columns: 1fr 1fr 1fr 34px; } }
-@media (max-width: 900px) { .catalog-workspace { flex-direction: column; } .point-card__fields { grid-template-columns: 1fr; } .point-note { grid-column: auto; } }
+.catalog-workspace {
+	display: flex;
+	align-items: flex-start;
+	gap: 16px;
+	min-width: 0;
+}
+.catalog-main {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+	gap: 12px;
+}
+.catalog-editor {
+	display: grid;
+	gap: 14px;
+}
+.section-heading > div > p,
+.muted-copy {
+	margin: 4px 0 0;
+	color: var(--muted);
+}
+.compact-check {
+	margin: 10px 0 12px;
+}
+.price-rows > div {
+	grid-template-columns: 1.2fr 1.2fr 0.7fr 0.8fr 0.8fr 1fr 1fr 34px;
+}
+.bundle-rows > div {
+	grid-template-columns: 2fr 0.65fr 0.8fr 1.4fr 34px;
+}
+.point-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+	gap: 10px;
+}
+.point-card {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 13px;
+	background: #fff;
+}
+.point-card header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+.switch-line {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 13px;
+}
+.point-card__fields {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+}
+.point-card__fields label {
+	display: grid;
+	gap: 5px;
+	font-size: 12px;
+	color: var(--muted);
+}
+.point-card__fields .check-field {
+	display: flex;
+	align-items: center;
+	color: var(--text);
+}
+.point-note {
+	grid-column: 1 / -1;
+}
+.variant-list {
+	display: grid;
+	gap: 7px;
+}
+.variant-list button {
+	display: flex;
+	justify-content: space-between;
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 9px;
+	background: #fff;
+	text-align: left;
+	cursor: pointer;
+}
+.variant-list button:hover {
+	border-color: var(--green);
+	background: var(--green-soft);
+}
+.variant-list small {
+	color: var(--muted);
+}
+@media (max-width: 1100px) {
+	.price-rows > div {
+		grid-template-columns: 1fr 1fr 1fr 34px;
+	}
+}
+@media (max-width: 900px) {
+	.catalog-workspace {
+		flex-direction: column;
+	}
+	.point-card__fields {
+		grid-template-columns: 1fr;
+	}
+	.point-note {
+		grid-column: auto;
+	}
+}
 </style>

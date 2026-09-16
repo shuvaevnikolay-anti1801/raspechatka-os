@@ -6,6 +6,7 @@ import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute();
 const rows = ref([]),
@@ -97,6 +98,7 @@ const listColumns = [
 	{ key: "total_amount", label: "Сумма", format: (value) => `${money(value)} ₽`, number: true },
 	{ key: "docstatus", label: "Статус", format: statusLabel, width: 130 },
 ];
+const entityFields = computed(() => mergeEntityFields(filterFields.value, listColumns));
 const listTotals = computed(() => ({
 	total_quantity: rows.value.reduce((sum, row) => sum + Number(row.total_quantity || 0), 0),
 	total_amount: rows.value.reduce((sum, row) => sum + Number(row.total_amount || 0), 0),
@@ -295,14 +297,14 @@ onMounted(async () => {
 		>
 		<SmartFilterBar
 			v-model="filters"
-			:fields="filterFields"
+			:entity-fields="entityFields"
 			view-key="warehouse.receipts"
 			@apply="load(1)"
 			@reset="load(1)"
 		/>
 		<SmartDataTable
 			:rows="rows"
-			:columns="listColumns"
+			:entity-fields="entityFields"
 			:totals="listTotals"
 			view-key="warehouse.receipts"
 			:loading="loading"

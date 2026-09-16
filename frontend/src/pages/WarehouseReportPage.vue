@@ -5,6 +5,7 @@ import { call, canAccess } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute();
 const router = useRouter();
@@ -131,6 +132,7 @@ const filterFields = computed(() => [
 		options: options.groups.map((group) => ({ value: group.name, label: group.group_name })),
 	},
 ]);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, columns.value));
 
 async function load(page = 1, size = pageSize.value) {
 	currentPage.value = page;
@@ -255,7 +257,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 		<SmartFilterBar
 			:key="report"
 			:model-value="filters"
-			:fields="filterFields"
+			:entity-fields="entityFields"
 			:view-key="`warehouse.${report}`"
 			@update:model-value="Object.assign(filters, $event)"
 			@apply="load(1)"
@@ -263,7 +265,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 		/>
 		<SmartDataTable
 			:rows="rows"
-			:columns="columns"
+			:entity-fields="entityFields"
 			:totals="totals"
 			:view-key="`warehouse.${report}`"
 			:loading="loading"
