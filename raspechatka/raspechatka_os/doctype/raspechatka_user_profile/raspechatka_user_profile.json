@@ -8,12 +8,12 @@
  "field_order": [
   "identity_tab", "full_name", "active", "last_name", "first_name", "middle_name", "phone",
   "access_tab", "access_profile", "scope_type", "organization", "business_entity", "assigned_points",
-  "connection_tab", "system_user", "linked_employee", "invitation_status", "invited_at", "notes"
+  "connection_tab", "system_user", "linked_employee", "invitation_status", "invited_at"
  ],
  "fields": [
   {"fieldname": "identity_tab", "fieldtype": "Tab Break", "label": "Пользователь"},
   {"fieldname": "full_name", "fieldtype": "Data", "label": "ФИО", "read_only": 1, "bold": 1, "in_list_view": 1, "in_global_search": 1},
-  {"fieldname": "active", "fieldtype": "Check", "label": "Доступ активен", "default": "1", "in_list_view": 1, "in_standard_filter": 1},
+  {"fieldname": "active", "fieldtype": "Check", "label": "Доступ активен", "default": "1", "in_list_view": 1, "in_standard_filter": 1, "hidden": 1},
   {"fieldname": "last_name", "fieldtype": "Data", "label": "Фамилия", "reqd": 1},
   {"fieldname": "first_name", "fieldtype": "Data", "label": "Имя", "reqd": 1},
   {"fieldname": "middle_name", "fieldtype": "Data", "label": "Отчество"},
@@ -28,8 +28,7 @@
   {"fieldname": "system_user", "fieldtype": "Link", "label": "Системная учётная запись", "options": "User", "read_only": 1, "unique": 1},
   {"fieldname": "linked_employee", "fieldtype": "Link", "label": "Карточка сотрудника", "options": "Employee", "unique": 1},
   {"fieldname": "invitation_status", "fieldtype": "Select", "label": "Приглашение", "options": "Not Generated\nGenerated\nActivated", "default": "Not Generated", "read_only": 1, "in_list_view": 1},
-  {"fieldname": "invited_at", "fieldtype": "Datetime", "label": "Приглашение сформировано", "read_only": 1},
-  {"fieldname": "notes", "fieldtype": "Small Text", "label": "Комментарий"}
+  {"fieldname": "invited_at", "fieldtype": "Datetime", "label": "Приглашение сформировано", "read_only": 1}
  ],
  "permissions": [
   {"role": "System Manager", "read": 1, "write": 1, "create": 1, "report": 1, "export": 1, "import": 1}

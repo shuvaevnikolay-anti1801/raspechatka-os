@@ -10,8 +10,8 @@ from raspechatka.requisites import digits, is_valid_bic, is_valid_inn
 
 REFERENCE_CONFIG = {
 	"organizations": {
-		"doctype": "Organization", "fields": ["name", "organization_name", "organization_type", "phone", "email", "active"],
-		"search_fields": ("organization_name", "phone", "email"), "order_by": "organization_name asc",
+		"doctype": "Organization", "fields": ["name", "organization_name", "organization_type", "phone", "address", "active"],
+		"search_fields": ("organization_name", "phone", "address"), "order_by": "organization_name asc",
 	},
 	"clients": {
 		"doctype": "Client", "fields": ["name", "client_name", "phone", "email", "registration_point", "personal_data_consent", "marketing_consent", "active"],
@@ -59,7 +59,7 @@ REFERENCE_CONFIG = {
 	},
 	"entities": {
 		"doctype": "Business Entity",
-		"fields": ["name", "short_name", "full_name", "internal_code", "organization", "inn", "phone", "email", "tax_system", "active"],
+		"fields": ["name", "short_name", "full_name", "organization", "inn", "phone", "email", "tax_system", "active"],
 		"search_fields": ("short_name", "full_name", "internal_code", "inn", "ogrnip", "phone", "email"),
 		"order_by": "short_name asc",
 	},
@@ -190,14 +190,6 @@ def lookup_entity_by_inn(inn):
 	name = data.get("name") or {}
 	fio = data.get("fio") or {}
 	address = data.get("address") or {}
-	state = data.get("state") or {}
-	status_labels = {
-		"ACTIVE": _("Действует"),
-		"LIQUIDATING": _("Ликвидируется"),
-		"LIQUIDATED": _("Ликвидировано"),
-		"BANKRUPT": _("Банкротство"),
-		"REORGANIZING": _("Реорганизация"),
-	}
 	full_name = name.get("full_with_opf") or name.get("full") or suggestion.get("unrestricted_value") or suggestion.get("value")
 	short_name = name.get("short_with_opf") or name.get("short") or suggestion.get("value") or full_name
 	return {
@@ -210,7 +202,6 @@ def lookup_entity_by_inn(inn):
 		"ogrnip": data.get("ogrn") or "",
 		"okpo": data.get("okpo") or "",
 		"registration_address": address.get("unrestricted_value") or address.get("value") or "",
-		"registration_status": status_labels.get(state.get("status"), state.get("status") or _("Найдено")),
 	}
 
 
@@ -247,15 +238,14 @@ def save_reference(reference, data):
 	if reference == "entities":
 		allowed = (
 			"short_name", "full_name", "organization", "phone", "email", "last_name", "first_name",
-			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "registration_status", "tax_system", "vat_payer",
+			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "tax_system", "vat_payer",
 		)
 	elif reference == "organizations":
-		allowed = ("organization_name", "active", "phone", "email", "address")
+		allowed = ("organization_name", "phone", "address")
 	elif reference == "points":
 		allowed = (
-			"point_name", "business_entity", "active", "city", "address", "phone", "email", "timezone",
-			"allow_free_price", "allow_discounts", "max_discount_percent", "allow_remove_cart_item",
-			"accepts_cash", "accepts_card", "card_bank_account", "accepts_qr", "qr_bank_account",
+			"point_name", "business_entity", "city", "address", "phone", "email", "timezone",
+			"telegram", "max_messenger", "vk", "whatsapp", "yandex_reviews_url", "twogis_reviews_url",
 		)
 	elif reference == "clients":
 		allowed = ("active", "last_name", "first_name", "middle_name", "phone", "email", "registration_point", "personal_data_consent", "marketing_consent", "notes")

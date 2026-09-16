@@ -42,7 +42,7 @@ def resolve_item_price(
 	point = frappe.db.get_value(
 		"Business Point",
 		business_point,
-		["active", "price_rounding", "allow_free_price"],
+		["active", "price_rounding"],
 		as_dict=True,
 	)
 	if not point or not point.active:

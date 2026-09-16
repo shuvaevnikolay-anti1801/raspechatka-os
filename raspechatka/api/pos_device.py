@@ -8,6 +8,7 @@ from frappe.utils import cint, flt, get_datetime, now_datetime
 
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import sales as sales_api
+from raspechatka.pos_settings import get_pos_sales_rules
 
 
 def _authenticate(device_id, token):
@@ -134,18 +135,6 @@ def _workplace(point_name):
 	return rows[0]
 
 
-def _rules(point):
-	return {
-		"allowFreePrice": bool(point.allow_free_price),
-		"allowRemoveCartItem": bool(point.allow_remove_cart_item),
-		"allowDiscounts": bool(point.allow_discounts),
-		"maxDiscountPercent": flt(point.max_discount_percent),
-		"acceptsCash": bool(point.accepts_cash),
-		"acceptsCard": bool(point.accepts_card),
-		"acceptsQr": bool(point.accepts_qr),
-	}
-
-
 def _touch(connection, error=None):
 	connection.last_seen_at = now_datetime()
 	connection.status = "Ошибка" if error else "В сети"
@@ -173,7 +162,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			"workplace": {"id": workplace.name, "name": workplace.workplace_name},
 			"employee": selected,
 			"employees": employees,
-			"rules": _rules(point),
+			"rules": get_pos_sales_rules(),
 			"products": legacy_pos._get_products(point.name),
 			"customers": _customers(),
 			"workplaceData": legacy_pos._get_workplace_data(workplace_data_employee, point, workplace),

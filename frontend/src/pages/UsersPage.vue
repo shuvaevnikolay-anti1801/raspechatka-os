@@ -321,18 +321,6 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 								</option>
 							</select>
 						</label>
-						<label class="check-field"
-							><input
-								v-model="form.active"
-								type="checkbox"
-								:true-value="1"
-								:false-value="0"
-							/>
-							Пользователь активен</label
-						>
-						<label class="span-3"
-							>Комментарий<textarea v-model="form.notes" rows="2"></textarea>
-						</label>
 					</div>
 				</div>
 				<div v-if="form.scope_type === 'Points'" class="form-section">
@@ -385,7 +373,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			<template #footer>
 				<div v-if="form.name" class="danger-actions">
 					<button class="text-button" @click="setActive(form.active ? 0 : 1)">
-						{{ form.active ? "Отключить доступ" : "Восстановить доступ" }}
+						{{ form.active ? "Отключить пользователя" : "Включить пользователя" }}
 					</button>
 				</div>
 				<div class="footer-actions">

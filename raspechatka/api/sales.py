@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_first_day, now_datetime, nowdate
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
 
@@ -123,6 +124,29 @@ def get_connections():
 	for row in rows:
 		row["status"] = _live_connection_status(row)
 	return {"rows": rows}
+
+
+@frappe.whitelist()
+def get_pos_sales_settings_api():
+	require_access("page.sales.integration", "read")
+	return get_pos_sales_settings()
+
+
+@frappe.whitelist(methods=["POST"])
+def save_pos_sales_settings(data):
+	require_access("page.sales.integration", "write")
+	if not get_scope()["global"]:
+		frappe.throw(_("Общие настройки продаж доступны только администратору сети"), frappe.PermissionError)
+	data = frappe.parse_json(data) or {}
+	doc = frappe.get_single("POS Sales Settings")
+	for fieldname in (
+		"allow_free_price", "allow_discounts", "max_discount_percent",
+		"allow_remove_cart_item", "accepts_cash", "accepts_card", "accepts_qr",
+	):
+		if fieldname in data:
+			doc.set(fieldname, data[fieldname])
+	doc.save(ignore_permissions=True)
+	return get_pos_sales_settings()
 
 
 @frappe.whitelist(methods=["POST"])

@@ -2,7 +2,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
-from frappe.utils import flt
 
 
 WEEKDAYS = ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
@@ -33,13 +32,6 @@ class BusinessPoint(Document):
 			if row.is_working and row.opens_at and row.closes_at and row.opens_at >= row.closes_at:
 				frappe.throw(_("Время закрытия должно быть позже времени открытия: {0}").format(row.weekday))
 
-		if self.allow_discounts and not 0 <= flt(self.max_discount_percent) <= 100:
-			frappe.throw(_("Максимальная скидка должна быть от 0 до 100%"))
-
-		for fieldname in ("card_bank_account", "qr_bank_account"):
-			account = self.get(fieldname)
-			if account and frappe.db.get_value("Business Bank Account", account, "business_entity") != self.business_entity:
-				frappe.throw(_("Выбранный банковский счёт должен принадлежать ИП точки"))
 
 	def after_insert(self):
 		if not frappe.db.exists("Catalog Warehouse", {"business_point": self.name}):

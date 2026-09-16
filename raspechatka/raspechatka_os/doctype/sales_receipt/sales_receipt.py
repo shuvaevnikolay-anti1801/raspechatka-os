@@ -5,6 +5,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, get_datetime, now_datetime
 
+from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.stock import (
 	get_average_rate,
 	make_ledger_entry,
@@ -63,12 +64,7 @@ class SalesReceipt(Document):
 			frappe.throw(_("Продажа и возврат должны относиться к одной точке"))
 		if not self.items or not self.payments:
 			frappe.throw(_("Добавьте позиции и оплаты"))
-		point_rules = frappe.db.get_value(
-			"Business Point",
-			self.business_point,
-			["allow_discounts", "max_discount_percent"],
-			as_dict=True,
-		)
+		point_rules = frappe._dict(get_pos_sales_settings())
 		gross = discount = cost = 0
 		source_lines = self._source_lines()
 		for row in self.items:
@@ -115,7 +111,7 @@ class SalesReceipt(Document):
 					or actual_discount_percent > flt(point_rules.max_discount_percent) + 0.001
 				)
 			):
-				frappe.throw(_("Скидка в строке {0} превышает разрешённую для точки").format(row.idx))
+				frappe.throw(_("Скидка в строке {0} превышает разрешённую для сети").format(row.idx))
 			row.line_total = flt(row.gross_amount) - flt(row.discount_amount)
 			if item.item_type in {"Product", "Variant"} and item.track_inventory:
 				row.valuation_rate = (

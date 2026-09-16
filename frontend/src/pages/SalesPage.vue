@@ -14,7 +14,10 @@ const route = useRoute(),
 	loading = ref(true),
 	error = ref(""),
 	selectedDoc = ref(null),
-	token = ref(null);
+	token = ref(null), settingsSaving = ref(false), settingsMessage = ref("");
+const posSettings = reactive({ allow_free_price: 0, allow_discounts: 1, max_discount_percent: 100,
+	allow_remove_cart_item: 1, accepts_cash: 1, accepts_card: 1, accepts_qr: 1 });
+const canEditIntegration = computed(() => canAccess("page.sales.integration", "Edit"));
 const options = reactive({ entities: [], points: [], cashiers: [] });
 const today = new Date().toISOString().slice(0, 10),
 	month = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -325,6 +328,7 @@ async function load() {
 		if (kind.value === "integration") {
 			method = "get_connections";
 			params = {};
+			Object.assign(posSettings, await call("raspechatka.api.sales.get_pos_sales_settings_api"));
 		}
 		const result = await call(`raspechatka.api.sales.${method}`, params);
 		rows.value = result.rows || [];
@@ -334,6 +338,15 @@ async function load() {
 	} finally {
 		loading.value = false;
 	}
+}
+async function savePosSettings() {
+	settingsSaving.value = true; settingsMessage.value = "";
+	try {
+		Object.assign(posSettings, await call("raspechatka.api.sales.save_pos_sales_settings",
+			{ data: JSON.stringify(posSettings) }, { method: "POST" }));
+		settingsMessage.value = "Настройки сохранены";
+	} catch (e) { settingsMessage.value = e.message; }
+	finally { settingsSaving.value = false; }
 }
 async function openRow(row) {
 	if (kind.value === "shifts")
@@ -431,7 +444,19 @@ onMounted(init);
 			</div></template
 		>
 		<template v-else-if="kind === 'integration'"
-			><div class="bank-security-note">
+			><div class="form-section pos-global-settings">
+				<h2>Общие настройки продаж</h2><h3>Продажи</h3>
+				<div class="form-grid checks-grid">
+					<label class="check-field"><input v-model="posSettings.allow_free_price" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEditIntegration" />Свободная цена</label>
+					<label class="check-field"><input v-model="posSettings.allow_discounts" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEditIntegration" />Разрешить скидки</label>
+					<label>Максимальная скидка, %<input v-model.number="posSettings.max_discount_percent" type="number" min="0" max="100" :disabled="!canEditIntegration || !posSettings.allow_discounts" /></label>
+					<label class="check-field"><input v-model="posSettings.allow_remove_cart_item" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEditIntegration" />Разрешить удаление позиции из корзины</label>
+				</div><h3>Способы оплаты</h3><div class="form-grid checks-grid">
+					<label class="check-field"><input v-model="posSettings.accepts_cash" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEditIntegration" />Наличные</label>
+					<label class="check-field"><input v-model="posSettings.accepts_card" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEditIntegration" />Карта</label>
+					<label class="check-field"><input v-model="posSettings.accepts_qr" type="checkbox" :true-value="1" :false-value="0" :disabled="!canEditIntegration" />QR</label>
+				</div><div v-if="canEditIntegration" class="footer-actions"><span>{{ settingsMessage }}</span><button class="button button-primary" :disabled="settingsSaving" @click="savePosSettings">{{ settingsSaving ? "Сохраняем…" : "Сохранить настройки" }}</button></div>
+			</div><div class="bank-security-note">
 				<span>✓</span>
 				<div>
 					<b>Токен показывается один раз</b>

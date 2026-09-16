@@ -3,6 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
+from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
 from raspechatka.pricing import resolve_item_price
 
 
@@ -21,15 +22,7 @@ def get_bootstrap(workplace_code=None):
 		"employee": {"id": employee.get("name"), "name": employee.get("employee_name") or frappe.session.user},
 		"point": {"id": point.name, "name": point.point_name},
 		"workplace": {"id": workplace.name, "name": workplace.workplace_name},
-		"rules": {
-			"allowFreePrice": bool(point.allow_free_price),
-			"allowRemoveCartItem": bool(point.allow_remove_cart_item),
-			"allowDiscounts": bool(point.allow_discounts),
-			"maxDiscountPercent": flt(point.max_discount_percent),
-			"acceptsCash": bool(point.accepts_cash),
-			"acceptsCard": bool(point.accepts_card),
-			"acceptsQr": bool(point.accepts_qr),
-		},
+		"rules": get_pos_sales_rules(),
 		"products": _get_products(point.name),
 		"customers": _get_customers(),
 		"workplaceData": _get_workplace_data(employee, point, workplace),
@@ -199,7 +192,7 @@ def _get_products(point_name):
 			uom=item.stock_uom,
 			required=False,
 		)
-		if not resolved_price and not frappe.db.get_value("Business Point", point_name, "allow_free_price"):
+		if not resolved_price and not get_pos_sales_settings()["allow_free_price"]:
 			continue
 		price = resolved_price["rate"] if resolved_price else 0
 		barcode = frappe.db.get_value(

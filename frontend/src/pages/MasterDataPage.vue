@@ -41,21 +41,20 @@ const configs = {
 			{
 				key: "search",
 				label: "Поиск",
-				placeholder: "Название, телефон или email",
+				placeholder: "ФИО, телефон или город",
 				form: false,
 				filter: false,
 				table: false,
 			},
 			{
 				key: "organization_name",
-				label: "Партнёр",
+				label: "ФИО партнёра",
 				searchable: true,
 				primary: true,
 				required: true,
 			},
 			{ key: "phone", label: "Телефон", searchable: true },
-			{ key: "email", label: "Email", searchable: true, type: "email" },
-			{ key: "address", label: "Адрес", type: "textarea", table: { default: false } },
+			{ key: "address", label: "Город проживания", table: { default: false } },
 			{
 				key: "active",
 				label: "Статус",
@@ -574,7 +573,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 								v-model="form[field.key]"
 								:type="field.type"
 								:required="field.required" /></label
-						><label class="check-field"
+						><label v-if="reference !== 'organizations'" class="check-field"
 							><input
 								v-model="form.active"
 								type="checkbox"
@@ -658,8 +657,8 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			<template v-if="config.create" #footer
 				><div v-if="form.name && canEdit" class="danger-actions">
 					<button class="text-button" @click="setActive(form.active ? 0 : 1)">
-						{{ form.active ? "Архивировать" : "Восстановить" }}</button
-					><button v-if="canAdmin" class="text-button danger" @click="remove">
+						{{ form.active ? "Архивировать" : "Вернуть в активные" }}</button
+					><button v-if="canAdmin && reference !== 'organizations'" class="text-button danger" @click="remove">
 						Удалить
 					</button>
 				</div>
