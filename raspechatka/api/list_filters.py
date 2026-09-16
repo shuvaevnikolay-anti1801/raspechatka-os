@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 
 DOCUMENT_AREAS = {
 	"Organization": "page.references.organizations",
@@ -91,6 +92,7 @@ OPERATORS = {
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_doctype_filter_fields(doctype):
 	_require_doctype(doctype)
 	meta = frappe.get_meta(doctype)
@@ -99,6 +101,7 @@ def get_doctype_filter_fields(doctype):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def filter_document_names(doctype, filters=None):
 	_require_doctype(doctype)
 	criteria = frappe.parse_json(filters) if isinstance(filters, str) else (filters or [])
