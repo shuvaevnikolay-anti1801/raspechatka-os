@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import cint, get_url, now_datetime
 
 from raspechatka.access import get_matrix_role_rows, get_scope, require_access
+from raspechatka.access_contract import access_contract
 
 
 def _require_admin():
@@ -125,6 +126,7 @@ def _require_employee_in_admin_scope(employee_name):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_users(search=None, active=None):
 	_require_admin()
 	filters = {}
@@ -156,6 +158,9 @@ def get_users(search=None, active=None):
 		order_by="full_name asc",
 		limit_page_length=1000,
 	)
+	role_labels = {role["name"]: role["label"] for role in get_matrix_role_rows()}
+	for row in rows:
+		row["access_profile_label"] = role_labels.get(row.access_profile, row.access_profile)
 	admin_scope = get_scope()
 	if admin_scope["global"]:
 		return rows

@@ -24,7 +24,7 @@ const preferenceKey = computed(() => `${props.viewKey}.filters`);
 const configuredFields = computed(() =>
 	props.entityFields
 		? deriveFilterFields(props.entityFields)
-		: props.fields.filter((field) => field.key !== "search"),
+		: props.fields.filter((field) => field.key !== "search")
 );
 const fields = computed(() => {
 	const schemaByKey = new Map(schemaFields.value.map((field) => [field.key, field]));
@@ -39,7 +39,7 @@ const fields = computed(() => {
 	});
 });
 const shownFields = computed(() =>
-	fields.value.filter((field) => visible.value.includes(field.key)),
+	fields.value.filter((field) => visible.value.includes(field.key))
 );
 const periodFieldPair = computed(() => {
 	const dateFields = fields.value.filter((field) => field.type === "date");
@@ -138,8 +138,8 @@ function defaultOperator(field) {
 	return field.type === "select"
 		? "equals"
 		: ["number", "date", "datetime-local", "time"].includes(field.type)
-			? "equals"
-			: "contains";
+		? "equals"
+		: "contains";
 }
 function selectedOperator(field) {
 	return props.modelValue[operatorKey(field)] || defaultOperator(field);
@@ -148,8 +148,8 @@ function operators(field) {
 	return field.type === "select"
 		? operatorOptions.exact
 		: ["number", "date", "datetime-local", "time"].includes(field.type)
-			? operatorOptions.range
-			: operatorOptions.text;
+		? operatorOptions.range
+		: operatorOptions.text;
 }
 function needsValue(field) {
 	return !["is_set", "is_not_set"].includes(selectedOperator(field));
@@ -179,7 +179,7 @@ async function savePreference(extra = {}) {
 				...extra,
 			}),
 		},
-		{ method: "POST" },
+		{ method: "POST" }
 	);
 }
 async function loadSchema() {
@@ -212,7 +212,7 @@ async function loadPreference() {
 			preference.visible,
 			fields.value,
 			"filter",
-			preference.schema,
+			preference.schema
 		);
 		bookmarks.value = Array.isArray(preference.bookmarks)
 			? preference.bookmarks.map((bookmark) => ({
@@ -221,9 +221,9 @@ async function loadPreference() {
 						bookmark.visible,
 						fields.value,
 						"filter",
-						bookmark.schema,
+						bookmark.schema
 					),
-				}))
+			  }))
 			: [];
 		if (preference.lastFilters) {
 			emit("update:modelValue", {
@@ -273,7 +273,7 @@ async function reset() {
 			fields.value.flatMap((field) => [
 				[field.key, field.emptyValue ?? ""],
 				[operatorKey(field), defaultOperator(field)],
-			]),
+			])
 		),
 		__periodPreset: "",
 	};

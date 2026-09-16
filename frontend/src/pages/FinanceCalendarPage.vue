@@ -60,8 +60,13 @@ const columns = [
 	{ key: "planned_date", label: "Дата", width: 120, format: date },
 	{ key: "title", label: "Платёж", primary: true, width: 250 },
 	{ key: "counterparty_name", label: "Контрагент", width: 200 },
-	{ key: "financial_article", label: "Статья", width: 180 },
-	{ key: "business_point", label: "Точка", width: 180 },
+	{
+		key: "financial_article",
+		label: "Статья",
+		width: 180,
+		displayKey: "financial_article_label",
+	},
+	{ key: "business_point", label: "Точка", width: 180, displayKey: "business_point_label" },
 	{
 		key: "direction",
 		label: "Тип",

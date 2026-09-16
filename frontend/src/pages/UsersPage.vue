@@ -24,14 +24,39 @@ const options = reactive({
 });
 const form = reactive({});
 
-const columns = [
+const columns = computed(() => [
 	{ key: "full_name", label: "ФИО", primary: true },
 	{ key: "phone", label: "Телефон / логин" },
-	{ key: "access_profile", label: "Профиль доступа" },
-	{ key: "scope_type", label: "Область доступа" },
-	{ key: "invitation_status", label: "Приглашение" },
+	{
+		key: "access_profile",
+		label: "Профиль доступа",
+		type: "select",
+		displayKey: "access_profile_label",
+		options: options.access_roles.map((role) => ({ value: role.name, label: role.label })),
+	},
+	{
+		key: "scope_type",
+		label: "Область доступа",
+		type: "select",
+		options: [
+			{ value: "Network", label: "Вся сеть" },
+			{ value: "Partner", label: "Партнёр" },
+			{ value: "Business Entity", label: "Юридическое лицо" },
+			{ value: "Points", label: "Выбранные точки" },
+		],
+	},
+	{
+		key: "invitation_status",
+		label: "Приглашение",
+		type: "select",
+		options: [
+			{ value: "Not Generated", label: "Не создано" },
+			{ value: "Generated", label: "Приглашение создано" },
+			{ value: "Activated", label: "Пользователь активирован" },
+		],
+	},
 	{ key: "active", label: "Статус" },
-];
+]);
 const filterFields = [
 	{ key: "search", label: "Поиск", placeholder: "ФИО или номер телефона", wide: true },
 	{
@@ -45,7 +70,7 @@ const filterFields = [
 		],
 	},
 ];
-const entityFields = mergeEntityFields(filterFields, columns);
+const entityFields = computed(() => mergeEntityFields(filterFields, columns.value));
 const availableEntities = computed(() =>
 	options.entities.filter((item) => form.organization && item.organization === form.organization)
 );

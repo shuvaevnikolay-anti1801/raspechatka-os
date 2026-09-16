@@ -140,8 +140,13 @@ const filterFields = computed(() => [
 ]);
 const employeeColumns = computed(() => [
 	{ key: "employee_name", label: "Сотрудник", primary: true, width: 260 },
-	{ key: "position", label: "Должность", width: 180 },
-	{ key: "business_entity", label: "Работодатель", width: 200 },
+	{ key: "position", label: "Должность", width: 180, displayKey: "position_label" },
+	{
+		key: "business_entity",
+		label: "Работодатель",
+		width: 200,
+		displayKey: "business_entity_label",
+	},
 	{
 		key: "default_point",
 		label: "Основная точка",

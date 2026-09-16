@@ -45,7 +45,7 @@ const configs = {
 		columns: [
 			{ key: "short_name", label: "Наименование", primary: true },
 			{ key: "inn", label: "ИНН" },
-			{ key: "organization", label: "Партнёр" },
+			{ key: "organization", label: "Партнёр", displayKey: "organization_label" },
 			{ key: "tax_system", label: "Налоговый режим" },
 			{ key: "phone", label: "Телефон", default: false },
 			{ key: "email", label: "E-mail", default: false },
@@ -59,7 +59,11 @@ const configs = {
 		create: "Добавить точку",
 		columns: [
 			{ key: "point_name", label: "Точка продаж", primary: true },
-			{ key: "business_entity", label: "Юридическое лицо" },
+			{
+				key: "business_entity",
+				label: "Юридическое лицо",
+				displayKey: "business_entity_label",
+			},
 			{ key: "city", label: "Город" },
 			{ key: "address", label: "Адрес" },
 			{ key: "phone", label: "Телефон", default: false },
@@ -74,7 +78,11 @@ const configs = {
 		description: "Один склад на точку, шкафы и места хранения",
 		columns: [
 			{ key: "warehouse_name", label: "Склад", primary: true },
-			{ key: "business_point", label: "Точка продаж" },
+			{
+				key: "business_point",
+				label: "Точка продаж",
+				displayKey: "business_point_label",
+			},
 			{ key: "cabinet_count", label: "Шкафов" },
 			{ key: "active", label: "Статус" },
 		],

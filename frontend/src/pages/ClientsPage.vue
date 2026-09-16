@@ -21,7 +21,11 @@ const canEdit = canAccess("clients.base", "Edit");
 const columns = [
 	{ key: "client_name", label: "Клиент", primary: true },
 	{ key: "phone", label: "Телефон" },
-	{ key: "registration_point", label: "Точка регистрации" },
+	{
+		key: "registration_point",
+		label: "Точка регистрации",
+		displayKey: "registration_point_label",
+	},
 	{ key: "club_status", label: "Статус клуба" },
 	{ key: "discount_percent", label: "Скидка, %" },
 	{ key: "active_channels", label: "Каналов" },

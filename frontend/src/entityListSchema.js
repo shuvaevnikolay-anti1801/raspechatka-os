@@ -69,6 +69,38 @@ export function deriveFormFields(fields) {
 	});
 }
 
+function emptyDisplayValue(value) {
+	return value === undefined || value === null || value === "";
+}
+
+function optionLabel(options, value) {
+	if (!Array.isArray(options)) return undefined;
+	return options.find((option) => String(option.value) === String(value))?.label;
+}
+
+export function resolveDisplayValue(row, field) {
+	const value = row?.[field.key];
+	if (typeof field.format === "function") return field.format(value, row);
+	if (field.displayKey && !emptyDisplayValue(row?.[field.displayKey]))
+		return row[field.displayKey];
+	if (emptyDisplayValue(value)) return "—";
+	const label = optionLabel(field.options, value);
+	if (label !== undefined) return label;
+	if (["check", "checkbox", "boolean"].includes(field.type))
+		return value === true || value === 1 || value === "1" ? "Да" : "Нет";
+	return value;
+}
+
+export function resolveSortValue(row, field) {
+	if (
+		field.displayKey ||
+		Array.isArray(field.options) ||
+		["check", "checkbox", "boolean"].includes(field.type)
+	)
+		return resolveDisplayValue(row, { ...field, format: undefined });
+	return row?.[field.key];
+}
+
 export function searchKeys(fields) {
 	return fields.filter((field) => field.searchable).map((field) => field.key);
 }

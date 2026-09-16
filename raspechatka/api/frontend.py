@@ -2,9 +2,11 @@ import frappe
 from frappe.utils import cint
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_catalog_items(
 	search=None,
 	item_type=None,
@@ -72,9 +74,41 @@ def get_catalog_items(
 		limit_start=limit_start,
 		limit_page_length=limit_page_length + 1,
 	)
+	visible_rows = rows[:limit_page_length]
+	group_names = {row.catalog_group for row in visible_rows if row.catalog_group}
+	item_names = {row.variant_of for row in visible_rows if row.variant_of}
+	group_labels = (
+		{
+			row.name: row.group_name
+			for row in frappe.get_all(
+				"Catalog Group",
+				filters={"name": ["in", list(group_names)]},
+				fields=["name", "group_name"],
+				limit_page_length=0,
+			)
+		}
+		if group_names
+		else {}
+	)
+	item_labels = (
+		{
+			row.name: row.item_name
+			for row in frappe.get_all(
+				"Catalog Item",
+				filters={"name": ["in", list(item_names)]},
+				fields=["name", "item_name"],
+				limit_page_length=0,
+			)
+		}
+		if item_names
+		else {}
+	)
+	for row in visible_rows:
+		row["catalog_group_label"] = group_labels.get(row.catalog_group)
+		row["variant_of_label"] = item_labels.get(row.variant_of)
 
 	return {
-		"items": rows[:limit_page_length],
+		"items": visible_rows,
 		"total_count": total_count,
 		"has_more": limit_start + limit_page_length < total_count,
 	}

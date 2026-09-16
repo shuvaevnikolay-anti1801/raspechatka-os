@@ -39,8 +39,12 @@ const entityFields = defineEntityFields([
 	},
 	{ key: "employee_name", label: "Сотрудник", searchable: true, primary: true, form: false },
 	{ key: "phone", label: "Телефон", searchable: true },
-	{ key: "position", label: "Должность" },
-	{ key: "business_entity", label: "Работодатель" },
+	{ key: "position", label: "Должность", displayKey: "position_label" },
+	{
+		key: "business_entity",
+		label: "Работодатель",
+		displayKey: "business_entity_label",
+	},
 	{ key: "employment_type", label: "Оформление" },
 	{
 		key: "access",

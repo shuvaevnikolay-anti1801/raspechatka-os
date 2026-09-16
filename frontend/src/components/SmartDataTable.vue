@@ -2,7 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { call } from "../api";
 import { documentFilterMatches } from "../listDocumentFilters";
-import { deriveTableColumns, reconcileColumnOrder, reconcileVisible } from "../entityListSchema";
+import {
+	deriveTableColumns,
+	reconcileColumnOrder,
+	reconcileVisible,
+	resolveDisplayValue,
+	resolveSortValue,
+} from "../entityListSchema";
 
 const props = defineProps({
 	rows: { type: Array, default: () => [] },
@@ -60,8 +66,11 @@ const pageCount = computed(() => Math.max(1, Math.ceil(rowCount.value / pageSize
 const sortedRows = computed(() => {
 	if (!sort.value.key) return filteredRows.value;
 	return [...filteredRows.value].sort((a, b) => {
-		const left = a[sort.value.key],
-			right = b[sort.value.key];
+		const column = availableColumns.value.find((item) => item.key === sort.value.key) || {
+			key: sort.value.key,
+		};
+		const left = resolveSortValue(a, column),
+			right = resolveSortValue(b, column);
 		const result =
 			typeof left === "number" && typeof right === "number"
 				? left - right
@@ -95,12 +104,7 @@ let resizing = null,
 	draggingKey = null;
 
 function display(row, column) {
-	const value = row[column.key];
-	return column.format
-		? column.format(value, row)
-		: value === undefined || value === null || value === ""
-		? "—"
-		: value;
+	return resolveDisplayValue(row, column);
 }
 async function savePreference() {
 	if (!ready.value) return;
