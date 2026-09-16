@@ -111,11 +111,16 @@ const weekdayLabels = [
 	"Воскресенье",
 ];
 const timezoneOptions = [
-	["Europe/Kaliningrad", "Калининград (МСК−1)"], ["Europe/Moscow", "Москва (МСК)"],
-	["Europe/Samara", "Самара (МСК+1)"], ["Asia/Yekaterinburg", "Екатеринбург (МСК+2)"],
-	["Asia/Omsk", "Омск (МСК+3)"], ["Asia/Krasnoyarsk", "Красноярск (МСК+4)"],
-	["Asia/Irkutsk", "Иркутск (МСК+5)"], ["Asia/Yakutsk", "Якутск (МСК+6)"],
-	["Asia/Vladivostok", "Владивосток (МСК+7)"], ["Asia/Magadan", "Магадан (МСК+8)"],
+	["Europe/Kaliningrad", "Калининград (МСК−1)"],
+	["Europe/Moscow", "Москва (МСК)"],
+	["Europe/Samara", "Самара (МСК+1)"],
+	["Asia/Yekaterinburg", "Екатеринбург (МСК+2)"],
+	["Asia/Omsk", "Омск (МСК+3)"],
+	["Asia/Krasnoyarsk", "Красноярск (МСК+4)"],
+	["Asia/Irkutsk", "Иркутск (МСК+5)"],
+	["Asia/Yakutsk", "Якутск (МСК+6)"],
+	["Asia/Vladivostok", "Владивосток (МСК+7)"],
+	["Asia/Magadan", "Магадан (МСК+8)"],
 	["Asia/Kamchatka", "Камчатка (МСК+9)"],
 ].map(([value, label]) => ({ value, label }));
 
@@ -190,8 +195,12 @@ function newReference() {
 			address: "",
 			phone: "",
 			email: "",
-			telegram: "", max_messenger: "", vk: "", whatsapp: "",
-			yandex_reviews_url: "", twogis_reviews_url: "",
+			telegram: "",
+			max_messenger: "",
+			vk: "",
+			whatsapp: "",
+			yandex_reviews_url: "",
+			twogis_reviews_url: "",
 			timezone: "Europe/Moscow",
 			working_hours: emptyHours(),
 		});
@@ -620,7 +629,10 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 					<h3>Основное</h3>
 					<div class="form-grid">
 						<label class="span-2"
-							>Название точки<input v-model="form.point_name" placeholder="Ярославль, Комсомольская, 12" required
+							>Название точки<input
+								v-model="form.point_name"
+								placeholder="Ярославль, Комсомольская, 12"
+								required
 						/></label>
 						<label
 							>Юридическое лицо<select v-model="form.business_entity" required>
@@ -648,9 +660,22 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 						><label>MAX<input v-model="form.max_messenger" /></label
 						><label>VK<input v-model="form.vk" /></label
 						><label>WhatsApp<input v-model="form.whatsapp" /></label
-						><label class="span-2">Яндекс.Карты (отзывы)<input v-model="form.yandex_reviews_url" /></label
-						><label class="span-2">2ГИС (отзывы)<input v-model="form.twogis_reviews_url" /></label
-						><label>Часовой пояс<select v-model="form.timezone" required><option v-for="item in timezoneOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+						><label class="span-2"
+							>Яндекс.Карты (отзывы)<input
+								v-model="form.yandex_reviews_url" /></label
+						><label class="span-2"
+							>2ГИС (отзывы)<input v-model="form.twogis_reviews_url" /></label
+						><label
+							>Часовой пояс<select v-model="form.timezone" required>
+								<option
+									v-for="item in timezoneOptions"
+									:key="item.value"
+									:value="item.value"
+								>
+									{{ item.label }}
+								</option>
+							</select></label
+						>
 					</div>
 				</div>
 				<div class="form-section">

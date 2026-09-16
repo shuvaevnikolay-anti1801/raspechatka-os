@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -23,11 +22,20 @@ def test_removed_fields_are_absent_from_the_user_model():
 	assert "registration_status" not in fieldnames(doctype("business_entity"))
 	assert "notes" not in fieldnames(doctype("raspechatka_user_profile"))
 	point_fields = fieldnames(doctype("business_point"))
-	assert not {
-		"card_bank_account", "qr_bank_account", "allow_free_price", "allow_discounts",
-		"max_discount_percent", "allow_remove_cart_item", "accepts_cash", "accepts_card",
-		"accepts_qr",
-	} & point_fields
+	assert (
+		not {
+			"card_bank_account",
+			"qr_bank_account",
+			"allow_free_price",
+			"allow_discounts",
+			"max_discount_percent",
+			"allow_remove_cart_item",
+			"accepts_cash",
+			"accepts_card",
+			"accepts_qr",
+		}
+		& point_fields
+	)
 
 
 def test_archiving_is_the_only_visible_lifecycle_for_core_references():
@@ -35,16 +43,23 @@ def test_archiving_is_the_only_visible_lifecycle_for_core_references():
 	users = source("frontend/src/pages/UsersPage.vue")
 	references = source("frontend/src/pages/ReferencesPage.vue")
 	assert "reference !== 'organizations'" in master
-	assert 'reference !== \'organizations\'" class="text-button danger"' in master
+	assert "canAdmin && reference !== 'organizations'" in master
 	assert "Пользователь активен" not in users
 	assert "form.notes" not in users
-	assert "v-model=\"form.active\"" not in references
+	assert 'v-model="form.active"' not in references
 
 
 def test_point_contacts_timezone_and_working_hours_round_trip_contract():
 	point = doctype("business_point")
 	fields = fieldnames(point)
-	assert {"telegram", "max_messenger", "vk", "whatsapp", "yandex_reviews_url", "twogis_reviews_url"} <= fields
+	assert {
+		"telegram",
+		"max_messenger",
+		"vk",
+		"whatsapp",
+		"yandex_reviews_url",
+		"twogis_reviews_url",
+	} <= fields
 	timezone = next(row for row in point["fields"] if row["fieldname"] == "timezone")
 	assert timezone["fieldtype"] == "Select"
 	assert "Europe/Moscow" in timezone["options"]
@@ -60,8 +75,13 @@ def test_pos_rules_have_one_network_wide_source_of_truth():
 	settings = doctype("pos_sales_settings")
 	assert settings["issingle"] == 1
 	assert fieldnames(settings) >= {
-		"allow_free_price", "allow_discounts", "max_discount_percent",
-		"allow_remove_cart_item", "accepts_cash", "accepts_card", "accepts_qr",
+		"allow_free_price",
+		"allow_discounts",
+		"max_discount_percent",
+		"allow_remove_cart_item",
+		"accepts_cash",
+		"accepts_card",
+		"accepts_qr",
 	}
 	assert "get_pos_sales_rules()" in source("raspechatka/api/pos.py")
 	assert "get_pos_sales_rules()" in source("raspechatka/api/pos_device.py")

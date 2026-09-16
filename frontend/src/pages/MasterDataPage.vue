@@ -658,7 +658,11 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 				><div v-if="form.name && canEdit" class="danger-actions">
 					<button class="text-button" @click="setActive(form.active ? 0 : 1)">
 						{{ form.active ? "Архивировать" : "Вернуть в активные" }}</button
-					><button v-if="canAdmin && reference !== 'organizations'" class="text-button danger" @click="remove">
+					><button
+						v-if="canAdmin && reference !== 'organizations'"
+						class="text-button danger"
+						@click="remove"
+					>
 						Удалить
 					</button>
 				</div>

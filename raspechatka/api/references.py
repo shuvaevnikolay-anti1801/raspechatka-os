@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import json
 
 import frappe
@@ -11,56 +12,126 @@ from raspechatka.requisites import digits, is_valid_bic, is_valid_inn
 
 REFERENCE_CONFIG = {
 	"organizations": {
-		"doctype": "Organization", "fields": ["name", "organization_name", "organization_type", "phone", "address", "active"],
-		"search_fields": ("organization_name", "phone", "address"), "order_by": "organization_name asc",
+		"doctype": "Organization",
+		"fields": ["name", "organization_name", "organization_type", "phone", "address", "active"],
+		"search_fields": ("organization_name", "phone", "address"),
+		"order_by": "organization_name asc",
 	},
 	"clients": {
-		"doctype": "Client", "fields": ["name", "client_name", "phone", "email", "registration_point", "personal_data_consent", "marketing_consent", "active"],
-		"search_fields": ("client_name", "phone", "email"), "order_by": "client_name asc",
+		"doctype": "Client",
+		"fields": [
+			"name",
+			"client_name",
+			"phone",
+			"email",
+			"registration_point",
+			"personal_data_consent",
+			"marketing_consent",
+			"active",
+		],
+		"search_fields": ("client_name", "phone", "email"),
+		"order_by": "client_name asc",
 	},
 	"suppliers": {
-		"doctype": "Catalog Supplier", "fields": ["name", "supplier_name", "supplier_type", "scope", "business_entity", "inn", "phone", "email", "active"],
-		"search_fields": ("supplier_name", "inn", "phone", "email"), "order_by": "supplier_name asc",
+		"doctype": "Catalog Supplier",
+		"fields": [
+			"name",
+			"supplier_name",
+			"supplier_type",
+			"scope",
+			"business_entity",
+			"inn",
+			"phone",
+			"email",
+			"active",
+		],
+		"search_fields": ("supplier_name", "inn", "phone", "email"),
+		"order_by": "supplier_name asc",
 	},
 	"employees": {
-		"doctype": "Employee", "fields": ["name", "employee_name", "business_entity", "position", "access_profile", "phone", "email", "active"],
-		"search_fields": ("employee_name", "phone", "email"), "order_by": "employee_name asc",
+		"doctype": "Employee",
+		"fields": [
+			"name",
+			"employee_name",
+			"business_entity",
+			"position",
+			"access_profile",
+			"phone",
+			"email",
+			"active",
+		],
+		"search_fields": ("employee_name", "phone", "email"),
+		"order_by": "employee_name asc",
 	},
 	"positions": {
-		"doctype": "Position", "fields": ["name", "position_name", "description", "active"],
-		"search_fields": ("position_name", "description"), "order_by": "position_name asc",
+		"doctype": "Position",
+		"fields": ["name", "position_name", "description", "active"],
+		"search_fields": ("position_name", "description"),
+		"order_by": "position_name asc",
 	},
 	"payment-methods": {
-		"doctype": "Payment Method", "fields": ["name", "method_name", "method_type", "system_method", "active"],
-		"search_fields": ("method_name",), "order_by": "method_name asc",
+		"doctype": "Payment Method",
+		"fields": ["name", "method_name", "method_type", "system_method", "active"],
+		"search_fields": ("method_name",),
+		"order_by": "method_name asc",
 	},
 	"pos-workplaces": {
-		"doctype": "POS Workplace", "fields": ["name", "workplace_name", "business_point", "active"],
-		"search_fields": ("workplace_name", "business_point"), "order_by": "workplace_name asc",
+		"doctype": "POS Workplace",
+		"fields": ["name", "workplace_name", "business_point", "active"],
+		"search_fields": ("workplace_name", "business_point"),
+		"order_by": "workplace_name asc",
 	},
 	"cash-registers": {
-		"doctype": "Cash Register", "fields": ["name", "register_name", "business_point", "pos_workplace", "currency", "active"],
-		"search_fields": ("register_name", "business_point"), "order_by": "register_name asc",
+		"doctype": "Cash Register",
+		"fields": ["name", "register_name", "business_point", "pos_workplace", "currency", "active"],
+		"search_fields": ("register_name", "business_point"),
+		"order_by": "register_name asc",
 	},
 	"financial-articles": {
-		"doctype": "Financial Article", "fields": ["name", "article_name", "article_type", "parent_financial_article", "is_group", "system_article", "active"],
-		"search_fields": ("article_name", "description"), "order_by": "lft asc",
+		"doctype": "Financial Article",
+		"fields": [
+			"name",
+			"article_name",
+			"article_type",
+			"parent_financial_article",
+			"is_group",
+			"system_article",
+			"active",
+		],
+		"search_fields": ("article_name", "description"),
+		"order_by": "lft asc",
 	},
 	"catalog-groups": {
-		"doctype": "Catalog Group", "fields": ["name", "group_name", "parent_catalog_group", "is_group", "active"],
-		"search_fields": ("group_name",), "order_by": "lft asc",
+		"doctype": "Catalog Group",
+		"fields": ["name", "group_name", "parent_catalog_group", "is_group", "active"],
+		"search_fields": ("group_name",),
+		"order_by": "lft asc",
 	},
 	"catalog-units": {
-		"doctype": "Catalog Unit", "fields": ["name", "unit_name", "symbol", "allow_fraction", "active"],
-		"search_fields": ("unit_name", "symbol"), "order_by": "unit_name asc",
+		"doctype": "Catalog Unit",
+		"fields": ["name", "unit_name", "symbol", "allow_fraction", "active"],
+		"search_fields": ("unit_name", "symbol"),
+		"order_by": "unit_name asc",
 	},
 	"price-types": {
-		"doctype": "Catalog Price Type", "fields": ["name", "price_type_name", "purpose", "currency", "active"],
-		"search_fields": ("price_type_name",), "order_by": "price_type_name asc",
+		"doctype": "Catalog Price Type",
+		"fields": ["name", "price_type_name", "purpose", "currency", "active"],
+		"search_fields": ("price_type_name",),
+		"order_by": "price_type_name asc",
 	},
 	"entities": {
 		"doctype": "Business Entity",
-		"fields": ["name", "short_name", "full_name", "organization", "inn", "phone", "email", "tax_system", "active"],
+		"fields": [
+			"name",
+			"short_name",
+			"full_name",
+			"organization",
+			"inn",
+			"phone",
+			"email",
+			"tax_system",
+			"active",
+		],
 		"search_fields": ("short_name", "full_name", "internal_code", "inn", "ogrnip", "phone", "email"),
 		"order_by": "short_name asc",
 	},
@@ -79,10 +150,21 @@ REFERENCE_CONFIG = {
 }
 
 AREA_BY_REFERENCE = {
-	"organizations": "page.references.organizations", "entities": "page.references.entities", "points": "page.references.points", "warehouses": "page.references.warehouses",
-	"clients": "page.clients.list", "suppliers": "page.references.suppliers", "employees": "page.team.employees", "positions": "page.team.positions",
-	"catalog-groups": "page.catalog", "catalog-units": "page.catalog", "price-types": "page.catalog",
-	"payment-methods": "page.finance.settings", "pos-workplaces": "page.sales.integration", "cash-registers": "page.sales.integration", "financial-articles": "page.finance.settings",
+	"organizations": "page.references.organizations",
+	"entities": "page.references.entities",
+	"points": "page.references.points",
+	"warehouses": "page.references.warehouses",
+	"clients": "page.clients.list",
+	"suppliers": "page.references.suppliers",
+	"employees": "page.team.employees",
+	"positions": "page.team.positions",
+	"catalog-groups": "page.catalog",
+	"catalog-units": "page.catalog",
+	"price-types": "page.catalog",
+	"payment-methods": "page.finance.settings",
+	"pos-workplaces": "page.sales.integration",
+	"cash-registers": "page.sales.integration",
+	"financial-articles": "page.finance.settings",
 }
 
 
@@ -141,7 +223,16 @@ def get_reference_detail(reference, name):
 		result["bank_accounts"] = frappe.get_all(
 			"Business Bank Account",
 			filters={"business_entity": name},
-			fields=["name", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "bank_address", "active"],
+			fields=[
+				"name",
+				"settlement_account",
+				"currency",
+				"bic",
+				"bank_name",
+				"correspondent_account",
+				"bank_address",
+				"active",
+			],
 			order_by="bank_name asc",
 			limit_page_length=100,
 		)
@@ -170,8 +261,28 @@ def get_reference_detail(reference, name):
 			limit_page_length=1000,
 		)
 	elif reference == "suppliers":
-		result["bank_accounts"] = frappe.get_all("Supplier Bank Account", filters={"supplier": name}, fields=["name", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "active"], order_by="bank_name asc", limit_page_length=100)
-		result["items"] = frappe.get_all("Catalog Item Supplier", filters={"supplier": name}, fields=["name", "item", "is_primary", "active"], order_by="is_primary desc, item asc", limit_page_length=1000)
+		result["bank_accounts"] = frappe.get_all(
+			"Supplier Bank Account",
+			filters={"supplier": name},
+			fields=[
+				"name",
+				"settlement_account",
+				"currency",
+				"bic",
+				"bank_name",
+				"correspondent_account",
+				"active",
+			],
+			order_by="bank_name asc",
+			limit_page_length=100,
+		)
+		result["items"] = frappe.get_all(
+			"Catalog Item Supplier",
+			filters={"supplier": name},
+			fields=["name", "item", "is_primary", "active"],
+			order_by="is_primary desc, item asc",
+			limit_page_length=1000,
+		)
 
 	return result
 
@@ -192,7 +303,12 @@ def lookup_entity_by_inn(inn):
 	name = data.get("name") or {}
 	fio = data.get("fio") or {}
 	address = data.get("address") or {}
-	full_name = name.get("full_with_opf") or name.get("full") or suggestion.get("unrestricted_value") or suggestion.get("value")
+	full_name = (
+		name.get("full_with_opf")
+		or name.get("full")
+		or suggestion.get("unrestricted_value")
+		or suggestion.get("value")
+	)
 	short_name = name.get("short_with_opf") or name.get("short") or suggestion.get("value") or full_name
 	return {
 		"short_name": short_name,
@@ -220,7 +336,11 @@ def lookup_bank_by_bic(bic):
 	address = data.get("address") or {}
 	return {
 		"bic": data.get("bic") or bic,
-		"bank_name": name.get("payment") or name.get("short") or name.get("full") or suggestion.get("value") or "",
+		"bank_name": name.get("payment")
+		or name.get("short")
+		or name.get("full")
+		or suggestion.get("value")
+		or "",
 		"correspondent_account": data.get("correspondent_account") or "",
 		"bank_address": address.get("unrestricted_value") or address.get("value") or "",
 	}
@@ -240,26 +360,101 @@ def save_reference(reference, data):
 
 	if reference == "entities":
 		allowed = (
-			"short_name", "full_name", "organization", "phone", "email", "last_name", "first_name",
-			"middle_name", "inn", "ogrnip", "okpo", "registration_address", "tax_system", "vat_payer",
+			"short_name",
+			"full_name",
+			"organization",
+			"phone",
+			"email",
+			"last_name",
+			"first_name",
+			"middle_name",
+			"inn",
+			"ogrnip",
+			"okpo",
+			"registration_address",
+			"tax_system",
+			"vat_payer",
 		)
 	elif reference == "organizations":
 		allowed = ("organization_name", "phone", "address")
 	elif reference == "points":
 		allowed = (
-			"point_name", "business_entity", "city", "address", "phone", "email", "timezone",
-			"telegram", "max_messenger", "vk", "whatsapp", "yandex_reviews_url", "twogis_reviews_url",
+			"point_name",
+			"business_entity",
+			"city",
+			"address",
+			"phone",
+			"email",
+			"timezone",
+			"telegram",
+			"max_messenger",
+			"vk",
+			"whatsapp",
+			"yandex_reviews_url",
+			"twogis_reviews_url",
 		)
 	elif reference == "clients":
-		allowed = ("active", "last_name", "first_name", "middle_name", "phone", "email", "registration_point", "personal_data_consent", "marketing_consent", "notes")
+		allowed = (
+			"active",
+			"last_name",
+			"first_name",
+			"middle_name",
+			"phone",
+			"email",
+			"registration_point",
+			"personal_data_consent",
+			"marketing_consent",
+			"notes",
+		)
 	elif reference == "suppliers":
-		allowed = ("supplier_name", "supplier_type", "active", "scope", "business_entity", "phone", "email", "website", "contact_name", "contact_position", "contact_phone", "contact_email", "legal_name", "last_name", "first_name", "middle_name", "inn", "kpp", "ogrn", "ogrnip", "notes")
+		allowed = (
+			"supplier_name",
+			"supplier_type",
+			"active",
+			"scope",
+			"business_entity",
+			"phone",
+			"email",
+			"website",
+			"contact_name",
+			"contact_position",
+			"contact_phone",
+			"contact_email",
+			"legal_name",
+			"last_name",
+			"first_name",
+			"middle_name",
+			"inn",
+			"kpp",
+			"ogrn",
+			"ogrnip",
+			"notes",
+		)
 	elif reference == "employees":
-		allowed = ("active", "last_name", "first_name", "middle_name", "phone", "email", "birth_date", "business_entity", "position", "access_profile", "notes")
+		allowed = (
+			"active",
+			"last_name",
+			"first_name",
+			"middle_name",
+			"phone",
+			"email",
+			"birth_date",
+			"business_entity",
+			"position",
+			"access_profile",
+			"notes",
+		)
 	elif reference == "positions":
 		allowed = ("position_name", "active", "description")
 	elif reference == "financial-articles":
-		allowed = ("article_name", "article_type", "parent_financial_article", "is_group", "active", "description")
+		allowed = (
+			"article_name",
+			"article_type",
+			"parent_financial_article",
+			"is_group",
+			"active",
+			"description",
+		)
 	elif reference == "catalog-groups":
 		allowed = ("group_name", "parent_catalog_group", "is_group", "active")
 	elif reference == "catalog-units":
@@ -284,20 +479,28 @@ def save_reference(reference, data):
 	if reference == "points" and "working_hours" in data:
 		doc.set("working_hours", [])
 		for row in data.get("working_hours") or []:
-			doc.append("working_hours", {
-				"weekday": row.get("weekday"),
-				"is_working": cint(row.get("is_working")),
-				"opens_at": row.get("opens_at"),
-				"closes_at": row.get("closes_at"),
-			})
+			doc.append(
+				"working_hours",
+				{
+					"weekday": row.get("weekday"),
+					"is_working": cint(row.get("is_working")),
+					"opens_at": row.get("opens_at"),
+					"closes_at": row.get("closes_at"),
+				},
+			)
 	if reference == "clients" and "messengers" in data:
 		doc.set("messengers", [])
 		for row in data.get("messengers") or []:
-			doc.append("messengers", {"messenger_type": row.get("messenger_type"), "contact": row.get("contact")})
+			doc.append(
+				"messengers", {"messenger_type": row.get("messenger_type"), "contact": row.get("contact")}
+			)
 	if reference == "employees" and "assigned_points" in data:
 		doc.set("assigned_points", [])
 		for row in data.get("assigned_points") or []:
-			doc.append("assigned_points", {"business_point": row.get("business_point"), "is_default": cint(row.get("is_default"))})
+			doc.append(
+				"assigned_points",
+				{"business_point": row.get("business_point"), "is_default": cint(row.get("is_default"))},
+			)
 
 	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
@@ -308,10 +511,21 @@ def save_bank_account(data):
 	data = frappe.parse_json(data)
 	name = data.get("name")
 	require_access("page.references.entities", "write" if name else "create")
-	entity = data.get("business_entity") or (frappe.db.get_value("Business Bank Account", name, "business_entity") if name else None)
+	entity = data.get("business_entity") or (
+		frappe.db.get_value("Business Bank Account", name, "business_entity") if name else None
+	)
 	_ensure_scoped_name("entities", entity)
 	doc = frappe.get_doc("Business Bank Account", name) if name else frappe.new_doc("Business Bank Account")
-	for fieldname in ("business_entity", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "bank_address", "active"):
+	for fieldname in (
+		"business_entity",
+		"settlement_account",
+		"currency",
+		"bic",
+		"bank_name",
+		"correspondent_account",
+		"bank_address",
+		"active",
+	):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	doc.save(ignore_permissions=True)
@@ -325,10 +539,20 @@ def save_supplier_bank_account(data):
 	require_access("page.references.suppliers", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("suppliers", frappe.db.get_value("Supplier Bank Account", name, "supplier"))
-	supplier = data.get("supplier") or (frappe.db.get_value("Supplier Bank Account", name, "supplier") if name else None)
+	supplier = data.get("supplier") or (
+		frappe.db.get_value("Supplier Bank Account", name, "supplier") if name else None
+	)
 	_ensure_scoped_name("suppliers", supplier)
 	doc = frappe.get_doc("Supplier Bank Account", name) if name else frappe.new_doc("Supplier Bank Account")
-	for fieldname in ("supplier", "settlement_account", "currency", "bic", "bank_name", "correspondent_account", "active"):
+	for fieldname in (
+		"supplier",
+		"settlement_account",
+		"currency",
+		"bic",
+		"bank_name",
+		"correspondent_account",
+		"active",
+	):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
 	doc.save(ignore_permissions=True)
@@ -342,7 +566,9 @@ def save_item_supplier(data):
 	require_access("page.references.suppliers", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("suppliers", frappe.db.get_value("Catalog Item Supplier", name, "supplier"))
-	supplier = data.get("supplier") or (frappe.db.get_value("Catalog Item Supplier", name, "supplier") if name else None)
+	supplier = data.get("supplier") or (
+		frappe.db.get_value("Catalog Item Supplier", name, "supplier") if name else None
+	)
 	_ensure_scoped_name("suppliers", supplier)
 	doc = frappe.get_doc("Catalog Item Supplier", name) if name else frappe.new_doc("Catalog Item Supplier")
 	for fieldname in ("item", "supplier", "is_primary", "active"):
@@ -359,7 +585,9 @@ def save_cabinet(data):
 	require_access("page.references.warehouses", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("warehouses", frappe.db.get_value("Storage Cabinet", name, "warehouse"))
-	warehouse = data.get("warehouse") or (frappe.db.get_value("Storage Cabinet", name, "warehouse") if name else None)
+	warehouse = data.get("warehouse") or (
+		frappe.db.get_value("Storage Cabinet", name, "warehouse") if name else None
+	)
 	_ensure_scoped_name("warehouses", warehouse)
 	doc = frappe.get_doc("Storage Cabinet", name) if name else frappe.new_doc("Storage Cabinet")
 	for fieldname in ("warehouse", "cabinet_number", "active", "sort_order"):
@@ -377,7 +605,9 @@ def save_storage_location(data):
 	if name:
 		old_cabinet = frappe.db.get_value("Storage Location", name, "cabinet")
 		_ensure_scoped_name("warehouses", frappe.db.get_value("Storage Cabinet", old_cabinet, "warehouse"))
-	cabinet = data.get("cabinet") or (frappe.db.get_value("Storage Location", name, "cabinet") if name else None)
+	cabinet = data.get("cabinet") or (
+		frappe.db.get_value("Storage Location", name, "cabinet") if name else None
+	)
 	warehouse = frappe.db.get_value("Storage Cabinet", cabinet, "warehouse") if cabinet else None
 	_ensure_scoped_name("warehouses", warehouse)
 	doc = frappe.get_doc("Storage Location", name) if name else frappe.new_doc("Storage Location")
@@ -395,7 +625,9 @@ def save_item_storage(data):
 	require_access("page.references.warehouses", "write" if name else "create")
 	if name:
 		_ensure_scoped_name("warehouses", frappe.db.get_value("Catalog Item Storage", name, "warehouse"))
-	warehouse = data.get("warehouse") or (frappe.db.get_value("Catalog Item Storage", name, "warehouse") if name else None)
+	warehouse = data.get("warehouse") or (
+		frappe.db.get_value("Catalog Item Storage", name, "warehouse") if name else None
+	)
 	_ensure_scoped_name("warehouses", warehouse)
 	doc = frappe.get_doc("Catalog Item Storage", name) if name else frappe.new_doc("Catalog Item Storage")
 	for fieldname in ("item", "warehouse", "storage_location", "active"):
@@ -412,7 +644,9 @@ def archive_reference(reference, name, active=0):
 	_ensure_scoped_name(reference, name)
 	frappe.db.set_value(config["doctype"], name, "active", cint(active), update_modified=True)
 	if reference == "points":
-		frappe.db.set_value("Catalog Warehouse", {"business_point": name}, "active", cint(active), update_modified=True)
+		frappe.db.set_value(
+			"Catalog Warehouse", {"business_point": name}, "active", cint(active), update_modified=True
+		)
 	return {"name": name, "active": cint(active)}
 
 
@@ -444,25 +678,80 @@ def get_reference_options():
 	scope = get_scope()
 	allowed_entities = get_allowed_entities(scope)
 	point_filters = {} if scope["global"] else {"name": ["in", scope["points"] or ["__none__"]]}
-	entity_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", allowed_entities or ["__none__"]]}
+	entity_filters = (
+		{"active": 1} if scope["global"] else {"active": 1, "name": ["in", allowed_entities or ["__none__"]]}
+	)
 	organization_filters = {"active": 1}
 	if not scope["global"]:
 		organization_filters["name"] = scope.get("organization") or "__none__"
 	supplier_filters = {"active": 1, **_scope_filters("suppliers")}
 	return {
-		"organizations": frappe.get_all("Organization", filters=organization_filters, fields=["name", "organization_name"], order_by="organization_name asc", limit_page_length=500) if LEVELS.get(get_access_level("page.references.organizations"), 0) else [],
-		"entities": frappe.get_all("Business Entity", filters=entity_filters, fields=["name", "short_name"], order_by="short_name asc", limit_page_length=500),
-		"bank_accounts": frappe.get_all("Business Bank Account", filters={"active": 1, **({} if scope["global"] else {"business_entity": ["in", allowed_entities or ["__none__"]]})}, fields=["name", "business_entity", "bank_name", "settlement_account"], order_by="bank_name asc", limit_page_length=500),
-		"products": frappe.get_all("Catalog Item", filters={"active": 1, "item_type": "Product"}, fields=["name", "item_name", "item_code"], order_by="item_name asc", limit_page_length=1000) if LEVELS.get(get_access_level("page.catalog"), 0) else [],
-		"points": frappe.get_all("Business Point", filters={"active": 1, **point_filters}, fields=["name", "point_name", "business_entity"], order_by="point_name asc", limit_page_length=500),
-		"positions": frappe.get_all("Position", filters={"active": 1}, fields=["name", "position_name"], order_by="position_name asc", limit_page_length=500),
-		"suppliers": frappe.get_all("Catalog Supplier", filters=supplier_filters, fields=["name", "supplier_name"], order_by="supplier_name asc", limit_page_length=500) if LEVELS.get(get_access_level("page.references.suppliers"), 0) else [],
+		"organizations": frappe.get_all(
+			"Organization",
+			filters=organization_filters,
+			fields=["name", "organization_name"],
+			order_by="organization_name asc",
+			limit_page_length=500,
+		)
+		if LEVELS.get(get_access_level("page.references.organizations"), 0)
+		else [],
+		"entities": frappe.get_all(
+			"Business Entity",
+			filters=entity_filters,
+			fields=["name", "short_name"],
+			order_by="short_name asc",
+			limit_page_length=500,
+		),
+		"bank_accounts": frappe.get_all(
+			"Business Bank Account",
+			filters={
+				"active": 1,
+				**({} if scope["global"] else {"business_entity": ["in", allowed_entities or ["__none__"]]}),
+			},
+			fields=["name", "business_entity", "bank_name", "settlement_account"],
+			order_by="bank_name asc",
+			limit_page_length=500,
+		),
+		"products": frappe.get_all(
+			"Catalog Item",
+			filters={"active": 1, "item_type": "Product"},
+			fields=["name", "item_name", "item_code"],
+			order_by="item_name asc",
+			limit_page_length=1000,
+		)
+		if LEVELS.get(get_access_level("page.catalog"), 0)
+		else [],
+		"points": frappe.get_all(
+			"Business Point",
+			filters={"active": 1, **point_filters},
+			fields=["name", "point_name", "business_entity"],
+			order_by="point_name asc",
+			limit_page_length=500,
+		),
+		"positions": frappe.get_all(
+			"Position",
+			filters={"active": 1},
+			fields=["name", "position_name"],
+			order_by="position_name asc",
+			limit_page_length=500,
+		),
+		"suppliers": frappe.get_all(
+			"Catalog Supplier",
+			filters=supplier_filters,
+			fields=["name", "supplier_name"],
+			order_by="supplier_name asc",
+			limit_page_length=500,
+		)
+		if LEVELS.get(get_access_level("page.references.suppliers"), 0)
+		else [],
 	}
 
 
 @frappe.whitelist()
 def get_view_preference(view_key):
-	name = frappe.db.get_value("User View Preference", {"user": frappe.session.user, "view_key": view_key}, "name")
+	name = frappe.db.get_value(
+		"User View Preference", {"user": frappe.session.user, "view_key": view_key}, "name"
+	)
 	if not name:
 		return {}
 	settings = frappe.db.get_value("User View Preference", name, "settings_json")
@@ -475,7 +764,9 @@ def get_view_preference(view_key):
 @frappe.whitelist(methods=["POST"])
 def save_view_preference(view_key, settings):
 	settings = frappe.parse_json(settings)
-	name = frappe.db.get_value("User View Preference", {"user": frappe.session.user, "view_key": view_key}, "name")
+	name = frappe.db.get_value(
+		"User View Preference", {"user": frappe.session.user, "view_key": view_key}, "name"
+	)
 	doc = frappe.get_doc("User View Preference", name) if name else frappe.new_doc("User View Preference")
 	doc.user = frappe.session.user
 	doc.view_key = view_key
@@ -517,11 +808,16 @@ def _validate_payload_scope(reference, data, name=None):
 	if reference == "suppliers":
 		old_scope = frappe.db.get_value("Catalog Supplier", name, "scope") if name else None
 		if old_scope == "Network" or data.get("scope") == "Network":
-			frappe.throw(_("Общесетевых поставщиков изменяет только администратор сети"), frappe.PermissionError)
+			frappe.throw(
+				_("Общесетевых поставщиков изменяет только администратор сети"), frappe.PermissionError
+			)
 		if data.get("business_entity") not in allowed_entities:
 			frappe.throw(_("Можно использовать только своё юридическое лицо"), frappe.PermissionError)
 	if reference == "employees":
-		if data.get("business_entity") not in allowed_entities or data.get("access_profile") == "Network Admin":
+		if (
+			data.get("business_entity") not in allowed_entities
+			or data.get("access_profile") == "Network Admin"
+		):
 			frappe.throw(_("Недопустимое назначение сотрудника"), frappe.PermissionError)
 		assigned = {row.get("business_point") for row in data.get("assigned_points") or []}
 		if not assigned.issubset(points):
@@ -545,7 +841,11 @@ def _scope_filters(reference):
 	if reference in ("warehouses", "pos-workplaces", "cash-registers"):
 		return {"business_point": ["in", scope["points"] or ["__none__"]]}
 	if reference == "suppliers":
-		allowed = frappe.get_all("Catalog Supplier", or_filters={"scope": "Network", "business_entity": ["in", allowed_entities or ["__none__"]]}, pluck="name")
+		allowed = frappe.get_all(
+			"Catalog Supplier",
+			or_filters={"scope": "Network", "business_entity": ["in", allowed_entities or ["__none__"]]},
+			pluck="name",
+		)
 		return {"name": ["in", allowed or ["__none__"]]}
 	if reference == "employees":
 		return {"business_entity": ["in", allowed_entities or ["__none__"]]}

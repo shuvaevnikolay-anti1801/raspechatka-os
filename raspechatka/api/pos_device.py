@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from __future__ import annotations
 
 import hmac
@@ -6,9 +7,9 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, now_datetime
 
+from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import sales as sales_api
-from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_rules
 
 

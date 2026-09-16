@@ -1,7 +1,6 @@
 import frappe
 from frappe.utils import cint, flt
 
-
 DEFAULT_POS_SALES_SETTINGS = {
 	"allow_free_price": 0,
 	"allow_discounts": 1,
