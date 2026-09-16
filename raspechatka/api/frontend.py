@@ -77,24 +77,32 @@ def get_catalog_items(
 	visible_rows = rows[:limit_page_length]
 	group_names = {row.catalog_group for row in visible_rows if row.catalog_group}
 	item_names = {row.variant_of for row in visible_rows if row.variant_of}
-	group_labels = {
-		row.name: row.group_name
-		for row in frappe.get_all(
-			"Catalog Group",
-			filters={"name": ["in", list(group_names)]},
-			fields=["name", "group_name"],
-			limit_page_length=0,
-		)
-	} if group_names else {}
-	item_labels = {
-		row.name: row.item_name
-		for row in frappe.get_all(
-			"Catalog Item",
-			filters={"name": ["in", list(item_names)]},
-			fields=["name", "item_name"],
-			limit_page_length=0,
-		)
-	} if item_names else {}
+	group_labels = (
+		{
+			row.name: row.group_name
+			for row in frappe.get_all(
+				"Catalog Group",
+				filters={"name": ["in", list(group_names)]},
+				fields=["name", "group_name"],
+				limit_page_length=0,
+			)
+		}
+		if group_names
+		else {}
+	)
+	item_labels = (
+		{
+			row.name: row.item_name
+			for row in frappe.get_all(
+				"Catalog Item",
+				filters={"name": ["in", list(item_names)]},
+				fields=["name", "item_name"],
+				limit_page_length=0,
+			)
+		}
+		if item_names
+		else {}
+	)
 	for row in visible_rows:
 		row["catalog_group_label"] = group_labels.get(row.catalog_group)
 		row["variant_of_label"] = item_labels.get(row.variant_of)

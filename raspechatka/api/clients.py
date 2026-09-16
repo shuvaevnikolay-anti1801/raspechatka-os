@@ -322,15 +322,19 @@ def get_clients(search=None, club_status=None, business_point=None, channel=None
 		limit_page_length=1000,
 	)
 	point_names = {row.registration_point for row in rows if row.registration_point}
-	point_labels = {
-		row.name: row.point_name
-		for row in frappe.get_all(
-			"Business Point",
-			filters={"name": ["in", list(point_names)]},
-			fields=["name", "point_name"],
-			limit_page_length=0,
-		)
-	} if point_names else {}
+	point_labels = (
+		{
+			row.name: row.point_name
+			for row in frappe.get_all(
+				"Business Point",
+				filters={"name": ["in", list(point_names)]},
+				fields=["name", "point_name"],
+				limit_page_length=0,
+			)
+		}
+		if point_names
+		else {}
+	)
 	for row in rows:
 		row["registration_point_label"] = point_labels.get(row.registration_point)
 	return rows
