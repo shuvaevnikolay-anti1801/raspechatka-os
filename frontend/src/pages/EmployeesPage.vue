@@ -5,6 +5,7 @@ import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { defineEntityFields } from "../entityListSchema";
 
 const rows=ref([]),loading=ref(true),error=ref(""),detail=ref(null),saving=ref(false),formError=ref(""),invitation=ref("");
 const filters=ref({search:"",active:"1"});
@@ -13,18 +14,16 @@ const form=reactive({});
 const accessForm=reactive({access_profile:"Cashier",points:[]});
 const uploading=ref(""),lookingUpBank=ref(false),generatingDocs=ref(false),currentStep=ref(1);
 const steps=[{number:1,title:"Основные данные",hint:"Кто работает"},{number:2,title:"Трудоустройство",hint:"Где и кем"},{number:3,title:"Документы",hint:"Реквизиты и договор"},{number:4,title:"Доступ",hint:"Вход в систему"}];
-const columns=[
- {key:"employee_name",label:"Сотрудник",primary:true},
- {key:"phone",label:"Телефон"},
+const entityFields=defineEntityFields([
+ {key:"search",label:"Поиск",placeholder:"ФИО или телефон",form:false,filter:false,table:false},
+ {key:"employee_name",label:"Сотрудник",searchable:true,primary:true,form:false},
+ {key:"phone",label:"Телефон",searchable:true},
  {key:"position",label:"Должность"},
  {key:"business_entity",label:"Работодатель"},
  {key:"employment_type",label:"Оформление"},
- {key:"access",label:"Доступ",format:(value)=>value?(value.active?`${labelProfile(value.access_profile)} · активен`:"Отключён"):"Не выдан"},
-];
-const filterFields=[
- {key:"search",label:"Поиск",placeholder:"ФИО или телефон",wide:true},
- {key:"active",label:"Статус",type:"select",allLabel:"Все",options:[{value:"1",label:"Работают"},{value:"0",label:"Уволены / архив"}]},
-];
+ {key:"access",label:"Доступ",filter:false,form:false,format:(value)=>value?(value.active?`${labelProfile(value.access_profile)} · активен`:"Отключён"):"Не выдан"},
+ {key:"active",label:"Статус",type:"select",table:false,form:false,allLabel:"Все",options:[{value:"1",label:"Работают"},{value:"0",label:"Уволены / архив"}]},
+]);
 const availablePoints=computed(()=>options.points.filter(p=>!form.business_entity||p.business_entity===form.business_entity));
 const selectedPoints=computed(()=>(form.assigned_points||[]).map(x=>x.business_point));
 const employeePoints=computed(()=>availablePoints.value.filter(p=>selectedPoints.value.includes(p.name)));
@@ -101,8 +100,8 @@ onMounted(load);
 <template>
 <section class="page employee-page">
  <ListPageHeader title="Сотрудники"><template #actions><button class="button button-primary" @click="create">＋ Создать сотрудника</button></template></ListPageHeader>
- <SmartFilterBar v-model="filters" :fields="filterFields" view-key="team.employees" @apply="load" @reset="load"/>
- <ReferenceTable :rows="rows" :columns="columns" view-key="team.employees" :loading="loading" :error="error" @open="open" @retry="load"/>
+ <SmartFilterBar v-model="filters" :entity-fields="entityFields" view-key="team.employees" @apply="load" @reset="load"/>
+ <ReferenceTable :rows="rows" :entity-fields="entityFields" view-key="team.employees" :loading="loading" :error="error" @open="open" @retry="load"/>
  <AppModal v-if="detail!==null" title="Карточка сотрудника" wide @close="detail=null">
   <form class="editor-form" @submit.prevent="save">
    <nav class="employee-steps" aria-label="Этапы заполнения карточки"><button v-for="step in steps" :key="step.number" type="button" :class="{active:currentStep===step.number,done:currentStep>step.number||form.name&&step.number<3}" @click="form.name||step.number<=2?currentStep=step.number:null"><span>{{step.number}}</span><b>{{step.title}}</b><small>{{step.hint}}</small></button></nav>

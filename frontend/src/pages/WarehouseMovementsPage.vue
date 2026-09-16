@@ -5,6 +5,7 @@ import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute();
 const rows = ref([]);
@@ -99,6 +100,7 @@ const columns = [
 	{ key: "valuation_source", label: "Источник расчёта" },
 	{ key: "voucher_no", label: "Исходный документ" },
 ];
+const entityFields = computed(() => mergeEntityFields(filterFields.value, columns));
 
 function sourceUrl(row) {
 	const slug = String(row.voucher_type || "")
@@ -144,7 +146,7 @@ onMounted(init);
 		<ListPageHeader title="Движения товаров" />
 		<SmartFilterBar
 			:model-value="filters"
-			:fields="filterFields"
+			:entity-fields="entityFields"
 			view-key="warehouse.movements"
 			@update:model-value="
 				Object.assign(filters, $event);
@@ -155,7 +157,7 @@ onMounted(init);
 		/>
 		<SmartDataTable
 			:rows="rows"
-			:columns="columns"
+			:entity-fields="entityFields"
 			:loading="loading"
 			:error="error"
 			:selectable="false"

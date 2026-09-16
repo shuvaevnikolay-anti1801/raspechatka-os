@@ -129,6 +129,10 @@ Feature branches must edit source files under `frontend/`, but must not commit g
 
 The explicitly assigned integration agent runs the production frontend build after combining PRs and commits the generated assets in the integration commit. This prevents parallel branches from conflicting on hashed bundle names.
 
+## Standard list pages
+
+Before creating or changing a standard Filter → Table → entity-card page, read `docs/list-workspace.md`. Define one `entityFields` descriptor for business-visible fields and derive form, filter, and table presentations from it. Do not maintain parallel `formFields`, `filterFields`, and `tableColumns` arrays for the same entity. Search is a permanent special filter declared by the page, while Frappe DocType metadata may enrich declared fields but must never add UI fields on its own. Use the existing `SmartFilterBar` and `SmartDataTable`, including preference reconciliation and column-order persistence.
+
 ## Frappe data and migrations
 
 - Do not delete or rename a DocType or persisted field without an explicit migration and compatibility plan.

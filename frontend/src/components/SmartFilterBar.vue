@@ -1,10 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { call } from "../api";
+import { deriveFilterFields, reconcileVisible } from "../entityListSchema";
 import { setDocumentFilterMatches, viewDoctypes } from "../listDocumentFilters";
 
 const props = defineProps({
   fields: { type: Array, default: () => [] },
+  entityFields: { type: Array, default: null },
   modelValue: { type: Object, required: true },
   viewKey: { type: String, required: true },
   doctype: { type: String, default: "" },
@@ -13,14 +15,14 @@ const emit = defineEmits(["update:modelValue", "apply", "reset"]);
 const settingsOpen = ref(false), visible = ref([]), bookmarks = ref([]), ready = ref(false), schemaFields = ref([]), schemaLoading = ref(false), schemaError = ref("");
 const documentType = computed(() => props.doctype || viewDoctypes[props.viewKey] || "");
 const preferenceKey = computed(() => `${props.viewKey}.filters`);
+const configuredFields = computed(() => props.entityFields ? deriveFilterFields(props.entityFields) : props.fields.filter((field) => field.key !== "search"));
+const searchDefinition = computed(() => props.entityFields?.find((field) => field.key === "search") || props.fields.find((field) => field.key === "search") || {});
 const fields = computed(() => {
   const schemaByKey = new Map(schemaFields.value.map((field) => [field.key, field]));
-  const configured = props.fields.map((field) => {
+  return configuredFields.value.map((field) => {
     const schemaField = schemaByKey.get(field.key);
     return { ...schemaField, ...field, source: "configured", doctypeField: Boolean(schemaField) };
   });
-  const keys = new Set(configured.map((field) => field.key));
-  return [...configured, ...schemaFields.value.filter((field) => !keys.has(field.key)).map((field) => ({ ...field, source: "doctype", doctypeField: true, default: false }))];
 });
 const shownFields = computed(() => fields.value.filter((field) => visible.value.includes(field.key)));
 const periodFieldPair = computed(() => {
@@ -41,6 +43,7 @@ const operatorOptions = {
 };
 
 function defaults() { return fields.value.filter((field) => field.default !== false).map((field) => field.key); }
+function setSearch(value) { emit("update:modelValue", { ...props.modelValue, search: value }); }
 function setValue(key, value) {
   const next = { ...props.modelValue, [key]: value };
   if (periodFieldPair.value && [periodFieldPair.value.from.key, periodFieldPair.value.to.key].includes(key)) next.__periodPreset = "";
@@ -90,7 +93,7 @@ function dynamicCriteria() {
 }
 async function savePreference(extra = {}) {
   if (!ready.value) return;
-  await call("raspechatka.api.references.save_view_preference", { view_key: preferenceKey.value, settings: JSON.stringify({ visible: visible.value, bookmarks: bookmarks.value, lastFilters: props.modelValue, ...extra }) }, { method: "POST" });
+  await call("raspechatka.api.references.save_view_preference", { view_key: preferenceKey.value, settings: JSON.stringify({ visible: visible.value, schema: fields.value.map((field) => field.key), bookmarks: bookmarks.value, lastFilters: props.modelValue, ...extra }) }, { method: "POST" });
 }
 async function loadSchema() {
   schemaFields.value = []; schemaError.value = "";
@@ -106,9 +109,8 @@ async function loadPreference() {
   visible.value = defaults(); bookmarks.value = []; setDocumentFilterMatches(props.viewKey, null);
   try {
     const preference = await call("raspechatka.api.references.get_view_preference", { view_key: preferenceKey.value });
-    const valid = (preference.visible || []).filter((key) => fields.value.some((field) => field.key === key));
-    if (valid.length) visible.value = valid;
-    bookmarks.value = Array.isArray(preference.bookmarks) ? preference.bookmarks : [];
+    visible.value = reconcileVisible(preference.visible, fields.value, "filter", preference.schema);
+    bookmarks.value = Array.isArray(preference.bookmarks) ? preference.bookmarks.map((bookmark) => ({ ...bookmark, visible: reconcileVisible(bookmark.visible, fields.value, "filter", bookmark.schema) })) : [];
     if (preference.lastFilters) { emit("update:modelValue", { ...props.modelValue, ...resolvePeriodPreset(preference.lastFilters) }); restored = true; }
   } catch (_) {
     // The complete default field set remains available without saved preferences.
@@ -130,14 +132,14 @@ async function apply() {
   await savePreference(); emit("apply");
 }
 async function reset() {
-  const empty = { ...Object.fromEntries(fields.value.flatMap((field) => [[field.key, field.emptyValue ?? ""], [operatorKey(field), defaultOperator(field)]])), __periodPreset: "" };
+  const empty = { search: "", ...Object.fromEntries(fields.value.flatMap((field) => [[field.key, field.emptyValue ?? ""], [operatorKey(field), defaultOperator(field)]])), __periodPreset: "" };
   emit("update:modelValue", empty); setDocumentFilterMatches(props.viewKey, null);
   await savePreference({ lastFilters: empty }); emit("reset");
 }
 async function createBookmark() {
   const name = window.prompt("Название закладки");
   if (!name?.trim()) return;
-  bookmarks.value = [...bookmarks.value, { id: `${Date.now()}`, name: name.trim(), filters: { ...props.modelValue }, visible: [...visible.value] }];
+  bookmarks.value = [...bookmarks.value, { id: `${Date.now()}`, name: name.trim(), filters: { ...props.modelValue }, visible: [...visible.value], schema: fields.value.map((field) => field.key) }];
   await savePreference();
 }
 async function useBookmark(bookmark) {
@@ -157,6 +159,7 @@ onMounted(loadPreference);
     <div class="smart-filter-topline">
       <strong>Фильтр</strong>
       <div class="smart-filter-actions">
+        <input class="smart-filter-search" type="search" :value="modelValue.search || ''" :placeholder="searchDefinition.placeholder || 'Поиск'" aria-label="Поиск" @input="setSearch($event.target.value)" @keyup.enter="apply" />
         <span v-if="schemaLoading" class="filter-schema-state">Поля загружаются…</span>
         <button class="icon-action" type="button" title="Настроить поля" aria-label="Настроить поля фильтра" @click="settingsOpen=!settingsOpen">⚙</button>
         <button class="icon-action" type="button" title="Сохранить закладку" aria-label="Сохранить фильтр как закладку" @click="createBookmark">☆</button>

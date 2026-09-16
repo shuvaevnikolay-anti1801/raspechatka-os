@@ -5,6 +5,7 @@ import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const rows = ref([]),
 	loading = ref(true),
@@ -64,6 +65,7 @@ const filterFields = computed(() => [
 		})),
 	},
 ]);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, columns));
 function reset(values = {}) {
 	Object.keys(form).forEach((k) => delete form[k]);
 	Object.assign(form, {
@@ -170,14 +172,14 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 		>
 		<SmartFilterBar
 			v-model="filters"
-			:fields="filterFields"
+			:entity-fields="entityFields"
 			view-key="clients.base"
 			@apply="load"
 			@reset="load"
 		/>
 		<ReferenceTable
 			:rows="rows"
-			:columns="columns"
+			:entity-fields="entityFields"
 			view-key="clients.base"
 			:loading="loading"
 			:error="error"

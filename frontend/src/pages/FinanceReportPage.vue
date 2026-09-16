@@ -5,6 +5,7 @@ import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute(), loading = ref(true), error = ref(""), data = reactive({}), options = reactive({ entities: [], points: [], groups: [] });
 const filters = ref({ month: new Date().toISOString().slice(0, 7), from_date: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10), to_date: new Date().toISOString().slice(0, 10), business_entity: "", business_point: "", catalog_group: "", search: "" });
@@ -42,6 +43,7 @@ const columns = computed(() => kind.value === "settlements" ? [
   { key: "margin", label: "Рентабельность", number: true, format: percent },
   { key: "profit", label: "Прибыль", number: true, format: money },
 ]);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, columns.value));
 
 async function load() {
   loading.value = true; error.value = "";
@@ -60,7 +62,7 @@ watch(kind, load); onMounted(init);
 <template>
   <section class="page finance-page">
     <ListPageHeader :title="heading" />
-    <SmartFilterBar :key="kind" v-model="filters" :fields="filterFields" :view-key="`finance.${kind}`" @apply="load" @reset="load" />
+    <SmartFilterBar :key="kind" v-model="filters" :entity-fields="entityFields" :view-key="`finance.${kind}`" @apply="load" @reset="load" />
     <div v-if="loading&&(kind==='report'||kind==='overview')" class="table-message"><span class="loader"></span><span>Рассчитываем показатели…</span></div>
     <div v-else-if="error&&(kind==='report'||kind==='overview')" class="table-message error-message"><strong>Не удалось сформировать отчёт</strong><span>{{error}}</span><button @click="load">Повторить</button></div>
     <template v-else-if="kind==='report'||kind==='overview'">
@@ -69,7 +71,7 @@ watch(kind, load); onMounted(init);
     </template>
     <template v-else>
       <div v-if="kind==='profitability'&&!data.source_ready" class="integration-note"><b>Отчёт готов к данным кассы</b><span>Строки появятся после подключения продаж: выручка − возвраты − скидки − себестоимость.</span></div>
-      <SmartDataTable :rows="data.rows||[]" :columns="columns" :row-key="kind==='settlements'?'supplier':'item'" :totals="kind==='settlements'?data.totals:undefined" :view-key="`finance.${kind}`" :loading="loading" :error="error" :selectable="false" empty-text="Измените период или добавьте связанные операции." @retry="load" />
+      <SmartDataTable :rows="data.rows||[]" :entity-fields="entityFields" :row-key="kind==='settlements'?'supplier':'item'" :totals="kind==='settlements'?data.totals:undefined" :view-key="`finance.${kind}`" :loading="loading" :error="error" :selectable="false" empty-text="Измените период или добавьте связанные операции." @retry="load" />
     </template>
   </section>
 </template>

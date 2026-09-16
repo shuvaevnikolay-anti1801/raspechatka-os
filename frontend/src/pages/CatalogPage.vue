@@ -6,6 +6,7 @@ import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const items = ref([]);
 const groups = ref([]);
@@ -97,6 +98,7 @@ const tableColumns = computed(() => [
 	{ key: "stock_uom", label: "Ед. изм.", width: 100 },
 	{ key: "active", label: "Статус", width: 120, format: (value) => (value ? "Активен" : "В архиве") },
 ]);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, tableColumns.value));
 
 async function loadItems() {
 	const requestId = ++itemsRequestId;
@@ -340,7 +342,7 @@ async function initializeCatalog(size) {
 			<div class="catalog-main">
 				<SmartFilterBar
 					:model-value="filters"
-					:fields="filterFields"
+					:entity-fields="entityFields"
 					view-key="catalog.items"
 					@update:model-value="Object.assign(filters, $event)"
 					@apply="applyCatalogFilters"
@@ -348,7 +350,7 @@ async function initializeCatalog(size) {
 				/>
 				<SmartDataTable
 					:rows="items"
-					:columns="tableColumns"
+					:entity-fields="entityFields"
 					view-key="catalog.items"
 					:loading="loading"
 					:error="error"

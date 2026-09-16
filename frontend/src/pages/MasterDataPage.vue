@@ -6,6 +6,7 @@ import AppModal from "../components/AppModal.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { defineEntityFields, deriveFormFields } from "../entityListSchema";
 
 const route = useRoute();
 const reference = computed(() => route.meta.reference || route.params.reference);
@@ -17,7 +18,14 @@ const supplierItem = reactive({ item: "", is_primary: 0, active: 1 });
 
 const yesNo = [{ value: 1, label: "Да" }, { value: 0, label: "Нет" }];
 const configs = {
-  organizations: { title: "Партнёры", description: "Партнёры сети, объединяющие одно или несколько юридических лиц", create: "Добавить партнёра", columns: cols(["organization_name","Партнёр",1],["phone","Телефон"],["email","Email"],["active","Статус"]), fields: [f("organization_name","Наименование","text",1),f("phone","Телефон"),f("email","Email","email"),f("address","Адрес","textarea")] },
+  organizations: { title: "Партнёры", description: "Партнёры сети, объединяющие одно или несколько юридических лиц", create: "Добавить партнёра", entityFields: defineEntityFields([
+    { key: "search", label: "Поиск", placeholder: "Название, телефон или email", form: false, filter: false, table: false },
+    { key: "organization_name", label: "Партнёр", searchable: true, primary: true, required: true },
+    { key: "phone", label: "Телефон", searchable: true },
+    { key: "email", label: "Email", searchable: true, type: "email" },
+    { key: "address", label: "Адрес", type: "textarea", table: { default: false } },
+    { key: "active", label: "Статус", form: false, type: "select", allLabel: "Любой статус", options: [{ value: "1", label: "Активные" }, { value: "0", label: "Неактивные" }] },
+  ]) },
   clients: { title: "Клиенты", description: "Единая клиентская база всей сети", create: "Добавить клиента", columns: cols(["client_name","ФИО",1],["phone","Телефон"],["registration_point","Точка регистрации"],["personal_data_consent","Персональные данные"],["marketing_consent","Рассылка"],["active","Статус"]), fields: [f("last_name","Фамилия"),f("first_name","Имя","text",1),f("middle_name","Отчество"),f("phone","Телефон","text",1),f("email","Email","email"),f("registration_point","Точка регистрации","link",1,"points","point_name"),f("personal_data_consent","Согласие на обработку данных","check"),f("marketing_consent","Согласие на рассылку","check"),f("notes","Комментарий","textarea")] },
   suppliers: { title: "Поставщики", description: "Общесетевые и собственные поставщики ИП", create: "Добавить поставщика", columns: cols(["supplier_name","Поставщик",1],["supplier_type","Тип"],["scope","Доступность"],["business_entity","Владелец-ИП"],["inn","ИНН"],["active","Статус"]), fields: [f("supplier_name","Наименование","text",1),f("supplier_type","Тип","select",1,[{value:"Company",label:"Компания"},{value:"Individual Entrepreneur",label:"ИП"},{value:"Individual",label:"Физлицо"}]),f("scope","Доступность","select",1,[{value:"Network",label:"Вся сеть"},{value:"Business Entity",label:"Собственный у ИП"}]),f("business_entity","Владелец-ИП","link",0,"entities","short_name","scope","Business Entity"),f("legal_name","Полное наименование"),f("inn","ИНН"),f("kpp","КПП"),f("ogrn","ОГРН"),f("ogrnip","ОГРНИП"),f("phone","Телефон"),f("email","Email","email"),f("website","Сайт"),f("contact_name","Основное контактное лицо"),f("contact_position","Должность"),f("contact_phone","Телефон контактного лица"),f("contact_email","Email контактного лица","email"),f("notes","Комментарий","textarea")] },
   employees: { title: "Сотрудники", description: "Кадровый учёт трудоустроенных сотрудников", create: "Добавить сотрудника", columns: cols(["employee_name","ФИО",1],["business_entity","Работодатель"],["position","Должность"],["employment_type","Оформление"],["phone","Телефон"],["active","Статус"]), fields: [f("last_name","Фамилия","text",1),f("first_name","Имя","text",1),f("middle_name","Отчество"),f("phone","Телефон"),f("email","Email","email"),f("birth_date","Дата рождения","date"),f("gender","Пол","select",0,[{value:"Мужской",label:"Мужской"},{value:"Женский",label:"Женский"}]),f("business_entity","Работодатель-ИП","link",1,"entities","short_name"),f("position","Должность","link",1,"positions","position_name"),f("employment_type","Тип оформления","select",1,[{value:"Трудовой договор",label:"Трудовой договор"},{value:"ГПХ",label:"ГПХ"},{value:"Самозанятый",label:"Самозанятый"},{value:"ИП",label:"ИП"},{value:"Без оформления",label:"Без оформления"}]),f("hire_date","Дата приёма","date"),f("dismissal_date","Дата увольнения","date"),f("notes","Комментарий","textarea")] },
@@ -33,14 +41,19 @@ const configs = {
 function cols(...items){ return items.map(([key,label,primary])=>({key,label,primary:!!primary})); }
 function f(key,label,type="text",required=0,values=null,labelKey=null,depends=null,equals=null){ return {key,label,type,required:!!required,values,labelKey,depends,equals}; }
 const config = computed(()=>configs[reference.value]);
-const filterFields = computed(()=>[
-  {key:"search",label:"Поиск",placeholder:"Поиск по справочнику",wide:true},
-  {key:"active",label:"Статус",type:"select",allLabel:"Любой статус",options:[{value:"1",label:"Активные"},{value:"0",label:"Неактивные"}]},
-]);
+function legacyDescriptor(current) {
+  const byKey = new Map();
+  for (const field of current.fields || []) byKey.set(field.key, { ...field, form: true });
+  for (const column of current.columns || []) byKey.set(column.key, { ...(byKey.get(column.key) || { form: false }), ...column });
+  if (byKey.has("active")) byKey.set("active", { ...byKey.get("active"), form: false });
+  if (!byKey.has("active")) byKey.set("active", { key: "active", label: "Статус", form: false, type: "select", options: [{ value: "1", label: "Активные" }, { value: "0", label: "Неактивные" }] });
+  return defineEntityFields([{ key: "search", label: "Поиск", placeholder: "Поиск по справочнику", form: false, filter: false, table: false }, ...byKey.values()]);
+}
+const entityFields = computed(() => config.value.entityFields || legacyDescriptor(config.value));
 const areas = {organizations:"references.network",clients:"references.clients",suppliers:"references.suppliers",employees:"references.employees",positions:"references.employees","catalog-groups":"references.catalog","catalog-units":"references.catalog","price-types":"references.catalog","financial-articles":"references.finance","payment-methods":"references.finance","pos-workplaces":"references.finance","cash-registers":"references.finance"};
 const canEdit = computed(()=>canAccess(areas[reference.value],"Edit"));
 const canAdmin = computed(()=>canAccess(areas[reference.value],"Admin"));
-const visibleFields = computed(()=> (config.value.fields||[]).filter(field=>!field.depends || form[field.depends]===field.equals));
+const visibleFields = computed(()=> deriveFormFields(entityFields.value).filter(field=>!field.depends || form[field.depends]===field.equals));
 function reset(values={}){ Object.keys(form).forEach(k=>delete form[k]); Object.assign(form,{active:1,...values}); }
 function fieldOptions(field){ return Array.isArray(field.values) ? field.values : (options[field.values]||[]).map(v=>({value:v.name,label:v[field.labelKey]})); }
 async function load(){ loading.value=true; error.value=""; try{ rows.value=await call("raspechatka.api.references.get_reference_list",{reference:reference.value,...filters.value}); }catch(e){error.value=e.message;}finally{loading.value=false;} }
@@ -57,8 +70,8 @@ watch(reference,()=>{detail.value=null;filters.value={search:"",active:""};load(
 </script>
 
 <template><section class="page reference-page"><ListPageHeader :title="config.title"><template #actions><button v-if="config.create&&canEdit" class="button button-primary" @click="create">＋ {{ config.create }}</button></template></ListPageHeader>
-<SmartFilterBar v-model="filters" :key="reference" :fields="filterFields" :view-key="`references.${reference}`" @apply="load" @reset="load" />
-<ReferenceTable :key="reference" :rows="rows" :columns="config.columns" :view-key="`references.${reference}`" :loading="loading" :error="error" @open="open" @retry="load" />
+<SmartFilterBar v-model="filters" :key="reference" :entity-fields="entityFields" :view-key="`references.${reference}`" @apply="load" @reset="load" />
+<ReferenceTable :key="reference" :rows="rows" :entity-fields="entityFields" :view-key="`references.${reference}`" :loading="loading" :error="error" @open="open" @retry="load" />
 <AppModal v-if="detail!==null" :title="config.title" wide @close="detail=null"><form class="editor-form" @submit.prevent="save"><div class="form-section"><h3>Основное</h3><div class="form-grid"><label v-for="field in visibleFields" :key="field.key" :class="{'span-3':field.type==='textarea'}">{{ field.label }}<textarea v-if="field.type==='textarea'" v-model="form[field.key]" rows="2"></textarea><select v-else-if="field.type==='select'||field.type==='link'" v-model="form[field.key]" :required="field.required"><option value="">Не выбрано</option><option v-for="o in fieldOptions(field)" :key="o.value" :value="o.value">{{ o.label }}</option></select><input v-else-if="field.type==='check'" v-model="form[field.key]" type="checkbox" :true-value="1" :false-value="0" /><input v-else v-model="form[field.key]" :type="field.type" :required="field.required" /></label><label class="check-field"><input v-model="form.active" type="checkbox" :true-value="1" :false-value="0" /> Активно</label></div></div>
 <div v-if="reference==='clients'" class="form-section"><h3>Мессенджеры</h3><div class="form-grid"><label v-for="m in ['Telegram','WhatsApp','MAX']" :key="m">{{m}}<input v-model="form[`messenger_${m}`]" /></label></div></div>
 <template v-if="reference==='suppliers'&&form.name"><div class="form-section"><h3>Банковские счета</h3><div class="compact-list"><div v-for="a in detail.bank_accounts" :key="a.name"><b>{{a.bank_name}}</b><span>{{a.settlement_account}}</span></div></div><div v-if="canEdit" class="inline-form bank-inline"><input v-model="supplierBank.bank_name" placeholder="Банк" /><input v-model="supplierBank.bic" placeholder="БИК" /><input v-model="supplierBank.settlement_account" placeholder="Расчётный счёт" /><button type="button" class="button button-secondary" @click="addBank">Добавить</button></div></div><div class="form-section"><h3>Товары поставщика</h3><div class="compact-list"><div v-for="i in detail.items" :key="i.name"><b>{{i.item}}</b><span>{{i.is_primary?'Основной':'Дополнительный'}}</span></div></div><div v-if="canEdit" class="inline-form"><select v-model="supplierItem.item"><option value="">Выберите товар</option><option v-for="p in options.products" :key="p.name" :value="p.name">{{p.item_name}}</option></select><label class="check-field"><input v-model="supplierItem.is_primary" type="checkbox" :true-value="1" :false-value="0" />Основной</label><button type="button" class="button button-secondary" @click="addItem">Связать</button></div></div></template><p v-if="formError" class="form-error">{{formError}}</p></form>

@@ -5,6 +5,7 @@ import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const rows = ref([]);
 const loading = ref(true);
@@ -44,6 +45,7 @@ const filterFields = [
 		],
 	},
 ];
+const entityFields = mergeEntityFields(filterFields, columns);
 const availableEntities = computed(() =>
 	options.entities.filter((item) => form.organization && item.organization === form.organization)
 );
@@ -226,14 +228,14 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 		</ListPageHeader>
 		<SmartFilterBar
 			v-model="filters"
-			:fields="filterFields"
+			:entity-fields="entityFields"
 			view-key="references.users"
 			@apply="load"
 			@reset="load"
 		/>
 		<ReferenceTable
 			:rows="rows"
-			:columns="columns"
+			:entity-fields="entityFields"
 			view-key="references.users"
 			:loading="loading"
 			:error="error"

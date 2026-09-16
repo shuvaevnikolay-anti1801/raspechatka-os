@@ -5,6 +5,7 @@ import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute();
 const loading = ref(true);
@@ -82,6 +83,8 @@ const leaveColumns = computed(() => [
   { key: "status", label: "Статус", width: 120 },
   { key: "amount", label: "Сумма", width: 120, format: money },
 ]);
+const sectionColumns = computed(() => section.value === "employees" ? employeeColumns.value : section.value === "payroll" ? payrollColumns : section.value === "hr" ? leaveColumns.value : []);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, sectionColumns.value));
 
 function money(value) { return `${Number(value || 0).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`; }
 function isoDate(day) { return `${month.value}-${String(day).padStart(2, "0")}`; }
@@ -175,7 +178,7 @@ onMounted(load);
         <a v-if="section==='hr'" class="button button-primary" href="/app/employee-leave">Оформить отпуск</a>
       </template>
     </ListPageHeader>
-    <SmartFilterBar v-model="filterModel" :fields="filterFields" :view-key="`team.${section}`" @apply="load" @reset="load" />
+    <SmartFilterBar v-model="filterModel" :entity-fields="entityFields" :view-key="`team.${section}`" @apply="load" @reset="load" />
     <div v-if="error" class="team-error">{{ error }} <button @click="load">Повторить</button></div>
     <div v-if="loading" class="team-loading">Загружаем данные сотрудников…</div>
     <template v-else>
@@ -187,7 +190,7 @@ onMounted(load);
       </div>
 
       <div v-if="section==='employees'" class="team-panel">
-        <SmartDataTable :rows="data.employees" :columns="employeeColumns" view-key="team.employees" :selectable="false" empty-title="Сотрудников пока нет" empty-text="Создайте первую кадровую карточку." />
+        <SmartDataTable :rows="data.employees" :entity-fields="entityFields" view-key="team.employees" :selectable="false" empty-title="Сотрудников пока нет" empty-text="Создайте первую кадровую карточку." />
       </div>
 
       <div v-else-if="section==='schedule'" class="team-panel schedule-panel">
@@ -218,7 +221,7 @@ onMounted(load);
         <div class="panel-title payroll-controls"><div><h2>Расчёт зарплаты</h2><p>Факт часов и личная выручка берутся из закрытых кассовых смен.</p></div><label>С <input v-model="payrollStart" type="date"></label><label>По <input v-model="payrollEnd" type="date"></label></div>
         <div v-if="!payroll" class="team-empty"><b>Выберите точку и период, затем нажмите «Рассчитать»</b><span>Сохранение создаёт ведомость без проведения выплаты.</span></div>
         <template v-else>
-          <SmartDataTable :rows="payroll.rows" :columns="payrollColumns" view-key="team.payroll" :selectable="false" empty-title="Нет данных за период" />
+          <SmartDataTable :rows="payroll.rows" :entity-fields="entityFields" view-key="team.payroll" :selectable="false" empty-title="Нет данных за период" />
           <div class="totals"><span>Начислено <b>{{ money(payroll.totals.gross) }}</b></span><span>НДФЛ <b>{{ money(payroll.totals.ndfl) }}</b></span><span>К выплате <b>{{ money(payroll.totals.net) }}</b></span><span>Полная стоимость <b>{{ money(payroll.totals.cost) }}</b></span></div>
           <p v-if="payroll.name" class="saved">Ведомость сохранена: {{ payroll.name }}</p>
         </template>
@@ -232,7 +235,7 @@ onMounted(load);
 
       <div v-else class="team-panel">
         <div class="panel-title"><div><h2>Кадры и документы</h2><p>Трудоустройство, отпуска и кадровые документы сотрудников.</p></div><router-link class="button" to="/references/employees">Карточки сотрудников</router-link></div>
-        <SmartDataTable :rows="hr.leaves" :columns="leaveColumns" view-key="team.hr.leaves" :selectable="false" empty-title="Отпусков пока нет" empty-text="Оформите отпуск, компенсацию или больничный." />
+        <SmartDataTable :rows="hr.leaves" :entity-fields="entityFields" view-key="team.hr.leaves" :selectable="false" empty-title="Отпусков пока нет" empty-text="Оформите отпуск, компенсацию или больничный." />
       </div>
     </template>
   </section>

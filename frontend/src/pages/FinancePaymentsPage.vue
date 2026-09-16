@@ -5,6 +5,7 @@ import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const rows = ref([]);
 const loading = ref(true);
@@ -63,6 +64,7 @@ const listColumns = [
 	{ key: "amount", label: "Сумма", format: money, number: true, width: 140 },
 	{ key: "processing_status", label: "Статус", width: 170 },
 ];
+const entityFields = computed(() => mergeEntityFields(filterFields.value, listColumns));
 
 async function load() {
 	loading.value = true;
@@ -152,10 +154,10 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			<article><span>РАСХОД</span><b>{{ money(totals.expense) }}</b></article>
 			<article :class="{ accent: totals.net >= 0 }"><span>ДЕНЕЖНЫЙ ПОТОК</span><b>{{ money(totals.net) }}</b></article>
 		</div>
-		<SmartFilterBar :model-value="filters" :fields="filterFields" view-key="finance.payments" @update:model-value="Object.assign(filters, $event)" @apply="load" @reset="load" />
+		<SmartFilterBar :model-value="filters" :entity-fields="entityFields" view-key="finance.payments" @update:model-value="Object.assign(filters, $event)" @apply="load" @reset="load" />
 		<SmartDataTable
 			:rows="rows"
-			:columns="listColumns"
+			:entity-fields="entityFields"
 			:totals="{ amount: totals.net }"
 			view-key="finance.payments"
 			:loading="loading"

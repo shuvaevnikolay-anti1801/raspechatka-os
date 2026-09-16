@@ -7,6 +7,7 @@ import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import PayrollSettingsPanel from "../components/PayrollSettingsPanel.vue";
+import { mergeEntityFields } from "../entityListSchema";
 
 const route = useRoute();
 const reference = computed(() => route.meta.reference || route.params.reference || "entities");
@@ -76,6 +77,7 @@ const filterFields = computed(() => [
   { key: "search", label: "Поиск", placeholder: "Поиск по справочнику", wide: true },
   { key: "active", label: "Статус", type: "select", allLabel: "Любой статус", options: [{ value: "1", label: "Активные" }, { value: "0", label: reference.value === "entities" ? "Архивные" : "Неактивные" }] },
 ]);
+const entityFields = computed(() => mergeEntityFields(filterFields.value, config.value.columns));
 const title = computed(() => detail.value ? (form.short_name || form.point_name || form.warehouse_name) : config.value?.create);
 const entityAccounts = computed(() => options.bank_accounts.filter((account) => account.business_entity === form.business_entity));
 const warehouseLocations = computed(() => (detail.value?.cabinets || []).flatMap((cabinet) => cabinet.locations || []));
@@ -234,9 +236,9 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 <template>
   <section class="page reference-page">
     <ListPageHeader :title="config.title"><template #actions><button v-if="config.create" class="button button-primary" type="button" @click="newReference">＋ {{ config.create }}</button></template></ListPageHeader>
-    <SmartFilterBar v-model="filters" :fields="filterFields" :view-key="`references.${reference}`" @apply="loadRows" @reset="loadRows" />
+    <SmartFilterBar v-model="filters" :entity-fields="entityFields" :view-key="`references.${reference}`" @apply="loadRows" @reset="loadRows" />
 
-    <ReferenceTable :key="reference" :rows="rows" :columns="config.columns" :view-key="`references.${reference}`" :loading="loading" :error="error" @open="openReference" @retry="loadRows" />
+    <ReferenceTable :key="reference" :rows="rows" :entity-fields="entityFields" :view-key="`references.${reference}`" :loading="loading" :error="error" @open="openReference" @retry="loadRows" />
 
     <AppModal v-if="detail !== null" :title="title || config.title" wide @close="detail = null">
       <form v-if="reference === 'entities'" class="editor-form" @submit.prevent="saveReference">
