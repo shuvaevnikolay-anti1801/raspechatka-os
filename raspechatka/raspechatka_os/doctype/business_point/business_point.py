@@ -76,7 +76,24 @@ class BusinessPoint(Document):
 				.insert(ignore_permissions=True)
 				.name
 			)
-		if not frappe.db.exists("Cash Register", {"business_point": self.name}):
+		register = frappe.db.get_value("Cash Register", {"business_point": self.name}, "name")
+		if not register:
+			register = frappe.db.get_value("Cash Register", {"pos_workplace": workplace}, "name")
+		if register:
+			register_point = frappe.db.get_value("Cash Register", register, "business_point")
+			if register_point and register_point != self.name:
+				frappe.throw(_("Кассовое рабочее место уже связано с другой точкой продаж"))
+			frappe.db.set_value(
+				"Cash Register",
+				register,
+				{
+					"business_point": self.name,
+					"pos_workplace": workplace,
+					"active": self.active,
+				},
+				update_modified=False,
+			)
+		else:
 			frappe.get_doc(
 				{
 					"doctype": "Cash Register",
