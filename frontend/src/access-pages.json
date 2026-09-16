@@ -40,7 +40,10 @@
     "label": "Продукт",
     "order": 40,
     "pages": [
-      { "area": "page.catalog", "label": "Товары и Цены", "route": "/catalog", "legacy_area": "references.catalog", "order": 10 }
+      { "area": "page.catalog", "label": "Каталог", "route": "/catalog", "legacy_area": "references.catalog", "order": 10 },
+      { "area": "page.catalog.assortment", "label": "Ассортимент точек", "route": "/catalog/assortment", "legacy_area": "page.catalog", "order": 20 },
+      { "area": "page.catalog.prices", "label": "Цены", "route": "/catalog/prices", "legacy_area": "page.catalog", "order": 30 },
+      { "area": "page.catalog.minimum-stock", "label": "Минимальные остатки", "route": "/catalog/minimum-stock", "legacy_area": "page.catalog", "order": 40 }
     ]
   },
   {

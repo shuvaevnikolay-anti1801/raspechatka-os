@@ -335,6 +335,7 @@ def get_catalog_item(name=None, item_type="Product"):
 def save_catalog_item(data):
 	data = frappe.parse_json(data)
 	require_access("page.catalog", "write" if data.get("name") else "create")
+	is_new = not data.get("name")
 	doc = frappe.get_doc("Catalog Item", data["name"]) if data.get("name") else frappe.new_doc("Catalog Item")
 	if data.get("default_supplier") and not frappe.db.exists("Catalog Supplier", {"name": data.get("default_supplier"), **_supplier_filters()}):
 		frappe.throw("Поставщик недоступен", frappe.PermissionError)
@@ -363,6 +364,8 @@ def save_catalog_item(data):
 	doc.save(ignore_permissions=True)
 	if "assortments" in data:
 		_save_assortments(doc.name, data.get("assortments") or [])
+	elif is_new:
+		_create_default_assortments(doc.name)
 	return {"name": doc.name}
 
 
@@ -564,4 +567,27 @@ def _save_assortments(item, rows):
 			"notes",
 		):
 			doc.set(fieldname, row.get(fieldname))
+		doc.save(ignore_permissions=True)
+
+
+
+def _create_default_assortments(item):
+	"""Preserve the established default: a new item is enabled at every accessible active point."""
+	scope = get_scope()
+	filters = {"active": 1}
+	if not scope["global"]:
+		filters["name"] = ["in", scope.get("points") or ["__none__"]]
+	points = frappe.get_all("Business Point", filters=filters, pluck="name")
+	for point in points:
+		warehouse = frappe.db.get_value(
+			"Catalog Warehouse", {"business_point": point, "active": 1}, "name", order_by="warehouse_name asc"
+		)
+		doc = frappe.new_doc("Catalog Assortment")
+		doc.update({
+			"item": item,
+			"business_point": point,
+			"enabled": 1,
+			"visible_in_pos": 1,
+			"default_warehouse": warehouse,
+		})
 		doc.save(ignore_permissions=True)

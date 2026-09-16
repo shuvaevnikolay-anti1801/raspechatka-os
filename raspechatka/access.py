@@ -460,7 +460,6 @@ def _sync_missing_page_rules(pages):
 	legacy_levels = {
 		(row.role, row.access_area): row.access_level
 		for row in doc.rules
-		if not row.access_area.startswith("page.")
 	}
 	changed = False
 	for role in get_matrix_roles():

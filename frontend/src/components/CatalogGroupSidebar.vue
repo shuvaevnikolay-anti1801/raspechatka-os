@@ -53,10 +53,6 @@ const rows = computed(() => {
 	return result;
 });
 
-const total = computed(() =>
-	props.groups.reduce((sum, group) => sum + Number(group.direct_item_count || 0), 0),
-);
-
 function toggle(group) {
 	const next = new Set(expanded.value);
 	if (next.has(group.name)) next.delete(group.name);
@@ -90,7 +86,7 @@ watch(
 		</div>
 		<div class="group-tree">
 			<button class="group-row group-row--all" :class="{ active: !selected }" type="button" @click="emit('select', '')">
-				<span class="group-icon">▦</span><span class="group-title">Все позиции</span><span class="group-count">{{ total }}</span>
+				<span class="group-icon">▦</span><span class="group-title">Все позиции</span>
 			</button>
 			<div v-for="group in rows" :key="group.name" class="group-entry">
 				<button
@@ -112,7 +108,6 @@ watch(
 				>
 					<span class="group-icon" :class="{ 'has-children': group.hasChildren }">{{ group.hasChildren ? "" : "⌑" }}</span>
 					<span class="group-title">{{ group.group_name }}</span>
-					<span class="group-count">{{ group.item_count || 0 }}</span>
 				</button>
 				<button v-if="canEdit" class="group-edit" type="button" title="Изменить группу" @click.stop="emit('edit', group)">•••</button>
 			</div>
@@ -121,7 +116,7 @@ watch(
 </template>
 
 <style scoped>
-.group-panel { width: 270px; min-width: 270px; align-self: stretch; border: 1px solid var(--border); border-radius: 16px; background: #fff; overflow: hidden; }
+.group-panel { width: 220px; min-width: 220px; align-self: stretch; border: 1px solid var(--border); border-radius: 16px; background: #fff; overflow: hidden; }
 .group-panel__head { display: flex; align-items: center; justify-content: space-between; padding: 17px 16px 13px; border-bottom: 1px solid var(--border); }
 .group-panel__head h2 { margin: 2px 0 0; font-size: 17px; }
 .group-panel__eyebrow { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -136,7 +131,6 @@ watch(
 .group-icon.has-children { width: 14px; }
 .group-toggle { position: absolute; z-index: 2; top: 9px; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: #77826b; cursor: pointer; }
 .group-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.group-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .group-edit { position: absolute; right: 7px; top: 8px; width: 27px; height: 25px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; }
 .group-entry:hover .group-edit, .group-edit:focus { opacity: 1; }
 @media (max-width: 900px) { .group-panel { width: 100%; min-width: 0; } .group-tree { max-height: 260px; } }
