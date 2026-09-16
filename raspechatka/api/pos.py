@@ -3,11 +3,13 @@ from __future__ import annotations
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
+from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
 from raspechatka.pricing import resolve_item_price
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_bootstrap(workplace_code=None):
 	"""Return the cashier, point rules and point-specific catalog for POS."""
 	if frappe.session.user == "Guest":

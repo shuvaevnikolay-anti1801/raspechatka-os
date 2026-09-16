@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import cint, get_url, now_datetime
 
 from raspechatka.access import get_matrix_role_rows, get_scope, require_access
+from raspechatka.access_contract import access_contract
 
 
 def _require_admin():
@@ -233,6 +234,7 @@ def get_user_options():
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.references.users", action="admin", scope="user")
 def save_user_profile(data):
 	_require_admin()
 	data = frappe.parse_json(data)

@@ -8,6 +8,7 @@ from frappe.utils import cint, flt, get_datetime, now_datetime
 
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import sales as sales_api
+from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_rules
 
 
@@ -143,6 +144,7 @@ def _touch(connection, error=None):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def get_bootstrap(device_id, token, cashier_id=None):
 	"""Bootstrap a Windows register from the point chosen in POS Connection."""
 	connection = _authenticate(device_id, token)

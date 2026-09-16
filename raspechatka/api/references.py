@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import cint
 
 from raspechatka.access import LEVELS, get_access_level, get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.dadata import find_bank, find_party
 from raspechatka.requisites import digits, is_valid_bic, is_valid_inn
 
@@ -176,6 +177,7 @@ def get_reference_detail(reference, name):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="entity")
 def lookup_entity_by_inn(inn):
 	require_access("page.references.entities", "read")
 	inn = digits(inn)
@@ -225,6 +227,7 @@ def lookup_bank_by_bic(bic):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(auth="current_user", action="write", scope="entity")
 def save_reference(reference, data):
 	data = frappe.parse_json(data)
 	config = _get_config(reference)

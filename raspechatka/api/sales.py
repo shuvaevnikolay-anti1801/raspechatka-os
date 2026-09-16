@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import cint, flt, get_datetime, get_first_day, now_datetime, nowdate
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
@@ -127,12 +128,14 @@ def get_connections():
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.integration", action="read", scope="network")
 def get_pos_sales_settings_api():
 	require_access("page.sales.integration", "read")
 	return get_pos_sales_settings()
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.sales.integration", action="write", scope="network")
 def save_pos_sales_settings(data):
 	require_access("page.sales.integration", "write")
 	if not get_scope()["global"]:
