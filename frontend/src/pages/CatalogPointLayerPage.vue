@@ -1,0 +1,165 @@
+<script setup>
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { call, canAccess } from "../api";
+import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
+import ListPageHeader from "../components/ListPageHeader.vue";
+
+const route = useRoute();
+const layer = computed(() => route.meta.layer || "assortment");
+const config = computed(() => ({
+	assortment: { title: "Ассортимент точек", area: "page.catalog.assortment" },
+	prices: { title: "Цены", area: "page.catalog.prices" },
+	minimum_stock: { title: "Минимальные остатки", area: "page.catalog.minimum-stock" },
+}[layer.value]));
+const options = reactive({ points: [], groups: [], price_types: [] });
+const filters = reactive({ business_point: "", catalog_group: "", search: "" });
+const rows = ref([]);
+const loading = ref(false);
+const error = ref("");
+const saving = ref("");
+const canEdit = computed(() => canAccess(config.value.area, "Edit"));
+
+async function loadOptions() {
+	const result = await call("raspechatka.api.catalog_layers.get_options", { layer: layer.value });
+	Object.assign(options, result);
+	if (!filters.business_point) filters.business_point = options.points[0]?.name || "";
+}
+
+async function loadRows() {
+	if (!filters.business_point) { rows.value = []; return; }
+	loading.value = true;
+	error.value = "";
+	try {
+		rows.value = await call("raspechatka.api.catalog_layers.get_rows", {
+			layer: layer.value,
+			business_point: filters.business_point,
+			catalog_group: filters.catalog_group,
+			search: filters.search,
+		});
+	} catch (exception) { error.value = exception.message; }
+	finally { loading.value = false; }
+}
+
+async function saveAssortment(row) {
+	saving.value = row.name;
+	try {
+		await call("raspechatka.api.catalog_layers.set_assortment", {
+			business_point: filters.business_point, item: row.name,
+			enabled: row.enabled ? 1 : 0, visible_in_pos: row.visible_in_pos ? 1 : 0,
+		}, { method: "POST" });
+		if (!row.enabled) row.visible_in_pos = 0;
+	} catch (exception) { error.value = exception.message; await loadRows(); }
+	finally { saving.value = ""; }
+}
+
+async function bulk(enabled) {
+	saving.value = "bulk";
+	try {
+		await call("raspechatka.api.catalog_layers.bulk_set_assortment", {
+			business_point: filters.business_point, catalog_group: filters.catalog_group, enabled,
+		}, { method: "POST" });
+		await loadRows();
+	} catch (exception) { error.value = exception.message; }
+	finally { saving.value = ""; }
+}
+
+async function savePrice(row) {
+	saving.value = row.name;
+	try {
+		await call("raspechatka.api.catalog_layers.save_point_price", {
+			business_point: filters.business_point, item: row.name, rate: row.rate,
+			price_type: row.price_type, uom: row.stock_uom,
+		}, { method: "POST" });
+		await loadRows();
+	} catch (exception) { error.value = exception.message; }
+	finally { saving.value = ""; }
+}
+
+async function saveMinimum(row) {
+	saving.value = row.row_key;
+	try {
+		await call("raspechatka.api.catalog_layers.save_minimum_stock", {
+			business_point: filters.business_point, item: row.name, warehouse: row.warehouse,
+			minimum_stock: row.minimum_stock, reorder_quantity: row.reorder_quantity,
+		}, { method: "POST" });
+		await loadRows();
+	} catch (exception) { error.value = exception.message; }
+	finally { saving.value = ""; }
+}
+
+function selectGroup(name) { filters.catalog_group = name; loadRows(); }
+let searchTimer;
+watch(() => filters.search, () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadRows, 250); });
+watch(() => filters.business_point, loadRows);
+watch(layer, async () => { filters.catalog_group = ""; await loadOptions(); await loadRows(); });
+onMounted(async () => { try { await loadOptions(); await loadRows(); } catch (exception) { error.value = exception.message; } });
+</script>
+
+<template>
+	<section class="page layer-page">
+		<ListPageHeader :title="config.title" />
+		<div class="layer-controls">
+			<label>Точка продаж
+				<select v-model="filters.business_point">
+					<option v-for="point in options.points" :key="point.name" :value="point.name">{{ point.point_name }}</option>
+				</select>
+			</label>
+			<label>Поиск<input v-model="filters.search" placeholder="Название, код или артикул" /></label>
+			<div v-if="layer === 'assortment' && canEdit" class="bulk-actions">
+				<button class="button button-secondary" :disabled="saving" @click="bulk(1)">Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
+				<button class="button button-secondary" :disabled="saving" @click="bulk(0)">Выключить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
+			</div>
+		</div>
+		<p v-if="error" class="form-error">{{ error }}</p>
+		<div class="layer-workspace">
+			<CatalogGroupSidebar :groups="options.groups" :selected="filters.catalog_group" @select="selectGroup" />
+			<div class="layer-table-wrap">
+				<table class="layer-table">
+					<thead><tr><th>Позиция</th><th>Тип / группа</th>
+						<template v-if="layer === 'assortment'"><th>Доступен</th><th>Видим в POS</th></template>
+						<template v-else-if="layer === 'prices'"><th>Действующая цена</th><th>Источник</th><th></th></template>
+						<template v-else><th>Склад</th><th>Минимум</th><th>Пополнить на</th><th></th></template>
+					</tr></thead>
+					<tbody>
+						<tr v-for="row in rows" :key="row.row_key || row.name">
+							<td><strong>{{ row.item_name }}</strong><small>{{ row.item_code || row.name }}</small></td>
+							<td>{{ row.item_type }}<small>{{ row.catalog_group || "Без группы" }}</small></td>
+							<template v-if="layer === 'assortment'">
+								<td><input v-model="row.enabled" type="checkbox" :disabled="!canEdit || saving === row.name" :true-value="1" :false-value="0" @change="saveAssortment(row)" /></td>
+								<td><input v-model="row.visible_in_pos" type="checkbox" :disabled="!canEdit || !row.enabled || saving === row.name" :true-value="1" :false-value="0" @change="saveAssortment(row)" /></td>
+							</template>
+							<template v-else-if="layer === 'prices'">
+								<td><input v-model.number="row.rate" type="number" min="0" step="0.01" :disabled="!canEdit" /> {{ row.currency }}</td>
+								<td>{{ row.price_source === "Point" ? "Точка" : row.price_source === "Network" ? "Сеть" : row.price_source === "Variant Parent" ? "Основной товар" : "Нет цены" }}</td>
+								<td><button v-if="canEdit" class="button button-primary" :disabled="saving === row.name" @click="savePrice(row)">Сохранить override</button></td>
+							</template>
+							<template v-else>
+								<td>{{ row.warehouse_name }}<small v-if="row.is_assortment_warehouse">Склад ассортимента</small></td>
+								<td><input v-model.number="row.minimum_stock" type="number" min="0" step="any" :disabled="!canEdit" /></td>
+								<td><input v-model.number="row.reorder_quantity" type="number" min="0" step="any" :disabled="!canEdit" /></td>
+								<td><button v-if="canEdit" class="button button-primary" :disabled="!row.warehouse || saving === row.row_key" @click="saveMinimum(row)">Сохранить</button></td>
+							</template>
+						</tr>
+						<tr v-if="!loading && !rows.length"><td colspan="7">Нет данных для выбранной точки и фильтра.</td></tr>
+					</tbody>
+				</table>
+				<p v-if="loading" class="muted-copy">Загрузка…</p>
+			</div>
+		</div>
+	</section>
+</template>
+
+<style scoped>
+.layer-controls { display:flex; align-items:end; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.layer-controls label { display:grid; gap:5px; min-width:240px; font-size:12px; color:var(--muted); }
+.bulk-actions { display:flex; gap:8px; margin-left:auto; }
+.layer-workspace { display:flex; align-items:flex-start; gap:16px; min-width:0; }
+.layer-table-wrap { flex:1; min-width:0; overflow:auto; border:1px solid var(--border); border-radius:14px; background:#fff; }
+.layer-table { width:100%; border-collapse:collapse; }
+.layer-table th,.layer-table td { padding:11px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+.layer-table th { color:var(--muted); font-size:12px; background:#fafbf9; }
+.layer-table td small { display:block; margin-top:3px; color:var(--muted); }
+.layer-table input[type="number"],.layer-table select { min-width:120px; }
+@media (max-width:900px) { .layer-workspace{flex-direction:column}.bulk-actions{margin-left:0}.layer-table-wrap{width:100%} }
+</style>
