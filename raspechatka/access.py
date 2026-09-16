@@ -479,7 +479,7 @@ def _sync_missing_page_rules(pages):
 				"rules",
 				{"role": role, "access_area": page["area"], "access_level": level},
 			)
-			existing.add(key)
+			existing[key] = doc.rules[-1]
 			changed = True
 	if changed:
 		doc.save(ignore_permissions=True)
