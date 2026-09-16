@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from raspechatka import access
 from raspechatka.api import catalog_layers
 
 
@@ -74,3 +75,33 @@ class TestCatalogLayerContracts(TestCase):
 		root = Path(__file__).resolve().parents[1]
 		layer_source = (root / "api/catalog_layers.py").read_text(encoding="utf-8")
 		self.assertNotIn("local_sale_price", layer_source)
+
+
+
+class TestAccessPageMigration(TestCase):
+	def test_new_catalog_pages_copy_legacy_page_level_without_set_operations(self):
+		legacy = SimpleNamespace(
+			role="Manager", access_area="page.catalog", access_level="Edit"
+		)
+		rules = [legacy]
+		doc = SimpleNamespace(rules=rules, save=Mock())
+
+		def append(_field, values):
+			rules.append(SimpleNamespace(**values))
+
+		doc.append = append
+		fake_frappe = SimpleNamespace(get_single=Mock(return_value=doc))
+		pages = [{
+			"area": "page.catalog.assortment",
+			"legacy_area": "page.catalog",
+		}]
+		with (
+			patch.object(access, "frappe", fake_frappe),
+			patch.object(access, "get_matrix_roles", return_value=["Manager"]),
+			patch.object(access, "_required_page_level", return_value=None),
+		):
+			access._sync_missing_page_rules(pages)
+
+		self.assertEqual(rules[-1].access_area, "page.catalog.assortment")
+		self.assertEqual(rules[-1].access_level, "Edit")
+		doc.save.assert_called_once_with(ignore_permissions=True)
