@@ -51,7 +51,6 @@ const typeLabels = {
 	Bundle: "Комплект",
 	Variant: "Модификация",
 };
-const inventoryType = computed(() => ["Product", "Variant"].includes(itemForm.item_type));
 const currentVariants = computed(() =>
 	itemOptions.items.filter((item) => item.variant_of === itemForm.name)
 );
@@ -99,18 +98,8 @@ const filterFields = computed(() => [
 const tableColumns = computed(() => [
 	{ key: "item_type", label: "Тип", width: 130, format: (value) => typeLabels[value] || value },
 	{ key: "item_name", label: "Наименование", primary: true, width: 330 },
-	{
-		key: "catalog_group",
-		label: "Группа",
-		width: 220,
-		displayKey: "catalog_group_label",
-	},
-	{
-		key: "variant_of",
-		label: "Основной товар",
-		width: 220,
-		displayKey: "variant_of_label",
-	},
+	{ key: "catalog_group", label: "Группа", width: 220 },
+	{ key: "variant_of", label: "Основной товар", width: 220 },
 	{ key: "stock_uom", label: "Ед. изм.", width: 100 },
 	{
 		key: "active",
@@ -184,9 +173,10 @@ async function saveItem() {
 	saving.value = true;
 	editorError.value = "";
 	try {
+		const { prices, assortments, reorder_rules, ...catalogData } = JSON.parse(JSON.stringify(itemForm));
 		const result = await call(
 			"raspechatka.api.frontend.save_catalog_item",
-			{ data: JSON.stringify(itemForm) },
+			{ data: JSON.stringify(catalogData) },
 			{ method: "POST" }
 		);
 		await loadItems();
@@ -309,17 +299,6 @@ async function changeGroupArchiveState() {
 	} finally {
 		groupSaving.value = false;
 	}
-}
-
-function addPrice() {
-	(itemForm.prices ||= []).push({
-		price_type: itemOptions.price_types[0]?.name || "",
-		business_point: "",
-		uom: itemForm.stock_uom,
-		currency: "RUB",
-		rate: 0,
-		minimum_quantity: 1,
-	});
 }
 
 function addVariantValue() {
@@ -615,10 +594,7 @@ async function initializeCatalog(size) {
 
 				<div class="form-section">
 					<div class="section-heading">
-						<div><h3>Цены</h3></div>
-						<button v-if="canEdit" class="text-button" type="button" @click="addPrice">
-							＋ Добавить цену
-						</button>
+						<div><h3>Правила продажи</h3></div>
 					</div>
 					<label class="check-field compact-check"
 						><input
@@ -629,55 +605,6 @@ async function initializeCatalog(size) {
 						/>
 						Запретить скидки для позиции</label
 					>
-					<div class="editable-rows price-rows">
-						<div v-for="(row, index) in itemForm.prices" :key="index">
-							<select v-model="row.price_type">
-								<option
-									v-for="priceType in itemOptions.price_types"
-									:key="priceType.name"
-									:value="priceType.name"
-								>
-									{{ priceType.price_type_name }}
-								</option>
-							</select>
-							<select v-model="row.business_point">
-								<option value="">Все точки</option>
-								<option
-									v-for="point in itemOptions.points"
-									:key="point.name"
-									:value="point.name"
-								>
-									{{ point.point_name }}
-								</option>
-							</select>
-							<select v-model="row.uom">
-								<option
-									v-for="unit in itemOptions.units"
-									:key="unit.name"
-									:value="unit.name"
-								>
-									{{ unit.unit_name }}
-								</option>
-							</select>
-							<input
-								v-model.number="row.rate"
-								type="number"
-								min="0"
-								step="0.01"
-								placeholder="Цена"
-							/>
-							<input
-								v-model.number="row.minimum_quantity"
-								type="number"
-								min="0.0001"
-								step="any"
-								placeholder="От количества"
-							/>
-							<input v-model="row.valid_from" type="date" title="Действует с" />
-							<input v-model="row.valid_upto" type="date" title="Действует до" />
-							<button type="button" @click="removeRow('prices', index)">×</button>
-						</div>
-					</div>
 				</div>
 
 				<div v-if="itemForm.item_type === 'Bundle'" class="form-section">
@@ -729,95 +656,6 @@ async function initializeCatalog(size) {
 							</button>
 						</div>
 					</div>
-				</div>
-
-				<div class="form-section">
-					<div class="section-heading">
-						<div>
-							<h3>
-								{{
-									inventoryType
-										? "Остатки и доступность в точках"
-										: "Доступность в точках"
-								}}
-							</h3>
-						</div>
-					</div>
-					<div class="point-grid">
-						<article
-							v-for="row in itemForm.assortments"
-							:key="row.business_point"
-							class="point-card"
-						>
-							<header>
-								<strong>{{
-									itemOptions.points.find(
-										(point) => point.name === row.business_point
-									)?.point_name || row.business_point
-								}}</strong
-								><label class="switch-line"
-									><input
-										v-model="row.enabled"
-										type="checkbox"
-										:true-value="1"
-										:false-value="0"
-									/>
-									Доступен</label
-								>
-							</header>
-							<div class="point-card__fields">
-								<label class="check-field"
-									><input
-										v-model="row.visible_in_pos"
-										type="checkbox"
-										:true-value="1"
-										:false-value="0"
-										:disabled="!row.enabled"
-									/>
-									Показывать в кассе</label
-								>
-								<label
-									>Склад
-									<select
-										v-model="row.default_warehouse"
-										:disabled="!row.enabled"
-									>
-										<option value="">Не выбран</option>
-										<option
-											v-for="warehouse in itemOptions.warehouses.filter(
-												(item) =>
-													item.business_point === row.business_point
-											)"
-											:key="warehouse.name"
-											:value="warehouse.name"
-										>
-											{{ warehouse.warehouse_name }}
-										</option>
-									</select>
-								</label>
-								<label v-if="inventoryType"
-									>Минимальный остаток<input
-										v-model.number="row.minimum_stock"
-										type="number"
-										min="0"
-										step="any"
-								/></label>
-								<label v-if="inventoryType"
-									>Пополнить на<input
-										v-model.number="row.reorder_quantity"
-										type="number"
-										min="0"
-										step="any"
-								/></label>
-								<label class="point-note"
-									>Заметка<input v-model="row.notes" placeholder="Необязательно"
-								/></label>
-							</div>
-						</article>
-					</div>
-					<p v-if="!itemForm.assortments?.length" class="muted-copy">
-						Нет доступных активных точек продаж.
-					</p>
 				</div>
 
 				<p v-if="editorError" class="form-error">{{ editorError }}</p>
