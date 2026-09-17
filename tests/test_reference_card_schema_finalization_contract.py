@@ -64,7 +64,7 @@ def test_point_contacts_timezone_and_working_hours_round_trip_contract():
 	assert timezone["fieldtype"] == "Select"
 	assert "Europe/Moscow" in timezone["options"]
 	ui = source("frontend/src/pages/ReferencesPage.vue")
-	assert 'function normalizeTimeInput(value)' in ui
+	assert "function normalizeTimeInput(value)" in ui
 	assert 'match[1].padStart(2, "0")' in ui
 	assert "opens_at: normalizeTimeInput(day.opens_at)" in ui
 	assert "closes_at: normalizeTimeInput(day.closes_at)" in ui
