@@ -38,3 +38,4 @@ raspechatka.patches.v1_0.migrate_user_profiles_to_dynamic_roles
 raspechatka.patches.v1_0.enforce_cashier_web_page_none
 raspechatka.patches.v1_0.initialize_pos_sales_settings
 raspechatka.patches.v1_0.migrate_assortment_minimums_to_reorder_rules
+raspechatka.patches.v1_0.normalize_user_login_phones

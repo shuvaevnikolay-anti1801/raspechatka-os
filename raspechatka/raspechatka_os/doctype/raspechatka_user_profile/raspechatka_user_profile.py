@@ -1,5 +1,3 @@
-import re
-
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -13,14 +11,9 @@ ROLE_BY_PROFILE = {
 
 
 def normalize_phone(value):
-	digits = re.sub(r"\D", "", value or "")
-	if len(digits) == 10:
-		digits = "7" + digits
-	elif len(digits) == 11 and digits.startswith("8"):
-		digits = "7" + digits[1:]
-	if len(digits) != 11 or not digits.startswith("7"):
-		frappe.throw(_("Введите российский номер телефона в формате +7XXXXXXXXXX"))
-	return "+" + digits
+	from raspechatka.api.auth import normalize_login_phone
+
+	return normalize_login_phone(value)
 
 
 class RaspechatkaUserProfile(Document):
@@ -114,7 +107,7 @@ class RaspechatkaUserProfile(Document):
 		if not system_user:
 			system_user = frappe.db.get_value("User", {"username": self.phone}, "name")
 		if not system_user:
-			digits = re.sub(r"\D", "", self.phone)
+			digits = self.phone.removeprefix("+")
 			email = f"u{digits}@users.raspechatka.internal"
 			if frappe.db.exists("User", email):
 				system_user = email
