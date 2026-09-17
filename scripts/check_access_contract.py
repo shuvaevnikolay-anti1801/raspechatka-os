@@ -188,7 +188,10 @@ def validate_contract(endpoint: Endpoint, known_areas: set[str]) -> list[str]:
 	else:
 		if area is not None:
 			errors.append("non-session endpoint must not declare page area")
-		if auth in {"pos_token", "webhook", "oauth_state", "public_token", "guest"} and not endpoint.allow_guest:
+		if (
+			auth in {"pos_token", "webhook", "oauth_state", "public_token", "guest"}
+			and not endpoint.allow_guest
+		):
 			errors.append(f"auth={auth!r} normally requires allow_guest=True")
 	return errors
 
