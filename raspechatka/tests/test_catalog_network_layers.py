@@ -49,6 +49,28 @@ class TestCatalogLayerSecurity(TestCase):
 			):
 				catalog_layers.save_minimum_stock("POINT-A", "ITEM", "WAREHOUSE-A", 10, 20)
 
+	def test_all_points_resolves_only_active_points_inside_scope(self):
+		fake = SimpleNamespace(get_all=Mock(return_value=["POINT-A", "POINT-B"]))
+		with (
+			patch.object(catalog_layers, "frappe", fake),
+			patch.object(
+				catalog_layers,
+				"get_scope",
+				return_value={"global": False, "points": ["POINT-A", "POINT-B"]},
+			),
+		):
+			points = catalog_layers._selected_points(catalog_layers.ALL_POINTS, allow_all=True)
+		self.assertEqual(points, ["POINT-A", "POINT-B"])
+		filters = fake.get_all.call_args.kwargs["filters"]
+		self.assertEqual(filters["active"], 1)
+		self.assertEqual(filters["name"], ["in", ["POINT-A", "POINT-B"]])
+
+	def test_all_points_is_rejected_outside_assortment_context(self):
+		permission_error = type("PermissionError", (Exception,), {})
+		fake = SimpleNamespace(PermissionError=permission_error, throw=Mock(side_effect=permission_error))
+		with patch.object(catalog_layers, "frappe", fake), self.assertRaises(permission_error):
+			catalog_layers._selected_points(catalog_layers.ALL_POINTS, allow_all=False)
+
 
 class TestCatalogLayerContracts(TestCase):
 	def test_navigation_exposes_four_product_pages(self):
@@ -57,12 +79,33 @@ class TestCatalogLayerContracts(TestCase):
 		for route in ("/catalog", "/catalog/assortment", "/catalog/prices", "/catalog/minimum-stock"):
 			self.assertIn(f'"route": "{route}"', manifest)
 
-	def test_pos_contract_still_uses_assortment_flags_and_price_resolver(self):
+	def test_pos_contract_uses_enabled_as_single_sale_flag(self):
 		root = Path(__file__).resolve().parents[1]
 		pos_source = (root / "api/pos.py").read_text(encoding="utf-8")
 		self.assertIn('"enabled": 1', pos_source)
-		self.assertIn('"visible_in_pos": 1', pos_source)
+		self.assertNotIn('"visible_in_pos": 1', pos_source)
 		self.assertIn("resolve_item_price", pos_source)
+
+	def test_new_catalog_item_does_not_create_default_pos_assortment(self):
+		root = Path(__file__).resolve().parents[1]
+		source = (root / "api/frontend.py").read_text(encoding="utf-8")
+		save_source = source.split("def save_catalog_item", 1)[1].split("def _archive_values", 1)[0]
+		self.assertNotIn("_create_default_assortments", save_source)
+
+	def test_assortment_page_has_all_points_and_no_search(self):
+		root = Path(__file__).resolve().parents[2]
+		source = (root / "frontend/src/pages/CatalogPointLayerPage.vue").read_text(encoding="utf-8")
+		self.assertIn('value="__all__">Все точки', source)
+		self.assertIn("layer !== 'assortment'", source)
+		self.assertNotIn("Видим в POS", source)
+
+	def test_legacy_migration_preserves_effective_pos_visibility(self):
+		root = Path(__file__).resolve().parents[1]
+		source = (
+			root / "patches/v1_0/canonicalize_pos_assortment_enabled.py"
+		).read_text(encoding="utf-8")
+		self.assertIn("enabled = 1 AND visible_in_pos = 1", source)
+		self.assertIn("visible_in_pos = IF", source)
 
 	def test_reorder_reports_and_editor_share_canonical_rule(self):
 		root = Path(__file__).resolve().parents[1]

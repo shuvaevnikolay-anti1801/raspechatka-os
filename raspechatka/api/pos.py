@@ -124,7 +124,7 @@ def _get_products(point_name):
 	today = getdate(nowdate())
 	assortments = frappe.get_all(
 		"Catalog Assortment",
-		filters={"business_point": point_name, "enabled": 1, "visible_in_pos": 1},
+		filters={"business_point": point_name, "enabled": 1},
 		fields=["item", "valid_from", "valid_upto"],
 		limit_page_length=5000,
 	)
