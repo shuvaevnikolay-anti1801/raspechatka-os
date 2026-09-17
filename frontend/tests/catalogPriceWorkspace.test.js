@@ -26,16 +26,17 @@ test("point pricing table exposes the canonical business columns", () => {
 });
 
 test("view-only mode hides every price mutation control", () => {
-	assert.match(page, /v-if="layer === 'prices' && canEdit"/);
+	assert.match(page, /<template v-if="canEdit" #actions>/);
+	assert.match(page, /<template v-if="layer === 'prices'">/);
 	assert.match(workspace, /:disabled="!canEdit \|\| saving\.has\(row\.name\)"/);
 	assert.match(workspace, /<th v-if="canEdit">Сохранить<\/th>/);
 });
 
-test("price copy tools share the point toolbar and calculator stays on the right", () => {
-	assert.match(page, /class="source-point-control"/);
-	assert.match(page, /class="button button-secondary copy-prices-button"/);
-	assert.match(page, /class="button button-secondary calculator-button"/);
-	assert.match(page, /\.calculator-button \{\s*margin-left: auto;/);
+test("price copy tools use the shared point toolbar", () => {
+	assert.match(page, /CatalogPointLayerToolbar/);
+	assert.match(page, /v-model:source-point="sourcePoint"/);
+	assert.match(page, /Копировать цены/);
+	assert.match(page, /Калькулятор цен/);
 	assert.doesNotMatch(workspace, /class="price-tools"/);
 });
 
@@ -53,6 +54,15 @@ test("copy and calculator require backend preview before one bulk apply", () => 
 	assert.match(workspace, /Применить новые цены/);
 	assert.match(workspace, /Наценка была/);
 	assert.match(workspace, /Наценка станет/);
+});
+
+test("price previews explain source, target, scope and result counts", () => {
+	assert.match(workspace, /class="preview-context"/);
+	assert.match(workspace, /Точка назначения/);
+	assert.match(workspace, /class="preview-summary"/);
+	assert.match(workspace, /Будет изменено/);
+	assert.match(workspace, /Без изменений/);
+	assert.match(workspace, /Пропущено/);
 });
 
 test("markup traffic light uses thresholds returned with rows", () => {

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { call } from "../api";
+import AppModal from "./AppModal.vue";
 
 const props = defineProps({
 	rows: { type: Array, default: () => [] },
@@ -10,16 +11,23 @@ const props = defineProps({
 	groupLabel: { type: String, default: "Все позиции" },
 	canEdit: { type: Boolean, default: false },
 	loading: { type: Boolean, default: false },
+	sourcePoint: { type: String, default: "" },
 });
-const emit = defineEmits(["reload", "error", "feedback", "dirty"]);
+const emit = defineEmits(["reload", "error", "feedback", "dirty", "busy"]);
 const saving = ref(new Set());
 const dirtyRows = ref(new Set());
-const sourcePoint = ref("");
 const preview = ref(null);
-const modalOpen = ref(false);
+const modal = ref("");
 const calculating = ref(false);
-const sourcePoints = computed(() =>
-	props.points.filter((point) => point.name !== props.businessPoint)
+const pointLabel = computed(
+	() =>
+		props.points.find((point) => point.name === props.businessPoint)?.point_name ||
+		props.businessPoint,
+);
+const sourceLabel = computed(
+	() =>
+		props.points.find((point) => point.name === props.sourcePoint)?.point_name ||
+		props.sourcePoint,
 );
 
 function changed(row) {
@@ -41,7 +49,7 @@ async function save(row) {
 				minimum_stock: row.minimum_stock,
 				target_stock: row.target_stock,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		emit("feedback", `Норматив для «${row.item_name}» сохранён.`);
 		dirtyRows.value.delete(row.name);
@@ -55,36 +63,40 @@ async function save(row) {
 }
 
 async function copyNorms() {
-	if (!sourcePoint.value) return;
-	const source = props.points.find((point) => point.name === sourcePoint.value)?.point_name;
-	const target = props.points.find((point) => point.name === props.businessPoint)?.point_name;
-	if (
-		!window.confirm(
-			`Скопировать нормативы: ${source} → ${target}; область: ${props.groupLabel}; позиций назначения: ${props.rows.length}?`
-		)
-	)
-		return;
+	if (!props.sourcePoint) return;
+	calculating.value = true;
+	emit("busy", true);
 	try {
 		const result = await call(
 			"raspechatka.api.catalog_layers.copy_stock_norms",
 			{
 				business_point: props.businessPoint,
-				source_point: sourcePoint.value,
+				source_point: props.sourcePoint,
 				catalog_group: props.catalogGroup,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
+		modal.value = "";
 		emit("feedback", `Скопировано ${result.copied}; пропущено ${result.skipped}.`);
 		dirtyRows.value.clear();
 		emit("dirty", false);
 		emit("reload");
 	} catch (error) {
 		emit("error", error.message);
+	} finally {
+		calculating.value = false;
+		emit("busy", false);
 	}
+}
+
+function previewCopy() {
+	if (!props.sourcePoint) return;
+	modal.value = "copy";
 }
 
 async function calculate() {
 	calculating.value = true;
+	emit("busy", true);
 	try {
 		preview.value = await call("raspechatka.api.catalog_layers.preview_stock_norms", {
 			business_point: props.businessPoint,
@@ -94,19 +106,20 @@ async function calculate() {
 		emit("error", error.message);
 	} finally {
 		calculating.value = false;
+		emit("busy", false);
 	}
 }
 
 function openCalculator() {
 	preview.value = null;
-	modalOpen.value = true;
+	modal.value = "calculator";
 }
 
 async function applyPreview() {
 	const count = preview.value?.counts?.change || 0;
-	if (!count || !window.confirm(`Применить рассчитанные нормативы для ${count} позиций?`))
-		return;
+	if (!count) return;
 	calculating.value = true;
+	emit("busy", true);
 	try {
 		const result = await call(
 			"raspechatka.api.catalog_layers.apply_stock_norms",
@@ -115,10 +128,10 @@ async function applyPreview() {
 				catalog_group: props.catalogGroup,
 				preview_token: preview.value.preview_token,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		preview.value = null;
-		modalOpen.value = false;
+		modal.value = "";
 		emit("feedback", `Применено ${result.applied}; пропущено ${result.skipped}.`);
 		dirtyRows.value.clear();
 		emit("dirty", false);
@@ -127,30 +140,15 @@ async function applyPreview() {
 		emit("error", error.message);
 	} finally {
 		calculating.value = false;
+		emit("busy", false);
 	}
 }
+
+defineExpose({ openCalculator, previewCopy });
 </script>
 
 <template>
 	<div class="norms-workspace">
-		<div v-if="canEdit" class="norms-actions">
-			<select v-model="sourcePoint">
-				<option value="">Скопировать нормативы из…</option>
-				<option v-for="point in sourcePoints" :key="point.name" :value="point.name">
-					{{ point.point_name }}
-				</option>
-			</select>
-			<button class="button button-secondary" :disabled="!sourcePoint" @click="copyNorms">
-				Скопировать
-			</button>
-			<button
-				class="button button-primary"
-				:disabled="!rows.length || calculating"
-				@click="openCalculator"
-			>
-				Рассчитать нормативы
-			</button>
-		</div>
 		<table class="layer-table">
 			<thead>
 				<tr>
@@ -208,144 +206,261 @@ async function applyPreview() {
 				</tr>
 			</tbody>
 		</table>
-		<div v-if="modalOpen" class="norm-modal">
-			<div class="norm-dialog">
-				<div class="norm-dialog__head">
-					<h2>Расчёт нормативов</h2>
-					<button @click="modalOpen = false">×</button>
+		<AppModal v-if="modal === 'copy'" title="Копирование нормативов" @close="modal = ''">
+			<div class="operation-context">
+				<span>Из точки</span><strong>{{ sourceLabel }}</strong>
+				<span class="operation-context__arrow">→</span>
+				<span>В точку</span><strong>{{ pointLabel }}</strong>
+			</div>
+			<div class="operation-scope">
+				<div>
+					<span>Область</span><strong>{{ groupLabel }}</strong>
 				</div>
-				<p>{{ groupLabel }} · {{ rows.length }} позиций</p>
+				<div>
+					<span>Позиций назначения</span><strong>{{ rows.length }}</strong>
+				</div>
+			</div>
+			<p class="operation-note">
+				Для совпадающих позиций нормативы точки назначения будут заменены значениями из
+				выбранной точки. Остальные позиции будут пропущены.
+			</p>
+			<template #footer>
+				<button
+					class="button button-secondary"
+					:disabled="calculating"
+					@click="modal = ''"
+				>
+					Отмена
+				</button>
+				<button class="button button-primary" :disabled="calculating" @click="copyNorms">
+					{{ calculating ? "Копируем…" : "Копировать нормативы" }}
+				</button>
+			</template>
+		</AppModal>
+		<AppModal v-if="modal === 'calculator'" title="Расчёт нормативов" wide @close="modal = ''">
+			<div class="operation-context operation-context--compact">
+				<div>
+					<span>Точка продаж</span><strong>{{ pointLabel }}</strong>
+				</div>
+				<div>
+					<span>Область расчёта</span><strong>{{ groupLabel }}</strong>
+				</div>
+				<div>
+					<span>Позиций</span><strong>{{ rows.length }}</strong>
+				</div>
+			</div>
+			<p v-if="!preview" class="operation-note">
+				Система рассчитает минимальный и целевой остаток по истории продаж. Перед
+				применением вы увидите результат по каждой позиции.
+			</p>
+			<template v-else>
+				<div class="policy-summary">
+					<span
+						>Анализ: <b>{{ preview.policy.analysis_days }} дней</b></span
+					>
+					<span
+						>Минимум: <b>{{ preview.policy.minimum_days }} дней</b></span
+					>
+					<span
+						>Цель: <b>{{ preview.policy.target_days }} дней</b></span
+					>
+				</div>
+				<div class="result-summary">
+					<div class="result-summary__primary">
+						<b>{{ preview.counts.change }}</b
+						><span>Будет изменено</span>
+					</div>
+					<div>
+						<b>{{ preview.counts.unchanged }}</b
+						><span>Без изменений</span>
+					</div>
+					<div>
+						<b>{{ preview.counts.insufficient }}</b
+						><span>Недостаточно данных</span>
+					</div>
+					<div>
+						<b>{{ preview.counts.skipped || 0 }}</b
+						><span>Пропущено</span>
+					</div>
+				</div>
+				<div class="preview-table">
+					<table class="layer-table">
+						<thead>
+							<tr>
+								<th>Позиция</th>
+								<th>Продано нетто</th>
+								<th>Дней</th>
+								<th>Среднее</th>
+								<th>Мин. сейчас / расчёт</th>
+								<th>Цель сейчас / расчёт</th>
+								<th>Статус</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="row in preview.rows" :key="row.name">
+								<td>{{ row.item_name }}</td>
+								<td>{{ row.net_sold_qty }}</td>
+								<td>
+									{{ row.history_days
+									}}<small v-if="row.short_history">Короткая история</small>
+								</td>
+								<td>{{ Number(row.average_daily_sales).toFixed(3) }}</td>
+								<td>
+									{{ row.minimum_stock }} / {{ row.calculated_minimum ?? "—" }}
+								</td>
+								<td>
+									{{ row.target_stock }} / {{ row.calculated_target ?? "—" }}
+								</td>
+								<td>
+									<span
+										class="status-badge"
+										:class="`status-badge--${row.status}`"
+										>{{
+											row.status === "change"
+												? "Будет изменено"
+												: row.status === "unchanged"
+													? "Без изменений"
+													: row.status === "skipped"
+														? "Пропущено"
+														: "Недостаточно данных"
+										}}</span
+									>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</template>
+			<template #footer>
+				<button
+					class="button button-secondary"
+					:disabled="calculating"
+					@click="modal = ''"
+				>
+					Отмена
+				</button>
 				<button
 					v-if="!preview"
 					class="button button-primary"
 					:disabled="calculating"
 					@click="calculate"
 				>
-					{{ calculating ? "Расчёт…" : "Рассчитать" }}
+					{{ calculating ? "Расчёт…" : "Рассчитать нормативы" }}
 				</button>
-				<template v-else>
-					<p>
-						Анализ {{ preview.policy.analysis_days }} дней · минимум
-						{{ preview.policy.minimum_days }} · цель {{ preview.policy.target_days }}
-					</p>
-					<p>
-						Будет изменено: {{ preview.counts.change }} · Без изменений:
-						{{ preview.counts.unchanged }} · Недостаточно данных:
-						{{ preview.counts.insufficient }} · Пропущено:
-						{{ preview.counts.skipped || 0 }}
-					</p>
-					<div class="preview-table">
-						<table class="layer-table">
-							<thead>
-								<tr>
-									<th>Позиция</th>
-									<th>Продано нетто</th>
-									<th>Дней</th>
-									<th>Среднее</th>
-									<th>Мин. сейчас / расчёт</th>
-									<th>Цель сейчас / расчёт</th>
-									<th>Статус</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr v-for="row in preview.rows" :key="row.name">
-									<td>{{ row.item_name }}</td>
-									<td>{{ row.net_sold_qty }}</td>
-									<td>
-										{{ row.history_days
-										}}<small v-if="row.short_history">Короткая история</small>
-									</td>
-									<td>{{ Number(row.average_daily_sales).toFixed(3) }}</td>
-									<td>
-										{{ row.minimum_stock }} /
-										{{ row.calculated_minimum ?? "—" }}
-									</td>
-									<td>
-										{{ row.target_stock }} / {{ row.calculated_target ?? "—" }}
-									</td>
-									<td>
-										{{
-											row.status === "change"
-												? "Будет изменено"
-												: row.status === "unchanged"
-												? "Без изменений"
-												: row.status === "skipped"
-												? "Пропущено"
-												: "Недостаточно данных"
-										}}
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-				</template>
-				<div class="norm-dialog__actions">
-					<button class="button button-secondary" @click="modalOpen = false">
-						Закрыть</button
-					><button
-						v-if="preview"
-						class="button button-primary"
-						:disabled="!preview.counts.change || calculating"
-						@click="applyPreview"
-					>
-						Применить рассчитанные нормативы
-					</button>
-				</div>
-			</div>
-		</div>
+				<button
+					v-else
+					class="button button-primary"
+					:disabled="!preview.counts.change || calculating"
+					@click="applyPreview"
+				>
+					{{ calculating ? "Применяем…" : "Применить рассчитанные нормативы" }}
+				</button>
+			</template>
+		</AppModal>
 	</div>
 </template>
 
 <style scoped>
-.norms-actions {
-	display: flex;
-	gap: 8px;
-	padding: 12px;
-	border-bottom: 1px solid var(--border);
-	flex-wrap: wrap;
-}
-.norms-actions select {
-	min-width: 240px;
-}
-.norm-modal {
-	position: fixed;
-	inset: 0;
-	z-index: 100;
-	background: #0008;
-	display: grid;
-	place-items: center;
-	padding: 24px;
-}
-.norm-dialog {
-	background: #fff;
-	border-radius: 16px;
-	padding: 18px;
-	max-width: 1200px;
-	width: 100%;
-	max-height: 90vh;
-	overflow: auto;
-}
-.norm-dialog__head,
-.norm-dialog__actions {
+.operation-context,
+.operation-scope,
+.policy-summary,
+.result-summary {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
 	gap: 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fafbf9;
 }
-.norm-dialog__head button {
-	border: 0;
-	background: none;
-	font-size: 24px;
+.operation-context > span,
+.operation-context > div span,
+.operation-scope span,
+.result-summary span {
+	color: var(--muted);
+	font-size: 12px;
 }
-.norm-dialog__actions {
-	justify-content: flex-end;
-	margin-top: 16px;
+.operation-context__arrow {
+	font-size: 18px !important;
+	color: var(--green-dark) !important;
+}
+.operation-context--compact {
+	justify-content: space-between;
+}
+.operation-context--compact > div,
+.operation-scope > div,
+.result-summary > div {
+	display: grid;
+	gap: 3px;
+}
+.operation-scope {
+	margin-top: 12px;
+	justify-content: space-between;
+}
+.operation-note {
+	margin: 14px 2px 0;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+}
+.policy-summary {
+	margin-top: 14px;
+	justify-content: flex-start;
+	color: var(--muted);
+	font-size: 13px;
+}
+.result-summary {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	margin-top: 12px;
+}
+.result-summary b {
+	font-size: 20px;
+}
+.result-summary__primary b {
+	color: var(--green-dark);
 }
 .preview-table {
+	max-height: 48vh;
+	margin-top: 14px;
 	overflow: auto;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+}
+.preview-table thead {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+.status-badge {
+	display: inline-block;
+	padding: 4px 8px;
+	border-radius: 999px;
+	background: #f1f3ef;
+	color: var(--muted);
+	font-size: 12px;
+}
+.status-badge--change {
+	background: var(--green-soft);
+	color: var(--green-dark);
 }
 .layer-table td small {
 	display: block;
 	color: var(--muted);
+}
+@media (max-width: 700px) {
+	.operation-context,
+	.operation-context--compact,
+	.operation-scope,
+	.policy-summary {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+	.operation-context__arrow {
+		transform: rotate(90deg);
+	}
+	.result-summary {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
 }
 </style>
