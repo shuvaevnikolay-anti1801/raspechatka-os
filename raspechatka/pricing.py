@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
+from math import isfinite
 
 import frappe
 from frappe import _
@@ -245,6 +246,156 @@ def resolve_item_prices(items, business_point, price_type=None, quantity=1, on_d
 		return None
 
 	return {item: resolve(item) for item in requested}
+
+
+def resolve_point_prices(items, business_point, price_type=None, on_date=None):
+	"""Return only canonical prices explicitly owned by ``business_point``.
+
+	Network and variant prices remain readable by the legacy resolver solely for
+	migration compatibility. Operational Web OS and POS consumers use this
+	point-owned contract after the compatibility patch materializes old values.
+	"""
+	requested = list(dict.fromkeys(items or []))
+	if not requested:
+		return {}
+	point = frappe.db.get_value("Business Point", business_point, ["active", "price_rounding"], as_dict=True)
+	if not point or not point.active:
+		frappe.throw(_("Точка продаж недоступна."))
+	price_type = price_type or get_default_price_type(business_point)
+	if not price_type:
+		return {item: None for item in requested}
+	item_rows = {
+		row.name: row
+		for row in frappe.get_all(
+			"Catalog Item",
+			filters={"name": ["in", requested], "active": 1},
+			fields=["name", "stock_uom"],
+			limit_page_length=0,
+		)
+	}
+	rows = frappe.get_all(
+		"Catalog Item Price",
+		filters={
+			"parent": ["in", requested or ["__none__"]],
+			"parenttype": "Catalog Item",
+			"parentfield": "prices",
+			"business_point": business_point,
+			"price_type": price_type,
+			"minimum_quantity": ["<=", 1],
+		},
+		fields=[
+			"parent",
+			"rate",
+			"uom",
+			"currency",
+			"minimum_quantity",
+			"valid_from",
+			"valid_upto",
+			"idx",
+		],
+		limit_page_length=0,
+	)
+	today = getdate(on_date or nowdate())
+	by_item = {}
+	for row in rows:
+		item = item_rows.get(row.parent)
+		if not item or (row.uom and row.uom != item.stock_uom):
+			continue
+		if row.valid_from and getdate(row.valid_from) > today:
+			continue
+		if row.valid_upto and getdate(row.valid_upto) < today:
+			continue
+		by_item.setdefault(row.parent, []).append(row)
+	result = {}
+	for item_name in requested:
+		candidates = by_item.get(item_name, [])
+		candidates.sort(
+			key=lambda row: (
+				1 if row.uom == getattr(item_rows.get(item_name), "stock_uom", None) else 0,
+				flt(row.minimum_quantity or 1),
+				getdate(row.valid_from) if row.valid_from else getdate("1900-01-01"),
+				row.idx or 0,
+			),
+			reverse=True,
+		)
+		candidate = candidates[0] if candidates else None
+		result[item_name] = (
+			{
+				"rate": round_price(flt(candidate.rate), point.price_rounding),
+				"price_type": price_type,
+				"business_point": business_point,
+				"uom": candidate.uom or getattr(item_rows.get(item_name), "stock_uom", None),
+				"currency": candidate.currency or "RUB",
+			}
+			if candidate
+			else None
+		)
+	return result
+
+
+def resolve_point_price(item, business_point, price_type=None, required=True):
+	price = resolve_point_prices([item], business_point, price_type=price_type).get(item)
+	if required and not price:
+		frappe.throw(_("Для позиции «{0}» не настроена цена выбранной точки.").format(item))
+	return price
+
+
+def set_point_price(item, business_point, rate, price_type=None, uom=None):
+	"""Persist the canonical point price on the existing Catalog Item child table."""
+	if not isfinite(flt(rate)) or flt(rate) < 0:
+		frappe.throw(_("Цена продажи должна быть неотрицательным конечным числом."))
+	doc = frappe.get_doc("Catalog Item", item)
+	if not doc.active:
+		frappe.throw(_("Позиция каталога недоступна."))
+	price_type = price_type or get_default_price_type(business_point)
+	if not price_type:
+		frappe.throw(_("Для точки продаж не настроен вид цены."))
+	uom = uom or doc.stock_uom
+	today = getdate(nowdate())
+	row = next(
+		(
+			row
+			for row in doc.prices
+			if row.business_point == business_point
+			and row.price_type == price_type
+			and (row.uom or doc.stock_uom) == uom
+			and flt(row.minimum_quantity or 1) == 1
+			and (not row.valid_from or getdate(row.valid_from) <= today)
+			and (not row.valid_upto or getdate(row.valid_upto) >= today)
+		),
+		None,
+	)
+	if not row:
+		row = doc.append(
+			"prices",
+			{
+				"business_point": business_point,
+				"price_type": price_type,
+				"uom": uom,
+				"currency": "RUB",
+				"minimum_quantity": 1,
+			},
+		)
+	row.rate = flt(rate)
+	doc.save(ignore_permissions=True)
+	return flt(row.rate)
+
+
+def materialize_legacy_point_prices(items, points):
+	"""Idempotently copy current legacy-effective prices into missing point rows."""
+	created = 0
+	for point in points:
+		price_type = get_default_price_type(point)
+		point_prices = resolve_point_prices(items, point, price_type=price_type)
+		missing = [item for item in items if not point_prices.get(item)]
+		legacy = resolve_item_prices(missing, point, price_type=price_type)
+		for item in missing:
+			price = legacy.get(item)
+			if not price:
+				continue
+			set_point_price(item, point, price["rate"], price_type, price.get("uom"))
+			created += 1
+	return created
 
 
 def round_price(rate, rule):

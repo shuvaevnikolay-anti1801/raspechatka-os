@@ -4,12 +4,9 @@ import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import { pageLabel } from "../pageRegistry";
 import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
+import CatalogPriceWorkspace from "../components/CatalogPriceWorkspace.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
-import {
-	layerEmptyMessage,
-	normalizeBusinessPoint,
-	priceSourceLabel,
-} from "../catalogPointLayerState";
+import { layerEmptyMessage, normalizeBusinessPoint } from "../catalogPointLayerState";
 
 const route = useRoute();
 const layer = computed(() => route.meta.layer || "assortment");
@@ -36,11 +33,18 @@ const error = ref("");
 const feedback = ref("");
 const saving = ref("");
 const savingRows = reactive(new Set());
+const priceDirty = ref(false);
+const previousPoint = ref("");
 const canEdit = computed(() => canAccess(config.value.area, "Edit"));
 const hasActiveWarehouse = computed(() =>
 	options.warehouses.some((warehouse) => warehouse.business_point === filters.business_point)
 );
 const emptyMessage = computed(() => layerEmptyMessage(layer.value, hasActiveWarehouse.value));
+const selectedGroupLabel = computed(
+	() =>
+		options.groups.find((group) => group.name === filters.catalog_group)?.group_name ||
+		"Все позиции"
+);
 
 let rowsRequestId = 0;
 
@@ -54,6 +58,7 @@ async function loadOptions() {
 		filters.business_point,
 		options.points
 	);
+	previousPoint.value = filters.business_point;
 	if (
 		filters.catalog_group &&
 		!options.groups.some((group) => group.name === filters.catalog_group)
@@ -157,32 +162,6 @@ async function bulk(enabled) {
 	}
 }
 
-async function savePrice(row) {
-	if (savingRows.has(row.name)) return;
-	savingRows.add(row.name);
-	error.value = "";
-	feedback.value = "";
-	try {
-		await call(
-			"raspechatka.api.catalog_layers.save_point_price",
-			{
-				business_point: filters.business_point,
-				item: row.name,
-				rate: row.rate,
-				price_type: row.price_type,
-				uom: row.stock_uom,
-			},
-			{ method: "POST" }
-		);
-		feedback.value = `Цена для «${row.item_name}» сохранена.`;
-		await loadRows();
-	} catch (exception) {
-		error.value = exception.message;
-	} finally {
-		savingRows.delete(row.name);
-	}
-}
-
 async function saveMinimum(row) {
 	if (savingRows.has(row.row_key)) return;
 	savingRows.add(row.row_key);
@@ -210,11 +189,28 @@ async function saveMinimum(row) {
 }
 
 function selectGroup(name) {
+	if (
+		layer.value === "prices" &&
+		priceDirty.value &&
+		!window.confirm("Есть несохранённые цены. Продолжить без сохранения?")
+	)
+		return;
+	priceDirty.value = false;
 	filters.catalog_group = name;
 	feedback.value = "";
 	loadRows();
 }
 function changePoint() {
+	if (
+		layer.value === "prices" &&
+		priceDirty.value &&
+		!window.confirm("Есть несохранённые цены. Продолжить без сохранения?")
+	) {
+		filters.business_point = previousPoint.value;
+		return;
+	}
+	priceDirty.value = false;
+	previousPoint.value = filters.business_point;
 	feedback.value = "";
 	loadRows();
 }
@@ -269,7 +265,21 @@ onMounted(async () => {
 				@select="selectGroup"
 			/>
 			<div class="layer-table-wrap">
-				<table class="layer-table">
+				<CatalogPriceWorkspace
+					v-if="layer === 'prices'"
+					:rows="rows"
+					:points="options.points"
+					:business-point="filters.business_point"
+					:catalog-group="filters.catalog_group"
+					:group-label="selectedGroupLabel"
+					:can-edit="canEdit"
+					:loading="loading"
+					@reload="loadRows"
+					@dirty="priceDirty = $event"
+					@error="error = $event"
+					@feedback="feedback = $event"
+				/>
+				<table v-if="layer !== 'prices'" class="layer-table">
 					<thead>
 						<tr>
 							<th>Позиция</th>
@@ -282,11 +292,6 @@ onMounted(async () => {
 											: "Продаётся в точке"
 									}}
 								</th></template
-							>
-							<template v-else-if="layer === 'prices'"
-								><th>Действующая цена</th>
-								<th>Источник</th>
-								<th>Сохранить</th></template
 							>
 							<template v-else
 								><th>Склад</th>
@@ -331,29 +336,6 @@ onMounted(async () => {
 												? `◐ В ${row.enabled_points} из ${row.point_count}`
 												: "○ Нигде"
 										}}
-									</button>
-								</td>
-							</template>
-							<template v-else-if="layer === 'prices'">
-								<td>
-									<input
-										v-model.number="row.rate"
-										type="number"
-										min="0"
-										step="0.01"
-										:disabled="!canEdit || savingRows.has(row.name)"
-									/>
-									{{ row.currency }}
-								</td>
-								<td>{{ priceSourceLabel(row.price_source) }}</td>
-								<td>
-									<button
-										v-if="canEdit"
-										class="button button-primary"
-										:disabled="savingRows.has(row.name)"
-										@click="savePrice(row)"
-									>
-										Сохранить
 									</button>
 								</td>
 							</template>

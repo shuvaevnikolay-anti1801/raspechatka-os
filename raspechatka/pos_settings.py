@@ -9,12 +9,16 @@ DEFAULT_POS_SALES_SETTINGS = {
 	"accepts_cash": 1,
 	"accepts_card": 1,
 	"accepts_qr": 1,
+	"markup_lower_threshold": 100,
+	"markup_upper_threshold": 200,
 }
 
 
 def get_pos_sales_settings():
 	"""Return the network-wide POS rules, including safe defaults before migration."""
 	settings = frappe.get_single("POS Sales Settings")
+	lower = getattr(settings, "markup_lower_threshold", None)
+	upper = getattr(settings, "markup_upper_threshold", None)
 	return {
 		"allow_free_price": cint(settings.allow_free_price),
 		"allow_discounts": cint(settings.allow_discounts),
@@ -23,6 +27,8 @@ def get_pos_sales_settings():
 		"accepts_cash": cint(settings.accepts_cash),
 		"accepts_card": cint(settings.accepts_card),
 		"accepts_qr": cint(settings.accepts_qr),
+		"markup_lower_threshold": flt(100 if lower is None else lower),
+		"markup_upper_threshold": flt(200 if upper is None else upper),
 	}
 
 

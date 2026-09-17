@@ -5,7 +5,7 @@ from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime
 
 from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
-from raspechatka.pricing import resolve_item_price
+from raspechatka.pricing import resolve_point_price
 
 
 @frappe.whitelist()
@@ -198,11 +198,9 @@ def _get_products(point_name):
 		item = items.get(assortment.item)
 		if not item or item.has_variants:
 			continue
-		resolved_price = resolve_item_price(
+		resolved_price = resolve_point_price(
 			item.name,
 			point_name,
-			quantity=1,
-			uom=item.stock_uom,
 			required=False,
 		)
 		if not resolved_price and not get_pos_sales_settings()["allow_free_price"]:

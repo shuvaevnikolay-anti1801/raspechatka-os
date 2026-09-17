@@ -3,12 +3,19 @@
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
-from frappe.utils import cint, flt, getdate, now_datetime, nowdate
+from frappe.utils import cint, flt, now_datetime
 
 from raspechatka.access import get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.api.frontend import _catalog_group_branch
-from raspechatka.pricing import get_default_price_type, resolve_item_prices
+from raspechatka.pos_settings import get_pos_sales_settings
+from raspechatka.pricing import (
+	get_default_price_type,
+	materialize_legacy_point_prices,
+	resolve_point_prices,
+	set_point_price,
+)
+from raspechatka.stock import get_point_average_rates
 
 AREA_BY_LAYER = {
 	"assortment": "page.catalog.assortment",
@@ -295,19 +302,27 @@ def get_assortment_group_states(business_point):
 
 def _price_rows(point, items):
 	price_type = get_default_price_type(point)
-	prices = resolve_item_prices([item.name for item in items], point, price_type=price_type)
+	item_names = [item.name for item in items]
+	prices = resolve_point_prices(item_names, point, price_type=price_type)
+	costs = get_point_average_rates(item_names, point)
+	settings = get_pos_sales_settings()
 	rows = []
 	for item in items:
 		price = prices.get(item.name)
+		cost = costs.get(item.name)
+		rate = price.get("rate") if price else None
+		markup = ((flt(rate) - flt(cost)) / flt(cost) * 100) if cost and rate is not None else None
 		rows.append(
 			{
 				**item,
 				"price_type": price_type,
-				"rate": price.get("rate") if price else None,
+				"rate": rate,
+				"saved_rate": rate,
 				"currency": price.get("currency") if price else "RUB",
-				"price_source": price.get("source") if price else None,
-				"inherited_from": price.get("inherited_from") if price else None,
-				"minimum_quantity": price.get("minimum_quantity") if price else 1,
+				"cost": cost,
+				"markup_percent": markup,
+				"markup_lower_threshold": settings["markup_lower_threshold"],
+				"markup_upper_threshold": settings["markup_upper_threshold"],
 			}
 		)
 	return rows
@@ -376,6 +391,8 @@ def set_assortment(business_point, item, enabled=0):
 	if not frappe.db.exists("Catalog Item", {"name": item, "active": 1}):
 		frappe.throw(_("Позиция каталога недоступна."), frappe.PermissionError)
 	updated = _apply_assortment([item], points, cint(enabled))
+	if cint(enabled):
+		materialize_legacy_point_prices([item], points)
 	return {"item": item, "enabled": cint(enabled), "updated": updated, "points": len(points)}
 
 
@@ -387,6 +404,8 @@ def bulk_set_assortment(business_point, enabled=0, catalog_group=None):
 	filters, _ = _item_filters(catalog_group)
 	items = frappe.get_all("Catalog Item", filters=filters, pluck="name", limit_page_length=0)
 	updated = _apply_assortment(items, points, cint(enabled))
+	if cint(enabled):
+		materialize_legacy_point_prices(items, points)
 	return {"updated": updated, "items": len(items), "points": len(points), "enabled": cint(enabled)}
 
 
@@ -471,39 +490,18 @@ def save_point_price(business_point, item, rate, price_type=None, uom=None):
 			_("Цена точки разрешена только для позиции её продаваемого ассортимента."),
 			frappe.PermissionError,
 		)
-	doc = frappe.get_doc("Catalog Item", item)
-	if not doc.active:
-		frappe.throw(_("Позиция каталога недоступна."), frappe.PermissionError)
-	price_type = price_type or get_default_price_type(point)
-	uom = uom or doc.stock_uom
-	today = getdate(nowdate())
-	row = next(
-		(
-			row
-			for row in doc.prices
-			if row.business_point == point
-			and row.price_type == price_type
-			and (row.uom or doc.stock_uom) == uom
-			and flt(row.minimum_quantity or 1) == 1
-			and (not row.valid_from or getdate(row.valid_from) <= today)
-			and (not row.valid_upto or getdate(row.valid_upto) >= today)
-		),
-		None,
-	)
-	if not row:
-		row = doc.append(
-			"prices",
-			{
-				"business_point": point,
-				"price_type": price_type,
-				"uom": uom,
-				"currency": "RUB",
-				"minimum_quantity": 1,
-			},
-		)
-	row.rate = flt(rate)
-	doc.save(ignore_permissions=True)
-	return {"item": item, "business_point": point, "rate": row.rate, "price_type": price_type}
+	if rate in (None, "") or flt(rate) < 0:
+		frappe.throw(_("Цена продажи должна быть неотрицательным числом."))
+	canonical_price_type = get_default_price_type(point)
+	if price_type and price_type != canonical_price_type:
+		frappe.throw(_("Для точки можно изменить только её рабочую цену продажи."), frappe.PermissionError)
+	saved_rate = set_point_price(item, point, rate, canonical_price_type)
+	return {
+		"item": item,
+		"business_point": point,
+		"rate": saved_rate,
+		"price_type": canonical_price_type,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
