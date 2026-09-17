@@ -141,6 +141,13 @@ function emptyHours() {
 	}));
 }
 
+function normalizeTimeInput(value) {
+	if (!value) return "";
+	const match = String(value).match(/^(\d{1,2}):(\d{2})/);
+	if (!match) return "";
+	return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
 function resetObject(target, values) {
 	Object.keys(target).forEach((key) => delete target[key]);
 	Object.assign(target, values);
@@ -239,8 +246,8 @@ async function openReference(row) {
 		if (reference.value === "points")
 			form.working_hours = form.working_hours.map((day) => ({
 				...day,
-				opens_at: day.opens_at ? String(day.opens_at).slice(0, 5) : "",
-				closes_at: day.closes_at ? String(day.closes_at).slice(0, 5) : "",
+				opens_at: normalizeTimeInput(day.opens_at),
+				closes_at: normalizeTimeInput(day.closes_at),
 			}));
 	} catch (exception) {
 		error.value = exception.message;

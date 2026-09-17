@@ -526,8 +526,8 @@ def save_reference(reference, data):
 				{
 					"weekday": row.get("weekday"),
 					"is_working": cint(row.get("is_working")),
-					"opens_at": row.get("opens_at"),
-					"closes_at": row.get("closes_at"),
+					"opens_at": _normalize_clock_time(row.get("opens_at")),
+					"closes_at": _normalize_clock_time(row.get("closes_at")),
 				},
 			)
 	if reference == "clients" and "messengers" in data:
@@ -822,6 +822,18 @@ def _get_config(reference):
 	if not config:
 		frappe.throw(_("Неизвестный справочник"))
 	return config
+
+
+def _normalize_clock_time(value):
+	if not value:
+		return None
+	parts = str(value).split(":")
+	if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+		frappe.throw(_("Некорректное время в режиме работы"))
+	hour, minute = cint(parts[0]), cint(parts[1])
+	if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+		frappe.throw(_("Некорректное время в режиме работы"))
+	return f"{hour:02d}:{minute:02d}:00"
 
 
 def _ensure_scoped_name(reference, name):
