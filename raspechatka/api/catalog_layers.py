@@ -10,7 +10,6 @@ from raspechatka.access_contract import access_contract
 from raspechatka.api.frontend import _catalog_group_branch
 from raspechatka.pricing import get_default_price_type, resolve_item_prices
 
-
 AREA_BY_LAYER = {
 	"assortment": "page.catalog.assortment",
 	"prices": "page.catalog.prices",
@@ -88,28 +87,38 @@ def get_options(layer="assortment"):
 		point_filters["name"] = ["in", scope.get("points") or ["__none__"]]
 	return {
 		"points": frappe.get_all(
-			"Business Point", filters=point_filters,
-			fields=["name", "point_name", "default_price_type"], order_by="point_name asc"
+			"Business Point",
+			filters=point_filters,
+			fields=["name", "point_name", "default_price_type"],
+			order_by="point_name asc",
 		),
 		"groups": frappe.get_all(
-			"Catalog Group", filters={"active": 1},
+			"Catalog Group",
+			filters={"active": 1},
 			fields=["name", "group_name", "parent_catalog_group", "is_group"],
-			order_by="group_name asc", limit_page_length=2000
+			order_by="group_name asc",
+			limit_page_length=2000,
 		),
 		"price_types": frappe.get_all(
-			"Catalog Price Type", filters={"active": 1, "purpose": "Selling"},
-			fields=["name", "price_type_name"], order_by="price_type_name asc"
+			"Catalog Price Type",
+			filters={"active": 1, "purpose": "Selling"},
+			fields=["name", "price_type_name"],
+			order_by="price_type_name asc",
 		),
 		"warehouses": frappe.get_all(
 			"Catalog Warehouse",
 			filters={
 				"active": 1,
-				**({} if scope["global"] else {"business_point": ["in", scope.get("points") or ["__none__"]]}),
+				**(
+					{} if scope["global"] else {"business_point": ["in", scope.get("points") or ["__none__"]]}
+				),
 			},
 			fields=["name", "business_point", "warehouse_name"],
 			order_by="warehouse_name asc",
 			limit_page_length=0,
-		) if layer == "minimum_stock" else [],
+		)
+		if layer == "minimum_stock"
+		else [],
 	}
 
 
@@ -121,9 +130,20 @@ def get_rows(layer, business_point, catalog_group=None, search=None):
 		points = _selected_points(business_point, allow_all=True)
 		filters, or_filters = _item_filters(catalog_group, search)
 		items = frappe.get_all(
-			"Catalog Item", filters=filters, or_filters=or_filters,
-			fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom", "variant_of"],
-			order_by="item_name asc", limit_page_length=5000
+			"Catalog Item",
+			filters=filters,
+			or_filters=or_filters,
+			fields=[
+				"name",
+				"item_name",
+				"item_code",
+				"item_type",
+				"catalog_group",
+				"stock_uom",
+				"variant_of",
+			],
+			order_by="item_name asc",
+			limit_page_length=5000,
 		)
 		return _assortment_rows_all(points, items)
 	point = _ensure_point(business_point)
@@ -137,9 +157,12 @@ def get_rows(layer, business_point, catalog_group=None, search=None):
 		)
 		filters["name"] = ["in", assortment_items or ["__none__"]]
 	items = frappe.get_all(
-		"Catalog Item", filters=filters, or_filters=or_filters,
+		"Catalog Item",
+		filters=filters,
+		or_filters=or_filters,
 		fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom", "variant_of"],
-		order_by="item_name asc", limit_page_length=5000
+		order_by="item_name asc",
+		limit_page_length=5000,
 	)
 	if layer == "assortment":
 		return _assortment_rows(point, items)
@@ -152,20 +175,24 @@ def get_rows(layer, business_point, catalog_group=None, search=None):
 
 def _assortment_rows(point, items):
 	by_item = {
-		row.item: row for row in frappe.get_all(
-			"Catalog Assortment", filters={"business_point": point},
-			fields=["name", "item", "enabled", "default_warehouse"]
+		row.item: row
+		for row in frappe.get_all(
+			"Catalog Assortment",
+			filters={"business_point": point},
+			fields=["name", "item", "enabled", "default_warehouse"],
 		)
 	}
 	result = []
 	for item in items:
 		assortment = by_item.get(item.name)
-		result.append({
-			**item,
-			"assortment": assortment.name if assortment else None,
-			"enabled": cint(assortment.enabled) if assortment else 0,
-			"default_warehouse": assortment.default_warehouse if assortment else None,
-		})
+		result.append(
+			{
+				**item,
+				"assortment": assortment.name if assortment else None,
+				"enabled": cint(assortment.enabled) if assortment else 0,
+				"default_warehouse": assortment.default_warehouse if assortment else None,
+			}
+		)
 	return result
 
 
@@ -185,14 +212,18 @@ def _assortment_rows_all(points, items):
 	result = []
 	for item in items:
 		enabled_count = enabled_counts.get(item.name, 0)
-		state = "all" if point_count and enabled_count == point_count else "partial" if enabled_count else "none"
-		result.append({
-			**item,
-			"enabled": 1 if state == "all" else 0,
-			"assortment_state": state,
-			"enabled_points": enabled_count,
-			"point_count": point_count,
-		})
+		state = (
+			"all" if point_count and enabled_count == point_count else "partial" if enabled_count else "none"
+		)
+		result.append(
+			{
+				**item,
+				"enabled": 1 if state == "all" else 0,
+				"assortment_state": state,
+				"enabled_points": enabled_count,
+				"point_count": point_count,
+			}
+		)
 	return result
 
 
@@ -203,11 +234,15 @@ def get_assortment_group_states(business_point):
 	_require_layer("assortment")
 	points = _selected_points(business_point, allow_all=True)
 	groups = frappe.get_all(
-		"Catalog Group", filters={"active": 1},
-		fields=["name", "parent_catalog_group"], limit_page_length=2000,
+		"Catalog Group",
+		filters={"active": 1},
+		fields=["name", "parent_catalog_group"],
+		limit_page_length=2000,
 	)
 	items = frappe.get_all(
-		"Catalog Item", filters={"active": 1}, fields=["name", "catalog_group"],
+		"Catalog Item",
+		filters={"active": 1},
+		fields=["name", "catalog_group"],
 		limit_page_length=0,
 	)
 	enabled_pairs = set()
@@ -217,7 +252,8 @@ def get_assortment_group_states(business_point):
 			for row in frappe.get_all(
 				"Catalog Assortment",
 				filters={"business_point": ["in", points], "enabled": 1},
-				fields=["item", "business_point"], limit_page_length=0,
+				fields=["item", "business_point"],
+				limit_page_length=0,
 			)
 		}
 	children = {}
@@ -263,48 +299,57 @@ def _price_rows(point, items):
 	rows = []
 	for item in items:
 		price = prices.get(item.name)
-		rows.append({
-			**item,
-			"price_type": price_type,
-			"rate": price.get("rate") if price else None,
-			"currency": price.get("currency") if price else "RUB",
-			"price_source": price.get("source") if price else None,
-			"inherited_from": price.get("inherited_from") if price else None,
-			"minimum_quantity": price.get("minimum_quantity") if price else 1,
-		})
+		rows.append(
+			{
+				**item,
+				"price_type": price_type,
+				"rate": price.get("rate") if price else None,
+				"currency": price.get("currency") if price else "RUB",
+				"price_source": price.get("source") if price else None,
+				"inherited_from": price.get("inherited_from") if price else None,
+				"minimum_quantity": price.get("minimum_quantity") if price else 1,
+			}
+		)
 	return rows
 
 
 def _minimum_rows(point, items):
 	warehouses = frappe.get_all(
-		"Catalog Warehouse", filters={"business_point": point, "active": 1},
-		fields=["name", "warehouse_name"], order_by="warehouse_name asc"
+		"Catalog Warehouse",
+		filters={"business_point": point, "active": 1},
+		fields=["name", "warehouse_name"],
+		order_by="warehouse_name asc",
 	)
 	warehouse_names = [row.name for row in warehouses]
 	assortments = {
-		row.item: row.default_warehouse for row in frappe.get_all(
+		row.item: row.default_warehouse
+		for row in frappe.get_all(
 			"Catalog Assortment", filters={"business_point": point}, fields=["item", "default_warehouse"]
 		)
 	}
 	rules = {
-		(row.parent, row.warehouse): row for row in frappe.get_all(
-			"Catalog Reorder Rule", filters={"warehouse": ["in", warehouse_names or ["__none__"]]},
-			fields=["name", "parent", "warehouse", "minimum_stock", "reorder_quantity"]
+		(row.parent, row.warehouse): row
+		for row in frappe.get_all(
+			"Catalog Reorder Rule",
+			filters={"warehouse": ["in", warehouse_names or ["__none__"]]},
+			fields=["name", "parent", "warehouse", "minimum_stock", "reorder_quantity"],
 		)
 	}
 	rows = []
 	for item in items:
 		for warehouse in warehouses:
 			rule = rules.get((item.name, warehouse.name))
-			rows.append({
-				**item,
-				"row_key": f"{item.name}:{warehouse.name}",
-				"warehouse": warehouse.name,
-				"warehouse_name": warehouse.warehouse_name,
-				"is_assortment_warehouse": warehouse.name == assortments.get(item.name),
-				"minimum_stock": flt(rule.minimum_stock) if rule else 0,
-				"reorder_quantity": flt(rule.reorder_quantity) if rule else 0,
-			})
+			rows.append(
+				{
+					**item,
+					"row_key": f"{item.name}:{warehouse.name}",
+					"warehouse": warehouse.name,
+					"warehouse_name": warehouse.warehouse_name,
+					"is_assortment_warehouse": warehouse.name == assortments.get(item.name),
+					"minimum_stock": flt(rule.minimum_stock) if rule else 0,
+					"reorder_quantity": flt(rule.reorder_quantity) if rule else 0,
+				}
+			)
 	return rows
 
 
@@ -376,7 +421,9 @@ def _apply_assortment(items, points, enabled):
 
 	warehouses = {
 		point: frappe.db.get_value(
-			"Catalog Warehouse", {"business_point": point, "active": 1}, "name",
+			"Catalog Warehouse",
+			{"business_point": point, "active": 1},
+			"name",
 			order_by="warehouse_name asc",
 		)
 		for point in points
@@ -386,10 +433,7 @@ def _apply_assortment(items, points, enabled):
 	# Use Frappe's supported batched insert. Existing rows were updated above;
 	# deterministic names plus ignore_duplicates make retries harmless.
 	missing_pairs = [
-		(item, point)
-		for point in points
-		for item in items
-		if (item, point) not in existing_pairs
+		(item, point) for point in points for item in items if (item, point) not in existing_pairs
 	]
 	values = [
 		(f"{point}-{item}", now, now, owner, owner, item, point, warehouses.get(point), value, value)
@@ -422,9 +466,7 @@ def _apply_assortment(items, points, enabled):
 def save_point_price(business_point, item, rate, price_type=None, uom=None):
 	_require_layer("prices", "write")
 	point = _ensure_point(business_point)
-	if not frappe.db.exists(
-		"Catalog Assortment", {"business_point": point, "item": item, "enabled": 1}
-	):
+	if not frappe.db.exists("Catalog Assortment", {"business_point": point, "item": item, "enabled": 1}):
 		frappe.throw(
 			_("Цена точки разрешена только для позиции её продаваемого ассортимента."),
 			frappe.PermissionError,
@@ -472,9 +514,7 @@ def save_minimum_stock(business_point, item, warehouse, minimum_stock=0, reorder
 	_ensure_warehouse(point, warehouse)
 	doc = frappe.get_doc("Catalog Item", item)
 	if not doc.active or not doc.track_inventory or doc.item_type not in ("Product", "Variant"):
-		frappe.throw(
-			_("Норматив разрешён только для складского товара."), frappe.PermissionError
-		)
+		frappe.throw(_("Норматив разрешён только для складского товара."), frappe.PermissionError)
 	row = next((row for row in doc.reorder_rules if row.warehouse == warehouse), None)
 	if not row:
 		row = doc.append("reorder_rules", {"warehouse": warehouse})

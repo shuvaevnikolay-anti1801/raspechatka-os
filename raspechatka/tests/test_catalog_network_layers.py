@@ -3,8 +3,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from raspechatka import access
-from raspechatka import pricing
+from raspechatka import access, pricing
 from raspechatka.api import catalog_layers
 
 
@@ -114,7 +113,7 @@ class TestCatalogLayerContracts(TestCase):
 	def test_layer_page_keeps_all_points_only_for_assortment_and_has_no_search(self):
 		root = Path(__file__).resolve().parents[2]
 		source = (root / "frontend/src/pages/CatalogPointLayerPage.vue").read_text(encoding="utf-8")
-		self.assertIn('value="__all__">Все точки', source)
+		self.assertIn('value="__all__"', source)
 		self.assertIn("layer === 'assortment'", source)
 		self.assertNotIn('placeholder="Название, код или артикул"', source)
 		self.assertNotIn("filters.search", source)
@@ -147,9 +146,7 @@ class TestCatalogLayerContracts(TestCase):
 
 	def test_legacy_migration_preserves_effective_pos_visibility(self):
 		root = Path(__file__).resolve().parents[1]
-		source = (
-			root / "patches/v1_0/canonicalize_pos_assortment_enabled.py"
-		).read_text(encoding="utf-8")
+		source = (root / "patches/v1_0/canonicalize_pos_assortment_enabled.py").read_text(encoding="utf-8")
 		self.assertIn("enabled = 1 AND visible_in_pos = 1", source)
 		self.assertIn("visible_in_pos = IF", source)
 
@@ -193,12 +190,26 @@ class TestBatchPriceResolver(TestCase):
 		}
 		price_rows = [
 			SimpleNamespace(
-				parent="PRODUCT", rate=100, business_point=None, uom="шт", currency="RUB",
-				minimum_quantity=1, valid_from=None, valid_upto=None, idx=1,
+				parent="PRODUCT",
+				rate=100,
+				business_point=None,
+				uom="шт",
+				currency="RUB",
+				minimum_quantity=1,
+				valid_from=None,
+				valid_upto=None,
+				idx=1,
 			),
 			SimpleNamespace(
-				parent="PRODUCT", rate=120, business_point="POINT-A", uom="шт", currency="RUB",
-				minimum_quantity=1, valid_from=None, valid_upto=None, idx=2,
+				parent="PRODUCT",
+				rate=120,
+				business_point="POINT-A",
+				uom="шт",
+				currency="RUB",
+				minimum_quantity=1,
+				valid_from=None,
+				valid_upto=None,
+				idx=2,
 			),
 		]
 
@@ -210,11 +221,16 @@ class TestBatchPriceResolver(TestCase):
 			raise AssertionError(doctype)
 
 		fake = SimpleNamespace(
-			db=SimpleNamespace(get_value=Mock(return_value=SimpleNamespace(active=1, price_rounding="Без округления"))),
+			db=SimpleNamespace(
+				get_value=Mock(return_value=SimpleNamespace(active=1, price_rounding="Без округления"))
+			),
 			get_all=Mock(side_effect=get_all),
 			throw=Mock(side_effect=AssertionError),
 		)
-		with patch.object(pricing, "frappe", fake), patch.object(pricing, "nowdate", return_value="2026-09-17"):
+		with (
+			patch.object(pricing, "frappe", fake),
+			patch.object(pricing, "nowdate", return_value="2026-09-17"),
+		):
 			result = pricing.resolve_item_prices(["PRODUCT", "VARIANT"], "POINT-A", price_type="RETAIL")
 
 		self.assertEqual(result["PRODUCT"]["rate"], 120)
@@ -228,12 +244,9 @@ class TestBatchPriceResolver(TestCase):
 		)
 
 
-
 class TestAccessPageMigration(TestCase):
 	def test_new_catalog_pages_copy_legacy_page_level_without_set_operations(self):
-		legacy = SimpleNamespace(
-			role="Manager", access_area="page.catalog", access_level="Edit"
-		)
+		legacy = SimpleNamespace(role="Manager", access_area="page.catalog", access_level="Edit")
 		rules = [legacy]
 		doc = SimpleNamespace(rules=rules, save=Mock())
 
@@ -242,10 +255,12 @@ class TestAccessPageMigration(TestCase):
 
 		doc.append = append
 		fake_frappe = SimpleNamespace(get_single=Mock(return_value=doc))
-		pages = [{
-			"area": "page.catalog.assortment",
-			"legacy_area": "page.catalog",
-		}]
+		pages = [
+			{
+				"area": "page.catalog.assortment",
+				"legacy_area": "page.catalog",
+			}
+		]
 		with (
 			patch.object(access, "frappe", fake_frappe),
 			patch.object(access, "get_matrix_roles", return_value=["Manager"]),

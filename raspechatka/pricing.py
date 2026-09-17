@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 import frappe
 from frappe import _
@@ -10,7 +10,9 @@ from frappe.utils import flt, getdate, nowdate
 def get_default_price_type(business_point):
 	"""Return the active selling price type configured for a point."""
 	price_type = frappe.db.get_value("Business Point", business_point, "default_price_type")
-	if price_type and frappe.db.exists("Catalog Price Type", {"name": price_type, "active": 1, "purpose": "Selling"}):
+	if price_type and frappe.db.exists(
+		"Catalog Price Type", {"name": price_type, "active": 1, "purpose": "Selling"}
+	):
 		return price_type
 	return frappe.db.get_value(
 		"Catalog Price Type",
@@ -115,9 +117,7 @@ def resolve_item_price(
 				parent_price["inherited_from"] = item_row.variant_of
 				return parent_price
 		if required:
-			frappe.throw(
-				_("Для позиции «{0}» не настроена действующая цена «{1}».").format(item, price_type)
-			)
+			frappe.throw(_("Для позиции «{0}» не настроена действующая цена «{1}».").format(item, price_type))
 		return None
 
 	rate = flt(candidates[0].rate)
@@ -137,9 +137,7 @@ def resolve_item_prices(items, business_point, price_type=None, quantity=1, on_d
 	if not requested:
 		return {}
 
-	point = frappe.db.get_value(
-		"Business Point", business_point, ["active", "price_rounding"], as_dict=True
-	)
+	point = frappe.db.get_value("Business Point", business_point, ["active", "price_rounding"], as_dict=True)
 	if not point or not point.active:
 		frappe.throw(_("Точка продаж недоступна."))
 	price_type = price_type or get_default_price_type(business_point)
@@ -254,7 +252,5 @@ def round_price(rate, rule):
 	if rule == "До 1 рубля":
 		return float(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 	if rule == "До 10 рублей":
-		return float(
-			(value / Decimal("10")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("10")
-		)
+		return float((value / Decimal("10")).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * Decimal("10"))
 	return float(value)
