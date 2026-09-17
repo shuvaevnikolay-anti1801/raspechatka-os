@@ -92,6 +92,39 @@ body {
 	font-weight: 450;
 	outline: none;
 }
+.os-phone-control {
+	display: flex;
+	align-items: center;
+	height: 48px;
+	border: 1px solid var(--os-line);
+	border-radius: 10px;
+	background: #fff;
+	overflow: hidden;
+}
+.os-phone-control:focus-within {
+	border-color: var(--os-green);
+	box-shadow: 0 0 0 3px rgba(136, 189, 36, 0.18);
+}
+.os-phone-prefix {
+	display: flex !important;
+	align-items: center;
+	align-self: stretch;
+	margin: 0 !important;
+	padding: 0 12px 0 14px;
+	border-right: 1px solid var(--os-line);
+	background: #f8faf6;
+	color: var(--os-text);
+	font-weight: 650;
+	user-select: none;
+}
+.os-field .os-phone-control input {
+	height: 46px;
+	border: 0;
+	border-radius: 0;
+}
+.os-field .os-phone-control input:focus {
+	box-shadow: none;
+}
 .os-field input:focus {
 	border-color: var(--os-green);
 	box-shadow: 0 0 0 3px rgba(136, 189, 36, 0.18);
