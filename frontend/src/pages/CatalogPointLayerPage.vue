@@ -23,7 +23,7 @@ const config = computed(
 				title: pageLabel("/catalog/minimum-stock"),
 				area: "page.catalog.minimum-stock",
 			},
-		}[layer.value])
+		})[layer.value],
 );
 const options = reactive({ points: [], groups: [], price_types: [], warehouses: [] });
 const filters = reactive({ business_point: "", catalog_group: "" });
@@ -35,16 +35,18 @@ const feedback = ref("");
 const saving = ref("");
 const priceDirty = ref(false);
 const normsDirty = ref(false);
+const priceWorkspace = ref(null);
+const sourcePoint = ref("");
 const previousPoint = ref("");
 const canEdit = computed(() => canAccess(config.value.area, "Edit"));
 const hasActiveWarehouse = computed(() =>
-	options.warehouses.some((warehouse) => warehouse.business_point === filters.business_point)
+	options.warehouses.some((warehouse) => warehouse.business_point === filters.business_point),
 );
 const emptyMessage = computed(() => layerEmptyMessage(layer.value, hasActiveWarehouse.value));
 const selectedGroupLabel = computed(
 	() =>
 		options.groups.find((group) => group.name === filters.catalog_group)?.group_name ||
-		"Все позиции"
+		"Все позиции",
 );
 
 let rowsRequestId = 0;
@@ -57,7 +59,7 @@ async function loadOptions() {
 	filters.business_point = normalizeBusinessPoint(
 		layer.value,
 		filters.business_point,
-		options.points
+		options.points,
 	);
 	previousPoint.value = filters.business_point;
 	if (
@@ -91,7 +93,7 @@ async function loadRows() {
 				"raspechatka.api.catalog_layers.get_assortment_group_states",
 				{
 					business_point: filters.business_point,
-				}
+				},
 			);
 			if (requestId !== rowsRequestId) return;
 			groupStates.value = states;
@@ -113,7 +115,7 @@ async function saveAssortment(row) {
 				item: row.name,
 				enabled: row.enabled ? 1 : 0,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		feedback.value =
 			filters.business_point === "__all__"
@@ -135,7 +137,7 @@ async function bulk(enabled) {
 		!window.confirm(
 			`${enabled ? "Включить" : "Выключить"} ${
 				rows.value.length
-			} позиций в ${pointCount} точках?`
+			} позиций в ${pointCount} точках?`,
 		)
 	)
 		return;
@@ -150,7 +152,7 @@ async function bulk(enabled) {
 				catalog_group: filters.catalog_group,
 				enabled,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		feedback.value = `${enabled ? "Включено" : "Выключено"} ${
 			result.items
@@ -187,6 +189,7 @@ function changePoint() {
 	}
 	priceDirty.value = false;
 	normsDirty.value = false;
+	sourcePoint.value = "";
 	previousPoint.value = filters.business_point;
 	feedback.value = "";
 	loadRows();
@@ -223,6 +226,36 @@ onMounted(async () => {
 					</option>
 				</select>
 			</label>
+			<template v-if="layer === 'prices' && canEdit">
+				<label class="source-point-control"
+					>Копировать из точки
+					<select v-model="sourcePoint">
+						<option value="">Выберите точку…</option>
+						<option
+							v-for="point in options.points.filter(
+								(item) => item.name !== filters.business_point,
+							)"
+							:key="point.name"
+							:value="point.name"
+						>
+							{{ point.point_name }}
+						</option>
+					</select>
+				</label>
+				<button
+					class="button button-secondary copy-prices-button"
+					:disabled="!sourcePoint"
+					@click="priceWorkspace?.previewCopy()"
+				>
+					Копировать цены
+				</button>
+				<button
+					class="button button-secondary calculator-button"
+					@click="priceWorkspace?.openCalculator()"
+				>
+					Калькулятор цен
+				</button>
+			</template>
 			<div v-if="layer === 'assortment' && canEdit" class="bulk-actions">
 				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(1)">
 					Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}
@@ -244,6 +277,7 @@ onMounted(async () => {
 			<div class="layer-table-wrap">
 				<CatalogPriceWorkspace
 					v-if="layer === 'prices'"
+					ref="priceWorkspace"
 					:rows="rows"
 					:points="options.points"
 					:business-point="filters.business_point"
@@ -251,6 +285,7 @@ onMounted(async () => {
 					:group-label="selectedGroupLabel"
 					:can-edit="canEdit"
 					:loading="loading"
+					:source-point="sourcePoint"
 					@reload="loadRows"
 					@dirty="priceDirty = $event"
 					@error="error = $event"
@@ -318,8 +353,8 @@ onMounted(async () => {
 											row.assortment_state === "all"
 												? "✓ Во всех"
 												: row.assortment_state === "partial"
-												? `◐ В ${row.enabled_points} из ${row.point_count}`
-												: "○ Нигде"
+													? `◐ В ${row.enabled_points} из ${row.point_count}`
+													: "○ Нигде"
 										}}
 									</button>
 								</td>
@@ -354,6 +389,13 @@ onMounted(async () => {
 .bulk-actions {
 	display: flex;
 	gap: 8px;
+	margin-left: auto;
+}
+.copy-prices-button,
+.calculator-button {
+	align-self: flex-end;
+}
+.calculator-button {
 	margin-left: auto;
 }
 .layer-workspace {
@@ -422,6 +464,9 @@ onMounted(async () => {
 		flex-direction: column;
 	}
 	.bulk-actions {
+		margin-left: 0;
+	}
+	.calculator-button {
 		margin-left: 0;
 	}
 	.layer-table-wrap {

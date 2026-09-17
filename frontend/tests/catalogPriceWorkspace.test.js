@@ -4,7 +4,11 @@ import test from "node:test";
 
 const workspace = readFileSync(
 	new URL("../src/components/CatalogPriceWorkspace.vue", import.meta.url),
-	"utf8"
+	"utf8",
+);
+const page = readFileSync(
+	new URL("../src/pages/CatalogPointLayerPage.vue", import.meta.url),
+	"utf8",
 );
 
 test("point pricing table exposes the canonical business columns", () => {
@@ -22,9 +26,24 @@ test("point pricing table exposes the canonical business columns", () => {
 });
 
 test("view-only mode hides every price mutation control", () => {
-	assert.match(workspace, /v-if="canEdit" class="price-tools"/);
+	assert.match(page, /v-if="layer === 'prices' && canEdit"/);
 	assert.match(workspace, /:disabled="!canEdit \|\| saving\.has\(row\.name\)"/);
 	assert.match(workspace, /<th v-if="canEdit">Сохранить<\/th>/);
+});
+
+test("price copy tools share the point toolbar and calculator stays on the right", () => {
+	assert.match(page, /class="source-point-control"/);
+	assert.match(page, /class="button button-secondary copy-prices-button"/);
+	assert.match(page, /class="button button-secondary calculator-button"/);
+	assert.match(page, /\.calculator-button \{\s*margin-left: auto;/);
+	assert.doesNotMatch(workspace, /class="price-tools"/);
+});
+
+test("calculator modal presents context, rule and optional constraints", () => {
+	assert.match(workspace, /class="calculator-intro"/);
+	assert.match(workspace, /Правило расчёта/);
+	assert.match(workspace, /Дополнительные ограничения/);
+	assert.match(workspace, /Перед применением вы увидите все новые цены/);
 });
 
 test("copy and calculator require backend preview before one bulk apply", () => {
