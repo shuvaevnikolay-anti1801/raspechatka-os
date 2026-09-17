@@ -21,7 +21,7 @@ def _valid_inn12(seed):
 
 
 class IntegrationTestBusinessPoint(IntegrationTestCase):
-	def test_working_hours_survive_save_and_reopen(self):
+	def _create_point(self):
 		suffix = frappe.generate_hash(length=8)
 		organization = frappe.get_doc(
 			{
@@ -43,7 +43,7 @@ class IntegrationTestBusinessPoint(IntegrationTestCase):
 				"tax_system": "Патент",
 			}
 		).insert(ignore_permissions=True)
-		point = frappe.get_doc(
+		return frappe.get_doc(
 			{
 				"doctype": "Business Point",
 				"point_name": f"Ярославль, Тестовая, {suffix}",
@@ -62,7 +62,23 @@ class IntegrationTestBusinessPoint(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
+	def test_working_hours_survive_save_and_reopen(self):
+		point = self._create_point()
+
 		reopened = frappe.get_doc("Business Point", point.name)
 		self.assertEqual(reopened.timezone, "Asia/Yekaterinburg")
 		self.assertEqual(str(reopened.working_hours[0].opens_at), "8:15:00")
 		self.assertEqual(str(reopened.working_hours[0].closes_at), "19:45:00")
+
+	def test_save_reuses_legacy_register_linked_only_by_workplace(self):
+		point = self._create_point()
+		workplace = frappe.db.get_value("POS Workplace", {"business_point": point.name}, "name")
+		register = frappe.db.get_value("Cash Register", {"business_point": point.name}, "name")
+		frappe.db.set_value("Cash Register", register, "business_point", None, update_modified=False)
+
+		point.point_name = f"{point.point_name} — обновлено"
+		point.save(ignore_permissions=True)
+
+		self.assertEqual(frappe.db.get_value("Cash Register", register, "business_point"), point.name)
+		self.assertEqual(frappe.db.get_value("Cash Register", register, "pos_workplace"), workplace)
+		self.assertEqual(frappe.db.count("Cash Register", {"pos_workplace": workplace}), 1)
