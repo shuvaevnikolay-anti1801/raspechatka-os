@@ -7,14 +7,19 @@ class TestCatalogItemTypeContract(TestCase):
 		root = Path(__file__).resolve().parents[1]
 		source = (root / "raspechatka_os/doctype/catalog_item/catalog_item.py").read_text(encoding="utf-8")
 		validate_body = source.split("def validate(self):", 1)[1].split("def on_update", 1)[0]
-		self.assertLess(validate_body.index("self._validate_immutable_type()"), validate_body.index("self._clean_identifiers()"))
+		self.assertLess(
+			validate_body.index("self._validate_immutable_type()"),
+			validate_body.index("self._clean_identifiers()"),
+		)
 		self.assertIn('frappe.db.get_value("Catalog Item", self.name, "item_type")', validate_body)
 		self.assertIn("frappe.ValidationError", validate_body)
 
 	def test_new_item_may_choose_its_type(self):
 		root = Path(__file__).resolve().parents[1]
 		source = (root / "raspechatka_os/doctype/catalog_item/catalog_item.py").read_text(encoding="utf-8")
-		immutable_body = source.split("def _validate_immutable_type(self):", 1)[1].split("def on_update", 1)[0]
+		immutable_body = source.split("def _validate_immutable_type(self):", 1)[1].split("def on_update", 1)[
+			0
+		]
 		self.assertIn("if self.is_new():\n\t\t\treturn", immutable_body)
 
 
@@ -37,7 +42,9 @@ class TestCatalogCardSourceContract(TestCase):
 	def test_existing_hidden_tax_values_are_not_reset_on_card_save(self):
 		root = Path(__file__).resolve().parents[1]
 		source = (root / "raspechatka_os/doctype/catalog_item/catalog_item.py").read_text(encoding="utf-8")
-		type_rules = source.split("def _apply_type_rules(self):", 1)[1].split("def _validate_group_and_unit", 1)[0]
+		type_rules = source.split("def _apply_type_rules(self):", 1)[1].split(
+			"def _validate_group_and_unit", 1
+		)[0]
 		self.assertIn("if self.is_new():", type_rules)
 		self.assertLess(type_rules.index("if self.is_new():"), type_rules.index('self.vat_rate = "Без НДС"'))
 
@@ -50,7 +57,10 @@ class TestCatalogCardSourceContract(TestCase):
 	def test_component_search_is_bounded_and_rejects_bundles(self):
 		root = Path(__file__).resolve().parents[1]
 		source = (root / "api/frontend.py").read_text(encoding="utf-8")
-		search_source = source.split("def search_bundle_components", 1)[1].split("def save_catalog_item", 1)[0]
-		self.assertIn('limit_page_length = min(max(cint(limit_page_length), 1), 50)', search_source)
+		search_source = source.split("def search_bundle_components", 1)[1].split("def save_catalog_item", 1)[
+			0
+		]
+		self.assertIn("limit_page_length = min(max(cint(limit_page_length), 1), 50)", search_source)
 		self.assertIn('["Product", "Service", "Variant"]', search_source)
 		self.assertIn('f"%{value}%"', search_source)
+7819b7a2e2f162ff737c573a9416eb38799e0ec3
