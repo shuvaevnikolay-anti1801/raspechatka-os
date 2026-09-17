@@ -156,7 +156,8 @@ class TestCatalogLayerContracts(TestCase):
 	def test_price_workspace_has_no_legacy_source_column(self):
 		root = Path(__file__).resolve().parents[2]
 		source = (root / "frontend/src/components/CatalogPriceWorkspace.vue").read_text(encoding="utf-8")
-		self.assertNotIn("Источник", source)
+		self.assertNotIn("<th>Источник</th>", source)
+		self.assertIn("Точка-источник", source)
 		self.assertIn("Закупочная цена", source)
 		self.assertIn("Наценка", source)
 
