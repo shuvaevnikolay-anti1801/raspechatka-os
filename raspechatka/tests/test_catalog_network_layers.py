@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from raspechatka import access
+from raspechatka import access, pricing
 from raspechatka.api import catalog_layers
 
 
@@ -49,6 +49,24 @@ class TestCatalogLayerSecurity(TestCase):
 			):
 				catalog_layers.save_minimum_stock("POINT-A", "ITEM", "WAREHOUSE-A", 10, 20)
 
+	def test_point_price_rejects_item_outside_enabled_assortment(self):
+		permission_error = type("PermissionError", (Exception,), {})
+		fake = SimpleNamespace(
+			PermissionError=permission_error,
+			db=SimpleNamespace(exists=Mock(return_value=False)),
+			throw=Mock(side_effect=permission_error),
+		)
+		with (
+			patch.object(catalog_layers, "frappe", fake),
+			patch.object(catalog_layers, "_require_layer"),
+			patch.object(catalog_layers, "_ensure_point", return_value="POINT-A"),
+			self.assertRaises(permission_error),
+		):
+			catalog_layers.save_point_price("POINT-A", "ITEM-B", 100)
+		fake.db.exists.assert_called_once_with(
+			"Catalog Assortment", {"business_point": "POINT-A", "item": "ITEM-B", "enabled": 1}
+		)
+
 	def test_all_points_resolves_only_active_points_inside_scope(self):
 		fake = SimpleNamespace(get_all=Mock(return_value=["POINT-A", "POINT-B"]))
 		with (
@@ -92,18 +110,43 @@ class TestCatalogLayerContracts(TestCase):
 		save_source = source.split("def save_catalog_item", 1)[1].split("def _archive_values", 1)[0]
 		self.assertNotIn("_create_default_assortments", save_source)
 
-	def test_assortment_page_has_all_points_and_no_search(self):
+	def test_layer_page_keeps_all_points_only_for_assortment_and_has_no_search(self):
 		root = Path(__file__).resolve().parents[2]
 		source = (root / "frontend/src/pages/CatalogPointLayerPage.vue").read_text(encoding="utf-8")
-		self.assertIn('value="__all__">Все точки', source)
-		self.assertIn("layer !== 'assortment'", source)
+		self.assertIn('value="__all__"', source)
+		self.assertIn("layer === 'assortment'", source)
+		self.assertNotIn('placeholder="Название, код или артикул"', source)
+		self.assertNotIn("filters.search", source)
 		self.assertNotIn("Видим в POS", source)
+
+	def test_price_rows_prefilter_enabled_assortment_and_use_batch_resolver(self):
+		root = Path(__file__).resolve().parents[1]
+		source = (root / "api/catalog_layers.py").read_text(encoding="utf-8")
+		rows_source = source.split("def get_rows", 1)[1].split("def _assortment_rows", 1)[0]
+		price_source = source.split("def _price_rows", 1)[1].split("def _minimum_rows", 1)[0]
+		self.assertIn('filters={"business_point": point, "enabled": 1}', rows_source)
+		self.assertIn('filters["name"] = ["in", assortment_items', rows_source)
+		self.assertIn("resolve_item_prices", price_source)
+		self.assertNotIn("resolve_item_price(", price_source)
+
+	def test_write_endpoints_declare_page_and_point_contracts(self):
+		self.assertEqual(
+			catalog_layers.save_point_price._raspechatka_access_contract,
+			{"area": "page.catalog.prices", "action": "write", "scope": "point", "auth": "session"},
+		)
+		self.assertEqual(
+			catalog_layers.save_minimum_stock._raspechatka_access_contract,
+			{
+				"area": "page.catalog.minimum-stock",
+				"action": "write",
+				"scope": "point",
+				"auth": "session",
+			},
+		)
 
 	def test_legacy_migration_preserves_effective_pos_visibility(self):
 		root = Path(__file__).resolve().parents[1]
-		source = (
-			root / "patches/v1_0/canonicalize_pos_assortment_enabled.py"
-		).read_text(encoding="utf-8")
+		source = (root / "patches/v1_0/canonicalize_pos_assortment_enabled.py").read_text(encoding="utf-8")
 		self.assertIn("enabled = 1 AND visible_in_pos = 1", source)
 		self.assertIn("visible_in_pos = IF", source)
 
@@ -139,12 +182,71 @@ class TestCatalogLayerContracts(TestCase):
 		self.assertNotIn("local_sale_price", layer_source)
 
 
+class TestBatchPriceResolver(TestCase):
+	def test_batch_resolver_preserves_point_priority_and_variant_inheritance(self):
+		items = {
+			"PRODUCT": SimpleNamespace(name="PRODUCT", stock_uom="шт", variant_of=None),
+			"VARIANT": SimpleNamespace(name="VARIANT", stock_uom="шт", variant_of="PRODUCT"),
+		}
+		price_rows = [
+			SimpleNamespace(
+				parent="PRODUCT",
+				rate=100,
+				business_point=None,
+				uom="шт",
+				currency="RUB",
+				minimum_quantity=1,
+				valid_from=None,
+				valid_upto=None,
+				idx=1,
+			),
+			SimpleNamespace(
+				parent="PRODUCT",
+				rate=120,
+				business_point="POINT-A",
+				uom="шт",
+				currency="RUB",
+				minimum_quantity=1,
+				valid_from=None,
+				valid_upto=None,
+				idx=2,
+			),
+		]
+
+		def get_all(doctype, filters=None, **_kwargs):
+			if doctype == "Catalog Item":
+				return [items[name] for name in filters["name"][1] if name in items]
+			if doctype == "Catalog Item Price":
+				return price_rows
+			raise AssertionError(doctype)
+
+		fake = SimpleNamespace(
+			db=SimpleNamespace(
+				get_value=Mock(return_value=SimpleNamespace(active=1, price_rounding="Без округления"))
+			),
+			get_all=Mock(side_effect=get_all),
+			throw=Mock(side_effect=AssertionError),
+		)
+		with (
+			patch.object(pricing, "frappe", fake),
+			patch.object(pricing, "nowdate", return_value="2026-09-17"),
+		):
+			result = pricing.resolve_item_prices(["PRODUCT", "VARIANT"], "POINT-A", price_type="RETAIL")
+
+		self.assertEqual(result["PRODUCT"]["rate"], 120)
+		self.assertEqual(result["PRODUCT"]["source"], "Point")
+		self.assertEqual(result["VARIANT"]["rate"], 120)
+		self.assertEqual(result["VARIANT"]["source"], "Variant Parent")
+		self.assertEqual(result["VARIANT"]["inherited_from"], "PRODUCT")
+		self.assertEqual(
+			sum(call.args[0] == "Catalog Item Price" for call in fake.get_all.call_args_list),
+			1,
+		)
+
 
 class TestAccessPageMigration(TestCase):
 	def test_new_catalog_pages_copy_legacy_page_level_without_set_operations(self):
-		legacy = SimpleNamespace(
-			role="Manager", access_area="page.catalog", access_level="Edit"
-		)
+		legacy = SimpleNamespace(role="Manager", access_area="page.catalog", access_level="Edit")
 		rules = [legacy]
 		doc = SimpleNamespace(rules=rules, save=Mock())
 
@@ -153,10 +255,12 @@ class TestAccessPageMigration(TestCase):
 
 		doc.append = append
 		fake_frappe = SimpleNamespace(get_single=Mock(return_value=doc))
-		pages = [{
-			"area": "page.catalog.assortment",
-			"legacy_area": "page.catalog",
-		}]
+		pages = [
+			{
+				"area": "page.catalog.assortment",
+				"legacy_area": "page.catalog",
+			}
+		]
 		with (
 			patch.object(access, "frappe", fake_frappe),
 			patch.object(access, "get_matrix_roles", return_value=["Manager"]),
