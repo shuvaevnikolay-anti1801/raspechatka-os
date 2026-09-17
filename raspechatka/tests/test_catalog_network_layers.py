@@ -136,7 +136,9 @@ class TestCatalogLayerContracts(TestCase):
 	def test_layer_page_keeps_all_points_only_for_assortment_and_has_no_search(self):
 		root = Path(__file__).resolve().parents[2]
 		source = (root / "frontend/src/pages/CatalogPointLayerPage.vue").read_text(encoding="utf-8")
-		self.assertIn('value="__all__"', source)
+		toolbar = (root / "frontend/src/components/CatalogPointLayerToolbar.vue").read_text(encoding="utf-8")
+		self.assertIn('v-if="allowAll" value="__all__"', toolbar)
+		self.assertIn(':allow-all="layer === \'assortment\'"', source)
 		self.assertIn("layer === 'assortment'", source)
 		self.assertNotIn('placeholder="Название, код или артикул"', source)
 		self.assertNotIn("filters.search", source)
@@ -157,8 +159,10 @@ class TestCatalogLayerContracts(TestCase):
 		root = Path(__file__).resolve().parents[2]
 		source = (root / "frontend/src/components/CatalogPriceWorkspace.vue").read_text(encoding="utf-8")
 		page_source = (root / "frontend/src/pages/CatalogPointLayerPage.vue").read_text(encoding="utf-8")
+		toolbar = (root / "frontend/src/components/CatalogPointLayerToolbar.vue").read_text(encoding="utf-8")
 		self.assertNotIn("<th>Источник</th>", source)
-		self.assertIn("Копировать из точки", page_source)
+		self.assertIn("Копировать из точки", toolbar)
+		self.assertIn('v-model:source-point="sourcePoint"', page_source)
 		self.assertIn("Закупочная цена", source)
 		self.assertIn("Наценка", source)
 

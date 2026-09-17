@@ -4,8 +4,10 @@ import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import { pageLabel } from "../pageRegistry";
 import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
+import CatalogPointLayerToolbar from "../components/CatalogPointLayerToolbar.vue";
 import CatalogPriceWorkspace from "../components/CatalogPriceWorkspace.vue";
 import StockNormsWorkspace from "../components/StockNormsWorkspace.vue";
+import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import { layerEmptyMessage, normalizeBusinessPoint } from "../catalogPointLayerState";
 
@@ -36,7 +38,10 @@ const saving = ref("");
 const priceDirty = ref(false);
 const normsDirty = ref(false);
 const priceWorkspace = ref(null);
+const normsWorkspace = ref(null);
 const sourcePoint = ref("");
+const workspaceBusy = ref(false);
+const bulkIntent = ref(null);
 const previousPoint = ref("");
 const canEdit = computed(() => canAccess(config.value.area, "Edit"));
 const hasActiveWarehouse = computed(() =>
@@ -47,6 +52,12 @@ const selectedGroupLabel = computed(
 	() =>
 		options.groups.find((group) => group.name === filters.catalog_group)?.group_name ||
 		"Все позиции",
+);
+const selectedPointLabel = computed(() =>
+	filters.business_point === "__all__"
+		? "Все доступные точки"
+		: options.points.find((point) => point.name === filters.business_point)?.point_name ||
+			filters.business_point,
 );
 
 let rowsRequestId = 0;
@@ -131,16 +142,6 @@ async function saveAssortment(row) {
 }
 
 async function bulk(enabled) {
-	const pointCount = filters.business_point === "__all__" ? options.points.length : 1;
-	if (
-		(!enabled || filters.business_point === "__all__") &&
-		!window.confirm(
-			`${enabled ? "Включить" : "Выключить"} ${
-				rows.value.length
-			} позиций в ${pointCount} точках?`,
-		)
-	)
-		return;
 	saving.value = "bulk";
 	error.value = "";
 	feedback.value = "";
@@ -157,12 +158,21 @@ async function bulk(enabled) {
 		feedback.value = `${enabled ? "Включено" : "Выключено"} ${
 			result.items
 		} позиций; изменено ${result.updated} настроек в ${result.points} точках.`;
+		bulkIntent.value = null;
 		await loadRows();
 	} catch (exception) {
 		error.value = exception.message;
 	} finally {
 		saving.value = "";
 	}
+}
+
+function requestBulk(enabled) {
+	bulkIntent.value = {
+		enabled,
+		items: rows.value.length,
+		points: filters.business_point === "__all__" ? options.points.length : 1,
+	};
 }
 
 function selectGroup(name) {
@@ -189,6 +199,7 @@ function changePoint() {
 	}
 	priceDirty.value = false;
 	normsDirty.value = false;
+	workspaceBusy.value = false;
 	sourcePoint.value = "";
 	previousPoint.value = filters.business_point;
 	feedback.value = "";
@@ -200,6 +211,8 @@ async function setAggregated(row, enabled) {
 }
 watch(layer, async () => {
 	feedback.value = "";
+	sourcePoint.value = "";
+	workspaceBusy.value = false;
 	await loadOptions();
 	await loadRows();
 });
@@ -216,55 +229,66 @@ onMounted(async () => {
 <template>
 	<section class="page layer-page">
 		<ListPageHeader :title="config.title" />
-		<div class="layer-controls">
-			<label
-				>Точка продаж
-				<select v-model="filters.business_point" @change="changePoint">
-					<option v-if="layer === 'assortment'" value="__all__">Все точки</option>
-					<option v-for="point in options.points" :key="point.name" :value="point.name">
-						{{ point.point_name }}
-					</option>
-				</select>
-			</label>
-			<template v-if="layer === 'prices' && canEdit">
-				<label class="source-point-control"
-					>Копировать из точки
-					<select v-model="sourcePoint">
-						<option value="">Выберите точку…</option>
-						<option
-							v-for="point in options.points.filter(
-								(item) => item.name !== filters.business_point,
-							)"
-							:key="point.name"
-							:value="point.name"
-						>
-							{{ point.point_name }}
-						</option>
-					</select>
-				</label>
-				<button
-					class="button button-secondary copy-prices-button"
-					:disabled="!sourcePoint"
-					@click="priceWorkspace?.previewCopy()"
-				>
-					Копировать цены
-				</button>
-				<button
-					class="button button-secondary calculator-button"
-					@click="priceWorkspace?.openCalculator()"
-				>
-					Калькулятор цен
-				</button>
+		<CatalogPointLayerToolbar
+			v-model:business-point="filters.business_point"
+			v-model:source-point="sourcePoint"
+			:points="options.points"
+			:allow-all="layer === 'assortment'"
+			:show-source="canEdit && (layer === 'prices' || layer === 'minimum_stock')"
+			:disabled="loading || workspaceBusy"
+			@change-point="changePoint"
+		>
+			<template v-if="canEdit" #actions>
+				<template v-if="layer === 'prices'">
+					<button
+						class="button button-secondary"
+						:disabled="!sourcePoint || workspaceBusy"
+						@click="priceWorkspace?.previewCopy()"
+					>
+						{{ workspaceBusy ? "Загрузка…" : "Копировать цены" }}
+					</button>
+					<button
+						class="button button-primary"
+						:disabled="workspaceBusy || !rows.length"
+						@click="priceWorkspace?.openCalculator()"
+					>
+						Калькулятор цен
+					</button>
+				</template>
+				<template v-else-if="layer === 'minimum_stock'">
+					<button
+						class="button button-secondary"
+						:disabled="!sourcePoint || workspaceBusy"
+						@click="normsWorkspace?.previewCopy()"
+					>
+						Копировать нормативы
+					</button>
+					<button
+						class="button button-primary"
+						:disabled="workspaceBusy || !rows.length"
+						@click="normsWorkspace?.openCalculator()"
+					>
+						Рассчитать нормативы
+					</button>
+				</template>
+				<template v-else-if="layer === 'assortment'">
+					<button
+						class="button button-secondary"
+						:disabled="saving !== ''"
+						@click="requestBulk(1)"
+					>
+						Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}
+					</button>
+					<button
+						class="button button-secondary"
+						:disabled="saving !== ''"
+						@click="requestBulk(0)"
+					>
+						Выключить {{ filters.catalog_group ? "группу" : "весь каталог" }}
+					</button>
+				</template>
 			</template>
-			<div v-if="layer === 'assortment' && canEdit" class="bulk-actions">
-				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(1)">
-					Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}
-				</button>
-				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(0)">
-					Выключить {{ filters.catalog_group ? "группу" : "весь каталог" }}
-				</button>
-			</div>
-		</div>
+		</CatalogPointLayerToolbar>
 		<p v-if="error" class="form-error">{{ error }}</p>
 		<p v-if="feedback" class="form-success">{{ feedback }}</p>
 		<div class="layer-workspace">
@@ -290,9 +314,11 @@ onMounted(async () => {
 					@dirty="priceDirty = $event"
 					@error="error = $event"
 					@feedback="feedback = $event"
+					@busy="workspaceBusy = $event"
 				/>
 				<StockNormsWorkspace
 					v-else-if="layer === 'minimum_stock'"
+					ref="normsWorkspace"
 					:rows="rows"
 					:points="options.points"
 					:business-point="filters.business_point"
@@ -300,10 +326,12 @@ onMounted(async () => {
 					:group-label="selectedGroupLabel"
 					:can-edit="canEdit"
 					:loading="loading"
+					:source-point="sourcePoint"
 					@reload="loadRows"
 					@dirty="normsDirty = $event"
 					@error="error = $event"
 					@feedback="feedback = $event"
+					@busy="workspaceBusy = $event"
 				/>
 				<table v-else class="layer-table">
 					<thead>
@@ -368,36 +396,59 @@ onMounted(async () => {
 				<p v-if="loading" class="muted-copy">Загрузка…</p>
 			</div>
 		</div>
+		<AppModal
+			v-if="bulkIntent"
+			:title="bulkIntent.enabled ? 'Включение ассортимента' : 'Выключение ассортимента'"
+			@close="bulkIntent = null"
+		>
+			<div class="bulk-preview">
+				<div>
+					<span>Точки продаж</span><strong>{{ selectedPointLabel }}</strong>
+				</div>
+				<div>
+					<span>Область</span><strong>{{ selectedGroupLabel }}</strong>
+				</div>
+				<div>
+					<span>Точек</span><strong>{{ bulkIntent.points }}</strong>
+				</div>
+				<div>
+					<span>Позиций</span><strong>{{ bulkIntent.items }}</strong>
+				</div>
+			</div>
+			<p class="bulk-preview__note">
+				{{
+					bulkIntent.enabled
+						? "Позиции станут доступными для продажи в выбранной области."
+						: "Позиции перестанут продаваться в выбранной области. Сами карточки каталога сохранятся."
+				}}
+			</p>
+			<template #footer>
+				<button
+					class="button button-secondary"
+					:disabled="saving === 'bulk'"
+					@click="bulkIntent = null"
+				>
+					Отмена
+				</button>
+				<button
+					class="button button-primary"
+					:disabled="saving === 'bulk'"
+					@click="bulk(bulkIntent.enabled)"
+				>
+					{{
+						saving === "bulk"
+							? "Применяем…"
+							: bulkIntent.enabled
+								? "Включить позиции"
+								: "Выключить позиции"
+					}}
+				</button>
+			</template>
+		</AppModal>
 	</section>
 </template>
 
 <style scoped>
-.layer-controls {
-	display: flex;
-	align-items: end;
-	gap: 12px;
-	margin-bottom: 14px;
-	flex-wrap: wrap;
-}
-.layer-controls label {
-	display: grid;
-	gap: 5px;
-	min-width: 240px;
-	font-size: 12px;
-	color: var(--muted);
-}
-.bulk-actions {
-	display: flex;
-	gap: 8px;
-	margin-left: auto;
-}
-.copy-prices-button,
-.calculator-button {
-	align-self: flex-end;
-}
-.calculator-button {
-	margin-left: auto;
-}
 .layer-workspace {
 	display: flex;
 	align-items: flex-start;
@@ -459,18 +510,40 @@ onMounted(async () => {
 	color: #8a5a00;
 	background: #fff4d6;
 }
+.bulk-preview {
+	display: grid;
+	grid-template-columns: 1.5fr 1fr auto auto;
+	gap: 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fafbf9;
+}
+.bulk-preview > div {
+	display: grid;
+	gap: 3px;
+}
+.bulk-preview span {
+	color: var(--muted);
+	font-size: 12px;
+}
+.bulk-preview__note {
+	margin: 14px 2px 0;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+}
 @media (max-width: 900px) {
 	.layer-workspace {
 		flex-direction: column;
 	}
-	.bulk-actions {
-		margin-left: 0;
-	}
-	.calculator-button {
-		margin-left: 0;
-	}
 	.layer-table-wrap {
 		width: 100%;
+	}
+}
+@media (max-width: 620px) {
+	.bulk-preview {
+		grid-template-columns: 1fr;
 	}
 }
 </style>

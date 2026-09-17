@@ -13,7 +13,7 @@ const props = defineProps({
 	loading: Boolean,
 	sourcePoint: { type: String, default: "" },
 });
-const emit = defineEmits(["reload", "error", "feedback", "dirty"]);
+const emit = defineEmits(["reload", "error", "feedback", "dirty", "busy"]);
 const saving = reactive(new Set());
 const modal = ref("");
 const preview = ref(null);
@@ -89,6 +89,7 @@ async function save(row) {
 }
 async function previewCopy() {
 	if (!props.sourcePoint) return;
+	emit("busy", true);
 	try {
 		preview.value = await call("raspechatka.api.catalog_pricing.preview_copy_prices", {
 			business_point: props.businessPoint,
@@ -98,9 +99,12 @@ async function previewCopy() {
 		modal.value = "copy";
 	} catch (error) {
 		emit("error", error.message);
+	} finally {
+		emit("busy", false);
 	}
 }
 async function previewCalculator() {
+	emit("busy", true);
 	try {
 		preview.value = await call("raspechatka.api.catalog_pricing.preview_calculated_prices", {
 			business_point: props.businessPoint,
@@ -110,11 +114,14 @@ async function previewCalculator() {
 		modal.value = "calculator-preview";
 	} catch (error) {
 		emit("error", error.message);
+	} finally {
+		emit("busy", false);
 	}
 }
 async function applyPreview() {
 	if (applying.value || !preview.value) return;
 	applying.value = true;
+	emit("busy", true);
 	const isCopy = modal.value === "copy";
 	try {
 		const result = await call(
@@ -138,6 +145,7 @@ async function applyPreview() {
 		emit("error", error.message);
 	} finally {
 		applying.value = false;
+		emit("busy", false);
 	}
 }
 
@@ -318,21 +326,36 @@ defineExpose({ openCalculator, previewCopy });
 		</AppModal>
 		<AppModal
 			v-if="modal === 'copy' || modal === 'calculator-preview'"
-			title="Предпросмотр изменения цен"
+			:title="modal === 'copy' ? 'Копирование цен' : 'Предпросмотр новых цен'"
 			wide
 			@close="modal = ''"
 		>
-			<p>
-				<b>Точка назначения:</b> {{ pointLabel }} · <b>Группа:</b> {{ groupLabel
-				}}<template v-if="modal === 'copy'">
-					· <b>Источник:</b> {{ sourceLabel }}</template
-				>
-			</p>
-			<p>
-				Будет изменено: <b>{{ preview.summary.changed }}</b
-				>; без изменений: {{ preview.summary.unchanged }}; пропущено:
-				{{ preview.summary.skipped }}.
-			</p>
+			<div class="preview-context">
+				<div v-if="modal === 'copy'">
+					<span>Из точки</span><strong>{{ sourceLabel }}</strong>
+				</div>
+				<span v-if="modal === 'copy'" class="preview-context__arrow">→</span>
+				<div>
+					<span>Точка назначения</span><strong>{{ pointLabel }}</strong>
+				</div>
+				<div>
+					<span>Область</span><strong>{{ groupLabel }}</strong>
+				</div>
+			</div>
+			<div class="preview-summary">
+				<div class="preview-summary__primary">
+					<b>{{ preview.summary.changed }}</b
+					><span>Будет изменено</span>
+				</div>
+				<div>
+					<b>{{ preview.summary.unchanged }}</b
+					><span>Без изменений</span>
+				</div>
+				<div>
+					<b>{{ preview.summary.skipped }}</b
+					><span>Пропущено</span>
+				</div>
+			</div>
 			<div class="preview-list">
 				<div class="preview-head">
 					<b>Позиция</b><b>Закупочная цена</b><b>Текущая</b><b>Новая</b
@@ -513,12 +536,15 @@ defineExpose({ openCalculator, previewCopy });
 .preview-list {
 	max-height: 48vh;
 	overflow: auto;
-	min-width: 900px;
+	margin-top: 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
 }
 .preview-list > div {
 	display: grid;
 	grid-template-columns: 2fr repeat(5, 1fr) 1.5fr;
 	gap: 8px;
+	min-width: 900px;
 	padding: 8px;
 	border-bottom: 1px solid var(--border);
 }
@@ -527,12 +553,57 @@ defineExpose({ openCalculator, previewCopy });
 	top: 0;
 	background: #fff;
 }
-.modal-body {
-	overflow: auto;
+.preview-context,
+.preview-summary {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 14px 16px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fafbf9;
+}
+.preview-context > div,
+.preview-summary > div {
+	display: grid;
+	gap: 3px;
+}
+.preview-context > div:last-child {
+	margin-left: auto;
+}
+.preview-context span,
+.preview-summary span {
+	color: var(--muted);
+	font-size: 12px;
+}
+.preview-context__arrow {
+	font-size: 18px !important;
+	color: var(--green-dark) !important;
+}
+.preview-summary {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	margin-top: 12px;
+}
+.preview-summary b {
+	font-size: 20px;
+}
+.preview-summary__primary b {
+	color: var(--green-dark);
 }
 @media (max-width: 700px) {
 	.calculator-grid {
 		grid-template-columns: 1fr;
+	}
+	.preview-context {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+	.preview-context > div:last-child {
+		margin-left: 0;
+	}
+	.preview-context__arrow {
+		transform: rotate(90deg);
 	}
 }
 </style>
