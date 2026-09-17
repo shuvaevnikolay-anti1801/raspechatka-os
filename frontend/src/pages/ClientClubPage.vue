@@ -15,7 +15,7 @@ const stats = reactive({}),
 const canEdit = computed(() => canAccess("page.clients.club", "Edit"));
 const settingsFingerprint = computed(() => JSON.stringify(form));
 const hasUnsavedSettings = computed(
-	() => Boolean(savedSettings.value) && settingsFingerprint.value !== savedSettings.value,
+	() => Boolean(savedSettings.value) && settingsFingerprint.value !== savedSettings.value
 );
 async function load() {
 	loading.value = true;
@@ -47,7 +47,7 @@ async function recalculateDiscounts() {
 		recalculationResult.value = await call(
 			"raspechatka.api.clients.run_loyalty_discount_recalculation",
 			{},
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		Object.assign(stats, await call("raspechatka.api.clients.get_club_dashboard"));
 	} catch (e) {
@@ -64,7 +64,7 @@ async function save() {
 		await call(
 			"raspechatka.api.clients.save_loyalty_settings",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" },
+			{ method: "POST" }
 		);
 		await load();
 	} catch (e) {
