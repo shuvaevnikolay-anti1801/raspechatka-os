@@ -2,6 +2,7 @@
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Count
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
 from raspechatka.access import get_scope, require_access
@@ -153,13 +154,14 @@ def _assortment_rows_all(points, items):
 	point_count = len(points)
 	enabled_counts = {}
 	if points:
-		for row in frappe.get_all(
-			"Catalog Assortment",
-			filters={"business_point": ["in", points], "enabled": 1},
-			fields=["item", "count(name) as enabled_count"],
-			group_by="item",
-			limit_page_length=0,
-		):
+		assortment = frappe.qb.DocType("Catalog Assortment")
+		rows = (
+			frappe.qb.from_(assortment)
+			.select(assortment.item, Count(assortment.name).as_("enabled_count"))
+			.where((assortment.business_point.isin(points)) & (assortment.enabled == 1))
+			.groupby(assortment.item)
+		).run(as_dict=True)
+		for row in rows:
 			enabled_counts[row.item] = cint(row.enabled_count)
 	result = []
 	for item in items:
@@ -339,17 +341,15 @@ def _apply_assortment(items, points, enabled):
 	if not items or not points:
 		return 0
 	value = cint(enabled)
-	item_placeholders = ", ".join(["%s"] * len(items))
-	point_placeholders = ", ".join(["%s"] * len(points))
+	assortment = frappe.qb.DocType("Catalog Assortment")
+	(
+		frappe.qb.update(assortment)
+		.set(assortment.enabled, value)
+		.set(assortment.visible_in_pos, value)
+		.where((assortment.item.isin(items)) & (assortment.business_point.isin(points)))
+	).run()
 	if not value:
 		# Absence already means disabled. Do not create a large matrix of zero rows.
-		frappe.db.sql(
-			f"""UPDATE `tabCatalog Assortment`
-			SET enabled = 0, visible_in_pos = 0
-			WHERE item IN ({item_placeholders})
-			AND business_point IN ({point_placeholders})""",  # nosec B608: placeholders are generated, not user input
-			[*items, *points],
-		)
 		return len(items) * len(points)
 
 	warehouses = {
@@ -361,27 +361,31 @@ def _apply_assortment(items, points, enabled):
 	}
 	now = now_datetime()
 	owner = frappe.session.user
-	# One upsert per chunk replaces N-by-M ORM saves and remains duplicate-safe when
-	# a browser retry or concurrent bulk operation materializes the same pair.
+	# Use Frappe's supported batched insert. Existing rows were updated above;
+	# deterministic names plus ignore_duplicates make retries harmless.
 	values = [
 		(f"{point}-{item}", now, now, owner, owner, item, point, warehouses.get(point), value, value)
 		for point in points
 		for item in items
 	]
-	for start in range(0, len(values), 500):
-		chunk = values[start : start + 500]
-		row_sql = ", ".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(chunk))
-		params = [field for row in chunk for field in row]
-		frappe.db.sql(
-			f"""INSERT INTO `tabCatalog Assortment`
-				(name, creation, modified, owner, modified_by, item, business_point, default_warehouse, enabled, visible_in_pos)
-			VALUES {row_sql}
-			ON DUPLICATE KEY UPDATE
-				enabled = VALUES(enabled),
-				visible_in_pos = VALUES(visible_in_pos),
-				default_warehouse = COALESCE(default_warehouse, VALUES(default_warehouse))""",  # nosec B608
-			params,
-		)
+	frappe.db.bulk_insert(
+		"Catalog Assortment",
+		fields=[
+			"name",
+			"creation",
+			"modified",
+			"owner",
+			"modified_by",
+			"item",
+			"business_point",
+			"default_warehouse",
+			"enabled",
+			"visible_in_pos",
+		],
+		values=values,
+		ignore_duplicates=True,
+		chunk_size=500,
+	)
 	return len(items) * len(points)
 
 

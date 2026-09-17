@@ -107,6 +107,23 @@ class TestCatalogLayerContracts(TestCase):
 		self.assertIn("enabled = 1 AND visible_in_pos = 1", source)
 		self.assertIn("visible_in_pos = IF", source)
 
+	def test_all_points_aggregation_uses_frappe_query_builder(self):
+		root = Path(__file__).resolve().parents[1]
+		source = (root / "api/catalog_layers.py").read_text(encoding="utf-8")
+		all_points_source = source.split("def _assortment_rows_all", 1)[1].split(
+			"def get_assortment_group_states", 1
+		)[0]
+		self.assertIn('Count(assortment.name).as_("enabled_count")', all_points_source)
+		self.assertNotIn('"count(name) as enabled_count"', all_points_source)
+
+	def test_bulk_assortment_uses_supported_frappe_batch_api(self):
+		root = Path(__file__).resolve().parents[1]
+		source = (root / "api/catalog_layers.py").read_text(encoding="utf-8")
+		bulk_source = source.split("def _apply_assortment", 1)[1].split("def save_point_price", 1)[0]
+		self.assertIn("frappe.db.bulk_insert(", bulk_source)
+		self.assertIn("ignore_duplicates=True", bulk_source)
+		self.assertNotIn("ON DUPLICATE KEY UPDATE", bulk_source)
+
 	def test_reorder_reports_and_editor_share_canonical_rule(self):
 		root = Path(__file__).resolve().parents[1]
 		layer_source = (root / "api/catalog_layers.py").read_text(encoding="utf-8")
