@@ -122,6 +122,8 @@ class TestCatalogLayerContracts(TestCase):
 		bulk_source = source.split("def _apply_assortment", 1)[1].split("def save_point_price", 1)[0]
 		self.assertIn("frappe.db.bulk_insert(", bulk_source)
 		self.assertIn("ignore_duplicates=True", bulk_source)
+		self.assertIn("existing_pairs", bulk_source)
+		self.assertIn("missing_pairs", bulk_source)
 		self.assertNotIn("ON DUPLICATE KEY UPDATE", bulk_source)
 
 	def test_reorder_reports_and_editor_share_canonical_rule(self):

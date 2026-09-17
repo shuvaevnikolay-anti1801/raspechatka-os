@@ -341,6 +341,15 @@ def _apply_assortment(items, points, enabled):
 	if not items or not points:
 		return 0
 	value = cint(enabled)
+	existing_pairs = {
+		(row.item, row.business_point)
+		for row in frappe.get_all(
+			"Catalog Assortment",
+			filters={"item": ["in", items], "business_point": ["in", points]},
+			fields=["item", "business_point"],
+			limit_page_length=0,
+		)
+	}
 	assortment = frappe.qb.DocType("Catalog Assortment")
 	(
 		frappe.qb.update(assortment)
@@ -363,29 +372,35 @@ def _apply_assortment(items, points, enabled):
 	owner = frappe.session.user
 	# Use Frappe's supported batched insert. Existing rows were updated above;
 	# deterministic names plus ignore_duplicates make retries harmless.
-	values = [
-		(f"{point}-{item}", now, now, owner, owner, item, point, warehouses.get(point), value, value)
+	missing_pairs = [
+		(item, point)
 		for point in points
 		for item in items
+		if (item, point) not in existing_pairs
 	]
-	frappe.db.bulk_insert(
-		"Catalog Assortment",
-		fields=[
-			"name",
-			"creation",
-			"modified",
-			"owner",
-			"modified_by",
-			"item",
-			"business_point",
-			"default_warehouse",
-			"enabled",
-			"visible_in_pos",
-		],
-		values=values,
-		ignore_duplicates=True,
-		chunk_size=500,
-	)
+	values = [
+		(f"{point}-{item}", now, now, owner, owner, item, point, warehouses.get(point), value, value)
+		for item, point in missing_pairs
+	]
+	if values:
+		frappe.db.bulk_insert(
+			"Catalog Assortment",
+			fields=[
+				"name",
+				"creation",
+				"modified",
+				"owner",
+				"modified_by",
+				"item",
+				"business_point",
+				"default_warehouse",
+				"enabled",
+				"visible_in_pos",
+			],
+			values=values,
+			ignore_duplicates=True,
+			chunk_size=500,
+		)
 	return len(items) * len(points)
 
 

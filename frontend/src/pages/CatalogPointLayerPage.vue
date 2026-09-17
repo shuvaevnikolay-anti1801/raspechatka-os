@@ -72,6 +72,8 @@ async function bulk(enabled) {
 		`${enabled ? "Включить" : "Выключить"} ${rows.value.length} позиций в ${pointCount} точках?`,
 	)) return;
 	saving.value = "bulk";
+	error.value = "";
+	feedback.value = "";
 	try {
 		const result = await call("raspechatka.api.catalog_layers.bulk_set_assortment", {
 			business_point: filters.business_point, catalog_group: filters.catalog_group, enabled,
