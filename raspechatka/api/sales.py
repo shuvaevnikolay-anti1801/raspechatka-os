@@ -433,6 +433,8 @@ def save_pos_sales_settings(data):
 		"accepts_cash",
 		"accepts_card",
 		"accepts_qr",
+		"markup_lower_threshold",
+		"markup_upper_threshold",
 	):
 		if fieldname in data:
 			doc.set(fieldname, data[fieldname])

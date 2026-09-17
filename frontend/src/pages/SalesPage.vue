@@ -25,6 +25,8 @@ const posSettings = reactive({
 	accepts_cash: 1,
 	accepts_card: 1,
 	accepts_qr: 1,
+	markup_lower_threshold: 100,
+	markup_upper_threshold: 200,
 });
 const canEditIntegration = computed(() => canAccess("page.sales.integration", "Edit"));
 const options = reactive({ entities: [], points: [], cashiers: [] });
@@ -505,6 +507,23 @@ onMounted(init);
 							:disabled="!canEditIntegration"
 						/>Разрешить удаление позиции из корзины</label
 					>
+				</div>
+				<h3>Индикация наценки</h3>
+				<div class="form-grid">
+					<label
+						>Красная / жёлтая граница, %<input
+							v-model.number="posSettings.markup_lower_threshold"
+							type="number"
+							min="0"
+							:disabled="!canEditIntegration"
+					/></label>
+					<label
+						>Жёлтая / зелёная граница, %<input
+							v-model.number="posSettings.markup_upper_threshold"
+							type="number"
+							min="0"
+							:disabled="!canEditIntegration"
+					/></label>
 				</div>
 				<h3>Способы оплаты</h3>
 				<div class="form-grid checks-grid">

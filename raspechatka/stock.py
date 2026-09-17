@@ -142,6 +142,48 @@ def get_average_rate(item, warehouse, posting_datetime=None, import_batch_overri
 	return flt(balance["value"] / balance["qty"]) if balance["qty"] else 0
 
 
+def get_point_average_rates(items, business_point):
+	"""Batch current moving-average costs using each assortment's working warehouse."""
+	requested = list(dict.fromkeys(items or []))
+	if not requested:
+		return {}
+	warehouses = frappe.get_all(
+		"Catalog Warehouse",
+		filters={"business_point": business_point, "active": 1},
+		pluck="name",
+		order_by="warehouse_name asc",
+		limit_page_length=0,
+	)
+	if not warehouses:
+		return {item: None for item in requested}
+	defaults = {
+		row.item: row.default_warehouse
+		for row in frappe.get_all(
+			"Catalog Assortment",
+			filters={"business_point": business_point, "item": ["in", requested]},
+			fields=["item", "default_warehouse"],
+			limit_page_length=0,
+		)
+	}
+	balances = frappe.get_all(
+		"Stock Balance",
+		filters={"item": ["in", requested], "warehouse": ["in", warehouses]},
+		fields=["item", "warehouse", "actual_qty", "stock_value", "average_rate"],
+		limit_page_length=0,
+	)
+	by_key = {(row.item, row.warehouse): row for row in balances}
+	result = {}
+	for item in requested:
+		warehouse = defaults.get(item) if defaults.get(item) in warehouses else warehouses[0]
+		balance = by_key.get((item, warehouse))
+		if not balance or flt(balance.actual_qty) <= 0:
+			result[item] = None
+			continue
+		rate = flt(balance.average_rate) or flt(balance.stock_value) / flt(balance.actual_qty)
+		result[item] = rate if rate > 0 else None
+	return result
+
+
 def make_ledger_entry(document, row, quantity, rate, amount, reversal=False, valuation_source=None):
 	"""Post exactly one immutable stock movement.
 

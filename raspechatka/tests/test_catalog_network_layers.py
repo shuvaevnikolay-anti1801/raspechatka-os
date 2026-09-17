@@ -102,7 +102,8 @@ class TestCatalogLayerContracts(TestCase):
 		pos_source = (root / "api/pos.py").read_text(encoding="utf-8")
 		self.assertIn('"enabled": 1', pos_source)
 		self.assertNotIn('"visible_in_pos": 1', pos_source)
-		self.assertIn("resolve_item_price", pos_source)
+		self.assertIn("resolve_point_price", pos_source)
+		self.assertNotIn("resolve_item_price(", pos_source)
 
 	def test_new_catalog_item_does_not_create_default_pos_assortment(self):
 		root = Path(__file__).resolve().parents[1]
@@ -119,15 +120,23 @@ class TestCatalogLayerContracts(TestCase):
 		self.assertNotIn("filters.search", source)
 		self.assertNotIn("Видим в POS", source)
 
-	def test_price_rows_prefilter_enabled_assortment_and_use_batch_resolver(self):
+	def test_price_rows_prefilter_enabled_assortment_and_use_exact_point_resolver(self):
 		root = Path(__file__).resolve().parents[1]
 		source = (root / "api/catalog_layers.py").read_text(encoding="utf-8")
 		rows_source = source.split("def get_rows", 1)[1].split("def _assortment_rows", 1)[0]
 		price_source = source.split("def _price_rows", 1)[1].split("def _minimum_rows", 1)[0]
 		self.assertIn('filters={"business_point": point, "enabled": 1}', rows_source)
 		self.assertIn('filters["name"] = ["in", assortment_items', rows_source)
-		self.assertIn("resolve_item_prices", price_source)
+		self.assertIn("resolve_point_prices", price_source)
+		self.assertIn("get_point_average_rates", price_source)
 		self.assertNotIn("resolve_item_price(", price_source)
+
+	def test_price_workspace_has_no_legacy_source_column(self):
+		root = Path(__file__).resolve().parents[2]
+		source = (root / "frontend/src/components/CatalogPriceWorkspace.vue").read_text(encoding="utf-8")
+		self.assertNotIn("Источник", source)
+		self.assertIn("Закупочная цена", source)
+		self.assertIn("Наценка", source)
 
 	def test_write_endpoints_declare_page_and_point_contracts(self):
 		self.assertEqual(
