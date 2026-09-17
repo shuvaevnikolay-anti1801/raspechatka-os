@@ -8,7 +8,11 @@ from frappe.utils import add_days, cint, date_diff, flt, getdate, now_datetime, 
 
 from raspechatka.access import get_scope, require_access
 from raspechatka.access_contract import access_contract
-from raspechatka.raspechatka_os.doctype.client.client import CHANNELS, normalize_phone
+from raspechatka.raspechatka_os.doctype.client.client import (
+	CHANNELS,
+	calculate_loyalty_state,
+	normalize_phone,
+)
 
 MARKETING_TYPES = {
 	"segments": {
@@ -530,20 +534,27 @@ def get_club_dashboard():
 		"awaiting_channel": sum(1 for row in rows if row.club_status == "Ожидает мессенджер"),
 		"marketing_allowed": sum(1 for row in rows if row.marketing_consent),
 		"birthdays_this_month": birthdays_month,
-		"campaigns_planned": frappe.db.count("Promo Campaign", {"status": "Запланирована"}) if visible is None else 0,
+		"campaigns_planned": frappe.db.count("Promo Campaign", {"status": "Запланирована"})
+		if visible is None
+		else 0,
 		"sent_total": _sum_field("Promo Campaign", "sent_count") if visible is None else 0,
 		"purchases_from_campaigns": frappe.db.count(
 			"Client Purchase",
 			{
 				"campaign": ["is", "set"],
 				"cancelled": 0,
-				**({} if visible is None else {"business_point": ["in", get_scope().get("points") or ["__none__"]]}),
+				**(
+					{}
+					if visible is None
+					else {"business_point": ["in", get_scope().get("points") or ["__none__"]]}
+				),
 			},
 		),
 	}
 
 
 @frappe.whitelist()
+@access_contract(area="page.clients.club", action="read", scope="network")
 def get_loyalty_settings():
 	require_access("page.clients.club", "read")
 	_require_network_scope()
@@ -551,6 +562,7 @@ def get_loyalty_settings():
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.clients.club", action="write", scope="network")
 def save_loyalty_settings(data):
 	require_access("page.clients.club", "write")
 	_require_network_scope()
@@ -595,12 +607,102 @@ def save_loyalty_settings(data):
 	return {"saved": True}
 
 
+LOYALTY_RECALCULATION_LOCK = "raspechatka:clients:loyalty-recalculation"
+LOYALTY_DERIVED_FIELDS = (
+	"club_status",
+	"discount_percent",
+	"active_channels",
+	"primary_channel",
+	"backup_channel",
+	"telegram_active",
+	"max_active",
+	"vk_active",
+)
+
+
+def _same_loyalty_value(fieldname, current, expected):
+	if fieldname == "discount_percent":
+		return flt(current) == flt(expected)
+	if fieldname in {"active_channels", "telegram_active", "max_active", "vk_active"}:
+		return cint(current) == cint(expected)
+	return (current or "") == (expected or "")
+
+
 def recalculate_all_discounts():
-	for name in frappe.get_all("Client", pluck="name", limit_page_length=100000):
-		doc = frappe.get_doc("Client", name)
-		if doc.get("legacy_club_id"):
-			continue
-		doc.save(ignore_permissions=True)
+	"""Recalculate only derived loyalty fields, including legacy/imported clients."""
+	locked = frappe.db.sql("SELECT GET_LOCK(%s, 0)", (LOYALTY_RECALCULATION_LOCK,))[0][0]
+	if not cint(locked):
+		frappe.throw(_("Пересчёт скидок уже выполняется. Дождитесь его завершения."))  # noqa: RUF001
+
+	try:
+		settings = frappe.get_single("Loyalty Settings")
+		clients = frappe.get_all(
+			"Client",
+			fields=[
+				"name",
+				"active",
+				"personal_data_consent",
+				"marketing_consent",
+				"club_rules_consent",
+				*LOYALTY_DERIVED_FIELDS,
+			],
+			limit_page_length=0,
+		)
+		client_names = [row.name for row in clients]
+		messengers_by_client = {name: [] for name in client_names}
+		if client_names:
+			for row in frappe.get_all(
+				"Client Messenger",
+				filters={"parent": ["in", client_names], "parenttype": "Client", "parentfield": "messengers"},
+				fields=["parent", "messenger_type", "status", "idx"],
+				order_by="parent asc, idx asc",
+				limit_page_length=0,
+			):
+				messengers_by_client.setdefault(row.parent, []).append(row)
+
+		result = {
+			"total": len(clients),
+			"processed": 0,
+			"changed": 0,
+			"unchanged": 0,
+			"zero_discount": 0,
+			"nonzero_discount": 0,
+			"errors": 0,
+		}
+		for client in clients:
+			try:
+				state = calculate_loyalty_state(
+					client, messengers=messengers_by_client.get(client.name, []), settings=settings
+				)
+				state.pop("active_messengers", None)
+				updates = {
+					fieldname: state[fieldname]
+					for fieldname in LOYALTY_DERIVED_FIELDS
+					if not _same_loyalty_value(fieldname, client.get(fieldname), state[fieldname])
+				}
+				if updates:
+					frappe.db.set_value("Client", client.name, updates, update_modified=False)
+					result["changed"] += 1
+				else:
+					result["unchanged"] += 1
+				if flt(state["discount_percent"]) > 0:
+					result["nonzero_discount"] += 1
+				else:
+					result["zero_discount"] += 1
+				result["processed"] += 1
+			except Exception:
+				result["errors"] += 1
+				frappe.log_error(frappe.get_traceback(), f"Loyalty recalculation: {client.name}")
+		return result
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (LOYALTY_RECALCULATION_LOCK,))
+
+
+@frappe.whitelist(methods=["POST"])
+@access_contract(area="page.clients.club", action="write", scope="network")
+def run_loyalty_discount_recalculation():
+	_require_network_scope()
+	return recalculate_all_discounts()
 
 
 def _segment_members(doc):
@@ -686,8 +788,8 @@ def get_marketing_records(kind, search=None, status=None):
 	if kind == "campaigns":
 		for row in rows:
 			row["purchase_count"] = frappe.db.count("Client Purchase", {"campaign": row.name, "cancelled": 0})
-			row["revenue"] = (
-				_sum_field("Client Purchase", "net_amount", {"campaign": row.name, "cancelled": 0})
+			row["revenue"] = _sum_field(
+				"Client Purchase", "net_amount", {"campaign": row.name, "cancelled": 0}
 			)
 	return rows
 
@@ -705,9 +807,7 @@ def get_marketing_record(kind, name):
 		result["members"] = _segment_members(doc)[:500]
 	elif kind == "campaigns":
 		result["purchase_count"] = frappe.db.count("Client Purchase", {"campaign": name, "cancelled": 0})
-		result["revenue"] = (
-			_sum_field("Client Purchase", "net_amount", {"campaign": name, "cancelled": 0})
-		)
+		result["revenue"] = _sum_field("Client Purchase", "net_amount", {"campaign": name, "cancelled": 0})
 	return result
 
 

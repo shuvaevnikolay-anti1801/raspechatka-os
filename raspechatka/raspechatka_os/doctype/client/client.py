@@ -28,6 +28,79 @@ def get_loyalty_settings():
 		return None
 
 
+def _value(row, fieldname, default=None):
+	if isinstance(row, dict):
+		return row.get(fieldname, default)
+	return getattr(row, fieldname, default)
+
+
+def calculate_loyalty_state(client, messengers=None, settings=None):
+	"""Calculate every derived loyalty field without mutating the client record."""
+	messengers = list(messengers if messengers is not None else _value(client, "messengers", []) or [])
+	active = [
+		row
+		for row in messengers
+		if _value(row, "status") == "Активен" and _value(row, "messenger_type") in CHANNELS
+	]
+	active_types = {_value(row, "messenger_type") for row in active}
+	settings = settings if settings is not None else get_loyalty_settings()
+	eligible = bool(
+		(
+			not settings
+			or not cint(_value(settings, "personal_data_required"))
+			or cint(_value(client, "personal_data_consent"))
+		)
+		and (
+			not settings
+			or not cint(_value(settings, "marketing_required"))
+			or cint(_value(client, "marketing_consent"))
+		)
+		and (
+			not settings
+			or not cint(_value(settings, "club_rules_required"))
+			or cint(_value(client, "club_rules_consent"))
+		)
+	)
+
+	if not cint(_value(client, "active")):
+		club_status = "Заблокирован"
+	elif active and eligible:
+		club_status = "Активен"
+	elif eligible:
+		club_status = "Ожидает мессенджер"
+	else:
+		club_status = "Регистрация"
+
+	discount = 0.0
+	if club_status == "Активен" and settings and cint(_value(settings, "active")):
+		channel_limit = cint(_value(settings, "max_active_channels"))
+		channel_count = min(len(active), channel_limit) if channel_limit > 0 else len(active)
+		matching = sorted(
+			(
+				row
+				for row in (_value(settings, "discount_rules", []) or [])
+				if cint(_value(row, "active")) and cint(_value(row, "active_channel_count")) <= channel_count
+			),
+			key=lambda row: cint(_value(row, "active_channel_count")),
+		)
+		if matching:
+			discount = flt(_value(matching[-1], "discount_percent"))
+		maximum_discount = flt(_value(settings, "maximum_discount_percent"))
+		discount = min(discount, maximum_discount)
+
+	return {
+		"club_status": club_status,
+		"discount_percent": discount,
+		"active_channels": len(active),
+		"primary_channel": _value(active[0], "messenger_type", "") if active else "",
+		"backup_channel": _value(active[1], "messenger_type", "") if len(active) > 1 else "",
+		"telegram_active": cint("Telegram" in active_types),
+		"max_active": cint("MAX" in active_types),
+		"vk_active": cint("VK" in active_types),
+		"active_messengers": active,
+	}
+
+
 class Client(Document):
 	def before_insert(self):
 		self.client_id = self.client_id or make_autoname("RP-.######")
@@ -74,49 +147,15 @@ class Client(Document):
 				self.set(timestamp, None)
 
 	def _recalculate_loyalty(self):
-		active = [
-			row for row in self.messengers if row.status == "Активен" and row.messenger_type in CHANNELS
-		]
+		state = calculate_loyalty_state(self)
+		active = state.pop("active_messengers")
 		for index, row in enumerate(active):
 			row.channel_role = "Основной" if index == 0 else "Резервный" if index == 1 else "Дополнительный"
 		for row in self.messengers:
 			if row.status != "Активен":
 				row.channel_role = ""
-		self.active_channels = len(active)
-		self.primary_channel = active[0].messenger_type if active else ""
-		self.backup_channel = active[1].messenger_type if len(active) > 1 else ""
-		active_types = {row.messenger_type for row in active}
-		self.telegram_active = cint("Telegram" in active_types)
-		self.max_active = cint("MAX" in active_types)
-		self.vk_active = cint("VK" in active_types)
-		settings = get_loyalty_settings()
-		eligible = bool(
-			(not settings or not settings.personal_data_required or self.personal_data_consent)
-			and (not settings or not settings.marketing_required or self.marketing_consent)
-			and (not settings or not settings.club_rules_required or self.club_rules_consent)
-		)
-		discount = 0
-		if settings and settings.active and eligible:
-			matching = sorted(
-				(
-					row
-					for row in settings.discount_rules
-					if cint(row.active) and cint(row.active_channel_count) <= len(active)
-				),
-				key=lambda row: cint(row.active_channel_count),
-			)
-			if matching:
-				discount = flt(matching[-1].discount_percent)
-			discount = min(discount, flt(settings.maximum_discount_percent or discount))
-		self.discount_percent = discount
-		if not self.active:
-			self.club_status = "Заблокирован"
-		elif active and eligible:
-			self.club_status = "Активен"
-		elif eligible:
-			self.club_status = "Ожидает мессенджер"
-		else:
-			self.club_status = "Регистрация"
+		for fieldname, value in state.items():
+			self.set(fieldname, value)
 
 	def issue_session(self):
 		settings = get_loyalty_settings()
