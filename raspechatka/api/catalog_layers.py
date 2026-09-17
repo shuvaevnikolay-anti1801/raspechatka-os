@@ -2,9 +2,10 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, nowdate
+from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
 from raspechatka.access import get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.api.frontend import _catalog_group_branch
 from raspechatka.pricing import get_default_price_type, resolve_item_price
 
@@ -14,6 +15,8 @@ AREA_BY_LAYER = {
 	"prices": "page.catalog.prices",
 	"minimum_stock": "page.catalog.minimum-stock",
 }
+
+ALL_POINTS = "__all__"
 
 
 def _require_layer(layer, action="read"):
@@ -30,6 +33,23 @@ def _ensure_point(point):
 	if not scope["global"] and point not in (scope.get("points") or []):
 		frappe.throw(_("Точка продаж недоступна."), frappe.PermissionError)
 	return point
+
+
+def _allowed_active_points():
+	"""Return active points inside the current data scope."""
+	scope = get_scope()
+	filters = {"active": 1}
+	if not scope["global"]:
+		filters["name"] = ["in", scope.get("points") or ["__none__"]]
+	return frappe.get_all("Business Point", filters=filters, pluck="name", order_by="point_name asc")
+
+
+def _selected_points(point, allow_all=False):
+	if point == ALL_POINTS:
+		if not allow_all:
+			frappe.throw(_("Выберите конкретную точку продаж."), frappe.PermissionError)
+		return _allowed_active_points()
+	return [_ensure_point(point)]
 
 
 def _ensure_warehouse(point, warehouse):
@@ -82,8 +102,18 @@ def get_options(layer="assortment"):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_rows(layer, business_point, catalog_group=None, search=None):
 	_require_layer(layer)
+	if layer == "assortment" and business_point == ALL_POINTS:
+		points = _selected_points(business_point, allow_all=True)
+		filters, or_filters = _item_filters(catalog_group, search)
+		items = frappe.get_all(
+			"Catalog Item", filters=filters, or_filters=or_filters,
+			fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom", "variant_of"],
+			order_by="item_name asc", limit_page_length=5000
+		)
+		return _assortment_rows_all(points, items)
 	point = _ensure_point(business_point)
 	filters, or_filters = _item_filters(catalog_group, search, layer == "minimum_stock")
 	items = frappe.get_all(
@@ -104,7 +134,7 @@ def _assortment_rows(point, items):
 	by_item = {
 		row.item: row for row in frappe.get_all(
 			"Catalog Assortment", filters={"business_point": point},
-			fields=["name", "item", "enabled", "visible_in_pos", "default_warehouse"]
+			fields=["name", "item", "enabled", "default_warehouse"]
 		)
 	}
 	result = []
@@ -114,9 +144,95 @@ def _assortment_rows(point, items):
 			**item,
 			"assortment": assortment.name if assortment else None,
 			"enabled": cint(assortment.enabled) if assortment else 0,
-			"visible_in_pos": cint(assortment.visible_in_pos) if assortment else 0,
 			"default_warehouse": assortment.default_warehouse if assortment else None,
 		})
+	return result
+
+
+def _assortment_rows_all(points, items):
+	point_count = len(points)
+	enabled_counts = {}
+	if points:
+		for row in frappe.get_all(
+			"Catalog Assortment",
+			filters={"business_point": ["in", points], "enabled": 1},
+			fields=["item", "count(name) as enabled_count"],
+			group_by="item",
+			limit_page_length=0,
+		):
+			enabled_counts[row.item] = cint(row.enabled_count)
+	result = []
+	for item in items:
+		enabled_count = enabled_counts.get(item.name, 0)
+		state = "all" if point_count and enabled_count == point_count else "partial" if enabled_count else "none"
+		result.append({
+			**item,
+			"enabled": 1 if state == "all" else 0,
+			"assortment_state": state,
+			"enabled_points": enabled_count,
+			"point_count": point_count,
+		})
+	return result
+
+
+@frappe.whitelist()
+@access_contract(area="page.catalog.assortment", action="read", scope="point")
+def get_assortment_group_states(business_point):
+	"""Return computed all/partial/none states; no group policy is persisted."""
+	_require_layer("assortment")
+	points = _selected_points(business_point, allow_all=True)
+	groups = frappe.get_all(
+		"Catalog Group", filters={"active": 1},
+		fields=["name", "parent_catalog_group"], limit_page_length=2000,
+	)
+	items = frappe.get_all(
+		"Catalog Item", filters={"active": 1}, fields=["name", "catalog_group"],
+		limit_page_length=0,
+	)
+	enabled_pairs = set()
+	if points:
+		enabled_pairs = {
+			(row.item, row.business_point)
+			for row in frappe.get_all(
+				"Catalog Assortment",
+				filters={"business_point": ["in", points], "enabled": 1},
+				fields=["item", "business_point"], limit_page_length=0,
+			)
+		}
+	children = {}
+	for group in groups:
+		children.setdefault(group.parent_catalog_group or "", []).append(group.name)
+	items_by_group = {}
+	for item in items:
+		items_by_group.setdefault(item.catalog_group or "", []).append(item.name)
+
+	branch_cache = {}
+
+	def branch_items(group, visiting=None):
+		if group in branch_cache:
+			return branch_cache[group]
+		visiting = set(visiting or ())
+		if group in visiting:
+			return []
+		visiting.add(group)
+		result = list(items_by_group.get(group, []))
+		for child in children.get(group, []):
+			result.extend(branch_items(child, visiting))
+		branch_cache[group] = result
+		return result
+
+	result = {}
+	for group in groups:
+		group_items = branch_items(group.name)
+		total = len(group_items) * len(points)
+		enabled_count = sum((item, point) in enabled_pairs for item in group_items for point in points)
+		state = "all" if total and enabled_count == total else "partial" if enabled_count else "none"
+		result[group.name] = {
+			"state": state,
+			"enabled": enabled_count,
+			"total": total,
+			"items": len(group_items),
+		}
 	return result
 
 
@@ -193,32 +309,80 @@ def _get_or_create_assortment(item, point):
 
 
 @frappe.whitelist(methods=["POST"])
-def set_assortment(business_point, item, enabled=0, visible_in_pos=None):
+@access_contract(area="page.catalog.assortment", action="write", scope="point")
+def set_assortment(business_point, item, enabled=0):
 	_require_layer("assortment", "write")
-	point = _ensure_point(business_point)
+	points = _selected_points(business_point, allow_all=True)
 	if not frappe.db.exists("Catalog Item", {"name": item, "active": 1}):
 		frappe.throw(_("Позиция каталога недоступна."), frappe.PermissionError)
-	doc = _get_or_create_assortment(item, point)
-	doc.enabled = cint(enabled)
-	doc.visible_in_pos = cint(visible_in_pos if visible_in_pos is not None else doc.visible_in_pos)
-	if not doc.enabled:
-		doc.visible_in_pos = 0
-	doc.save(ignore_permissions=True)
-	return {"item": item, "enabled": doc.enabled, "visible_in_pos": doc.visible_in_pos}
+	updated = _apply_assortment([item], points, cint(enabled))
+	return {"item": item, "enabled": cint(enabled), "updated": updated, "points": len(points)}
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.catalog.assortment", action="write", scope="point")
 def bulk_set_assortment(business_point, enabled=0, catalog_group=None):
 	_require_layer("assortment", "write")
-	point = _ensure_point(business_point)
+	points = _selected_points(business_point, allow_all=True)
 	filters, _ = _item_filters(catalog_group)
 	items = frappe.get_all("Catalog Item", filters=filters, pluck="name", limit_page_length=0)
-	for item in items:
-		doc = _get_or_create_assortment(item, point)
-		doc.enabled = cint(enabled)
-		doc.visible_in_pos = cint(enabled)
-		doc.save(ignore_permissions=True)
-	return {"updated": len(items)}
+	updated = _apply_assortment(items, points, cint(enabled))
+	return {"updated": updated, "items": len(items), "points": len(points), "enabled": cint(enabled)}
+
+
+def _apply_assortment(items, points, enabled):
+	"""Materialize item/point state in one request; enabled is the sale authority.
+
+	``visible_in_pos`` remains mirrored during its compatibility window so old
+	POS clients cannot observe a different state.
+	"""
+	if not items or not points:
+		return 0
+	value = cint(enabled)
+	item_placeholders = ", ".join(["%s"] * len(items))
+	point_placeholders = ", ".join(["%s"] * len(points))
+	if not value:
+		# Absence already means disabled. Do not create a large matrix of zero rows.
+		frappe.db.sql(
+			f"""UPDATE `tabCatalog Assortment`
+			SET enabled = 0, visible_in_pos = 0
+			WHERE item IN ({item_placeholders})
+			AND business_point IN ({point_placeholders})""",  # nosec B608: placeholders are generated, not user input
+			[*items, *points],
+		)
+		return len(items) * len(points)
+
+	warehouses = {
+		point: frappe.db.get_value(
+			"Catalog Warehouse", {"business_point": point, "active": 1}, "name",
+			order_by="warehouse_name asc",
+		)
+		for point in points
+	}
+	now = now_datetime()
+	owner = frappe.session.user
+	# One upsert per chunk replaces N-by-M ORM saves and remains duplicate-safe when
+	# a browser retry or concurrent bulk operation materializes the same pair.
+	values = [
+		(f"{point}-{item}", now, now, owner, owner, item, point, warehouses.get(point), value, value)
+		for point in points
+		for item in items
+	]
+	for start in range(0, len(values), 500):
+		chunk = values[start : start + 500]
+		row_sql = ", ".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(chunk))
+		params = [field for row in chunk for field in row]
+		frappe.db.sql(
+			f"""INSERT INTO `tabCatalog Assortment`
+				(name, creation, modified, owner, modified_by, item, business_point, default_warehouse, enabled, visible_in_pos)
+			VALUES {row_sql}
+			ON DUPLICATE KEY UPDATE
+				enabled = VALUES(enabled),
+				visible_in_pos = VALUES(visible_in_pos),
+				default_warehouse = COALESCE(default_warehouse, VALUES(default_warehouse))""",  # nosec B608
+			params,
+		)
+	return len(items) * len(points)
 
 
 @frappe.whitelist(methods=["POST"])

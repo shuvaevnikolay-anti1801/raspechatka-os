@@ -5,6 +5,7 @@ const props = defineProps({
 	groups: { type: Array, default: () => [] },
 	selected: { type: String, default: "" },
 	canEdit: { type: Boolean, default: false },
+	states: { type: Object, default: () => ({}) },
 });
 const emit = defineEmits(["select", "create", "edit"]);
 const storageKey = "raspechatka.catalog.expanded-groups";
@@ -108,6 +109,9 @@ watch(
 				>
 					<span class="group-icon" :class="{ 'has-children': group.hasChildren }">{{ group.hasChildren ? "" : "⌑" }}</span>
 					<span class="group-title">{{ group.group_name }}</span>
+					<span v-if="states[group.name]" class="group-state" :class="`group-state--${states[group.name].state}`" :title="`${states[group.name].enabled} из ${states[group.name].total}`">
+						{{ states[group.name].state === "all" ? "✓" : states[group.name].state === "partial" ? "◐" : "○" }}
+					</span>
 				</button>
 				<button v-if="canEdit" class="group-edit" type="button" title="Изменить группу" @click.stop="emit('edit', group)">•••</button>
 			</div>
@@ -131,6 +135,9 @@ watch(
 .group-icon.has-children { width: 14px; }
 .group-toggle { position: absolute; z-index: 2; top: 9px; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: #77826b; cursor: pointer; }
 .group-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.group-state { justify-self:end; font-size:13px; color:var(--muted); }
+.group-state--all { color:var(--green-dark); }
+.group-state--partial { color:#a86c00; }
 .group-edit { position: absolute; right: 7px; top: 8px; width: 27px; height: 25px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; }
 .group-entry:hover .group-edit, .group-edit:focus { opacity: 1; }
 @media (max-width: 900px) { .group-panel { width: 100%; min-width: 0; } .group-tree { max-height: 260px; } }
