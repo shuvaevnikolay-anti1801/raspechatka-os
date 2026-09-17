@@ -1,0 +1,14 @@
+.payment-modal-v2{max-width:720px}
+.checkout-methods{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.checkout-methods button{min-height:70px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px}
+.checkout-methods button small{font-size:11px;font-weight:500;opacity:.72}
+.checkout-methods button:disabled{opacity:.48;cursor:not-allowed}
+.payment-warning{margin:14px 0;padding:14px 16px;border-radius:12px;background:#fff2e8;border:1px solid #efc7a7;display:flex;flex-direction:column;gap:5px}
+.payment-warning strong{font-size:14px}.payment-warning span{font-size:13px;color:#6d5140;line-height:1.4}
+.remote-confirmation{margin:16px 0;padding:18px;border-radius:14px;border:1px solid #dfe4db;background:#f8faf7;display:flex;flex-direction:column;gap:12px}
+.remote-confirmation>strong{font-size:17px}.remote-confirmation>p{margin:0;color:#5c6658;line-height:1.45}
+.remote-check{display:flex!important;align-items:flex-start!important;gap:10px!important;padding:14px;border-radius:10px;background:#fff;border:1px solid #d8ddd4;cursor:pointer}
+.remote-check input{width:20px!important;height:20px!important;min-width:20px;margin-top:1px}
+.remote-check span{display:flex;flex-direction:column;gap:3px}.remote-check small{color:#687063;font-weight:400}
+.checkout-footnote{margin:12px 0 0;color:#697064;font-size:12px;line-height:1.4;text-align:center}
+@media(max-width:760px){.checkout-methods{grid-template-columns:1fr}.payment-modal-v2{max-width:calc(100vw - 24px)}}

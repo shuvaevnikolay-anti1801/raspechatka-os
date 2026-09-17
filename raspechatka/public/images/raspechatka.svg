@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Распечатка OS</title>
+  <defs>
+    <linearGradient id="brand" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3157D5"/>
+      <stop offset="1" stop-color="#7B3FF2"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#brand)"/>
+  <path d="M18 13h21l9 9v29H18z" fill="#fff" opacity=".96"/>
+  <path d="M39 13v10h9" fill="#DDE4FF"/>
+  <path d="M25 31h16M25 38h12M25 45h8" fill="none" stroke="#4B55D9" stroke-linecap="round" stroke-width="3.5"/>
+</svg>

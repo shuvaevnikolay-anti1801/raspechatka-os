@@ -63,4 +63,3 @@ class TestCatalogCardSourceContract(TestCase):
 		self.assertIn("limit_page_length = min(max(cint(limit_page_length), 1), 50)", search_source)
 		self.assertIn('["Product", "Service", "Variant"]', search_source)
 		self.assertIn('f"%{value}%"', search_source)
-7819b7a2e2f162ff737c573a9416eb38799e0ec3

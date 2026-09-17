@@ -1,0 +1,1 @@
+{"doctype":"DocType","name":"Raspechatka Access Settings","module":"Raspechatka OS","issingle":1,"track_changes":1,"field_order":["rules"],"fields":[{"fieldname":"rules","fieldtype":"Table","label":"Матрица доступа","options":"Role Access Rule"}],"permissions":[{"role":"System Manager","read":1,"write":1},{"role":"Raspechatka Network Admin","read":1,"write":1}]}

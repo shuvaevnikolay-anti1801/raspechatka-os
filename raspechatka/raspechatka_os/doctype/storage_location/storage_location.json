@@ -1,0 +1,16 @@
+{
+ "actions":[],"allow_rename":0,"autoname":"hash","doctype":"DocType","engine":"InnoDB",
+ "field_order":["full_address","warehouse","cabinet","location_name","active","sort_order"],
+ "fields":[
+  {"fieldname":"full_address","fieldtype":"Data","label":"Адрес хранения","read_only":1,"in_list_view":1,"in_global_search":1,"bold":1},
+  {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"read_only":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"cabinet","fieldtype":"Link","label":"Шкаф","options":"Storage Cabinet","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"location_name","fieldtype":"Data","label":"Название места","reqd":1,"in_list_view":1},
+  {"fieldname":"active","fieldtype":"Check","label":"Активно","default":"1","in_list_view":1},
+  {"fieldname":"sort_order","fieldtype":"Int","label":"Порядок","default":"0"}
+ ],
+ "links":[{"link_doctype":"Catalog Item Storage","link_fieldname":"storage_location","group":"Товары"}],
+ "module":"Raspechatka OS","name":"Storage Location",
+ "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1}],
+ "search_fields":"full_address,location_name","sort_field":"sort_order","sort_order":"ASC","states":[],"title_field":"full_address","track_changes":1
+}

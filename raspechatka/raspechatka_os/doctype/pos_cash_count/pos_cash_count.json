@@ -1,0 +1,18 @@
+{
+ "actions":[],"autoname":"CASHCOUNT-.YYYY.-.#####","doctype":"DocType","engine":"InnoDB",
+ "field_order":["counted_at","count_type","business_point","pos_workplace","cashier_user","amounts_section","expected_amount","counted_amount","difference","lines","source_pos_event"],
+ "fields":[
+  {"fieldname":"counted_at","fieldtype":"Datetime","label":"Дата и время","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"count_type","fieldtype":"Select","label":"Тип пересчёта","options":"opening\ncontrol\nclosing","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"pos_workplace","fieldtype":"Link","label":"Рабочее место","options":"POS Workplace","reqd":1},
+  {"fieldname":"cashier_user","fieldtype":"Link","label":"Кассир","options":"User","read_only":1},
+  {"fieldname":"amounts_section","fieldtype":"Section Break","label":"Итог"},
+  {"fieldname":"expected_amount","fieldtype":"Currency","label":"Ожидается","read_only":1},
+  {"fieldname":"counted_amount","fieldtype":"Currency","label":"Посчитано","read_only":1},
+  {"fieldname":"difference","fieldtype":"Currency","label":"Расхождение","read_only":1},
+  {"fieldname":"lines","fieldtype":"Table","label":"Купюры и монеты","options":"POS Cash Count Line","reqd":1},
+  {"fieldname":"source_pos_event","fieldtype":"Data","label":"Событие кассы","read_only":1,"unique":1,"no_copy":1}
+ ],
+ "module":"Raspechatka OS","name":"POS Cash Count","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1}],"sort_field":"counted_at","sort_order":"DESC","track_changes":1
+}

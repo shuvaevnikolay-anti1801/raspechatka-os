@@ -1,0 +1,15 @@
+{
+ "actions":[],"autoname":"CLEAN-.YYYY.-.#####","doctype":"DocType","engine":"InnoDB",
+ "field_order":["visit_date","business_point","recorded_by","recorded_by_name","paid","paid_at","payment_pos_event","source_pos_event"],
+ "fields":[
+  {"fieldname":"visit_date","fieldtype":"Date","label":"Дата уборки","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"business_point","fieldtype":"Link","label":"Точка продаж","options":"Business Point","reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"recorded_by","fieldtype":"Link","label":"Отметил","options":"User","read_only":1},
+  {"fieldname":"recorded_by_name","fieldtype":"Data","label":"Сотрудник","read_only":1,"in_list_view":1},
+  {"fieldname":"paid","fieldtype":"Check","label":"Оплачено","default":0,"read_only":1,"in_list_view":1},
+  {"fieldname":"paid_at","fieldtype":"Datetime","label":"Выплачено","read_only":1},
+  {"fieldname":"payment_pos_event","fieldtype":"Data","label":"Событие выплаты","read_only":1,"no_copy":1},
+  {"fieldname":"source_pos_event","fieldtype":"Data","label":"Событие кассы","read_only":1,"unique":1,"no_copy":1}
+ ],
+ "module":"Raspechatka OS","name":"Cleaner Visit","permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1}],"sort_field":"visit_date","sort_order":"DESC","track_changes":1
+}

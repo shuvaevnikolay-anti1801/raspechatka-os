@@ -1,0 +1,107 @@
+{
+ "doctype": "DocType",
+ "name": "Payroll Run Line",
+ "module": "Raspechatka OS",
+ "istable": 1,
+ "field_order": [
+  "employee",
+  "hours",
+  "hourly_amount",
+  "personal_sales",
+  "piecework_amount",
+  "bonus",
+  "other_accruals",
+  "gross_amount",
+  "ndfl",
+  "insurance",
+  "injury",
+  "bank_amount",
+  "cash_amount",
+  "net_amount",
+  "total_cost"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Сотрудник",
+   "options": "Employee",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "hours",
+   "fieldtype": "Float",
+   "label": "Часы",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "hourly_amount",
+   "fieldtype": "Currency",
+   "label": "Почасовая часть"
+  },
+  {
+   "fieldname": "personal_sales",
+   "fieldtype": "Currency",
+   "label": "Личная выручка"
+  },
+  {
+   "fieldname": "piecework_amount",
+   "fieldtype": "Currency",
+   "label": "Сдельная часть"
+  },
+  {
+   "fieldname": "bonus",
+   "fieldtype": "Currency",
+   "label": "Премия"
+  },
+  {
+   "fieldname": "other_accruals",
+   "fieldtype": "Currency",
+   "label": "Другие начисления"
+  },
+  {
+   "fieldname": "gross_amount",
+   "fieldtype": "Currency",
+   "label": "Начислено",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "ndfl",
+   "fieldtype": "Currency",
+   "label": "НДФЛ"
+  },
+  {
+   "fieldname": "insurance",
+   "fieldtype": "Currency",
+   "label": "Страховые взносы"
+  },
+  {
+   "fieldname": "injury",
+   "fieldtype": "Currency",
+   "label": "Травматизм"
+  },
+  {
+   "fieldname": "bank_amount",
+   "fieldtype": "Currency",
+   "label": "Безналично"
+  },
+  {
+   "fieldname": "cash_amount",
+   "fieldtype": "Currency",
+   "label": "Наличными"
+  },
+  {
+   "fieldname": "net_amount",
+   "fieldtype": "Currency",
+   "label": "К выплате",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "total_cost",
+   "fieldtype": "Currency",
+   "label": "Стоимость сотрудника"
+  }
+ ],
+ "permissions": []
+}

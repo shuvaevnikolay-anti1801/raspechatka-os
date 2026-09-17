@@ -1,0 +1,24 @@
+{
+ "actions": [],
+ "autoname": "format:NEWS-{#####}",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["title", "message", "priority", "audience", "audience_value", "published_from", "published_until", "status"],
+ "fields": [
+  {"fieldname": "title", "fieldtype": "Data", "label": "Заголовок", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "message", "fieldtype": "Text Editor", "label": "Сообщение", "reqd": 1},
+  {"default": "Normal", "fieldname": "priority", "fieldtype": "Select", "label": "Важность", "options": "Normal\nImportant", "reqd": 1},
+  {"default": "All", "fieldname": "audience", "fieldtype": "Select", "label": "Получатели", "options": "All\nRole\nUser", "reqd": 1},
+  {"depends_on": "eval:doc.audience!='All'", "fieldname": "audience_value", "fieldtype": "Data", "label": "Роль или пользователь"},
+  {"default": "Now", "fieldname": "published_from", "fieldtype": "Datetime", "label": "Начало публикации", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "published_until", "fieldtype": "Datetime", "label": "Окончание публикации"},
+  {"default": "Draft", "fieldname": "status", "fieldtype": "Select", "label": "Статус", "options": "Draft\nPublished\nArchived", "reqd": 1, "in_list_view": 1}
+ ],
+ "module": "Raspechatka OS",
+ "name": "System Announcement",
+ "permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}],
+ "sort_field": "published_from",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

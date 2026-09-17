@@ -1,0 +1,13 @@
+:root {
+  --green: var(--rp-green);
+  --green-bright: var(--rp-green-bright);
+  --green-soft: var(--rp-green-soft);
+  --ink: var(--rp-ink);
+  --muted: var(--rp-muted);
+  --line: var(--rp-line);
+  --line-dark: var(--rp-line-dark);
+  --canvas: var(--rp-canvas);
+  --paper: var(--rp-paper);
+  --radius: var(--rp-radius);
+  font-family: var(--rp-font);
+}

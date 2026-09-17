@@ -1,0 +1,16 @@
+:root {
+  --rp-green: #a1ce0f;
+  --rp-green-bright: #baff32;
+  --rp-green-soft: #eff8cf;
+  --rp-ink: #272727;
+  --rp-muted: #6d726a;
+  --rp-line: #dfe2dc;
+  --rp-line-dark: #c9cdc5;
+  --rp-canvas: #f3f5f1;
+  --rp-paper: #ffffff;
+  --rp-danger: #a04132;
+  --rp-danger-soft: #fde9e5;
+  --rp-radius: 3px;
+  --rp-font: Inter, "Segoe UI", Arial, sans-serif;
+  --rp-shadow: 0 12px 30px rgba(28, 31, 25, .10);
+}

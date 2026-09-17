@@ -1,0 +1,99 @@
+{
+ "doctype": "DocType",
+ "name": "Employee Leave",
+ "module": "Raspechatka OS",
+ "autoname": "hash",
+ "title_field": "employee",
+ "track_changes": 1,
+ "field_order": [
+  "employee",
+  "leave_type",
+  "date_from",
+  "date_to",
+  "days",
+  "status",
+  "average_earnings",
+  "amount",
+  "document",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Сотрудник",
+   "options": "Employee",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "leave_type",
+   "fieldtype": "Select",
+   "label": "Вид",
+   "options": "Ежегодный отпуск\nКомпенсация отпуска\nБольничный\nОтпуск без содержания\nДругое",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "date_from",
+   "fieldtype": "Date",
+   "label": "С",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "date_to",
+   "fieldtype": "Date",
+   "label": "По",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "days",
+   "fieldtype": "Float",
+   "label": "Дней",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Статус",
+   "options": "Draft\nApproved\nPaid\nCancelled",
+   "default": "Draft",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "average_earnings",
+   "fieldtype": "Currency",
+   "label": "Средний дневной заработок"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Сумма"
+  },
+  {
+   "fieldname": "document",
+   "fieldtype": "Attach",
+   "label": "Документ"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Комментарий"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ]
+}

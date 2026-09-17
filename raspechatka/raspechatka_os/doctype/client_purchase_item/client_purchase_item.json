@@ -1,0 +1,16 @@
+{
+ "doctype":"DocType",
+ "name":"Client Purchase Item",
+ "module":"Raspechatka OS",
+ "istable":1,
+ "editable_grid":1,
+ "field_order":["item","item_name","quantity","rate","amount"],
+ "fields":[
+  {"fieldname":"item","fieldtype":"Link","label":"Товар или услуга","options":"Catalog Item","in_list_view":1},
+  {"fieldname":"item_name","fieldtype":"Data","label":"Наименование на момент продажи","reqd":1,"in_list_view":1},
+  {"fieldname":"quantity","fieldtype":"Float","label":"Количество","reqd":1,"in_list_view":1},
+  {"fieldname":"rate","fieldtype":"Currency","label":"Цена","reqd":1,"in_list_view":1},
+  {"fieldname":"amount","fieldtype":"Currency","label":"Сумма","reqd":1,"in_list_view":1}
+ ],
+ "permissions":[]
+}
