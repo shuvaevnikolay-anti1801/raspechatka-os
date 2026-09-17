@@ -361,7 +361,7 @@ def _apply_assortment(items, points, enabled):
 	}
 	now = now_datetime()
 	owner = frappe.session.user
-	# One upsert per chunk replaces N×M ORM saves and remains duplicate-safe when
+	# One upsert per chunk replaces N-by-M ORM saves and remains duplicate-safe when
 	# a browser retry or concurrent bulk operation materializes the same pair.
 	values = [
 		(f"{point}-{item}", now, now, owner, owner, item, point, warehouses.get(point), value, value)
