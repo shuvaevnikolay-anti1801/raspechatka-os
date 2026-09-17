@@ -11,10 +11,10 @@ const props = defineProps({
 	groupLabel: { type: String, default: "Все позиции" },
 	canEdit: Boolean,
 	loading: Boolean,
+	sourcePoint: { type: String, default: "" },
 });
 const emit = defineEmits(["reload", "error", "feedback", "dirty"]);
 const saving = reactive(new Set());
-const sourcePoint = ref("");
 const modal = ref("");
 const preview = ref(null);
 const applying = ref(false);
@@ -32,15 +32,13 @@ const calculator = reactive({
 	max_price: "",
 	only_markup_below: "",
 });
-const availableSources = computed(() =>
-	props.points.filter((p) => p.name !== props.businessPoint)
-);
 const pointLabel = computed(
 	() =>
-		props.points.find((p) => p.name === props.businessPoint)?.point_name || props.businessPoint
+		props.points.find((p) => p.name === props.businessPoint)?.point_name ||
+		props.businessPoint,
 );
 const sourceLabel = computed(
-	() => props.points.find((p) => p.name === sourcePoint.value)?.point_name || sourcePoint.value
+	() => props.points.find((p) => p.name === props.sourcePoint)?.point_name || props.sourcePoint,
 );
 const money = (value) =>
 	value == null
@@ -66,12 +64,6 @@ function publishDirty() {
 	emit("dirty", props.rows.some(isDirty));
 }
 watch(() => props.rows, publishDirty, { deep: true });
-watch(
-	() => props.businessPoint,
-	() => {
-		sourcePoint.value = "";
-	}
-);
 async function save(row) {
 	if (saving.has(row.name)) return;
 	saving.add(row.name);
@@ -85,7 +77,7 @@ async function save(row) {
 				price_type: row.price_type,
 				uom: row.stock_uom,
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		emit("feedback", `Цена для «${row.item_name}» сохранена.`);
 		emit("reload");
@@ -96,11 +88,11 @@ async function save(row) {
 	}
 }
 async function previewCopy() {
-	if (!sourcePoint.value) return;
+	if (!props.sourcePoint) return;
 	try {
 		preview.value = await call("raspechatka.api.catalog_pricing.preview_copy_prices", {
 			business_point: props.businessPoint,
-			source_point: sourcePoint.value,
+			source_point: props.sourcePoint,
 			catalog_group: props.catalogGroup,
 		});
 		modal.value = "copy";
@@ -134,10 +126,10 @@ async function applyPreview() {
 				catalog_group: props.catalogGroup,
 				preview_token: preview.value.token,
 				...(isCopy
-					? { source_point: sourcePoint.value }
+					? { source_point: props.sourcePoint }
 					: { spec: JSON.stringify(calculator) }),
 			},
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		modal.value = "";
 		emit("feedback", `Обновлено цен: ${result.updated}.`);
@@ -148,24 +140,16 @@ async function applyPreview() {
 		applying.value = false;
 	}
 }
+
+function openCalculator() {
+	modal.value = "calculator";
+}
+
+defineExpose({ openCalculator, previewCopy });
 </script>
 
 <template>
 	<div class="price-workspace">
-		<div v-if="canEdit" class="price-tools">
-			<select v-model="sourcePoint">
-				<option value="">Точка-источник…</option>
-				<option v-for="point in availableSources" :key="point.name" :value="point.name">
-					{{ point.point_name }}
-				</option>
-			</select>
-			<button class="button button-secondary" :disabled="!sourcePoint" @click="previewCopy">
-				Копировать цены
-			</button>
-			<button class="button button-secondary" @click="modal = 'calculator'">
-				Калькулятор цен
-			</button>
-		</div>
 		<div class="layer-table-wrap">
 			<table class="layer-table">
 				<thead>
@@ -223,90 +207,105 @@ async function applyPreview() {
 			<p v-if="loading" class="muted-copy">Загрузка…</p>
 		</div>
 		<AppModal v-if="modal === 'calculator'" title="Калькулятор цен" wide @close="modal = ''">
-			<p>
-				<b>Точка:</b> {{ pointLabel }} · <b>Группа:</b> {{ groupLabel }} · <b>Позиций:</b>
-				{{ rows.length }}
-			</p>
-			<div class="calculator-grid">
-				<label
-					>Режим<select v-model="calculator.mode">
-						<option value="change">Изменить базовую цену</option>
-						<option value="markup">Установить наценку</option>
-					</select></label
-				>
-				<label v-if="calculator.mode === 'change'"
-					>База<select v-model="calculator.base">
-						<option value="current">Текущая цена</option>
-						<option value="cost">Себестоимость</option>
-					</select></label
-				>
-				<label v-if="calculator.mode === 'change'"
-					>Действие<select v-model="calculator.operation">
-						<option value="add">Увеличить</option>
-						<option value="subtract">Уменьшить</option>
-					</select></label
-				>
-				<label v-if="calculator.mode === 'change'"
-					>Единица<select v-model="calculator.unit">
-						<option value="percent">%</option>
-						<option value="ruble">₽</option>
-					</select></label
-				>
-				<label
-					>{{ calculator.mode === "markup" ? "Наценка, %" : "Значение"
-					}}<input v-model.number="calculator.value" type="number"
-				/></label>
-				<label
-					>Шаг округления, ₽<input
-						v-model.number="calculator.rounding_step"
-						type="number"
-						min="0"
-						list="rounding-steps" /><datalist id="rounding-steps">
-						<option value="0">Без округления</option>
-						<option value="1" />
-						<option value="10" />
-						<option value="50" />
-						<option value="100" /></datalist
-				></label>
-				<label
-					>Направление<select v-model="calculator.rounding_mode">
-						<option value="nearest">Ближайшее</option>
-						<option value="up">Вверх</option>
-						<option value="down">Вниз</option>
-					</select></label
-				>
+			<div class="calculator-intro">
+				<div>
+					<strong>{{ pointLabel }}</strong>
+					<span>{{ groupLabel }}</span>
+				</div>
+				<div class="calculator-count">
+					<b>{{ rows.length }}</b
+					><span>позиций</span>
+				</div>
 			</div>
-			<details class="conditions">
-				<summary>Дополнительные условия</summary>
+			<p class="calculator-hint">
+				Настройте правило массового изменения. Перед применением вы увидите все новые цены.
+			</p>
+			<section class="calculator-section">
+				<h3>Правило расчёта</h3>
 				<div class="calculator-grid">
 					<label
-						>Минимальная цена<input
-							v-model="calculator.min_price"
+						><span>Режим</span
+						><select v-model="calculator.mode">
+							<option value="change">Изменить базовую цену</option>
+							<option value="markup">Установить наценку</option>
+						</select></label
+					>
+					<label v-if="calculator.mode === 'change'"
+						><span>От какой цены считать</span
+						><select v-model="calculator.base">
+							<option value="current">Текущая цена</option>
+							<option value="cost">Себестоимость</option>
+						</select></label
+					>
+					<label v-if="calculator.mode === 'change'"
+						><span>Что сделать</span
+						><select v-model="calculator.operation">
+							<option value="add">Увеличить</option>
+							<option value="subtract">Уменьшить</option>
+						</select></label
+					>
+					<label v-if="calculator.mode === 'change'"
+						><span>Единица изменения</span
+						><select v-model="calculator.unit">
+							<option value="percent">%</option>
+							<option value="ruble">₽</option>
+						</select></label
+					>
+					<label
+						><span>{{ calculator.mode === "markup" ? "Наценка, %" : "Значение" }}</span
+						><input v-model.number="calculator.value" type="number"
+					/></label>
+					<label
+						><span>Шаг округления, ₽</span
+						><input
+							v-model.number="calculator.rounding_step"
 							type="number"
-							min="0" /></label
+							min="0"
+							list="rounding-steps" /><datalist id="rounding-steps">
+							<option value="0">Без округления</option>
+							<option value="1" />
+							<option value="10" />
+							<option value="50" />
+							<option value="100" /></datalist
+					></label>
+					<label
+						><span>Как округлять</span
+						><select v-model="calculator.rounding_mode">
+							<option value="nearest">Ближайшее</option>
+							<option value="up">Вверх</option>
+							<option value="down">Вниз</option>
+						</select></label
+					>
+				</div>
+			</section>
+			<details class="conditions calculator-section">
+				<summary>
+					<span>Дополнительные ограничения</span><small>Необязательно</small>
+				</summary>
+				<div class="calculator-grid">
+					<label
+						><span>Минимальная цена, ₽</span
+						><input v-model="calculator.min_price" type="number" min="0" /></label
 					><label
-						>Максимальная цена<input
-							v-model="calculator.max_price"
-							type="number"
-							min="0" /></label
+						><span>Максимальная цена, ₽</span
+						><input v-model="calculator.max_price" type="number" min="0" /></label
 					><label
-						>Только при наценке ниже, %<input
-							v-model="calculator.only_markup_below"
-							type="number" /></label
+						><span>Менять только при наценке ниже, %</span
+						><input v-model="calculator.only_markup_below" type="number" /></label
 					><label class="check"
 						><input
 							v-model="calculator.skip_without_cost"
 							type="checkbox"
 							:true-value="1"
 							:false-value="0"
-						/>Пропускать без себестоимости</label
+						/><span>Пропускать позиции без себестоимости</span></label
 					><label class="check"
 						><input
 							v-model="calculator.not_below_cost"
 							type="checkbox"
 							:true-value="1"
 							:false-value="0"
-						/>Не ниже себестоимости</label
+						/><span>Не устанавливать цену ниже себестоимости</span></label
 					>
 				</div>
 			</details>
@@ -364,8 +363,8 @@ async function applyPreview() {
 						applying
 							? "Применяем…"
 							: modal === "copy"
-							? "Скопировать цены"
-							: "Применить новые цены"
+								? "Скопировать цены"
+								: "Применить новые цены"
 					}}
 				</button></template
 			>
@@ -374,12 +373,6 @@ async function applyPreview() {
 </template>
 
 <style scoped>
-.price-tools {
-	display: flex;
-	gap: 8px;
-	flex-wrap: wrap;
-	margin-bottom: 12px;
-}
 .layer-table-wrap {
 	overflow: auto;
 	border: 1px solid var(--border);
@@ -434,11 +427,71 @@ async function applyPreview() {
 }
 .calculator-grid label {
 	display: grid;
-	gap: 5px;
+	gap: 7px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #34423a;
 }
 .calculator-grid .check {
 	display: flex;
 	align-items: center;
+	gap: 9px;
+	min-height: 42px;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: #fff;
+	font-weight: 500;
+}
+.calculator-grid input:not([type="checkbox"]),
+.calculator-grid select {
+	width: 100%;
+	min-height: 42px;
+}
+.calculator-intro {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 16px 18px;
+	border-radius: 14px;
+	background: linear-gradient(135deg, var(--green-soft), #f7fbf3);
+	border: 1px solid #d9ead1;
+}
+.calculator-intro > div:first-child {
+	display: grid;
+	gap: 3px;
+}
+.calculator-intro strong {
+	font-size: 17px;
+	color: var(--green-dark);
+}
+.calculator-intro span,
+.calculator-hint {
+	color: var(--muted);
+}
+.calculator-count {
+	display: grid;
+	justify-items: end;
+}
+.calculator-count b {
+	font-size: 22px;
+	line-height: 1;
+	color: var(--green-dark);
+}
+.calculator-hint {
+	margin: 12px 2px 18px;
+	font-size: 13px;
+}
+.calculator-section {
+	padding: 16px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fafbf9;
+}
+.calculator-section h3 {
+	margin: 0 0 14px;
+	font-size: 15px;
 }
 .conditions {
 	margin-top: 14px;
@@ -446,6 +499,13 @@ async function applyPreview() {
 .conditions summary {
 	cursor: pointer;
 	font-weight: 600;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+.conditions summary small {
+	color: var(--muted);
+	font-weight: 500;
 }
 .conditions .calculator-grid {
 	margin-top: 12px;
