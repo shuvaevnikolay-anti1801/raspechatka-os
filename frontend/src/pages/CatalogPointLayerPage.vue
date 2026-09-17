@@ -132,8 +132,8 @@ onMounted(async () => { try { await loadOptions(); await loadRows(); } catch (ex
 			</label>
 			<label v-if="layer !== 'assortment'">Поиск<input v-model="filters.search" placeholder="Название, код или артикул" /></label>
 			<div v-if="layer === 'assortment' && canEdit" class="bulk-actions">
-				<button class="button button-secondary" :disabled="saving" @click="bulk(1)">Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
-				<button class="button button-secondary" :disabled="saving" @click="bulk(0)">Выключить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
+				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(1)">Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
+				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(0)">Выключить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
 			</div>
 		</div>
 		<p v-if="error" class="form-error">{{ error }}</p>
