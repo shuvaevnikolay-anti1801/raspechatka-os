@@ -232,8 +232,8 @@ def _refresh_group_flags():
 
 
 @frappe.whitelist()
+@access_contract(area="page.catalog", action="read", scope="network")
 def get_catalog_item(name=None, item_type="Product"):
-	require_access("page.catalog", "read")
 	scope = get_scope()
 	point_filters = {"active": 1} if scope["global"] else {"active": 1, "name": ["in", scope["points"] or ["__none__"]]}
 	warehouse_filters = {"active": 1} if scope["global"] else {"active": 1, "business_point": ["in", scope["points"] or ["__none__"]]}
@@ -296,6 +296,12 @@ def get_catalog_item(name=None, item_type="Product"):
 				for point in points
 			],
 		}
+	related_item_names = set()
+	if name:
+		related_item_names.update(row.item for row in doc.get("bundle_components") or [] if row.item)
+		related_item_names.update(
+			frappe.get_all("Catalog Item", filters={"variant_of": name}, pluck="name")
+		)
 	options = {
 		"groups": frappe.get_all(
 			"Catalog Group",
@@ -313,10 +319,10 @@ def get_catalog_item(name=None, item_type="Product"):
 		"price_types": frappe.get_all("Catalog Price Type", filters={"active": 1}, fields=["name", "price_type_name"], order_by="price_type_name asc"),
 		"items": frappe.get_all(
 			"Catalog Item",
-			filters={"active": 1, **({"name": ["!=", name]} if name else {})},
+			filters={"name": ["in", list(related_item_names) or ["__none__"]]},
 			fields=["name", "item_name", "item_type", "stock_uom", "catalog_group", "default_supplier", "variant_of"],
 			order_by="item_name asc",
-			limit_page_length=2000,
+			limit_page_length=0,
 		),
 		"variant_parents": frappe.get_all(
 			"Catalog Item",
@@ -331,12 +337,37 @@ def get_catalog_item(name=None, item_type="Product"):
 	return {"doc": doc, "options": options}
 
 
+@frappe.whitelist()
+@access_contract(area="page.catalog", action="read", scope="network")
+def search_bundle_components(search=None, exclude=None, limit_page_length=30):
+	"""Search active, valid bundle components without loading the whole catalog."""
+	limit_page_length = min(max(cint(limit_page_length), 1), 50)
+	filters = {"active": 1, "item_type": ["in", ["Product", "Service", "Variant"]]}
+	if exclude:
+		filters["name"] = ["!=", exclude]
+	value = (search or "").strip()
+	return {
+		"items": frappe.get_all(
+			"Catalog Item",
+			filters=filters,
+			or_filters={"item_name": ["like", f"%{value}%"]} if value else None,
+			fields=["name", "item_name", "item_type", "stock_uom"],
+			order_by="item_name asc",
+			limit_page_length=limit_page_length,
+		)
+	}
+
+
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.catalog", action="write", scope="network")
 def save_catalog_item(data):
 	data = frappe.parse_json(data)
-	require_access("page.catalog", "write" if data.get("name") else "create")
+	if not data.get("name"):
+		require_access("page.catalog", "create")
 	is_new = not data.get("name")
 	doc = frappe.get_doc("Catalog Item", data["name"]) if data.get("name") else frappe.new_doc("Catalog Item")
+	if not is_new and "item_type" in data and data.get("item_type") != doc.item_type:
+		frappe.throw("Тип позиции нельзя изменить после создания.", frappe.ValidationError)
 	if data.get("default_supplier") and not frappe.db.exists("Catalog Supplier", {"name": data.get("default_supplier"), **_supplier_filters()}):
 		frappe.throw("Поставщик недоступен", frappe.PermissionError)
 	allowed = (
@@ -345,7 +376,6 @@ def save_catalog_item(data):
 		"catalog_group",
 		"stock_uom",
 		"default_supplier",
-		"prevent_discounts",
 		"variant_of",
 	)
 	for fieldname in allowed:

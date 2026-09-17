@@ -7,6 +7,7 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { pageLabel } from "../pageRegistry";
 
 const items = ref([]);
 const groups = ref([]);
@@ -28,6 +29,10 @@ const filters = reactive({
 const editorOpen = ref(false);
 const saving = ref(false);
 const editorError = ref("");
+const componentSearches = reactive({});
+const componentResults = reactive({});
+const componentLoading = reactive({});
+const componentSearchTimers = new Map();
 const itemForm = reactive({});
 const itemOptions = reactive({
 	groups: [],
@@ -39,7 +44,7 @@ const itemOptions = reactive({
 	points: [],
 	warehouses: [],
 });
-const canEdit = canAccess("references.catalog", "Edit");
+const canEdit = canAccess("page.catalog", "Edit");
 const groupEditorOpen = ref(false);
 const groupSaving = ref(false);
 const groupError = ref("");
@@ -165,6 +170,10 @@ async function loadWorkspace() {
 
 async function loadEditor(name, type = "Product") {
 	editorError.value = "";
+	Object.keys(componentSearches).forEach((key) => delete componentSearches[key]);
+	Object.keys(componentResults).forEach((key) => delete componentResults[key]);
+	for (const timer of componentSearchTimers.values()) clearTimeout(timer);
+	componentSearchTimers.clear();
 	try {
 		const result = await call("raspechatka.api.frontend.get_catalog_item", {
 			name,
@@ -183,7 +192,22 @@ async function saveItem() {
 	saving.value = true;
 	editorError.value = "";
 	try {
-		const { prices, assortments, reorder_rules, ...catalogData } = JSON.parse(JSON.stringify(itemForm));
+		const catalogData = {
+			...(itemForm.name ? { name: itemForm.name } : { item_type: itemForm.item_type }),
+			item_name: itemForm.item_name,
+			catalog_group: itemForm.catalog_group,
+			stock_uom: itemForm.stock_uom,
+			default_supplier: itemForm.default_supplier,
+			variant_of: itemForm.variant_of,
+			variant_values: itemForm.variant_values || [],
+			bundle_components: (itemForm.bundle_components || []).map((row) => ({
+				item: row.item,
+				quantity: row.quantity,
+				uom: row.uom,
+				// Preserve historical comments without exposing or rewriting them in the UI.
+				...(row.notes ? { notes: row.notes } : {}),
+			})),
+		};
 		const result = await call(
 			"raspechatka.api.frontend.save_catalog_item",
 			{ data: JSON.stringify(catalogData) },
@@ -316,7 +340,53 @@ function addVariantValue() {
 }
 
 function addBundleComponent() {
-	(itemForm.bundle_components ||= []).push({ item: "", quantity: 1, uom: "шт", notes: "" });
+	(itemForm.bundle_components ||= []).push({ item: "", quantity: 1, uom: "шт" });
+}
+
+function componentLabel(id) {
+	return (
+		Object.values(componentResults)
+			.flat()
+			.find((item) => item.name === id)?.item_name ||
+		itemOptions.items.find((item) => item.name === id)?.item_name ||
+		id || ""
+	);
+}
+
+function selectedComponent(row) {
+	return itemOptions.items.find((item) => item.name === row.item);
+}
+
+function componentOptions(index, row) {
+	const results = componentResults[index] || [];
+	const selected = selectedComponent(row);
+	return selected && !results.some((item) => item.name === selected.name)
+		? [selected, ...results]
+		: results;
+}
+
+function searchBundleComponents(index, value = "") {
+	componentSearches[index] = value;
+	clearTimeout(componentSearchTimers.get(index));
+	componentSearchTimers.set(
+		index,
+		setTimeout(async () => {
+			componentLoading[index] = true;
+			try {
+				const result = await call("raspechatka.api.frontend.search_bundle_components", {
+					search: value,
+					exclude: itemForm.name || "",
+					limit_page_length: 30,
+				});
+				componentResults[index] = result.items || [];
+			} catch (exception) {
+				editorError.value = exception.message;
+			} finally {
+				componentLoading[index] = false;
+			}
+		},
+		250
+	));
 }
 
 function removeRow(table, index) {
@@ -347,7 +417,7 @@ async function initializeCatalog(size) {
 
 <template>
 	<section class="page catalog-page">
-		<ListPageHeader title="Товары и Цены">
+		<ListPageHeader :title="pageLabel('/catalog', 'Каталог')">
 			<template #actions>
 				<div v-if="canEdit" class="create-actions">
 					<button
@@ -476,7 +546,7 @@ async function initializeCatalog(size) {
 						<div><h3>Основное</h3></div>
 					</div>
 					<div class="form-grid">
-						<label
+						<label v-if="!itemForm.name"
 							>Тип
 							<select v-model="itemForm.item_type">
 								<option
@@ -488,6 +558,10 @@ async function initializeCatalog(size) {
 								</option>
 							</select>
 						</label>
+						<div v-else class="type-readonly">
+							<span>Тип</span>
+							<strong class="type-chip" :class="itemForm.item_type.toLowerCase()">{{ typeLabels[itemForm.item_type] }}</strong>
+						</div>
 						<label class="span-2"
 							>Наименование<input v-model="itemForm.item_name" required
 						/></label>
@@ -602,20 +676,6 @@ async function initializeCatalog(size) {
 					<p v-else class="muted-copy">Модификаций пока нет.</p>
 				</div>
 
-				<div class="form-section">
-					<div class="section-heading">
-						<div><h3>Правила продажи</h3></div>
-					</div>
-					<label class="check-field compact-check"
-						><input
-							v-model="itemForm.prevent_discounts"
-							type="checkbox"
-							:true-value="1"
-							:false-value="0"
-						/>
-						Запретить скидки для позиции</label
-					>
-				</div>
 				<div v-if="itemForm.item_type === 'Bundle'" class="form-section">
 					<div class="section-heading">
 						<div>
@@ -633,16 +693,35 @@ async function initializeCatalog(size) {
 					</div>
 					<div class="editable-rows bundle-rows">
 						<div v-for="(row, index) in itemForm.bundle_components" :key="index">
-							<select v-model="row.item">
-								<option value="">Товар или услуга</option>
-								<option
-									v-for="item in itemOptions.items"
-									:key="item.name"
-									:value="item.name"
+							<div class="component-picker">
+								<input
+									:value="componentSearches[index] ?? componentLabel(row.item)"
+									placeholder="Введите 2–3 символа"
+									@focus="searchBundleComponents(index, componentSearches[index] || '')"
+									@input="searchBundleComponents(index, $event.target.value)"
+								/>
+								<select
+									v-model="row.item"
+									size="4"
+									@change="componentSearches[index] = componentLabel(row.item)"
 								>
-									{{ item.item_name }}
-								</option>
-							</select>
+									<option value="">Не выбрано</option>
+									<option v-if="componentLoading[index]" disabled>Ищем…</option>
+									<option
+										v-for="item in componentOptions(index, row)"
+										:key="item.name"
+										:value="item.name"
+									>
+										{{ item.item_name }}
+									</option>
+									<option
+										v-if="!componentLoading[index] && !componentOptions(index, row).length"
+										disabled
+									>
+										Ничего не найдено
+									</option>
+								</select>
+							</div>
 							<input
 								v-model.number="row.quantity"
 								type="number"
@@ -659,7 +738,6 @@ async function initializeCatalog(size) {
 									{{ unit.unit_name }}
 								</option>
 							</select>
-							<input v-model="row.notes" placeholder="Комментарий" />
 							<button type="button" @click="removeRow('bundle_components', index)">
 								×
 							</button>
@@ -725,8 +803,12 @@ async function initializeCatalog(size) {
 	grid-template-columns: 1.2fr 1.2fr 0.7fr 0.8fr 0.8fr 1fr 1fr 34px;
 }
 .bundle-rows > div {
-	grid-template-columns: 2fr 0.65fr 0.8fr 1.4fr 34px;
+	grid-template-columns: 2fr 0.65fr 0.8fr 34px;
 }
+.component-picker { display: grid; gap: 4px; }
+.component-picker select { min-height: 90px; }
+.type-readonly { display: grid; align-content: start; gap: 7px; color: var(--muted); font-size: 12px; }
+.type-readonly .type-chip { width: fit-content; }
 .point-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));

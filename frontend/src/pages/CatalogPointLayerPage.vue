@@ -2,15 +2,16 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
+import { pageLabel } from "../pageRegistry";
 import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 
 const route = useRoute();
 const layer = computed(() => route.meta.layer || "assortment");
 const config = computed(() => ({
-	assortment: { title: "Ассортимент точек", area: "page.catalog.assortment" },
-	prices: { title: "Цены", area: "page.catalog.prices" },
-	minimum_stock: { title: "Минимальные остатки", area: "page.catalog.minimum-stock" },
+	assortment: { title: pageLabel("/catalog/assortment"), area: "page.catalog.assortment" },
+	prices: { title: pageLabel("/catalog/prices"), area: "page.catalog.prices" },
+	minimum_stock: { title: pageLabel("/catalog/minimum-stock"), area: "page.catalog.minimum-stock" },
 }[layer.value]));
 const options = reactive({ points: [], groups: [], price_types: [] });
 const filters = reactive({ business_point: "", catalog_group: "", search: "" });
