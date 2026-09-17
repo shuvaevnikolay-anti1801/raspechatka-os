@@ -5,6 +5,7 @@ from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
 from raspechatka.access import get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.api.frontend import _catalog_group_branch
 from raspechatka.pricing import get_default_price_type, resolve_item_price
 
@@ -101,6 +102,7 @@ def get_options(layer="assortment"):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_rows(layer, business_point, catalog_group=None, search=None):
 	_require_layer(layer)
 	if layer == "assortment" and business_point == ALL_POINTS:
@@ -174,6 +176,7 @@ def _assortment_rows_all(points, items):
 
 
 @frappe.whitelist()
+@access_contract(area="page.catalog.assortment", action="read", scope="point")
 def get_assortment_group_states(business_point):
 	"""Return computed all/partial/none states; no group policy is persisted."""
 	_require_layer("assortment")
@@ -306,6 +309,7 @@ def _get_or_create_assortment(item, point):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.catalog.assortment", action="write", scope="point")
 def set_assortment(business_point, item, enabled=0):
 	_require_layer("assortment", "write")
 	points = _selected_points(business_point, allow_all=True)
@@ -316,6 +320,7 @@ def set_assortment(business_point, item, enabled=0):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.catalog.assortment", action="write", scope="point")
 def bulk_set_assortment(business_point, enabled=0, catalog_group=None):
 	_require_layer("assortment", "write")
 	points = _selected_points(business_point, allow_all=True)
