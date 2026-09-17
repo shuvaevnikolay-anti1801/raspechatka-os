@@ -365,6 +365,7 @@ def save_catalog_item(data):
 		"stock_uom",
 		"default_supplier",
 		"variant_of",
+		"starting_minimum_stock",
 	)
 	for fieldname in allowed:
 		if fieldname in data:

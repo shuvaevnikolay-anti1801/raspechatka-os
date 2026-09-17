@@ -32,6 +32,16 @@ class TestCatalogLayerSecurity(TestCase):
 		with patch.object(catalog_layers, "frappe", fake), self.assertRaises(permission_error):
 			catalog_layers._ensure_warehouse("POINT-A", "WAREHOUSE-B")
 
+	def test_point_warehouse_rejects_legacy_multiple_active_warehouses(self):
+		validation_error = type("ValidationError", (Exception,), {})
+		fake = SimpleNamespace(
+			ValidationError=validation_error,
+			get_all=Mock(return_value=["WAREHOUSE-A", "WAREHOUSE-B"]),
+			throw=Mock(side_effect=validation_error),
+		)
+		with patch.object(catalog_layers, "frappe", fake), self.assertRaises(validation_error):
+			catalog_layers._point_warehouse("POINT-A")
+
 	def test_minimum_stock_rejects_service_and_bundle(self):
 		for item_type in ("Service", "Bundle"):
 			permission_error = type("PermissionError", (Exception,), {})
@@ -44,10 +54,10 @@ class TestCatalogLayerSecurity(TestCase):
 				patch.object(catalog_layers, "frappe", fake),
 				patch.object(catalog_layers, "_require_layer"),
 				patch.object(catalog_layers, "_ensure_point", return_value="POINT-A"),
-				patch.object(catalog_layers, "_ensure_warehouse", return_value="WAREHOUSE-A"),
+				patch.object(catalog_layers, "_point_warehouse", return_value="WAREHOUSE-A"),
 				self.assertRaises(permission_error),
 			):
-				catalog_layers.save_minimum_stock("POINT-A", "ITEM", "WAREHOUSE-A", 10, 20)
+				catalog_layers.save_minimum_stock("POINT-A", "ITEM", 10, 20)
 
 	def test_point_price_rejects_item_outside_enabled_assortment(self):
 		permission_error = type("PermissionError", (Exception,), {})
@@ -91,11 +101,23 @@ class TestCatalogLayerSecurity(TestCase):
 
 
 class TestCatalogLayerContracts(TestCase):
+	def test_stock_norm_formula_uses_effective_history_and_ceil(self):
+		minimum, target, average = catalog_layers._calculate_stock_norm(
+			17, 10, {"minimum_days": 30, "target_days": 90}
+		)
+		self.assertEqual((minimum, target), (51, 153))
+		self.assertEqual(average, 1.7)
+		self.assertEqual(
+			catalog_layers._calculate_stock_norm(-2, 10, {"minimum_days": 30, "target_days": 90}),
+			(None, None, 0),
+		)
+
 	def test_navigation_exposes_four_product_pages(self):
 		root = Path(__file__).resolve().parents[2]
 		manifest = (root / "frontend/src/access-pages.json").read_text(encoding="utf-8")
 		for route in ("/catalog", "/catalog/assortment", "/catalog/prices", "/catalog/minimum-stock"):
 			self.assertIn(f'"route": "{route}"', manifest)
+		self.assertIn('"label": "Нормативы запасов"', manifest)
 
 	def test_pos_contract_uses_enabled_as_single_sale_flag(self):
 		root = Path(__file__).resolve().parents[1]
@@ -185,6 +207,32 @@ class TestCatalogLayerContracts(TestCase):
 		report_source = (root / "api/warehouse_reports.py").read_text(encoding="utf-8")
 		self.assertIn('"Catalog Reorder Rule"', layer_source)
 		self.assertIn('"Catalog Reorder Rule"', report_source)
+		self.assertIn("target_stock - available - expected_qty", report_source)
+		self.assertIn("available <= minimum_stock", report_source)
+
+	def test_stock_norms_ui_has_no_warehouse_selector_and_uses_target(self):
+		root = Path(__file__).resolve().parents[2]
+		source = (root / "frontend/src/components/StockNormsWorkspace.vue").read_text(encoding="utf-8")
+		self.assertNotIn("warehouse", source.lower())
+		self.assertIn("target_stock", source)
+		self.assertIn("preview_stock_norms", source)
+		self.assertIn("copy_stock_norms", source)
+
+	def test_stock_norms_schema_keeps_legacy_quantity_and_adds_target(self):
+		root = Path(__file__).resolve().parents[1]
+		rule = (root / "raspechatka_os/doctype/catalog_reorder_rule/catalog_reorder_rule.json").read_text()
+		item = (root / "raspechatka_os/doctype/catalog_item/catalog_item.json").read_text()
+		self.assertIn('"fieldname":"target_stock"', rule)
+		self.assertIn('"fieldname":"reorder_quantity"', rule)
+		self.assertIn('"fieldname": "starting_minimum_stock"', item)
+
+	def test_warehouse_policy_is_global_admin_page(self):
+		root = Path(__file__).resolve().parents[2]
+		manifest = (root / "frontend/src/access-pages.json").read_text()
+		api = (root / "raspechatka/api/warehouse_settings.py").read_text()
+		self.assertIn('"area": "page.warehouse.settings"', manifest)
+		self.assertIn('"minimum": "Admin"', manifest)
+		self.assertIn('action="admin", scope="network"', api)
 
 	def test_legacy_point_price_is_not_used_by_new_layer(self):
 		root = Path(__file__).resolve().parents[1]

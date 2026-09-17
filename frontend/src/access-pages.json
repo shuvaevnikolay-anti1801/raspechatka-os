@@ -43,7 +43,7 @@
       { "area": "page.catalog", "label": "Каталог", "route": "/catalog", "legacy_area": "references.catalog", "order": 10 },
       { "area": "page.catalog.assortment", "label": "Ассортимент точек", "route": "/catalog/assortment", "legacy_area": "page.catalog", "order": 20 },
       { "area": "page.catalog.prices", "label": "Цены", "route": "/catalog/prices", "legacy_area": "page.catalog", "order": 30 },
-      { "area": "page.catalog.minimum-stock", "label": "Минимальные остатки", "route": "/catalog/minimum-stock", "legacy_area": "page.catalog", "order": 40 }
+      { "area": "page.catalog.minimum-stock", "label": "Нормативы запасов", "route": "/catalog/minimum-stock", "legacy_area": "page.catalog", "order": 40 }
     ]
   },
   {
@@ -59,7 +59,8 @@
       { "area": "page.warehouse.turnover", "label": "Обороты", "route": "/warehouse/turnover", "legacy_area": "warehouse.operations", "order": 60 },
       { "area": "page.warehouse.movements", "label": "Движения товаров", "route": "/warehouse/movements", "legacy_area": "warehouse.operations", "order": 70 },
       { "area": "page.references.suppliers", "label": "Поставщики", "route": "/references/suppliers", "legacy_area": "references.suppliers", "submenu_group": "service", "order": 80 },
-      { "area": "page.references.warehouses", "label": "Склады", "route": "/references/warehouses", "legacy_area": "references.storage", "submenu_group": "service", "order": 90 }
+      { "area": "page.references.warehouses", "label": "Склады", "route": "/references/warehouses", "legacy_area": "references.storage", "submenu_group": "service", "order": 90 },
+      { "area": "page.warehouse.settings", "label": "Настройки", "route": "/warehouse/settings", "legacy_area": "warehouse.operations", "submenu_group": "service", "minimum": "Admin", "order": 100 }
     ]
   },
   {

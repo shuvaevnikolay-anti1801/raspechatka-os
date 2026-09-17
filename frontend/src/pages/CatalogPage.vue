@@ -198,6 +198,7 @@ async function saveItem() {
 			catalog_group: itemForm.catalog_group,
 			stock_uom: itemForm.stock_uom,
 			default_supplier: itemForm.default_supplier,
+			starting_minimum_stock: itemForm.starting_minimum_stock,
 			variant_of: itemForm.variant_of,
 			variant_values: itemForm.variant_values || [],
 			bundle_components: (itemForm.bundle_components || []).map((row) => ({
@@ -602,6 +603,10 @@ async function initializeCatalog(size) {
 									{{ supplier.supplier_name }}
 								</option>
 							</select>
+						</label>
+						<label v-if="['Product', 'Variant'].includes(itemForm.item_type)"
+							>Стартовый минимальный остаток
+							<input v-model.number="itemForm.starting_minimum_stock" type="number" min="0" step="any" />
 						</label>
 						<label v-if="itemForm.item_type === 'Variant'" class="span-2"
 							>Основной товар

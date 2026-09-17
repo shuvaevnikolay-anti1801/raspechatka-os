@@ -1111,5 +1111,5 @@ def _load_json(value):
 		return None
 	try:
 		return json.loads(value)
-	except TypeError, ValueError:
+	except (TypeError, ValueError):
 		return None

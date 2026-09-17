@@ -482,7 +482,7 @@ class SalesReceipt(Document):
 			return {}
 		try:
 			return frappe.parse_json(self.source_payload_json) or {}
-		except TypeError, ValueError:
+		except (TypeError, ValueError):
 			return {}
 
 	def _source_lines(self):
