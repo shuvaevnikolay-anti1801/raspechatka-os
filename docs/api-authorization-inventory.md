@@ -34,7 +34,7 @@ document endpoints authorize the persisted object before accepting client-contro
 | `api.clients.get_clients`, `get_client`, `save_client`, `lookup_client`, `record_purchase` | `page.clients.list` / read/write | clients registered/purchased at caller points | Client visibility plus requested point check |
 | `api.clients.get_client_options` | `page.clients.list` / read | caller points | Points filtered; Network-wide marketing options withheld from scoped callers |
 | `api.clients.get_club_dashboard` | `page.clients.club` / read | visible clients and caller points | Scoped counts; Network-only campaign totals withheld |
-| `api.clients.get_loyalty_settings`, `save_loyalty_settings` | `page.clients.club` / read/write | Network-wide | Explicit Network-only guard |
+| `api.clients.get_loyalty_settings`, `save_loyalty_settings`, `run_loyalty_discount_recalculation` | `page.clients.club` / read/write | Network-wide | Explicit Network-only guard; bulk recalculation updates derived loyalty fields only |
 | `api.clients.get_marketing_records`, `get_marketing_record`, `save_marketing_record` | matching `page.clients.{segments,campaigns,promo_codes,calendar}` / read/write | Network-wide | Explicit Network-only guard; segment member helper still intersects visible clients |
 | `api.clients.club_gateway`, public club/config/register/channel methods | session/link/webhook token | token client | Token resolves the client; secrets are not returned |
 | `api.club_shadow.status`, `configure` | `page.clients.club` / admin | Network | Network configuration guard |
