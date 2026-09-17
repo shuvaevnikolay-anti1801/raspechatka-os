@@ -33,7 +33,7 @@ def push_batch(...):
     ...
 ```
 
-Supported auth types are `session`, `pos_token`, `webhook`, `oauth_state`, `public_token`, and `current_user`. Session contracts enforce `require_access(area, action)` automatically. Alternative auth endpoints must authenticate and bind their own trusted context (for example POS Connection point or signed OAuth state).
+Supported auth types are `session`, `pos_token`, `webhook`, `oauth_state`, `public_token`, `current_user`, and `guest`. `guest` is reserved for intentionally public endpoints such as the rate-limited OS login endpoint; it must never expose business data. Session contracts enforce `require_access(area, action)` automatically. Alternative auth endpoints must authenticate and bind their own trusted context (for example POS Connection point or signed OAuth state).
 
 The Quality Gate compares the PR against `version-16`. A newly added or materially changed whitelisted endpoint without a valid contract fails CI. Untouched legacy endpoints remain covered by `docs/api-authorization-inventory.md` and migrate to explicit decorators as they are changed.
 

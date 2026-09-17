@@ -25,6 +25,7 @@ add_to_apps_screen = [
 # Standalone product interface. Frappe Desk remains available at /app for
 # administrators, while all product routes are rendered by the Vue frontend.
 website_route_rules = [
+	{"from_route": "/login", "to_route": "os-login"},
 	{"from_route": "/raspechatka/<path:app_path>", "to_route": "raspechatka"}
 ]
 

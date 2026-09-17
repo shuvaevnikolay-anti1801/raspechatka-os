@@ -1,6 +1,14 @@
 from functools import wraps
 
-VALID_AUTH_TYPES = {"session", "pos_token", "webhook", "oauth_state", "public_token", "current_user"}
+VALID_AUTH_TYPES = {
+	"session",
+	"pos_token",
+	"webhook",
+	"oauth_state",
+	"public_token",
+	"current_user",
+	"guest",
+}
 VALID_ACTIONS = {"read", "create", "write", "delete", "admin"}
 VALID_SCOPES = {"network", "entity", "point", "client", "user", "pos_point", "provider", "none"}
 

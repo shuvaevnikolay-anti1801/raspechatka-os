@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = ROOT / "raspechatka"
 PAGES_PATH = ROOT / "frontend" / "src" / "access-pages.json"
 
-VALID_AUTH = {"session", "pos_token", "webhook", "oauth_state", "public_token", "current_user"}
+VALID_AUTH = {"session", "pos_token", "webhook", "oauth_state", "public_token", "current_user", "guest"}
 VALID_ACTIONS = {"read", "create", "write", "delete", "admin"}
 VALID_SCOPES = {"network", "entity", "point", "client", "user", "pos_point", "provider", "none"}
 
@@ -188,7 +188,7 @@ def validate_contract(endpoint: Endpoint, known_areas: set[str]) -> list[str]:
 	else:
 		if area is not None:
 			errors.append("non-session endpoint must not declare page area")
-		if auth in {"pos_token", "webhook", "oauth_state", "public_token"} and not endpoint.allow_guest:
+		if auth in {"pos_token", "webhook", "oauth_state", "public_token", "guest"} and not endpoint.allow_guest:
 			errors.append(f"auth={auth!r} normally requires allow_guest=True")
 	return errors
 

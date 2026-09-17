@@ -102,8 +102,24 @@ function openProfile() {
 	window.location.assign("/app/user-profile");
 }
 
-function logout() {
-	window.location.assign("/api/method/logout");
+async function logout() {
+	try {
+		const response = await fetch("/api/method/logout", {
+			method: "POST",
+			credentials: "same-origin",
+			headers: {
+				Accept: "application/json",
+				"Content-Type": "application/json",
+				"X-Frappe-CSRF-Token": boot.csrf_token || "",
+			},
+			body: "{}",
+		});
+		if (!response.ok) throw new Error("logout failed");
+		window.location.replace("/login");
+	} catch {
+		accountOpen.value = false;
+		window.alert("Не удалось выйти из системы. Попробуйте ещё раз.");
+	}
 }
 
 onMounted(() => {
