@@ -8,7 +8,7 @@ test("catalog workspace titles use the same labels as the product submenu", () =
 		["/catalog", "Каталог"],
 		["/catalog/assortment", "Ассортимент точек"],
 		["/catalog/prices", "Цены"],
-		["/catalog/minimum-stock", "Минимальные остатки"],
+		["/catalog/minimum-stock", "Нормативы запасов"],
 	];
 	assert.deepEqual(
 		submenuForSection("catalog").map(({ route, label }) => [route, label]),

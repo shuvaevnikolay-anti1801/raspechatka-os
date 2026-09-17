@@ -51,6 +51,7 @@
   "lead_time_days",
   "minimum_order_qty",
   "reorder_section",
+  "starting_minimum_stock",
   "reorder_rules",
   "barcodes_tab",
   "barcodes",
@@ -369,6 +370,15 @@
    "fieldtype": "Section Break",
    "label": "Неснижаемый остаток по складам",
    "depends_on": "track_inventory"
+  },
+  {
+   "fieldname": "starting_minimum_stock",
+   "fieldtype": "Float",
+   "label": "Стартовый минимальный остаток",
+   "non_negative": 1,
+   "default": "0",
+   "depends_on": "track_inventory",
+   "description": "Сетевой шаблон только для первой инициализации норматива новой точки."
   },
   {
    "fieldname": "reorder_rules",

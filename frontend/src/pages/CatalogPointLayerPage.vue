@@ -5,6 +5,7 @@ import { call, canAccess } from "../api";
 import { pageLabel } from "../pageRegistry";
 import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import CatalogPriceWorkspace from "../components/CatalogPriceWorkspace.vue";
+import StockNormsWorkspace from "../components/StockNormsWorkspace.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import { layerEmptyMessage, normalizeBusinessPoint } from "../catalogPointLayerState";
 
@@ -32,8 +33,8 @@ const loading = ref(false);
 const error = ref("");
 const feedback = ref("");
 const saving = ref("");
-const savingRows = reactive(new Set());
 const priceDirty = ref(false);
+const normsDirty = ref(false);
 const previousPoint = ref("");
 const canEdit = computed(() => canAccess(config.value.area, "Edit"));
 const hasActiveWarehouse = computed(() =>
@@ -162,54 +163,28 @@ async function bulk(enabled) {
 	}
 }
 
-async function saveMinimum(row) {
-	if (savingRows.has(row.row_key)) return;
-	savingRows.add(row.row_key);
-	error.value = "";
-	feedback.value = "";
-	try {
-		await call(
-			"raspechatka.api.catalog_layers.save_minimum_stock",
-			{
-				business_point: filters.business_point,
-				item: row.name,
-				warehouse: row.warehouse,
-				minimum_stock: row.minimum_stock,
-				reorder_quantity: row.reorder_quantity,
-			},
-			{ method: "POST" }
-		);
-		feedback.value = `Норматив для «${row.item_name}» сохранён.`;
-		await loadRows();
-	} catch (exception) {
-		error.value = exception.message;
-	} finally {
-		savingRows.delete(row.row_key);
-	}
-}
-
 function selectGroup(name) {
 	if (
-		layer.value === "prices" &&
-		priceDirty.value &&
-		!window.confirm("Есть несохранённые цены. Продолжить без сохранения?")
+		((layer.value === "prices" && priceDirty.value) || (layer.value === "minimum_stock" && normsDirty.value)) &&
+		!window.confirm("Есть несохранённые изменения. Продолжить без сохранения?")
 	)
 		return;
 	priceDirty.value = false;
+	normsDirty.value = false;
 	filters.catalog_group = name;
 	feedback.value = "";
 	loadRows();
 }
 function changePoint() {
 	if (
-		layer.value === "prices" &&
-		priceDirty.value &&
-		!window.confirm("Есть несохранённые цены. Продолжить без сохранения?")
+		((layer.value === "prices" && priceDirty.value) || (layer.value === "minimum_stock" && normsDirty.value)) &&
+		!window.confirm("Есть несохранённые изменения. Продолжить без сохранения?")
 	) {
 		filters.business_point = previousPoint.value;
 		return;
 	}
 	priceDirty.value = false;
+	normsDirty.value = false;
 	previousPoint.value = filters.business_point;
 	feedback.value = "";
 	loadRows();
@@ -279,7 +254,14 @@ onMounted(async () => {
 					@error="error = $event"
 					@feedback="feedback = $event"
 				/>
-				<table v-if="layer !== 'prices'" class="layer-table">
+				<StockNormsWorkspace
+					v-else-if="layer === 'minimum_stock'"
+					:rows="rows" :points="options.points" :business-point="filters.business_point"
+					:catalog-group="filters.catalog_group" :group-label="selectedGroupLabel"
+					:can-edit="canEdit" :loading="loading"
+					@reload="loadRows" @dirty="normsDirty = $event" @error="error = $event" @feedback="feedback = $event"
+				/>
+				<table v-else class="layer-table">
 					<thead>
 						<tr>
 							<th>Позиция</th>
@@ -292,12 +274,6 @@ onMounted(async () => {
 											: "Продаётся в точке"
 									}}
 								</th></template
-							>
-							<template v-else
-								><th>Склад</th>
-								<th>Минимальный остаток</th>
-								<th>Пополнить на</th>
-								<th>Сохранить</th></template
 							>
 						</tr>
 					</thead>
@@ -336,42 +312,6 @@ onMounted(async () => {
 												? `◐ В ${row.enabled_points} из ${row.point_count}`
 												: "○ Нигде"
 										}}
-									</button>
-								</td>
-							</template>
-							<template v-else>
-								<td>
-									{{ row.warehouse_name
-									}}<small v-if="row.is_assortment_warehouse"
-										>Склад ассортимента</small
-									>
-								</td>
-								<td>
-									<input
-										v-model.number="row.minimum_stock"
-										type="number"
-										min="0"
-										step="any"
-										:disabled="!canEdit || savingRows.has(row.row_key)"
-									/>
-								</td>
-								<td>
-									<input
-										v-model.number="row.reorder_quantity"
-										type="number"
-										min="0"
-										step="any"
-										:disabled="!canEdit || savingRows.has(row.row_key)"
-									/>
-								</td>
-								<td>
-									<button
-										v-if="canEdit"
-										class="button button-primary"
-										:disabled="!row.warehouse || savingRows.has(row.row_key)"
-										@click="saveMinimum(row)"
-									>
-										Сохранить
 									</button>
 								</td>
 							</template>

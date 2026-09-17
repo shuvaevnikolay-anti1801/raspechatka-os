@@ -5,11 +5,13 @@ from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
 from raspechatka.access import get_scope, require_access, require_any_access
+from raspechatka.access_contract import access_contract
 from raspechatka.api.warehouse import _ensure_point
 from raspechatka.stock import effective_ledger_condition, get_active_import_batch
 
 
 @frappe.whitelist()
+@access_contract(area="page.warehouse.balances", action="read", scope="point")
 def get_stock_balances(
 	as_of=None,
 	business_point=None,
@@ -29,8 +31,8 @@ def get_stock_balances(
 	else:
 		aggregated = _historical_balances(warehouses, end)
 	expected = _expected_quantities(warehouses)
-	minimums = _minimum_stock_levels(warehouses)
-	for key in set(expected) | set(minimums):
+	norms = _stock_norm_levels(warehouses)
+	for key in set(expected) | set(norms):
 		aggregated.setdefault(
 			key,
 			{
@@ -89,8 +91,8 @@ def get_stock_balances(
 		reserved = flt(values.get("reserved_quantity"))
 		available = qty - reserved
 		expected_qty = flt(expected.get((item, warehouse_name)))
-		minimum_stock = flt(minimums.get((item, warehouse_name)))
-		recommended = max(minimum_stock - available - expected_qty, 0)
+		minimum_stock, target_stock = norms.get((item, warehouse_name), (0, 0))
+		recommended = max(target_stock - available - expected_qty, 0) if available <= minimum_stock else 0
 		if not int(show_zero) and abs(qty) < 0.000001 and not expected_qty and not recommended:
 			continue
 		value = flt(values["stock_value"])
@@ -115,6 +117,7 @@ def get_stock_balances(
 				"available_quantity": available,
 				"expected_quantity": expected_qty,
 				"minimum_stock": minimum_stock,
+				"target_stock": target_stock,
 				"recommended_order_quantity": recommended,
 				"average_rate": flt(value / qty) if qty else 0,
 				"stock_value": value,
@@ -520,17 +523,23 @@ def _effective_ledger_or_filters():
 	return filters
 
 
-def _minimum_stock_levels(warehouses):
+def _stock_norm_levels(warehouses):
 	rows = frappe.get_all(
 		"Catalog Reorder Rule",
 		filters={
 			"warehouse": ["in", warehouses or ["__none__"]],
 			"parenttype": "Catalog Item",
 		},
-		fields=["parent", "warehouse", "minimum_stock"],
+		fields=["parent", "warehouse", "minimum_stock", "target_stock"],
 		limit_page_length=0,
 	)
-	return {(row.parent, row.warehouse): flt(row.minimum_stock) for row in rows}
+	return {
+		(row.parent, row.warehouse): (
+			flt(row.minimum_stock),
+			max(flt(row.target_stock), flt(row.minimum_stock)),
+		)
+		for row in rows
+	}
 
 
 def _paginate_rows(rows, limit_start=0, limit_page_length=25):
