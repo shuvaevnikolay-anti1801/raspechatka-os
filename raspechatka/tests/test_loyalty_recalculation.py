@@ -104,7 +104,10 @@ class TestBulkLoyaltyRecalculation(TestCase):
 			get_all=Mock(
 				side_effect=[
 					[legacy, regular],
-					[Row(parent="LEGACY-1", messenger_type="Telegram", status="Активен", idx=1)],
+					[
+						Row(parent="LEGACY-1", messenger_type="Telegram", status="Активен", idx=1),
+						Row(parent="CLIENT-2", messenger_type="Telegram", status="Активен", idx=1),
+					],
 				]
 			),
 			log_error=Mock(),
