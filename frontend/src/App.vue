@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { boot, canAccess } from "./api";
 import accessSections from "./access-pages.json";
+import { submenuForSection } from "./pageRegistry";
 import TopNavigation from "./components/TopNavigation.vue";
 
 const route = useRoute();
@@ -11,9 +12,7 @@ const can = canAccess;
 const submenus = Object.fromEntries(
 	accessSections.map((section) => [
 		section.key,
-		(section.pages || [])
-			.filter((page) => page.submenu !== false)
-			.sort((left, right) => (left.order || 0) - (right.order || 0))
+		submenuForSection(section.key)
 			.map((page) => ({
 				label: page.label,
 				to: page.route,

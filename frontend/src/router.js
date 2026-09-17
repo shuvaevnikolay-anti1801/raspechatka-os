@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { canAccess } from "./api";
-import accessSections from "./access-pages.json";
+import { accessPages, pageForRoute } from "./pageRegistry";
 import DashboardPage from "./pages/DashboardPage.vue";
 import IAssistantPage from "./pages/IAssistantPage.vue";
 import CatalogPage from "./pages/CatalogPage.vue";
@@ -97,11 +97,8 @@ const router = createRouter({
 	scrollBehavior: () => ({ top: 0 }),
 });
 
-const accessPages = accessSections.flatMap((section) => section.pages || []);
-const accessPageByRoute = new Map(accessPages.map((page) => [page.route, page]));
-
 router.beforeEach((to) => {
-	const page = accessPageByRoute.get(to.path);
+	const page = pageForRoute(to.path);
 	if (!page || canAccess(page.area, page.minimum || "View")) return true;
 	const firstAvailable = accessPages.find((item) =>
 		canAccess(item.area, item.minimum || "View")

@@ -16,12 +16,20 @@ class CatalogItem(Document):
 			self.item_code = make_autoname("CAT-.#####")
 
 	def validate(self):
+		self._validate_immutable_type()
 		self._clean_identifiers()
 		self._apply_type_rules()
 		self._validate_group_and_unit()
 		self._validate_supplier()
 		self._validate_variant()
 		self._validate_rows()
+
+	def _validate_immutable_type(self):
+		if self.is_new():
+			return
+		stored_type = frappe.db.get_value("Catalog Item", self.name, "item_type")
+		if stored_type and self.item_type != stored_type:
+			frappe.throw(_("Тип позиции нельзя изменить после создания."), frappe.ValidationError)
 
 	def on_update(self):
 		self._refresh_variant_parent()
@@ -40,9 +48,12 @@ class CatalogItem(Document):
 		self.allow_negative_stock = 0
 		self.valuation_method = "Moving Average"
 		self.tracking_method = "None"
-		self.vat_rate = "Без НДС"
-		self.tax_system = "По настройке точки"
-		self.receipt_subject = "Услуга" if self.item_type == "Service" else "Товар"
+		# These legacy sales/tax values still have POS and integration consumers. Apply
+		# type defaults only on creation so an ordinary card edit cannot erase imports.
+		if self.is_new():
+			self.vat_rate = "Без НДС"
+			self.tax_system = "По настройке точки"
+			self.receipt_subject = "Услуга" if self.item_type == "Service" else "Товар"
 
 		if self.item_type == "Service":
 			self.set("bundle_components", [])
