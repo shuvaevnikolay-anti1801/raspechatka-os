@@ -5,6 +5,7 @@ import { call, canAccess } from "../api";
 import { pageLabel } from "../pageRegistry";
 import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
+import { layerEmptyMessage, normalizeBusinessPoint, priceSourceLabel } from "../catalogPointLayerState";
 
 const route = useRoute();
 const layer = computed(() => route.meta.layer || "assortment");
@@ -13,42 +14,56 @@ const config = computed(() => ({
 	prices: { title: pageLabel("/catalog/prices"), area: "page.catalog.prices" },
 	minimum_stock: { title: pageLabel("/catalog/minimum-stock"), area: "page.catalog.minimum-stock" },
 }[layer.value]));
-const options = reactive({ points: [], groups: [], price_types: [] });
-const filters = reactive({ business_point: "", catalog_group: "", search: "" });
+const options = reactive({ points: [], groups: [], price_types: [], warehouses: [] });
+const filters = reactive({ business_point: "", catalog_group: "" });
 const rows = ref([]);
 const groupStates = ref({});
 const loading = ref(false);
 const error = ref("");
 const feedback = ref("");
 const saving = ref("");
+const savingRows = reactive(new Set());
 const canEdit = computed(() => canAccess(config.value.area, "Edit"));
+const hasActiveWarehouse = computed(() => options.warehouses.some(
+	(warehouse) => warehouse.business_point === filters.business_point,
+));
+const emptyMessage = computed(() => layerEmptyMessage(layer.value, hasActiveWarehouse.value));
+
+let rowsRequestId = 0;
 
 async function loadOptions() {
 	const result = await call("raspechatka.api.catalog_layers.get_options", { layer: layer.value });
 	Object.assign(options, result);
-	if (!filters.business_point) {
-		filters.business_point = layer.value === "assortment" ? "__all__" : (options.points[0]?.name || "");
+	filters.business_point = normalizeBusinessPoint(layer.value, filters.business_point, options.points);
+	if (filters.catalog_group && !options.groups.some((group) => group.name === filters.catalog_group)) {
+		filters.catalog_group = "";
 	}
 }
 
 async function loadRows() {
-	if (!filters.business_point) { rows.value = []; return; }
+	const requestId = ++rowsRequestId;
+	rows.value = [];
+	if (layer.value !== "assortment") groupStates.value = {};
+	if (!filters.business_point) { loading.value = false; return; }
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.catalog_layers.get_rows", {
+		const result = await call("raspechatka.api.catalog_layers.get_rows", {
 			layer: layer.value,
 			business_point: filters.business_point,
 			catalog_group: filters.catalog_group,
-			search: filters.search,
 		});
+		if (requestId !== rowsRequestId) return;
+		rows.value = result;
 		if (layer.value === "assortment") {
-			groupStates.value = await call("raspechatka.api.catalog_layers.get_assortment_group_states", {
+			const states = await call("raspechatka.api.catalog_layers.get_assortment_group_states", {
 				business_point: filters.business_point,
 			});
+			if (requestId !== rowsRequestId) return;
+			groupStates.value = states;
 		}
-	} catch (exception) { error.value = exception.message; }
-	finally { loading.value = false; }
+	} catch (exception) { if (requestId === rowsRequestId) error.value = exception.message; }
+	finally { if (requestId === rowsRequestId) loading.value = false; }
 }
 
 async function saveAssortment(row) {
@@ -85,38 +100,44 @@ async function bulk(enabled) {
 }
 
 async function savePrice(row) {
-	saving.value = row.name;
+	if (savingRows.has(row.name)) return;
+	savingRows.add(row.name);
+	error.value = "";
+	feedback.value = "";
 	try {
 		await call("raspechatka.api.catalog_layers.save_point_price", {
 			business_point: filters.business_point, item: row.name, rate: row.rate,
 			price_type: row.price_type, uom: row.stock_uom,
 		}, { method: "POST" });
+		feedback.value = `Цена для «${row.item_name}» сохранена.`;
 		await loadRows();
 	} catch (exception) { error.value = exception.message; }
-	finally { saving.value = ""; }
+	finally { savingRows.delete(row.name); }
 }
 
 async function saveMinimum(row) {
-	saving.value = row.row_key;
+	if (savingRows.has(row.row_key)) return;
+	savingRows.add(row.row_key);
+	error.value = "";
+	feedback.value = "";
 	try {
 		await call("raspechatka.api.catalog_layers.save_minimum_stock", {
 			business_point: filters.business_point, item: row.name, warehouse: row.warehouse,
 			minimum_stock: row.minimum_stock, reorder_quantity: row.reorder_quantity,
 		}, { method: "POST" });
+		feedback.value = `Норматив для «${row.item_name}» сохранён.`;
 		await loadRows();
 	} catch (exception) { error.value = exception.message; }
-	finally { saving.value = ""; }
+	finally { savingRows.delete(row.row_key); }
 }
 
-function selectGroup(name) { filters.catalog_group = name; loadRows(); }
+function selectGroup(name) { filters.catalog_group = name; feedback.value = ""; loadRows(); }
+function changePoint() { feedback.value = ""; loadRows(); }
 async function setAggregated(row, enabled) {
 	row.enabled = enabled ? 1 : 0;
 	await saveAssortment(row);
 }
-let searchTimer;
-watch(() => filters.search, () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadRows, 250); });
-watch(() => filters.business_point, loadRows);
-watch(layer, async () => { filters.catalog_group = ""; await loadOptions(); await loadRows(); });
+watch(layer, async () => { feedback.value = ""; await loadOptions(); await loadRows(); });
 onMounted(async () => { try { await loadOptions(); await loadRows(); } catch (exception) { error.value = exception.message; } });
 </script>
 
@@ -125,12 +146,11 @@ onMounted(async () => { try { await loadOptions(); await loadRows(); } catch (ex
 		<ListPageHeader :title="config.title" />
 		<div class="layer-controls">
 			<label>Точка продаж
-				<select v-model="filters.business_point">
+				<select v-model="filters.business_point" @change="changePoint">
 					<option v-if="layer === 'assortment'" value="__all__">Все точки</option>
 					<option v-for="point in options.points" :key="point.name" :value="point.name">{{ point.point_name }}</option>
 				</select>
 			</label>
-			<label v-if="layer !== 'assortment'">Поиск<input v-model="filters.search" placeholder="Название, код или артикул" /></label>
 			<div v-if="layer === 'assortment' && canEdit" class="bulk-actions">
 				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(1)">Включить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
 				<button class="button button-secondary" :disabled="saving !== ''" @click="bulk(0)">Выключить {{ filters.catalog_group ? "группу" : "весь каталог" }}</button>
@@ -144,8 +164,8 @@ onMounted(async () => { try { await loadOptions(); await loadRows(); } catch (ex
 				<table class="layer-table">
 					<thead><tr><th>Позиция</th><th>Тип / группа</th>
 						<template v-if="layer === 'assortment'"><th>{{ filters.business_point === '__all__' ? 'Доступность по точкам' : 'Продаётся в точке' }}</th></template>
-						<template v-else-if="layer === 'prices'"><th>Действующая цена</th><th>Источник</th><th></th></template>
-						<template v-else><th>Склад</th><th>Минимум</th><th>Пополнить на</th><th></th></template>
+						<template v-else-if="layer === 'prices'"><th>Действующая цена</th><th>Источник</th><th>Сохранить</th></template>
+						<template v-else><th>Склад</th><th>Минимальный остаток</th><th>Пополнить на</th><th>Сохранить</th></template>
 					</tr></thead>
 					<tbody>
 						<tr v-for="row in rows" :key="row.row_key || row.name">
@@ -160,18 +180,18 @@ onMounted(async () => { try { await loadOptions(); await loadRows(); } catch (ex
 								</td>
 							</template>
 							<template v-else-if="layer === 'prices'">
-								<td><input v-model.number="row.rate" type="number" min="0" step="0.01" :disabled="!canEdit" /> {{ row.currency }}</td>
-								<td>{{ row.price_source === "Point" ? "Точка" : row.price_source === "Network" ? "Сеть" : row.price_source === "Variant Parent" ? "Основной товар" : "Нет цены" }}</td>
-								<td><button v-if="canEdit" class="button button-primary" :disabled="saving === row.name" @click="savePrice(row)">Сохранить override</button></td>
+								<td><input v-model.number="row.rate" type="number" min="0" step="0.01" :disabled="!canEdit || savingRows.has(row.name)" /> {{ row.currency }}</td>
+								<td>{{ priceSourceLabel(row.price_source) }}</td>
+								<td><button v-if="canEdit" class="button button-primary" :disabled="savingRows.has(row.name)" @click="savePrice(row)">Сохранить</button></td>
 							</template>
 							<template v-else>
 								<td>{{ row.warehouse_name }}<small v-if="row.is_assortment_warehouse">Склад ассортимента</small></td>
-								<td><input v-model.number="row.minimum_stock" type="number" min="0" step="any" :disabled="!canEdit" /></td>
-								<td><input v-model.number="row.reorder_quantity" type="number" min="0" step="any" :disabled="!canEdit" /></td>
-								<td><button v-if="canEdit" class="button button-primary" :disabled="!row.warehouse || saving === row.row_key" @click="saveMinimum(row)">Сохранить</button></td>
+								<td><input v-model.number="row.minimum_stock" type="number" min="0" step="any" :disabled="!canEdit || savingRows.has(row.row_key)" /></td>
+								<td><input v-model.number="row.reorder_quantity" type="number" min="0" step="any" :disabled="!canEdit || savingRows.has(row.row_key)" /></td>
+								<td><button v-if="canEdit" class="button button-primary" :disabled="!row.warehouse || savingRows.has(row.row_key)" @click="saveMinimum(row)">Сохранить</button></td>
 							</template>
 						</tr>
-						<tr v-if="!loading && !rows.length"><td colspan="7">Нет данных для выбранной точки и фильтра.</td></tr>
+						<tr v-if="!loading && !rows.length"><td colspan="7">{{ emptyMessage }}</td></tr>
 					</tbody>
 				</table>
 				<p v-if="loading" class="muted-copy">Загрузка…</p>

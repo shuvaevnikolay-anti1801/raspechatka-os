@@ -8,7 +8,7 @@ from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 from raspechatka.access import get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.api.frontend import _catalog_group_branch
-from raspechatka.pricing import get_default_price_type, resolve_item_price
+from raspechatka.pricing import get_default_price_type, resolve_item_prices
 
 
 AREA_BY_LAYER = {
@@ -79,6 +79,7 @@ def _item_filters(group=None, search=None, stock_only=False):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_options(layer="assortment"):
 	_require_layer(layer)
 	scope = get_scope()
@@ -99,6 +100,16 @@ def get_options(layer="assortment"):
 			"Catalog Price Type", filters={"active": 1, "purpose": "Selling"},
 			fields=["name", "price_type_name"], order_by="price_type_name asc"
 		),
+		"warehouses": frappe.get_all(
+			"Catalog Warehouse",
+			filters={
+				"active": 1,
+				**({} if scope["global"] else {"business_point": ["in", scope.get("points") or ["__none__"]]}),
+			},
+			fields=["name", "business_point", "warehouse_name"],
+			order_by="warehouse_name asc",
+			limit_page_length=0,
+		) if layer == "minimum_stock" else [],
 	}
 
 
@@ -117,6 +128,14 @@ def get_rows(layer, business_point, catalog_group=None, search=None):
 		return _assortment_rows_all(points, items)
 	point = _ensure_point(business_point)
 	filters, or_filters = _item_filters(catalog_group, search, layer == "minimum_stock")
+	if layer == "prices":
+		assortment_items = frappe.get_all(
+			"Catalog Assortment",
+			filters={"business_point": point, "enabled": 1},
+			pluck="item",
+			limit_page_length=0,
+		)
+		filters["name"] = ["in", assortment_items or ["__none__"]]
 	items = frappe.get_all(
 		"Catalog Item", filters=filters, or_filters=or_filters,
 		fields=["name", "item_name", "item_code", "item_type", "catalog_group", "stock_uom", "variant_of"],
@@ -239,17 +258,11 @@ def get_assortment_group_states(business_point):
 
 
 def _price_rows(point, items):
-	assortment = set(
-		frappe.get_all(
-			"Catalog Assortment", filters={"business_point": point, "enabled": 1}, pluck="item"
-		)
-	)
 	price_type = get_default_price_type(point)
+	prices = resolve_item_prices([item.name for item in items], point, price_type=price_type)
 	rows = []
 	for item in items:
-		if item.name not in assortment:
-			continue
-		price = resolve_item_price(item.name, point, price_type=price_type, uom=item.stock_uom, required=False)
+		price = prices.get(item.name)
 		rows.append({
 			**item,
 			"price_type": price_type,
@@ -405,9 +418,17 @@ def _apply_assortment(items, points, enabled):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.catalog.prices", action="write", scope="point")
 def save_point_price(business_point, item, rate, price_type=None, uom=None):
 	_require_layer("prices", "write")
 	point = _ensure_point(business_point)
+	if not frappe.db.exists(
+		"Catalog Assortment", {"business_point": point, "item": item, "enabled": 1}
+	):
+		frappe.throw(
+			_("Цена точки разрешена только для позиции её продаваемого ассортимента."),
+			frappe.PermissionError,
+		)
 	doc = frappe.get_doc("Catalog Item", item)
 	if not doc.active:
 		frappe.throw(_("Позиция каталога недоступна."), frappe.PermissionError)
@@ -444,6 +465,7 @@ def save_point_price(business_point, item, rate, price_type=None, uom=None):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.catalog.minimum-stock", action="write", scope="point")
 def save_minimum_stock(business_point, item, warehouse, minimum_stock=0, reorder_quantity=0):
 	_require_layer("minimum_stock", "write")
 	point = _ensure_point(business_point)
