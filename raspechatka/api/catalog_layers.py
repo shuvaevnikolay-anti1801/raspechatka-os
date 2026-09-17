@@ -2,6 +2,7 @@
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Count
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
 from raspechatka.access import get_scope, require_access
@@ -153,13 +154,14 @@ def _assortment_rows_all(points, items):
 	point_count = len(points)
 	enabled_counts = {}
 	if points:
-		for row in frappe.get_all(
-			"Catalog Assortment",
-			filters={"business_point": ["in", points], "enabled": 1},
-			fields=["item", "count(name) as enabled_count"],
-			group_by="item",
-			limit_page_length=0,
-		):
+		assortment = frappe.qb.DocType("Catalog Assortment")
+		rows = (
+			frappe.qb.from_(assortment)
+			.select(assortment.item, Count(assortment.name).as_("enabled_count"))
+			.where((assortment.business_point.isin(points)) & (assortment.enabled == 1))
+			.groupby(assortment.item)
+		).run(as_dict=True)
+		for row in rows:
 			enabled_counts[row.item] = cint(row.enabled_count)
 	result = []
 	for item in items:
