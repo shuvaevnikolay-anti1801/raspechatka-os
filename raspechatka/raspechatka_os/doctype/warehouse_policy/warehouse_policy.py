@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -11,5 +12,7 @@ class WarehousePolicy(Document):
 		target = cint(self.target_days)
 		if analysis <= 0 or minimum <= 0 or target < minimum:
 			frappe.throw(
-				_("Период анализа и минимальный запас должны быть больше нуля, а целевой период — не меньше минимального.")
+				_(
+					"Период анализа и минимальный запас должны быть больше нуля, а целевой период — не меньше минимального."
+				)
 			)

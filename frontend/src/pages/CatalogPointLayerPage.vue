@@ -165,7 +165,8 @@ async function bulk(enabled) {
 
 function selectGroup(name) {
 	if (
-		((layer.value === "prices" && priceDirty.value) || (layer.value === "minimum_stock" && normsDirty.value)) &&
+		((layer.value === "prices" && priceDirty.value) ||
+			(layer.value === "minimum_stock" && normsDirty.value)) &&
 		!window.confirm("Есть несохранённые изменения. Продолжить без сохранения?")
 	)
 		return;
@@ -177,7 +178,8 @@ function selectGroup(name) {
 }
 function changePoint() {
 	if (
-		((layer.value === "prices" && priceDirty.value) || (layer.value === "minimum_stock" && normsDirty.value)) &&
+		((layer.value === "prices" && priceDirty.value) ||
+			(layer.value === "minimum_stock" && normsDirty.value)) &&
 		!window.confirm("Есть несохранённые изменения. Продолжить без сохранения?")
 	) {
 		filters.business_point = previousPoint.value;
@@ -256,10 +258,17 @@ onMounted(async () => {
 				/>
 				<StockNormsWorkspace
 					v-else-if="layer === 'minimum_stock'"
-					:rows="rows" :points="options.points" :business-point="filters.business_point"
-					:catalog-group="filters.catalog_group" :group-label="selectedGroupLabel"
-					:can-edit="canEdit" :loading="loading"
-					@reload="loadRows" @dirty="normsDirty = $event" @error="error = $event" @feedback="feedback = $event"
+					:rows="rows"
+					:points="options.points"
+					:business-point="filters.business_point"
+					:catalog-group="filters.catalog_group"
+					:group-label="selectedGroupLabel"
+					:can-edit="canEdit"
+					:loading="loading"
+					@reload="loadRows"
+					@dirty="normsDirty = $event"
+					@error="error = $event"
+					@feedback="feedback = $event"
 				/>
 				<table v-else class="layer-table">
 					<thead>

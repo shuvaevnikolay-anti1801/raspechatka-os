@@ -57,7 +57,12 @@ const routes = [
   { path: "/warehouse/balances", name: "warehouse-balances", component: WarehouseReportPage, meta: { module: "warehouse", report: "balances" } },
   { path: "/warehouse/turnover", name: "warehouse-turnover", component: WarehouseReportPage, meta: { module: "warehouse", report: "turnover" } },
   { path: "/warehouse/movements", name: "warehouse-movements", component: WarehouseMovementsPage, meta: { module: "warehouse" } },
-  { path: "/warehouse/settings", name: "warehouse-settings", component: WarehouseSettingsPage, meta: { module: "warehouse" } },
+  {
+    path: "/warehouse/settings",
+    name: "warehouse-settings",
+    component: WarehouseSettingsPage,
+    meta: { module: "warehouse" },
+  },
   { path: "/clients", name: "clients", component: ClientsPage, meta: { module: "clients" } },
   { path: "/clients/club", name: "client-club", component: ClientClubPage, meta: { module: "clients" } },
   { path: "/clients/segments", name: "client-segments", component: ClientMarketingPage, meta: { module: "clients", kind: "segments" } },

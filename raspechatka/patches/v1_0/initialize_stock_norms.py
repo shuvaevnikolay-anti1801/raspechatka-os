@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe.utils import flt
 
@@ -17,9 +18,7 @@ def execute():
 	if multiple:
 		frappe.log_error(
 			title="DEV-083: несколько активных складов у точки",
-			message="\n".join(
-				f"{row.business_point}: {row.warehouse_count}" for row in multiple
-			),
+			message="\n".join(f"{row.business_point}: {row.warehouse_count}" for row in multiple),
 		)
 	rows = frappe.get_all(
 		"Catalog Reorder Rule",

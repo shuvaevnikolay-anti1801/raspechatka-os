@@ -93,7 +93,11 @@ def _stock_policy():
 		"minimum_days": cint(doc.minimum_days),
 		"target_days": cint(doc.target_days),
 	}
-	if policy["analysis_days"] <= 0 or policy["minimum_days"] <= 0 or policy["target_days"] < policy["minimum_days"]:
+	if (
+		policy["analysis_days"] <= 0
+		or policy["minimum_days"] <= 0
+		or policy["target_days"] < policy["minimum_days"]
+	):
 		frappe.throw(_("Политика запасов настроена некорректно. Обратитесь к администратору."))
 	return policy
 
@@ -534,14 +538,19 @@ def save_minimum_stock(business_point, item, minimum_stock=0, target_stock=0, wa
 
 def _save_stock_norm(point, warehouse, item, minimum_stock, target_stock):
 	doc = frappe.get_doc("Catalog Item", item)
-	if not doc.active or not doc.track_inventory or doc.item_type not in ("Product", "Variant") or not frappe.db.exists(
-		"Catalog Assortment", {"business_point": point, "item": item, "enabled": 1}
+	if (
+		not doc.active
+		or not doc.track_inventory
+		or doc.item_type not in ("Product", "Variant")
+		or not frappe.db.exists("Catalog Assortment", {"business_point": point, "item": item, "enabled": 1})
 	):
 		frappe.throw(_("Норматив разрешён только для складского товара."), frappe.PermissionError)
 	minimum = flt(minimum_stock)
 	target = flt(target_stock)
 	if minimum < 0 or target < minimum:
-		frappe.throw(_("Целевой остаток должен быть не меньше минимального, значения не могут быть отрицательными."))
+		frappe.throw(
+			_("Целевой остаток должен быть не меньше минимального, значения не могут быть отрицательными.")
+		)
 	row = next((row for row in doc.reorder_rules if row.warehouse == warehouse), None)
 	if not row:
 		row = doc.append("reorder_rules", {"warehouse": warehouse})
@@ -560,7 +569,12 @@ def _initialize_stock_norms(items, points):
 	policy = _stock_policy()
 	stock_items = frappe.get_all(
 		"Catalog Item",
-		filters={"name": ["in", items or ["__none__"]], "active": 1, "track_inventory": 1, "item_type": ["in", ["Product", "Variant"]]},
+		filters={
+			"name": ["in", items or ["__none__"]],
+			"active": 1,
+			"track_inventory": 1,
+			"item_type": ["in", ["Product", "Variant"]],
+		},
 		fields=["name", "starting_minimum_stock"],
 		limit_page_length=0,
 	)
@@ -569,7 +583,10 @@ def _initialize_stock_norms(items, points):
 		existing = set(
 			frappe.get_all(
 				"Catalog Reorder Rule",
-				filters={"warehouse": warehouse, "parent": ["in", [item.name for item in stock_items] or ["__none__"]]},
+				filters={
+					"warehouse": warehouse,
+					"parent": ["in", [item.name for item in stock_items] or ["__none__"]],
+				},
 				pluck="parent",
 				limit_page_length=0,
 			)
@@ -580,7 +597,9 @@ def _initialize_stock_norms(items, points):
 			minimum = max(flt(item.starting_minimum_stock), 0)
 			target = ceil(minimum * policy["target_days"] / policy["minimum_days"])
 			doc = frappe.get_doc("Catalog Item", item.name)
-			doc.append("reorder_rules", {"warehouse": warehouse, "minimum_stock": minimum, "target_stock": target})
+			doc.append(
+				"reorder_rules", {"warehouse": warehouse, "minimum_stock": minimum, "target_stock": target}
+			)
 			doc.save(ignore_permissions=True)
 
 
@@ -589,6 +608,15 @@ def _eligible_stock_items(point, catalog_group=None):
 		"Catalog Assortment",
 		filters={"business_point": point, "enabled": 1},
 		pluck="item",
+		limit_page_length=0,
+	)
+	filters, _ = _item_filters(catalog_group, stock_only=True)
+	filters["name"] = ["in", assortment_items or ["__none__"]]
+	return frappe.get_all(
+		"Catalog Item",
+		filters=filters,
+		fields=["name", "item_name", "item_code", "catalog_group", "stock_uom"],
+		order_by="item_name asc",
 		limit_page_length=0,
 	)
 
@@ -602,15 +630,6 @@ def _calculate_stock_norm(net_qty, history_days, policy):
 		ceil(average * policy["minimum_days"]),
 		ceil(average * policy["target_days"]),
 		average,
-	)
-	filters, _ = _item_filters(catalog_group, stock_only=True)
-	filters["name"] = ["in", assortment_items or ["__none__"]]
-	return frappe.get_all(
-		"Catalog Item",
-		filters=filters,
-		fields=["name", "item_name", "item_code", "catalog_group", "stock_uom"],
-		order_by="item_name asc",
-		limit_page_length=0,
 	)
 
 
@@ -629,7 +648,10 @@ def copy_stock_norms(business_point, source_point, catalog_group=None):
 		row.parent: row
 		for row in frappe.get_all(
 			"Catalog Reorder Rule",
-			filters={"warehouse": source_warehouse, "parent": ["in", [item.name for item in items] or ["__none__"]]},
+			filters={
+				"warehouse": source_warehouse,
+				"parent": ["in", [item.name for item in items] or ["__none__"]],
+			},
 			fields=["parent", "minimum_stock", "target_stock"],
 			limit_page_length=0,
 		)
@@ -705,27 +727,33 @@ def _sales_norm_preview(point, catalog_group=None, cache_result=True):
 		net_qty = flt(sale.net_qty) if sale else 0
 		history_start = max(from_date, point_created, assortment_dates.get(item.name, point_created))
 		history_days = max((today - history_start).days + 1, 0)
-		calculated_minimum, calculated_target, average = _calculate_stock_norm(
-			net_qty, history_days, policy
-		)
+		calculated_minimum, calculated_target, average = _calculate_stock_norm(net_qty, history_days, policy)
 		current_minimum = flt(rule.minimum_stock) if rule else 0
 		current_target = max(flt(rule.target_stock), current_minimum) if rule else 0
-		status = "insufficient" if not calculated_minimum else (
-			"unchanged" if calculated_minimum == current_minimum and calculated_target == current_target else "change"
+		status = (
+			"insufficient"
+			if not calculated_minimum
+			else (
+				"unchanged"
+				if calculated_minimum == current_minimum and calculated_target == current_target
+				else "change"
+			)
 		)
-		preview_rows.append({
-			**item,
-			"net_sold_qty": net_qty,
-			"history_days": history_days,
-			"short_history": 0 < history_days < policy["analysis_days"],
-			"average_daily_sales": average,
-			"minimum_stock": current_minimum,
-			"calculated_minimum": calculated_minimum,
-			"target_stock": current_target,
-			"calculated_target": calculated_target,
-			"status": status,
-			"rule_modified": str(rule.modified) if rule else None,
-		})
+		preview_rows.append(
+			{
+				**item,
+				"net_sold_qty": net_qty,
+				"history_days": history_days,
+				"short_history": 0 < history_days < policy["analysis_days"],
+				"average_daily_sales": average,
+				"minimum_stock": current_minimum,
+				"calculated_minimum": calculated_minimum,
+				"target_stock": current_target,
+				"calculated_target": calculated_target,
+				"status": status,
+				"rule_modified": str(rule.modified) if rule else None,
+			}
+		)
 	payload = {"point": point, "group": catalog_group or "", "policy": policy, "rows": preview_rows}
 	signature = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 	token = frappe.generate_hash(length=32)
@@ -735,9 +763,18 @@ def _sales_norm_preview(point, catalog_group=None, cache_result=True):
 			{"signature": signature, "point": point, "group": catalog_group or ""},
 			expires_in_sec=900,
 		)
-	counts = {status: sum(row["status"] == status for row in preview_rows) for status in ("change", "unchanged", "insufficient")}
+	counts = {
+		status: sum(row["status"] == status for row in preview_rows)
+		for status in ("change", "unchanged", "insufficient")
+	}
 	counts["skipped"] = 0
-	return {"rows": preview_rows, "policy": policy, "counts": counts, "preview_token": token, "signature": signature}
+	return {
+		"rows": preview_rows,
+		"policy": policy,
+		"counts": counts,
+		"preview_token": token,
+		"signature": signature,
+	}
 
 
 @frappe.whitelist()
