@@ -22,7 +22,10 @@
 		<form id="os-login-form" novalidate>
 			<label class="os-field" for="login-phone">
 				<span>Телефон</span>
-				<input id="login-phone" name="phone" type="tel" inputmode="tel" autocomplete="username" placeholder="+7 (___) ___-__-__" maxlength="18" autofocus>
+				<span class="os-phone-control">
+					<span class="os-phone-prefix" aria-hidden="true">+7</span>
+					<input id="login-phone" name="phone" type="tel" inputmode="numeric" autocomplete="username" aria-label="Номер телефона после +7" placeholder="(___) ___-__-__" maxlength="15" autofocus>
+				</span>
 				<small class="os-field-error" id="phone-error"></small>
 			</label>
 			<label class="os-field" for="login-password">
@@ -51,5 +54,5 @@
 {% endblock %}
 
 {% block script %}
-<script src="/assets/raspechatka/js/os-login.js" type="module"></script>
+<script src="/assets/raspechatka/js/os-login.js" defer></script>
 {% endblock %}

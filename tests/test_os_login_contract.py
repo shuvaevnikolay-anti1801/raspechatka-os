@@ -30,6 +30,17 @@ def test_login_frontend_guards_double_submit_and_never_renders_raw_backend_error
 	assert "payload._server_messages" not in source
 
 
+def test_login_uses_one_classic_asset_and_renders_a_permanent_country_prefix():
+	html = read("raspechatka/www/os-login.html")
+	source = read("raspechatka/public/js/os-login.js")
+	assert '<span class="os-phone-prefix" aria-hidden="true">+7</span>' in html
+	assert 'inputmode="numeric"' in html
+	assert '<script src="/assets/raspechatka/js/os-login.js" defer></script>' in html
+	assert 'type="module"' not in html
+	assert "login-phone.mjs" not in html
+	assert not source.lstrip().startswith("import ")
+
+
 def test_backend_resolves_phone_to_system_user_and_keeps_frappe_authentication():
 	source = read("raspechatka/api/auth.py")
 	assert '"Raspechatka User Profile"' in source
