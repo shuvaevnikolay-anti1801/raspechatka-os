@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { calculateSubtotalMinor, calculateTotalMinor } from '../../shared/cart'
+import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
-  Customer, HeldReceipt, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
+  Customer, HeldReceipt, ManualDiscount, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, ReturnSummary, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, WorkplaceData
 } from '../../shared/contracts'
@@ -36,13 +36,16 @@ export default function AppV2(){
   const [cart,setCart]=useState<CartLine[]>([])
   const [customer,setCustomer]=useState<Customer|null>(null)
   const [reviewCount,setReviewCount]=useState(0)
+  const [manualDiscount,setManualDiscount]=useState<ManualDiscount|null>(null)
   const [message,setMessage]=useState('')
   const [busy,setBusy]=useState(false)
+  const [syncing,setSyncing]=useState(false)
   const [payment,setPayment]=useState<PaymentChoice|null>(null)
   const [returnSale,setReturnSale]=useState<SaleDetails|null>(null)
   const [cashOperation,setCashOperation]=useState<CashOperationType|null>(null)
   const [customerOpen,setCustomerOpen]=useState(false)
-  const [freePriceOpen,setFreePriceOpen]=useState(false)
+  const [manualDiscountOpen,setManualDiscountOpen]=useState(false)
+  const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
   const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
   const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
   const [receiptQuery,setReceiptQuery]=useState('')
@@ -81,43 +84,62 @@ export default function AppV2(){
     return products.filter((p)=>(category==='Все'||p.category===category)&&(!text||(p.name+' '+p.sku+' '+(p.barcode||'')).toLocaleLowerCase('ru').includes(text)))
   },[products,query,category])
   const productById=useMemo(()=>new Map(products.map((p)=>[p.id,p])),[products])
-  const subtotal=calculateSubtotalMinor(cart)
-  const discountBlocked=cart.some((line)=>productById.get(line.productId)?.preventDiscounts)
-  const discountAllowed=Boolean(boot?.rules.allowDiscounts)&&!discountBlocked
-  const clubPercent=discountAllowed&&customer?Math.min(customer.discountPercent,boot?.rules.maxDiscountPercent??0):0
-  const clubTotal=calculateTotalMinor(cart,clubPercent)
-  const minimumAllowedTotal=discountAllowed?calculateTotalMinor(cart,boot?.rules.maxDiscountPercent??0):subtotal
-  const reviewUnitMinor=discountAllowed?(boot?.rules.reviewDiscountPerReviewMinor??0):0
-  const reviewBudgetMinor=Math.max(0,clubTotal-minimumAllowedTotal)
-  const maxReviews=reviewUnitMinor>0?Math.floor(reviewBudgetMinor/reviewUnitMinor):0
-  const safeReviewCount=Math.min(reviewCount,maxReviews)
-  const reviewDiscountMinor=Math.min(reviewBudgetMinor,safeReviewCount*reviewUnitMinor)
-  const clubDiscountMinor=Math.max(0,subtotal-clubTotal)
-  const total=Math.max(0,clubTotal-reviewDiscountMinor)
-  const effectiveDiscountPercent=subtotal>0?Math.max(0,Math.min(boot?.rules.maxDiscountPercent??100,(subtotal-total)/subtotal*100)):0
+  const discountRules={
+    allowDiscounts:Boolean(boot?.rules.allowDiscounts),maxDiscountPercent:boot?.rules.maxDiscountPercent??0,
+    reviewDiscountPerReviewMinor:boot?.rules.reviewDiscountPerReviewMinor??0,
+  }
+  const pricedCart=cart.map((line)=>({...line,preventDiscounts:Boolean(productById.get(line.productId)?.preventDiscounts)}))
+  const breakdown=calculateDiscountBreakdown(pricedCart,discountRules,customer?.discountPercent??0,reviewCount,manualDiscount)
+  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,totalMinor:total}=breakdown
+  const reviewUnitMinor=discountRules.allowDiscounts?discountRules.reviewDiscountPerReviewMinor:0
+  const safeReviewCount=breakdown.reviewCount
+  const maxReviews=reviewUnitMinor>0?Math.floor(Math.max(0,subtotal-clubDiscountMinor-1)/reviewUnitMinor):0
   const preferredPayment:PaymentChoice=boot?.rules.acceptsCash?'cash':boot?.rules.acceptsRemotePayment!==false?'remote_payment':boot?.rules.acceptsCard?'card':'qr'
-
-  useEffect(()=>{if(reviewCount>maxReviews)setReviewCount(maxReviews)},[maxReviews,reviewCount])
 
   const add=(product:Product)=>setCart((current)=>{
     const found=current.find((line)=>line.productId===product.id)
-    return found?current.map((line)=>line.productId===product.id?{...line,quantity:line.quantity+1}:line):[...current,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor}]
+    return found?current.map((line)=>line.productId===product.id?{...line,quantity:line.quantity+1}:line):[...current,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor,catalogUnitPriceMinor:product.priceMinor,preventDiscounts:product.preventDiscounts}]
   })
   const setQuantity=(id:string,value:number)=>setCart((current)=>current.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>setCart((current)=>current.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{setCart([]);setCustomer(null);setReviewCount(0);setOrderDraft(null)}
+  const clear=()=>{setCart([]);setCustomer(null);setReviewCount(0);setManualDiscount(null);setOrderDraft(null)}
+  const overridePrice=(line:CartLine)=>{
+    const product=productById.get(line.productId)
+    if(!product||!boot?.rules.allowFreePrice)return
+    setPriceOverrideLine(line)
+  }
+  const syncNow=async()=>{
+    if(syncing||busy)return
+    setSyncing(true)
+    try{
+      await window.raspechatkaPos.syncNow();await refresh()
+      if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer))
+      setMessage('Данные обновлены')
+    }catch{
+      await refresh().catch(()=>undefined)
+      setMessage('Не удалось связаться с Распечатка OS — продолжаем работать локально')
+    }finally{setSyncing(false)}
+  }
   const openShift=async()=>{try{await window.raspechatkaPos.openShift();await refresh();setCashCountOpen('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
-    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,discountPercent:effectiveDiscountPercent})
+    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount})
     clear();await refresh();setMessage('Чек отложен')
   }
   const restoreReceipt=async(receipt:HeldReceipt)=>{
     const fresh=await resolveCurrentCustomer(receipt.customer,window.raspechatkaPos.getCustomer)
-    setCart(receipt.lines);setCustomer(fresh);setReviewCount(0)
+    setCart(receipt.lines);setCustomer(fresh);setReviewCount(receipt.reviewCount??0);setManualDiscount(receipt.manualDiscount??null)
     await window.raspechatkaPos.deleteHeldReceipt(receipt.id);await refresh();setScreen('sale')
+    const restored=calculateDiscountBreakdown(
+      receipt.lines.map((line)=>({...line,preventDiscounts:Boolean(productById.get(line.productId)?.preventDiscounts)})),
+      discountRules,fresh?.discountPercent??0,receipt.reviewCount??0,receipt.manualDiscount,
+    )
+    const requestedManual=receipt.manualDiscount?.type==='amount'
+      ? receipt.manualDiscount.value
+      : Math.round(Math.max(0,restored.subtotalMinor-restored.clubDiscountMinor-restored.reviewDiscountMinor)*(receipt.manualDiscount?.value??0)/100)
     if(receipt.customer&&!fresh)setMessage('Клиент больше не участвует в активной клубной программе и снят с чека')
+    else if(restored.manualDiscountMinor<requestedManual)setMessage('Скидки отложенного чека ограничены актуальными правилами. Проверьте сумму перед оплатой.')
   }
   const complete=async(payments:PaymentPart[],cashReceivedMinor?:number,remotePaymentConfirmation?:RemotePaymentConfirmation)=>{
     if(busy)return
@@ -133,7 +155,11 @@ export default function AppV2(){
       }
       const result=await window.raspechatkaPos.completeSale({
         clientRequestId:crypto.randomUUID(),payments,lines:cart,customer,
-        receiptDiscountPercent:effectiveDiscountPercent,clubDiscountPercent:clubPercent,
+        receiptDiscountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,clubDiscountPercent:clubPercent,
+        clubDiscountMinor,reviewCount,reviewDiscountMinor,manualDiscount,
+        manualDiscountType:manualDiscount?.type??null,manualDiscountValue:manualDiscount?.value??0,
+        manualDiscountMinor:breakdown.manualDiscountMinor,totalDiscountMinor:breakdown.totalDiscountMinor,
+        discountRules,discountBreakdown:breakdown,
         cashReceivedMinor,remotePaymentConfirmation,order:orderDraft||undefined
       })
       clear();setPayment(null);await refresh()
@@ -171,29 +197,30 @@ export default function AppV2(){
       <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
       <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
       <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
-      <div className="nav-spacer"/><span className="sync-state">К отправке: <b>{boot.pendingSync}</b></span>
+      <div className="nav-spacer"/><span className="sync-state" title={boot.lastSyncAt?`Последняя синхронизация: ${new Date(boot.lastSyncAt).toLocaleString('ru-RU')}`:'Успешной синхронизации ещё не было'}>{boot.online?'OS на связи':'Локальный режим'} · К отправке: <b>{boot.pendingSync}</b></span><button className="secondary" disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</button>
     </nav>
     {message&&<div className="toast" onClick={()=>setMessage('')}>{message}<button>×</button></div>}
 
     {screen==='sale'&&<main className="sale-layout">
       <aside className="categories"><strong>Категории</strong>{categories.map((name)=><button key={name} className={category===name?'active':''} onClick={()=>setCategory(name)}>{name}<span>{name==='Все'?products.length:products.filter((p)=>p.category===name).length}</span></button>)}</aside>
       <section className="catalog">
-        <div className="catalog-toolbar"><label className="search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label>{boot.rules.allowFreePrice&&<button className="secondary" onClick={()=>setFreePriceOpen(true)}>Свободная цена</button>}</div>
+        <div className="catalog-toolbar"><label className="search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label></div>
         <div className="product-grid">{visible.map((p)=><button className="product-card pos-v2-product" key={p.id} onClick={()=>add(p)}><strong>{p.name}</strong><footer><b>{formatMoney(p.priceMinor)}</b>{p.stock!=null&&<span>Остаток {p.stock}</span>}</footer></button>)}</div>
       </section>
       <aside className="receipt">
         <header><div><small>ТЕКУЩАЯ ПРОДАЖА</small></div><button disabled={!cart.length} onClick={clear}>Очистить</button></header>
         <div className="customer-row"><button onClick={()=>setCustomerOpen(true)}>◎ {customer?.name||'Найти покупателя по телефону'}</button>{customer&&<span>Скидка клуба {clubPercent}% · <button onClick={()=>chooseCustomer(null)}>убрать</button></span>}</div>
         <div className="receipt-lines">{!cart.length?<div className="empty"><i>＋</i><b>Чек пока пуст</b><span>Выберите услугу или найдите её по названию</span></div>:cart.map((line)=><div className="receipt-line" key={line.productId}>
-          <div><strong>{line.name}</strong><small>{formatMoney(line.unitPriceMinor)} за ед.</small></div>
+          <div><strong>{line.name}</strong><small>{formatMoney(line.unitPriceMinor)} за ед. {boot.rules.allowFreePrice&&<button onClick={()=>overridePrice(line)}>изменить цену</button>}</small></div>
           <div className="qty pos-v2-qty"><button onClick={()=>change(line.productId,-1)}>−</button><input aria-label={'Количество '+line.name} type="number" min="0.001" step="0.001" value={line.quantity} onChange={(e)=>setQuantity(line.productId,Number(e.target.value))}/><button onClick={()=>change(line.productId,1)}>+</button></div>
           <b>{formatMoney(line.quantity*line.unitPriceMinor)}</b>
         </div>)}</div>
         <footer className="receipt-total">
           {clubDiscountMinor>0&&<div className="subtotal"><span>Скидка клуба {clubPercent}%</span><strong>− {formatMoney(clubDiscountMinor)}</strong></div>}
-          <div className={'review-discount-row '+(!discountAllowed?'disabled':'')}><div><span>Отзывы</span><small>{reviewUnitMinor>0?`${formatMoney(reviewUnitMinor)} за отзыв`:'Скидка не настроена'}</small></div><div className="review-count"><button disabled={!discountAllowed||safeReviewCount<=0} onClick={()=>setReviewCount(Math.max(0,safeReviewCount-1))}>−</button><input type="number" min="0" max={maxReviews} step="1" value={safeReviewCount} disabled={!discountAllowed||reviewUnitMinor<=0} onChange={(e)=>setReviewCount(Math.min(maxReviews,Math.max(0,Math.floor(Number(e.target.value)||0))))}/><button disabled={!discountAllowed||safeReviewCount>=maxReviews} onClick={()=>setReviewCount(Math.min(maxReviews,safeReviewCount+1))}>+</button></div><strong>{reviewDiscountMinor?`− ${formatMoney(reviewDiscountMinor)}`:'—'}</strong></div>
-          {discountBlocked&&<div className="discount-warning">В чеке есть позиция, для которой скидки запрещены.</div>}
-          {(clubDiscountMinor>0||reviewDiscountMinor>0)&&<div className="subtotal"><span>Без скидок</span><s>{formatMoney(subtotal)}</s></div>}
+          <div className={'review-discount-row '+(!discountRules.allowDiscounts?'disabled':'')}><div><span>Отзывы</span><small>{reviewUnitMinor>0?`${formatMoney(reviewUnitMinor)} за отзыв`:'Скидка не настроена'}</small></div><div className="review-count"><button disabled={!discountRules.allowDiscounts||safeReviewCount<=0} onClick={()=>setReviewCount(Math.max(0,safeReviewCount-1))}>−</button><input type="number" min="0" max={maxReviews} step="1" value={safeReviewCount} disabled={!discountRules.allowDiscounts||reviewUnitMinor<=0} onChange={(e)=>setReviewCount(Math.max(0,Math.floor(Number(e.target.value)||0)))}/><button disabled={!discountRules.allowDiscounts} onClick={()=>setReviewCount(safeReviewCount+1)}>+</button></div><strong>{reviewDiscountMinor?`− ${formatMoney(reviewDiscountMinor)}`:'—'}</strong></div>
+          <div className="review-discount-row"><div><span>Доп. скидка{manualDiscount?.type==='percent'?` ${manualDiscount.value}%`:''}</span><small>Ограничена настройками точки</small></div><button disabled={!discountRules.allowDiscounts} onClick={()=>setManualDiscountOpen(true)}>{manualDiscount?'Изменить':'Скидка'}</button><strong>{breakdown.manualDiscountMinor?`− ${formatMoney(breakdown.manualDiscountMinor)}`:'—'}</strong></div>
+          {cart.some((line)=>productById.get(line.productId)?.preventDiscounts)&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}
+          {breakdown.totalDiscountMinor>0&&<div className="subtotal"><span>Без скидок</span><s>{formatMoney(subtotal)}</s></div>}
           <div className="total"><span>Итого</span><strong>{formatMoney(total)}</strong></div>
           {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
             <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
@@ -224,7 +251,8 @@ export default function AppV2(){
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
-    {freePriceOpen&&<FreePriceModal onClose={()=>setFreePriceOpen(false)} onAdd={(name,price)=>{setCart((current)=>[...current,{productId:'free-'+crypto.randomUUID(),name,quantity:1,unitPriceMinor:price}]);setFreePriceOpen(false)}}/>}
+    {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>}
+    {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>}
     {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
 }
@@ -313,9 +341,23 @@ function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClo
   return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>ЛОКАЛЬНАЯ БАЗА КЛИЕНТОВ</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите минимум 4 цифры телефона"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone}</small></div><strong className="club-badge">Скидка {x.discountPercent}%</strong></button>)}{!searching&&digits.length<4&&<div className="pilot-empty">Поиск выполняется только по телефону. Введите последние 4 цифры или больше.</div>}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div></div></div>
 }
 
-function FreePriceModal({onClose,onAdd}:{onClose:()=>void;onAdd:(name:string,price:number)=>void}){
-  const [name,setName]=useState('Свободная позиция');const [price,setPrice]=useState('')
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>РУЧНАЯ ПОЗИЦИЯ</small><h2>Свободная цена</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Наименование</span><input value={name} onChange={(e)=>setName(e.target.value)}/></label><label className="cash-input"><span>Цена</span><input autoFocus value={price} onChange={(e)=>setPrice(e.target.value)} placeholder="0,00"/></label><button className="primary confirm" disabled={!name.trim()||toMinor(price)<=0} onClick={()=>onAdd(name.trim(),toMinor(price))}>Добавить · {formatMoney(toMinor(price))}</button></div></div>
+function ManualDiscountModal({lines,rules,clubPercent,reviewCount,current,onClose,onApply}:{
+  lines:CartLine[];rules:{allowDiscounts:boolean;maxDiscountPercent:number;reviewDiscountPerReviewMinor:number};
+  clubPercent:number;reviewCount:number;current:ManualDiscount|null;onClose:()=>void;onApply:(value:ManualDiscount|null)=>void
+}){
+  const [type,setType]=useState<ManualDiscount['type']>(current?.type??'percent')
+  const [input,setInput]=useState(current?(current.type==='amount'?String(current.value/100):String(current.value)):'')
+  const value=type==='amount'?toMinor(input):Math.max(0,Number(input.replace(',','.'))||0)
+  const draft:ManualDiscount={type,value}
+  const preview=calculateDiscountBreakdown(lines,rules,clubPercent,reviewCount,draft)
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ТЕКУЩИЙ ЧЕК</small><h2>Дополнительная скидка</h2></div><button onClick={onClose}>×</button></header><div className="form-row"><button className={type==='percent'?'active':''} onClick={()=>setType('percent')}>%</button><button className={type==='amount'?'active':''} onClick={()=>setType('amount')}>₽</button></div><label className="cash-input"><span>{type==='percent'?'Процент':'Сумма, ₽'}</span><input autoFocus type="number" min="0" step={type==='amount'?'0.01':'0.1'} value={input} onChange={(event)=>setInput(event.target.value)}/></label><div className="settings-status">Будет применено: <b>{formatMoney(preview.manualDiscountMinor)}</b><br/>Новый итог: <b>{formatMoney(preview.totalMinor)}</b></div><div className="settings-actions"><button onClick={()=>onApply(null)}>Убрать скидку</button><button className="primary" onClick={()=>onApply(draft)}>Применить</button></div></div></div>
+}
+
+function PriceOverrideModal({line,minimumMinor,onClose,onApply}:{line:CartLine;minimumMinor:number;onClose:()=>void;onApply:(price:number)=>void}){
+  const [input,setInput]=useState(String(line.unitPriceMinor/100))
+  const price=toMinor(input)
+  const valid=price>=minimumMinor
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ПОЗИЦИЯ ЧЕКА</small><h2>Изменить цену</h2></div><button onClick={onClose}>×</button></header><p>{line.name}</p><label className="cash-input"><span>Цена за единицу, ₽</span><input autoFocus type="number" min={minimumMinor/100} step="0.01" value={input} onChange={(event)=>setInput(event.target.value)}/></label>{!valid&&<div className="error-note">Минимальная цена: {formatMoney(minimumMinor)}</div>}<button className="primary confirm" disabled={!valid} onClick={()=>onApply(price)}>Применить · {formatMoney(price)}</button></div></div>
 }
 
 function WorkPage({products,data,shiftOpen,onChanged,notify}:{products:Product[];data:WorkplaceData;shiftOpen:boolean;onChanged:()=>Promise<void>;notify:(text:string)=>void}){

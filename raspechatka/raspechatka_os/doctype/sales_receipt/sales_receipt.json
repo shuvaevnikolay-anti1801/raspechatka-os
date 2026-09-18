@@ -24,7 +24,13 @@
   "payments",
   "gross_amount",
   "discount_amount",
+  "club_discount_percent",
+  "club_discount_amount",
+  "review_count",
   "review_discount_amount",
+  "manual_discount_type",
+  "manual_discount_value",
+  "manual_discount_amount",
   "other_discount_amount",
   "total_amount",
   "cost_amount",
@@ -171,9 +177,46 @@
    "read_only": 1
   },
   {
+   "fieldname": "club_discount_percent",
+   "fieldtype": "Percent",
+   "label": "Скидка клуба, %",
+   "default": "0"
+  },
+  {
+   "fieldname": "club_discount_amount",
+   "fieldtype": "Currency",
+   "label": "Скидка клуба",
+   "default": "0"
+  },
+  {
+   "fieldname": "review_count",
+   "fieldtype": "Int",
+   "label": "Количество отзывов",
+   "default": "0",
+   "non_negative": 1
+  },
+  {
    "fieldname": "review_discount_amount",
    "fieldtype": "Currency",
    "label": "Скидка за отзыв",
+   "default": "0"
+  },
+  {
+   "fieldname": "manual_discount_type",
+   "fieldtype": "Select",
+   "label": "Тип ручной скидки",
+   "options": "\npercent\namount"
+  },
+  {
+   "fieldname": "manual_discount_value",
+   "fieldtype": "Float",
+   "label": "Введённая ручная скидка",
+   "default": "0"
+  },
+  {
+   "fieldname": "manual_discount_amount",
+   "fieldtype": "Currency",
+   "label": "Ручная скидка",
    "default": "0"
   },
   {

@@ -43,3 +43,4 @@ raspechatka.patches.v1_0.normalize_user_login_phones
 raspechatka.patches.v1_0.materialize_operational_point_prices
 raspechatka.patches.v1_0.initialize_stock_norms
 raspechatka.patches.v1_0.initialize_direct_club_cutover
+raspechatka.patches.v1_0.migrate_review_discount_to_pos_settings

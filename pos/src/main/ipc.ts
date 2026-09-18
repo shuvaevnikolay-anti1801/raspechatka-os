@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { calculateTotalMinor } from '../shared/cart'
+import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
@@ -214,6 +214,8 @@ export function registerIpcHandlers(dependencies:{
     return connectionStore.status(bootState().lastSyncAt)
   })
   ipcMain.handle('pos:sync-now',async()=>{
+    assertCashierAccess()
+    if(transactionEngine.hasBlockingOperation())throw new Error('Синхронизация временно недоступна: завершите текущую оплату или восстановление операции')
     diagnostics.record({source:'sync',eventType:'sync.manual_started',message:'Запущена ручная синхронизация'})
     try{
       const result=await performSync(database,connectionStore,cashierAuth.state().employee?.id)
@@ -233,18 +235,23 @@ export function registerIpcHandlers(dependencies:{
     if(!request.lines.length)throw new Error('Чек пуст')
     const boot=bootState()
     const rules=boot.rules
-    const discount=Math.min(request.receiptDiscountPercent??0,rules.maxDiscountPercent)
-    const totalMinor=calculateTotalMinor(request.lines,rules.allowDiscounts?discount:0)
     const catalog=new Map(database.listProducts().map((x)=>[x.id,x]))
-    for(const line of request.lines){
+    const verifiedLines=request.lines.map((line)=>{
       const product=catalog.get(line.productId)
-      if(!product){
-        if(!rules.allowFreePrice)throw new Error('Свободная цена запрещена на этой точке')
-        continue
-      }
-      if(product.preventDiscounts&&(line.discountPercent||discount))throw new Error(`Для «${product.name}» скидка запрещена`)
+      if(!product)throw new Error(`Позиция «${line.name}» отсутствует в актуальном каталоге`)
+      if(line.unitPriceMinor!==product.priceMinor&&!rules.allowFreePrice)throw new Error(`Изменение цены «${product.name}» запрещено на этой точке`)
       if(line.unitPriceMinor<(product.minimumSalePriceMinor??0))throw new Error(`Цена «${product.name}» ниже минимальной`)
+      return {...line,catalogUnitPriceMinor:product.priceMinor,preventDiscounts:Boolean(product.preventDiscounts)}
+    })
+    const discountRules={
+      allowDiscounts:rules.allowDiscounts,
+      maxDiscountPercent:rules.maxDiscountPercent,
+      reviewDiscountPerReviewMinor:rules.reviewDiscountPerReviewMinor??0,
     }
+    const breakdown=calculateDiscountBreakdown(
+      verifiedLines,discountRules,request.clubDiscountPercent??0,request.reviewCount??0,request.manualDiscount,
+    )
+    const totalMinor=breakdown.totalMinor
     if(!request.payments.length||request.payments.some((x)=>!accepted(rules,x.method)))throw new Error('Способ оплаты недоступен на этой точке')
     if(request.payments.some((x)=>!Number.isInteger(x.amountMinor)||x.amountMinor<=0))throw new Error('Некорректная сумма оплаты')
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
@@ -281,7 +288,14 @@ export function registerIpcHandlers(dependencies:{
       details:{totalMinor,payments:request.payments.map((x)=>x.method)}
     })
     try{
-      const result=await transactionEngine.completeSale({...normalizedRequest,receiptDiscountPercent:discount},shift.id,totalMinor)
+      const result=await transactionEngine.completeSale({
+        ...normalizedRequest,lines:verifiedLines,receiptDiscountPercent:breakdown.subtotalMinor>0?breakdown.totalDiscountMinor/breakdown.subtotalMinor*100:0,
+        clubDiscountPercent:breakdown.clubDiscountPercent,reviewCount:breakdown.reviewCount,
+        clubDiscountMinor:breakdown.clubDiscountMinor,reviewDiscountMinor:breakdown.reviewDiscountMinor,
+        manualDiscountType:request.manualDiscount?.type??null,manualDiscountValue:request.manualDiscount?.value??0,
+        manualDiscountMinor:breakdown.manualDiscountMinor,totalDiscountMinor:breakdown.totalDiscountMinor,
+        discountRules,discountBreakdown:breakdown,
+      },shift.id,totalMinor)
       diagnostics.record({source:'fiscal',eventType:'sale.completed',message:`Продажа завершена, чек ${result.receiptNumber}`,operationId:request.clientRequestId,details:{saleId:result.saleId,totalMinor}})
       return result
     }catch(error){

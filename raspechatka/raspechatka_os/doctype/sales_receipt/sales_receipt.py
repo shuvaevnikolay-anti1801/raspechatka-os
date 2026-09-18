@@ -140,7 +140,10 @@ class SalesReceipt(Document):
 		if abs(paid - flt(self.total_amount)) > 0.01:
 			frappe.throw(_("Сумма оплат должна совпадать с итогом чека"))
 		if (
-			flt(self.review_discount_amount) + flt(self.other_discount_amount)
+			flt(self.club_discount_amount)
+			+ flt(self.review_discount_amount)
+			+ flt(self.manual_discount_amount)
+			+ flt(self.other_discount_amount)
 			> flt(self.discount_amount) + 0.01
 		):
 			frappe.throw(_("Разбивка скидки превышает общую скидку"))
