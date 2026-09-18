@@ -23,14 +23,19 @@ def test_cashier_web_access_is_denied_before_routing():
 	assert "is_cashier_pos_only(frappe.session.user)" in web and "frappe.PermissionError" in web
 
 
-def test_pos_cashier_list_requires_active_cashier_profile_user_and_point_assignment():
+def test_pos_cashier_list_requires_active_cashier_profile_user_and_profile_point_scope():
 	source = (ROOT / "raspechatka/api/pos_device.py").read_text(encoding="utf-8")
 	section = source[source.index("def _point_employees") : source.index("def _customers")]
-	assert '"Employee Point Assignment"' in section
 	assert '"Raspechatka User Profile"' in section
 	assert '"access_profile": "Raspechatka Cashier"' in section
 	assert '"active": 1' in section
 	assert '"User"' in section and '"enabled": 1' in section
+	assert '"Raspechatka User Point"' in section
+	assert '"business_point": point_name' in section
+	assert 'profile.scope_type == "Points"' in section
+	assert 'profile.scope_type == "Business Entity"' in section
+	assert 'profile.scope_type == "Partner"' in section
+	assert '"Employee Point Assignment"' not in section
 
 
 def test_pos_rejects_cross_point_cashier_filters_and_unknown_selection():
