@@ -4,8 +4,14 @@ from frappe.utils import flt
 
 def execute():
 	"""Move the legacy point value only when it is unambiguous; otherwise fail closed."""
-	if not frappe.db.has_column("POS Sales Settings", "review_discount_per_review"):
+	pos_settings_meta = frappe.get_meta("POS Sales Settings")
+	if not pos_settings_meta.has_field("review_discount_per_review"):
 		return
+
+	business_point_meta = frappe.get_meta("Business Point")
+	if not business_point_meta.has_field("review_discount_per_review"):
+		return
+
 	values = {
 		flt(row.review_discount_per_review)
 		for row in frappe.get_all(
