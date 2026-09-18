@@ -28,6 +28,8 @@ class RaspechatkaUserProfile(Document):
 		self.phone = normalize_phone(self.phone)
 		self._validate_scope()
 		self._validate_points()
+		if self.access_profile == "Raspechatka Cashier" and not self.linked_employee:
+			frappe.throw(_("Для работы в кассе выберите связанного сотрудника"))
 		if self.linked_employee:
 			duplicate = frappe.db.get_value(
 				"Raspechatka User Profile",
