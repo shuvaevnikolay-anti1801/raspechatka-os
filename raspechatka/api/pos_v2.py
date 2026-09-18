@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, now_datetime
 
+from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
@@ -335,6 +336,7 @@ def _sale_receipt(payload, cashier_id, connection):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
 	"""POS outbox ingestion with correct receipt-level discount allocation."""
 	connection = base_pos._authenticate(device_id, token)

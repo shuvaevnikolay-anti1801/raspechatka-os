@@ -309,6 +309,7 @@ def _ingest_order(event_type, event_id, connection, payload):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
 	"""Accept the Windows POS outbox using Device ID + one-time-issued token."""
 	connection = _authenticate(device_id, token)
