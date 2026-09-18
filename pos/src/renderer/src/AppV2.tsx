@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { calculateSubtotalMinor, calculateTotalMinor } from '../../shared/cart'
+import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
@@ -20,7 +21,6 @@ export default function AppV2(){
   const [boot,setBoot]=useState<BootState|null>(null)
   const [auth,setAuth]=useState<CashierAuthState|null>(null)
   const [products,setProducts]=useState<Product[]>([])
-  const [customers,setCustomers]=useState<Customer[]>([])
   const [sales,setSales]=useState<SaleSummary[]>([])
   const [orders,setOrders]=useState<Order[]>([])
   const [returns,setReturns]=useState<ReturnSummary[]>([])
@@ -51,18 +51,29 @@ export default function AppV2(){
     const nextAuth=await window.raspechatkaPos.getCashierAuthState()
     const result=await Promise.all([
       window.raspechatkaPos.getBootState(),window.raspechatkaPos.listProducts(),
-      window.raspechatkaPos.listCustomers(),window.raspechatkaPos.listSales(),
+      window.raspechatkaPos.listSales(),
       window.raspechatkaPos.listReturns(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
       window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
       window.raspechatkaPos.getLastCashCount()
     ])
-    setBoot(result[0]);setProducts(result[1]);setCustomers(result[2]);setSales(result[3])
-    setReturns(result[4]);setHeld(result[5]);setSummary(result[6]);setCashOperations(result[7]);setConnection(result[8])
-    setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11])
+    setBoot(result[0]);setProducts(result[1]);setSales(result[2])
+    setReturns(result[3]);setHeld(result[4]);setSummary(result[5]);setCashOperations(result[6]);setConnection(result[7])
+    setWorkplace(result[8]);setOrders(result[9]);setLastCashCount(result[10])
     setAuth(nextAuth)
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
+  useEffect(()=>{
+    if(!customer)return
+    let cancelled=false
+    const reconcile=async()=>{
+      const fresh=await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer)
+      if(!cancelled)setCustomer(fresh)
+    }
+    reconcile().catch(()=>undefined)
+    const timer=window.setInterval(()=>reconcile().catch(()=>undefined),5000)
+    return()=>{cancelled=true;window.clearInterval(timer)}
+  },[customer?.id])
 
   const categories=useMemo(()=>['Все',...new Set(products.map((p)=>p.category))],[products])
   const visible=useMemo(()=>{
@@ -73,7 +84,7 @@ export default function AppV2(){
   const subtotal=calculateSubtotalMinor(cart)
   const discountBlocked=cart.some((line)=>productById.get(line.productId)?.preventDiscounts)
   const discountAllowed=Boolean(boot?.rules.allowDiscounts)&&!discountBlocked
-  const clubPercent=discountAllowed&&customer?.isClubMember?Math.min(customer.discountPercent,boot?.rules.maxDiscountPercent??0):0
+  const clubPercent=discountAllowed&&customer?Math.min(customer.discountPercent,boot?.rules.maxDiscountPercent??0):0
   const clubTotal=calculateTotalMinor(cart,clubPercent)
   const minimumAllowedTotal=discountAllowed?calculateTotalMinor(cart,boot?.rules.maxDiscountPercent??0):subtotal
   const reviewUnitMinor=discountAllowed?(boot?.rules.reviewDiscountPerReviewMinor??0):0
@@ -103,16 +114,27 @@ export default function AppV2(){
     clear();await refresh();setMessage('Чек отложен')
   }
   const restoreReceipt=async(receipt:HeldReceipt)=>{
-    setCart(receipt.lines);setCustomer(receipt.customer??null);setReviewCount(0)
+    const fresh=await resolveCurrentCustomer(receipt.customer,window.raspechatkaPos.getCustomer)
+    setCart(receipt.lines);setCustomer(fresh);setReviewCount(0)
     await window.raspechatkaPos.deleteHeldReceipt(receipt.id);await refresh();setScreen('sale')
+    if(receipt.customer&&!fresh)setMessage('Клиент больше не участвует в активной клубной программе и снят с чека')
   }
   const complete=async(payments:PaymentPart[],cashReceivedMinor?:number,remotePaymentConfirmation?:RemotePaymentConfirmation)=>{
     if(busy)return
     setBusy(true)
     try{
+      if(customer){
+        const fresh=await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer)
+        if(!fresh||fresh.discountPercent!==customer.discountPercent||fresh.name!==customer.name||fresh.phone!==customer.phone){
+          setCustomer(fresh);setPayment(null)
+          setMessage(fresh?'Скидка клиента обновилась. Проверьте новую сумму и повторите оплату.':'Клиент больше не активен в клубе и снят с чека. Проверьте сумму и повторите оплату.')
+          return
+        }
+      }
       const result=await window.raspechatkaPos.completeSale({
         clientRequestId:crypto.randomUUID(),payments,lines:cart,customer,
-        receiptDiscountPercent:effectiveDiscountPercent,cashReceivedMinor,remotePaymentConfirmation,order:orderDraft||undefined
+        receiptDiscountPercent:effectiveDiscountPercent,clubDiscountPercent:clubPercent,
+        cashReceivedMinor,remotePaymentConfirmation,order:orderDraft||undefined
       })
       clear();setPayment(null);await refresh()
       const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
@@ -161,7 +183,7 @@ export default function AppV2(){
       </section>
       <aside className="receipt">
         <header><div><small>ТЕКУЩАЯ ПРОДАЖА</small></div><button disabled={!cart.length} onClick={clear}>Очистить</button></header>
-        <div className="customer-row"><button onClick={()=>setCustomerOpen(true)}>◎ {customer?.name||'Найти покупателя по телефону'}</button>{customer&&<span>{customer.isClubMember?`Участник клуба · −${customer.discountPercent}%`:(customer.clubStatus||'Без скидки')} · <button onClick={()=>chooseCustomer(null)}>убрать</button></span>}</div>
+        <div className="customer-row"><button onClick={()=>setCustomerOpen(true)}>◎ {customer?.name||'Найти покупателя по телефону'}</button>{customer&&<span>Скидка клуба {clubPercent}% · <button onClick={()=>chooseCustomer(null)}>убрать</button></span>}</div>
         <div className="receipt-lines">{!cart.length?<div className="empty"><i>＋</i><b>Чек пока пуст</b><span>Выберите услугу или найдите её по названию</span></div>:cart.map((line)=><div className="receipt-line" key={line.productId}>
           <div><strong>{line.name}</strong><small>{formatMoney(line.unitPriceMinor)} за ед.</small></div>
           <div className="qty pos-v2-qty"><button onClick={()=>change(line.productId,-1)}>−</button><input aria-label={'Количество '+line.name} type="number" min="0.001" step="0.001" value={line.quantity} onChange={(e)=>setQuantity(line.productId,Number(e.target.value))}/><button onClick={()=>change(line.productId,1)}>+</button></div>
@@ -195,13 +217,13 @@ export default function AppV2(){
       {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section><h3>Движения наличных</h3>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p>Операций пока нет</p>}</section></div>}
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} 
-    {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();setMessage('Каталог, настройки и очередь операций синхронизированы')}}/>}
+    {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer));setMessage('Каталог, клиенты, настройки и очередь операций синхронизированы')}}/>}
 
     {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)} onSave={async(d)=>{try{const o=await window.raspechatkaPos.createUnpaidOrder({phone:d.phone,lines:cart,comment:d.comment,dueAt:d.dueAt});setOrderDraft(null);clear();await refresh();setMessage('Заказ '+o.orderNumber+' сохранён без оплаты')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
-    {customerOpen&&<CustomerModal customers={customers} selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>} 
+    {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
     {freePriceOpen&&<FreePriceModal onClose={()=>setFreePriceOpen(false)} onAdd={(name,price)=>{setCart((current)=>[...current,{productId:'free-'+crypto.randomUUID(),name,quantity:1,unitPriceMinor:price}]);setFreePriceOpen(false)}}/>}
     {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
@@ -280,12 +302,15 @@ function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;on
   return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ДЕНЕЖНЫЙ ЯЩИК</small><h2>{type==='deposit'?'Внесение':'Изъятие'}</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Сумма</span><input autoFocus value={amount} onChange={(e)=>setAmount(e.target.value)}/></label><label className="cash-input"><span>Основание</span><input value={reason} onChange={(e)=>setReason(e.target.value)} placeholder={type==='deposit'?'Размен в начале смены':'Инкассация'}/></label><button className="primary confirm" disabled={toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</button></div></div>
 }
 
-function CustomerModal({customers,selected,onClose,onSelect}:{customers:Customer[];selected:Customer|null;onClose:()=>void;onSelect:(value:Customer|null)=>void}){
+function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClose:()=>void;onSelect:(value:Customer|null)=>void}){
   const [query,setQuery]=useState('')
-  const [visible,setVisible]=useState<Customer[]>(customers)
+  const [visible,setVisible]=useState<Customer[]>([])
   const [searching,setSearching]=useState(false)
-  useEffect(()=>{let cancelled=false;const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(query);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)}},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[query])
-  return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>ЛОКАЛЬНАЯ БАЗА КЛИЕНТОВ</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите телефон или имя"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{visible.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone||'Телефон не указан'} · {x.purchaseCount||0} покупок</small></div>{x.isClubMember?<strong className="club-badge">Клуб · −{x.discountPercent}%</strong>:<span className="club-status">{x.clubStatus||'Не в клубе'}</span>}</button>)}{!searching&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div></div></div>
+  const digits=query.replace(/\D/g,'')
+  useEffect(()=>{let cancelled=false;if(digits.length<4){setVisible([]);setSearching(false);return};const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(digits);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)}},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[digits])
+  const overflow=visible.length>50
+  const rows=visible.slice(0,50)
+  return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>ЛОКАЛЬНАЯ БАЗА КЛИЕНТОВ</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите минимум 4 цифры телефона"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone}</small></div><strong className="club-badge">Скидка {x.discountPercent}%</strong></button>)}{!searching&&digits.length<4&&<div className="pilot-empty">Поиск выполняется только по телефону. Введите последние 4 цифры или больше.</div>}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div></div></div>
 }
 
 function FreePriceModal({onClose,onAdd}:{onClose:()=>void;onAdd:(name:string,price:number)=>void}){

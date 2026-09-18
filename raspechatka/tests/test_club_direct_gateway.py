@@ -246,7 +246,7 @@ class TestClubDirectContracts(TestCase):
 		pos = (root / "raspechatka/api/pos.py").read_text(encoding="utf-8")
 		pos_v2 = (root / "raspechatka/api/pos_v2.py").read_text(encoding="utf-8")
 		self.assertIn('fields=["name", "client_name", "phone", "discount_percent"]', pos)
-		self.assertIn('["club_status", "discount_percent"]', pos_v2)
+		self.assertIn('["active", "club_status", "discount_percent"]', pos_v2)
 
 	def test_shadow_has_freeze_and_canonical_newer_guards(self):
 		root = Path(__file__).resolve().parents[2]

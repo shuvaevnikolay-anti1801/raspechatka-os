@@ -7,7 +7,7 @@ def test_pos_bootstrap_mirrors_only_authenticated_connection_point():
 	source = (ROOT / "raspechatka/api/pos_v2.py").read_text(encoding="utf-8")
 	bootstrap = source[source.index("def get_bootstrap") : source.index("def _allocate_final_amounts")]
 	assert "connection.business_point" in bootstrap
-	assert '"customers": _customers(point.name)' in bootstrap
+	assert '"customers": _customers()' in bootstrap
 	assert '"receiptMirror": _receipt_mirror(point.name)' in bootstrap
 	assert '"retentionDays": POS_MIRROR_RETENTION_DAYS' in bootstrap
 	receipts = source[source.index("def _receipt_mirror") : source.index("def _rules")]
@@ -29,3 +29,9 @@ def test_receipt_search_keeps_pos_connection_point_authoritative():
 	section = source[source.index("def search_receipts") :]
 	assert "point = connection.business_point" in section
 	assert '["Sales Receipt", "business_point", "=", point]' in section
+
+
+def test_sync_fetches_large_master_data_only_once_per_cycle():
+	source = (ROOT / "pos/src/main/sync.ts").read_text(encoding="utf-8")
+	perform_sync = source[source.index("export async function performSync") : source.index("export function startAutomaticSync")]
+	assert perform_sync.count("await applyBootstrap()") == 1

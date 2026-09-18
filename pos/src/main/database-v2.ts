@@ -1,6 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import type { Customer, ShiftSummary } from '../shared/contracts'
-import { normalizeRussianPhone } from '../shared/phone'
+import type { ShiftSummary } from '../shared/contracts'
 import { PosDatabase } from './database'
 
 export class PosDatabaseV2 extends PosDatabase {
@@ -10,8 +9,6 @@ export class PosDatabaseV2 extends PosDatabase {
     super(filePath)
     this.v2db=new DatabaseSync(filePath)
     this.v2db.exec('PRAGMA journal_mode = WAL')
-    this.ensureV2Column('customers','club_status','TEXT')
-    this.ensureV2Column('customers','is_club_member','INTEGER NOT NULL DEFAULT 0')
     this.ensureV2Column('sales','gross_minor','INTEGER NOT NULL DEFAULT 0')
     this.v2db.exec(`UPDATE sales SET gross_minor=COALESCE((
       SELECT SUM(ROUND(quantity*unit_price_minor)) FROM sale_items WHERE sale_items.sale_id=sales.id
@@ -27,29 +24,6 @@ export class PosDatabaseV2 extends PosDatabase {
     const columns=this.v2db.prepare(`PRAGMA table_info(${table})`).all() as Array<{name:string}>
     if(!columns.some((item)=>item.name===column)){
       this.v2db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
-    }
-  }
-
-  override listCustomers(query=''):Customer[]{
-    const text=query.trim();const q=`%${text}%`;const normalized=(normalizeRussianPhone(text)||text.replace(/\D/g,'')).replace(/^\+/,'')
-    const phoneQuery=`%${normalized}%`
-    return this.v2db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
-      purchase_count AS purchaseCount,total_spent_minor AS totalSpentMinor,
-      club_status AS clubStatus,is_club_member AS isClubMember
-      FROM customers WHERE active=1 AND (name LIKE ? COLLATE NOCASE OR (?<>'' AND normalized_phone LIKE ?)) ORDER BY name LIMIT 50`)
-      .all(q,normalized,phoneQuery).map((row:any)=>({...row,isClubMember:Number(row.isClubMember)||0})) as Customer[]
-  }
-
-  override replaceCustomers(customers:Customer[]):void{
-    super.replaceCustomers(customers)
-    const update=this.v2db.prepare('UPDATE customers SET club_status=?,is_club_member=? WHERE id=?')
-    this.v2db.exec('BEGIN')
-    try{
-      customers.forEach((customer)=>update.run(customer.clubStatus??null,customer.isClubMember?1:0,customer.id))
-      this.v2db.exec('COMMIT')
-    }catch(error){
-      this.v2db.exec('ROLLBACK')
-      throw error
     }
   }
 

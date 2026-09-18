@@ -205,18 +205,18 @@ export class PosDatabase {
       x.trackInventory?1:0,x.allowNegativeStock?1:0,x.minimumSalePriceMinor??0,x.preventDiscounts?1:0,x.storageAddress??null));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
-  listCustomers(query=''):Customer[]{const text=query.trim();const q=`%${text}%`;const phone=(normalizeRussianPhone(text)||text.replace(/\D/g,'')).replace(/^\+/,'');const phoneQuery=`%${phone}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent,
-    purchase_count AS purchaseCount,total_spent_minor AS totalSpentMinor
-    FROM customers WHERE active=1 AND (name LIKE ? COLLATE NOCASE OR (?<>'' AND normalized_phone LIKE ?)) ORDER BY name LIMIT 50`).all(q,phone,phoneQuery) as Customer[]}
+  listCustomers(query=''):Customer[]{const phone=(normalizeRussianPhone(query)||query.replace(/\D/g,'')).replace(/^\+/,'');if(phone.length<4)return [];const phoneQuery=`%${phone}%`;return this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent
+    FROM customers WHERE active=1 AND normalized_phone LIKE ? ORDER BY name LIMIT 51`).all(phoneQuery) as Customer[]}
+  getCustomer(id:string):Customer|null{return (this.db.prepare(`SELECT id,name,phone,discount_percent AS discountPercent
+    FROM customers WHERE id=? AND active=1 LIMIT 1`).get(id) as Customer|undefined)??null}
   replaceCustomers(customers:Customer[]):void {
     const upsert=this.db.prepare(`INSERT INTO customers
-      (id,name,phone,normalized_phone,discount_percent,purchase_count,total_spent_minor,active) VALUES (?,?,?,?,?,?,?,1)
+      (id,name,phone,normalized_phone,discount_percent,active) VALUES (?,?,?,?,?,1)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,phone=excluded.phone,
       normalized_phone=excluded.normalized_phone,
-      discount_percent=excluded.discount_percent,purchase_count=excluded.purchase_count,
-      total_spent_minor=excluded.total_spent_minor,active=1`)
+      discount_percent=excluded.discount_percent,active=1`)
     this.db.exec('BEGIN')
-    try{this.db.exec('UPDATE customers SET active=0');customers.forEach((x)=>upsert.run(x.id,x.name,x.phone??null,normalizeRussianPhone(x.phone),x.discountPercent,x.purchaseCount??0,x.totalSpentMinor??0));this.db.exec('COMMIT')}
+    try{this.db.exec('UPDATE customers SET active=0');customers.forEach((x)=>upsert.run(x.id,x.name,x.phone,normalizeRussianPhone(x.phone),x.discountPercent));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
@@ -260,7 +260,7 @@ export class PosDatabase {
     return (this.db.prepare('SELECT id saleId,fiscal_number receiptNumber,total_minor totalMinor FROM sales WHERE client_request_id=?').get(id) as {saleId:string;receiptNumber:string;totalMinor:number}|undefined)??null
   }
 
-  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;lines:CartLine[];payments:PaymentPart[];remotePaymentConfirmation?:RemotePaymentConfirmation;order?:{phone:string;comment?:string;dueAt?:string}}):void {
+  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;clubDiscountPercent?:number;lines:CartLine[];payments:PaymentPart[];remotePaymentConfirmation?:RemotePaymentConfirmation;order?:{phone:string;comment?:string;dueAt?:string}}):void {
     this.db.exec('BEGIN')
     try {
       this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,remote_payment_confirmation_json,created_at)

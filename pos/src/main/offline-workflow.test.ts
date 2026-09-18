@@ -12,10 +12,12 @@ const createDatabase=()=>{const folder=mkdtempSync(join(tmpdir(),'raspechatka-po
 afterEach(()=>{databases.splice(0).forEach((database)=>database.close());folders.splice(0).forEach((folder)=>rmSync(folder,{recursive:true,force:true}))})
 
 describe('offline working state',()=>{
-  it('finds a customer beyond the first 50 by name and normalized phone',()=>{
+  it('finds a customer only by partial normalized phone and keeps empty search private',()=>{
     const database=createDatabase()
-    database.replaceCustomers(Array.from({length:80},(_,index)=>({id:`client-${index}`,name:index===71?'Редкий Покупатель':`Клиент ${String(index).padStart(3,'0')}`,phone:index===71?'8 (900) 555-44-33':`+7 901 000 ${String(index).padStart(4,'0')}`,discountPercent:index===71?9:0,isClubMember:index===71?1:0})))
-    expect(database.listCustomers('Редкий')[0]).toMatchObject({id:'client-71',discountPercent:9})
+    database.replaceCustomers(Array.from({length:80},(_,index)=>({id:`client-${index}`,name:index===71?'Редкий Покупатель':`Клиент ${String(index).padStart(3,'0')}`,phone:index===71?'8 (900) 555-44-33':`+7 901 000 ${String(index).padStart(4,'0')}`,discountPercent:index===71?9:0})))
+    expect(database.listCustomers('')).toEqual([])
+    expect(database.listCustomers('Редкий')).toEqual([])
+    expect(database.listCustomers('4433')[0]).toMatchObject({id:'client-71',discountPercent:9})
     expect(database.listCustomers('+7 900 555-44-33')[0].id).toBe('client-71')
     expect(database.listCustomers('89005554433')[0].id).toBe('client-71')
     expect(normalizeRussianPhone('900 555-44-33')).toBe('+79005554433')
@@ -33,7 +35,7 @@ describe('offline working state',()=>{
     const shift=database.openShift({id:'shift-local',openedAt:new Date().toISOString(),cashierName:'Кассир'})
     database.saveSale({id:'sale-local',clientRequestId:'request-local',shiftId:shift.id,totalMinor:2000,paymentMethod:'cash',fiscalNumber:'FD-LOCAL',createdAt:new Date().toISOString(),receiptDiscountPercent:0,lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],payments:[{method:'cash',amountMinor:2000}]})
     database.clearConfirmedPointData()
-    expect(database.listPointEmployees()).toEqual([]);expect(database.listCustomers('Старый')).toEqual([])
+    expect(database.listPointEmployees()).toEqual([]);expect(database.listCustomers('0000')).toEqual([])
     expect(database.getSale('sale-local').receiptNumber).toBe('FD-LOCAL');expect(database.pendingEvents().map((event)=>event.eventType)).toContain('sale.completed')
   })
 

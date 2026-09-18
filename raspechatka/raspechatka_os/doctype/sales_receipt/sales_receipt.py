@@ -422,7 +422,9 @@ class SalesReceipt(Document):
 		)
 		payload = self._source_payload()
 		purchase.receipt_number = payload.get("fiscalNumber") or self.external_id or self.name
-		purchase.loyalty_discount_percent = flt(payload.get("receiptDiscountPercent"))
+		purchase.loyalty_discount_percent = flt(
+			payload.get("clubDiscountPercent", payload.get("receiptDiscountPercent"))
+		)
 		purchase.promo_code, purchase.campaign = self.promo_code, self.campaign
 		for row in self.items:
 			purchase.append(

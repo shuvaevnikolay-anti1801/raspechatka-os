@@ -159,7 +159,8 @@ export class PosTransactionEngine {
           paymentMethod:current.confirmedPayments.length>1?'mixed':current.confirmedPayments[0].method,
           fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,
           customerId:request.customer?.id,customerName:request.customer?.name,
-          receiptDiscountPercent:request.receiptDiscountPercent??0,lines:request.lines,payments:current.confirmedPayments,
+          receiptDiscountPercent:request.receiptDiscountPercent??0,clubDiscountPercent:request.clubDiscountPercent??0,
+          lines:request.lines,payments:current.confirmedPayments,
           remotePaymentConfirmation:request.remotePaymentConfirmation,order:request.order
         })
       }

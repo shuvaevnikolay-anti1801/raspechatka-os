@@ -21,12 +21,8 @@ export type Product = {
 export type Customer = {
   id: string
   name: string
-  phone?: string
+  phone: string
   discountPercent: number
-  purchaseCount?: number
-  totalSpentMinor?: number
-  clubStatus?: string
-  isClubMember?: number
 }
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
@@ -79,6 +75,7 @@ export type CompleteSaleRequest = {
   lines: CartLine[]
   customer?: Customer | null
   receiptDiscountPercent?: number
+  clubDiscountPercent?: number
   cashReceivedMinor?: number
   remotePaymentConfirmation?: RemotePaymentConfirmation
   order?: { phone:string; comment?:string; dueAt?:string }
@@ -196,6 +193,7 @@ export type PosApi = {
   getBootState: () => Promise<BootState>
   listProducts: () => Promise<Product[]>
   listCustomers: (query?: string) => Promise<Customer[]>
+  getCustomer: (id: string) => Promise<Customer|null>
   listSales: () => Promise<SaleSummary[]>
   searchPointReceipts: (query?:string) => Promise<PointReceiptSummary[]>
   getSale: (id: string) => Promise<SaleDetails>
