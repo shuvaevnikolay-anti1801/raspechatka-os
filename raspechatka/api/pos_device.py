@@ -27,24 +27,57 @@ def _authenticate(device_id, token):
 
 
 def _point_employees(point_name):
-	assignments = frappe.get_all(
-		"Employee Point Assignment",
-		filters={"business_point": point_name, "parenttype": "Employee"},
-		pluck="parent",
-		limit_page_length=1000,
-	)
-	if not assignments:
+	"""Return active cashier users whose profile scope includes this Business Point."""
+	point = frappe.db.get_value("Business Point", point_name, ["business_entity"], as_dict=True)
+	if not point or not point.business_entity:
 		return []
+	organization = frappe.db.get_value("Business Entity", point.business_entity, "organization")
 	profiles = frappe.get_all(
 		"Raspechatka User Profile",
 		filters={
-			"linked_employee": ["in", assignments],
 			"active": 1,
 			"access_profile": "Raspechatka Cashier",
+			"linked_employee": ["is", "set"],
 		},
-		fields=["linked_employee", "system_user"],
+		fields=[
+			"name",
+			"linked_employee",
+			"system_user",
+			"scope_type",
+			"organization",
+			"business_entity",
+		],
 		limit_page_length=1000,
 	)
+	if not profiles:
+		return []
+	point_profiles = set(
+		frappe.get_all(
+			"Raspechatka User Point",
+			filters={
+				"parent": ["in", [row.name for row in profiles]],
+				"parenttype": "Raspechatka User Profile",
+				"business_point": point_name,
+			},
+			pluck="parent",
+			limit_page_length=1000,
+		)
+	)
+
+	def has_point_access(profile):
+		if profile.scope_type == "Network":
+			return True
+		if profile.scope_type == "Partner":
+			return bool(organization and profile.organization == organization)
+		if profile.scope_type == "Business Entity":
+			return profile.business_entity == point.business_entity
+		if profile.scope_type == "Points":
+			return profile.name in point_profiles
+		return False
+
+	profiles = [row for row in profiles if has_point_access(row)]
+	if not profiles:
+		return []
 	enabled_users = set(
 		frappe.get_all(
 			"User",
