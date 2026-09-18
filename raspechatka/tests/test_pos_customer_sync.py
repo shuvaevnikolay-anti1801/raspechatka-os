@@ -1,4 +1,3 @@
-# ruff: noqa: RUF001
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase

@@ -294,9 +294,7 @@ def _sale_receipt(payload, cashier_id, connection):
 		manual_discount,
 		receipt_other_discount,
 		club_discount_percent,
-	) = _review_breakdown(
-		payload, connection, sum(raw), paid_total
-	)
+	) = _review_breakdown(payload, connection, sum(raw), paid_total)
 	line_discount = sum(gross) - sum(raw)
 
 	items = []

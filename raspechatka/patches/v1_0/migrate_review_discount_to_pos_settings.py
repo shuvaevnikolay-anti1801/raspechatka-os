@@ -19,6 +19,6 @@ def execute():
 	frappe.db.set_single_value("POS Sales Settings", "review_discount_per_review", value)
 	if has_conflict:
 		frappe.log_error(
-			"У активных точек были разные скидки за отзыв. Сетевая настройка безопасно установлена в 0; задайте её явно.",
+			"Active points had conflicting review discounts. Network setting was safely reset to 0.",
 			"POS review discount migration",
 		)
