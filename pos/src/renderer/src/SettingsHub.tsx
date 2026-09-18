@@ -1,20 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { BootState, ConnectionConfig, ConnectionStatus, DeviceStatuses, DiagnosticEvent, InpasSettings, PrintJobSummary, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
+import type { BootState, ConnectionConfig, ConnectionStatus, DeviceStatuses, DiagnosticEvent, InpasSettings, OutboxEvent, PrintJobSummary, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
 import './settings-hub.css'
 
 type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
 type ExtendedPosApi=typeof window.raspechatkaPos&{
   getAtolSettings:()=>Promise<AtolSettings>
   saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
+  listOutboxEvents:()=>Promise<OutboxEvent[]>
+  getOutboxPaused:()=>Promise<boolean>
+  setOutboxPaused:(paused:boolean,adminCode:string)=>Promise<boolean>
+  discardOutboxEvents:(ids:string[],adminCode:string)=>Promise<{discarded:number;pending:number}>
 }
 const pos=()=>window.raspechatkaPos as ExtendedPosApi
 const defaultAtol:AtolSettings={enabled:false,baseUrl:'http://127.0.0.1:16732/api/v2',taxationType:'patent',taxType:'none',operatorName:''}
 const defaultInpas:InpasSettings={enabled:false,executablePath:'',terminalId:'',currencyCode:'643',timeoutMs:3600000,qrMode:'terminal_choice'}
+const outboxLabels:Record<string,string>={
+  'shift.opened':'Открытие смены','shift.closed':'Закрытие смены','sale.completed':'Продажа','sale.returned':'Возврат',
+  'cash.deposited':'Внесение наличных','cash.withdrawn':'Изъятие наличных','cash.counted':'Пересчёт наличных',
+  'order.created':'Создание заказа','order.updated':'Изменение заказа','stock.write_off.requested':'Заявка на списание',
+  'point.supply.requested':'Заявка на закупку','cleaner.visit.recorded':'Посещение уборщицы','cleaner.paid':'Оплата уборки'
+}
+const criticalOutboxTypes=new Set(['shift.opened','shift.closed','sale.completed','sale.returned','cash.deposited','cash.withdrawn','cash.counted','cleaner.paid'])
+const outboxSummary=(event:OutboxEvent)=>{
+  const payload=event.payload&&typeof event.payload==='object'?event.payload as Record<string,unknown>:{}
+  const values=[payload.orderNumber,payload.fiscalNumber,payload.itemName,payload.cashierName,payload.reason,payload.id,payload.shiftId]
+    .map((value)=>typeof value==='string'?value.trim():'').filter(Boolean)
+  return values.slice(0,3).join(' · ')||event.id
+}
 
 export default function SettingsHub(){
   const [gateOpen,setGateOpen]=useState(false)
   const [open,setOpen]=useState(false)
   const [password,setPassword]=useState('')
+  const [adminCode,setAdminCode]=useState('')
   const [gateError,setGateError]=useState('')
   const [boot,setBoot]=useState<BootState|null>(null)
   const [connection,setConnection]=useState<ConnectionStatus|null>(null)
@@ -26,6 +44,9 @@ export default function SettingsHub(){
   const [operations,setOperations]=useState<UnresolvedOperation[]>([])
   const [printJobs,setPrintJobs]=useState<PrintJobSummary[]>([])
   const [diagnostics,setDiagnostics]=useState<DiagnosticEvent[]>([])
+  const [outbox,setOutbox]=useState<OutboxEvent[]>([])
+  const [outboxPaused,setOutboxPausedState]=useState(false)
+  const [selectedOutbox,setSelectedOutbox]=useState<Set<string>>(new Set())
   const [pairing,setPairing]=useState<ConnectionConfig>({serverUrl:'https://os.rpechatka.ru',deviceId:'',token:''})
   const [showPairing,setShowPairing]=useState(false)
   const [message,setMessage]=useState('')
@@ -46,12 +67,15 @@ export default function SettingsHub(){
   },[])
 
   const refresh=async()=>{
-    const [nextBoot,nextConnection,nextDevices,nextAtol,nextInpas,nextPrinters,nextPrinter,nextOperations,nextPrintJobs,nextDiagnostics]=await Promise.all([
+    const [nextBoot,nextConnection,nextDevices,nextAtol,nextInpas,nextPrinters,nextPrinter,nextOperations,nextPrintJobs,nextDiagnostics,nextOutbox,nextOutboxPaused]=await Promise.all([
       pos().getBootState(),pos().getConnectionStatus(),pos().getDeviceStatuses(),pos().getAtolSettings(),pos().getInpasSettings(),
-      pos().listPrinters(),pos().getSelectedPrinter(),pos().listUnresolvedOperations(),pos().listPrintJobs(),pos().listDiagnosticEvents(80)
+      pos().listPrinters(),pos().getSelectedPrinter(),pos().listUnresolvedOperations(),pos().listPrintJobs(),pos().listDiagnosticEvents(80),
+      pos().listOutboxEvents(),pos().getOutboxPaused()
     ])
     setBoot(nextBoot);setConnection(nextConnection);setDevices(nextDevices);setAtol(nextAtol);setInpas(nextInpas)
     setPrinters(nextPrinters);setPrinter(nextPrinter||'');setOperations(nextOperations);setPrintJobs(nextPrintJobs);setDiagnostics(nextDiagnostics)
+    setOutbox(nextOutbox);setOutboxPausedState(nextOutboxPaused)
+    setSelectedOutbox((current)=>new Set([...current].filter((id)=>nextOutbox.some((event)=>event.id===id))))
     setPairing((current)=>({...current,serverUrl:nextConnection.serverUrl||current.serverUrl,deviceId:nextConnection.deviceId||current.deviceId,token:''}))
   }
 
@@ -64,9 +88,9 @@ export default function SettingsHub(){
 
   const unlock=async()=>{
     if(!await pos().verifyAdminCode(password)){setGateError('Неверный пароль');return}
-    setGateOpen(false);setOpen(true);setPassword('');void refresh()
+    setAdminCode(password);setGateOpen(false);setOpen(true);setPassword('');void refresh()
   }
-  const close=()=>{setOpen(false);setShowPairing(false);setMessage('')}
+  const close=()=>{setOpen(false);setShowPairing(false);setMessage('');setAdminCode('');setSelectedOutbox(new Set())}
 
   const saveConnection=async()=>{
     setBusy(true);setMessage('Проверяем подключение к Распечатка OS…')
@@ -78,8 +102,26 @@ export default function SettingsHub(){
   }
   const syncNow=async()=>{
     setBusy(true);setMessage('Синхронизация…')
-    try{const next=await pos().syncNow();setBoot(next);await refresh();setMessage('Синхронизация завершена')}
+    try{const next=await pos().syncNow();setBoot(next);await refresh();setMessage(outboxPaused?'Справочники обновлены; отправка очереди приостановлена':'Синхронизация завершена')}
     catch(error){setMessage(error instanceof Error?error.message:String(error))}finally{setBusy(false)}
+  }
+  const toggleOutboxPause=async()=>{
+    const next=!outboxPaused
+    if(!next&&outbox.length&&!window.confirm(`Возобновить отправку? Касса сразу попробует передать ${outbox.length} событий в Распечатка OS.`))return
+    try{setOutboxPausedState(await pos().setOutboxPaused(next,adminCode));setMessage(next?'Отправка очереди приостановлена':'Отправка очереди возобновлена');await refresh()}
+    catch(error){setMessage(error instanceof Error?error.message:String(error))}
+  }
+  const toggleOutboxSelection=(id:string)=>setSelectedOutbox((current)=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next})
+  const discardSelected=async()=>{
+    const selected=outbox.filter((event)=>selectedOutbox.has(event.id))
+    if(!selected.length)return
+    const critical=selected.filter((event)=>criticalOutboxTypes.has(event.eventType)).length
+    const warning=critical
+      ?`Среди выбранных событий есть критические (${critical}): смены/продажи/возвраты/наличные. Они НЕ попадут в Распечатка OS. Локальные документы останутся на этом компьютере. Исключить ${selected.length} событий из отправки?`
+      :`Исключить ${selected.length} событий из отправки в Распечатка OS? Локальные документы останутся на этом компьютере.`
+    if(!window.confirm(warning))return
+    try{const result=await pos().discardOutboxEvents(selected.map((event)=>event.id),adminCode);setSelectedOutbox(new Set());setMessage(`Исключено из отправки: ${result.discarded}. Осталось: ${result.pending}`);await refresh()}
+    catch(error){setMessage(error instanceof Error?error.message:String(error))}
   }
   const saveAtol=async()=>{try{setAtol(await pos().saveAtolSettings(atol));setMessage('Настройки АТОЛ сохранены');await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
   const saveInpas=async()=>{try{setInpas(await pos().saveInpasSettings(inpas));setMessage('Настройки INPAS сохранены');await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
@@ -108,10 +150,16 @@ export default function SettingsHub(){
         <section className="settings-section"><div className="section-heading"><div><h2>Распечатка OS и точка</h2><p>Точка определяется Device ID, созданным в OS. В Windows выбрать другую точку нельзя.</p></div>{connection?.configured&&<button onClick={()=>setShowPairing((x)=>!x)}>{showPairing?'Отмена':'Переподключить'}</button>}</div>
           {connection?.configured&&!showPairing?<div className="connection-summary">
             <div><small>СТАТУС</small><b>{boot?.online?'На связи':'Локальный режим'}</b></div><div><small>ТОЧКА</small><b>{boot?.source==='frappe'?boot.pointName:'Ожидает синхронизации'}</b></div><div><small>РАБОЧЕЕ МЕСТО</small><b>{boot?.workstationName||'—'}</b></div><div><small>DEVICE ID</small><b>{connection.deviceId||'—'}</b></div>
-            <div><small>СОТРУДНИК</small><b>{boot?.cashierName||'Не выбран'}</b></div><div><small>ПОСЛЕДНЯЯ СИНХРОНИЗАЦИЯ</small><b>{boot?.lastSyncAt?new Date(boot.lastSyncAt).toLocaleString('ru-RU'):'Ещё не было'}</b></div><div><small>ОЧЕРЕДЬ</small><b>{boot?.pendingSync||0}</b></div>
+            <div><small>СОТРУДНИК</small><b>{boot?.cashierName||'Не выбран'}</b></div><div><small>ПОСЛЕДНЯЯ СИНХРОНИЗАЦИЯ</small><b>{boot?.lastSyncAt?new Date(boot.lastSyncAt).toLocaleString('ru-RU'):'Ещё не было'}</b></div><div><small>ОЧЕРЕДЬ</small><b>{boot?.pendingSync||0}{outboxPaused?' · ПАУЗА':''}</b></div>
           </div>:<div className="settings-form-grid"><label><span>Адрес OS</span><input value={pairing.serverUrl} onChange={(e)=>setPairing({...pairing,serverUrl:e.target.value})}/></label><label><span>Device ID</span><input value={pairing.deviceId||''} onChange={(e)=>setPairing({...pairing,deviceId:e.target.value})} placeholder="POS-…"/></label><label className="wide"><span>Token</span><input type="password" value={pairing.token||''} onChange={(e)=>setPairing({...pairing,token:e.target.value})} placeholder="Показывается в OS один раз" autoComplete="new-password"/></label><button className="primary wide" disabled={busy||!pairing.deviceId?.trim()||!pairing.token?.trim()} onClick={()=>void saveConnection()}>Подключить кассу</button></div>}
           {boot?.employees.length?<div className="cashier-row"><span>Подтверждённых кассиров точки: <b>{boot.employees.length}</b></span><button disabled={busy||!connection?.configured} onClick={()=>void syncNow()}>Синхронизировать сейчас</button></div>:connection?.configured&&<div className="settings-warning">К этой точке не прикреплены активные сотрудники.</div>}
           {connection?.lastError&&<div className="settings-error">{connection.lastError}</div>}
+        </section>
+
+        <section className="settings-section"><div className="section-heading"><div><h2>Очередь синхронизации</h2><p>Локальные события, которые ещё не подтверждены Распечатка OS.</p></div><b>{outbox.length}</b></div>
+          <div className="settings-warning"><b>Важно.</b> Удаление из очереди означает «никогда не отправлять это событие в OS». Сам локальный чек, смена или заказ при этом не удаляется с компьютера кассы.</div>
+          <div className="settings-actions"><button className={outboxPaused?'primary':''} onClick={()=>void toggleOutboxPause()}>{outboxPaused?'Возобновить отправку':'Приостановить отправку'}</button>{outbox.length>0&&<button onClick={()=>setSelectedOutbox(selectedOutbox.size===outbox.length?new Set():new Set(outbox.map((event)=>event.id)))}>{selectedOutbox.size===outbox.length?'Снять выбор':'Выбрать все'}</button>}<button disabled={!selectedOutbox.size} onClick={()=>void discardSelected()}>Удалить выбранные ({selectedOutbox.size})</button></div>
+          {!outbox.length?<div className="settings-ok">Очередь пуста.</div>:<div className="settings-recovery-list">{outbox.map((event)=><article key={event.id}><label style={{display:'flex',gap:10,alignItems:'flex-start',width:'100%'}}><input type="checkbox" checked={selectedOutbox.has(event.id)} onChange={()=>toggleOutboxSelection(event.id)}/><div style={{flex:1}}><b>{outboxLabels[event.eventType]||event.eventType}{criticalOutboxTypes.has(event.eventType)?' · критическое':''}</b><span>{new Date(event.createdAt).toLocaleString('ru-RU')} · {outboxSummary(event)}</span><details><summary>Технические данные</summary><pre style={{whiteSpace:'pre-wrap',wordBreak:'break-word',fontSize:11}}>{JSON.stringify(event.payload,null,2)}</pre></details></div></label></article>)}</div>}
         </section>
 
         <section className="settings-section"><div className="section-heading"><div><h2>ККТ АТОЛ</h2><p>АТОЛ 1Ф через локальный Web Server Драйвера ККТ 10.</p></div><label className="toggle"><input type="checkbox" checked={atol.enabled} onChange={(e)=>setAtol({...atol,enabled:e.target.checked})}/> Использовать АТОЛ</label></div>
