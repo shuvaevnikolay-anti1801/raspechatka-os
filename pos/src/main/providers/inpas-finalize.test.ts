@@ -160,6 +160,7 @@ describe("INPAS runner final result contract", () => {
       mkdirSync(join(directory, "jre", "bin"), { recursive: true });
       writeFileSync(jar, "jar");
       writeFileSync(java, "java");
+      process.env.JAVA_HOME = "";
 
       const settings = new InpasSettingsStore(join(directory, "settings.json"));
       settings.save(inpasSettings(jar));
