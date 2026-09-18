@@ -6,6 +6,7 @@ import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
 import { registerPosV2Ipc } from './pos-v2-ipc'
 import { registerHardwareSettingsIpc } from './hardware-ipc'
+import { registerOutboxAdminIpc } from './outbox-admin-ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
 import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
@@ -127,6 +128,7 @@ if(!hasLock){
     registerPilotIpc(diagnostics)
     registerPairingIpc({diagnostics,cashierAuth})
     registerHardwareSettingsIpc(atolSettingsStore,inpasSettingsStore,trainingMode?undefined:inpasProvider,diagnostics)
+    registerOutboxAdminIpc({database,diagnostics})
     stopAutomaticSync=startAutomaticSync(database,connectionStore,()=>cashierAuth.state().employee?.id)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
     createWindow()
