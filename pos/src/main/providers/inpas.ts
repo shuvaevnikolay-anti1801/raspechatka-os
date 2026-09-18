@@ -106,7 +106,9 @@ export class InpasSettingsStore {
         .flatMap((root) =>
           [
             "DCConsole.jar",
+            "DCCconsole.jar",
             "DCConsole.bat",
+            "DCCconsole.bat",
             "DC Console.exe",
             "DCConsole.exe",
           ].map((file) => join(root!, "INPAS", "DualConnector", file))
@@ -358,7 +360,7 @@ export class InpasPaymentProvider implements PaymentProvider {
           message: "Операция INPAS прервана или превысила время ожидания",
           raw,
         };
-      } else if (processResult.code === 0 && fields["39"] === "1") {
+      } else if (fields["39"] === "1") {
         paymentResult = {
           status: "approved",
           transactionId: this.transactionId(operationId, fields, receipt),
