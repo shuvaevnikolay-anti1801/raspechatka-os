@@ -200,6 +200,31 @@ class TestClubCors(TestCase):
 		club_cors.apply_public_club_cors(response, request)
 		self.assertEqual(response.headers, {})
 
+	def test_hook_adds_narrow_headers_for_public_gateway(self):
+		response = SimpleNamespace(headers={})
+		request = SimpleNamespace(
+			path="/api/method/raspechatka.api.clients.club_gateway",
+			headers={"Origin": "https://project.tilda.ws"},
+		)
+		fake = SimpleNamespace(conf={})
+		with patch.object(club_cors, "frappe", fake):
+			club_cors.apply_public_club_cors(response, request)
+		self.assertEqual(response.headers["Access-Control-Allow-Origin"], "https://project.tilda.ws")
+		self.assertEqual(response.headers["Access-Control-Allow-Methods"], "GET, POST, OPTIONS")
+		self.assertEqual(response.headers["Vary"], "Origin")
+
+
+class TestTildaCompatibility(TestCase):
+	def test_jsonp_wraps_read_response_and_rejects_unsafe_callback(self):
+		fake = SimpleNamespace(local=SimpleNamespace(response=SimpleNamespace()))
+		with patch.object(clients, "frappe", fake):
+			clients._external_response({"ok": True}, "clubReady")
+			self.assertEqual(fake.local.response.filecontent, 'clubReady({"ok": true});')
+			self.assertEqual(fake.local.response.content_type, "application/javascript; charset=utf-8")
+			clients._external_response({"ok": True}, "bad();callback")
+			self.assertEqual(fake.local.response.filecontent, '{"ok": false, "error": "INVALID_CALLBACK"}')
+			self.assertEqual(fake.local.response.content_type, "application/json; charset=utf-8")
+
 
 class TestClubDirectContracts(TestCase):
 	def test_gateway_keeps_legacy_actions_and_canonical_boundaries(self):
