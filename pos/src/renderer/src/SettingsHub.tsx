@@ -36,7 +36,7 @@ export default function SettingsHub(){
       const target=(event.target as HTMLElement|null)?.closest<HTMLButtonElement>('button')
       if(!target)return
       const navButtons=Array.from(document.querySelectorAll<HTMLButtonElement>('.main-nav>button'))
-      const isSettings=navButtons[5]===target||Boolean(target.closest('.top-status'))
+      const isSettings=navButtons[5]===target||target.classList.contains('settings-open-trigger')
       if(!isSettings)return
       event.preventDefault();event.stopPropagation();event.stopImmediatePropagation()
       setPassword('');setGateError('');setGateOpen(true)
@@ -62,8 +62,8 @@ export default function SettingsHub(){
     return()=>window.clearInterval(timer)
   },[open])
 
-  const unlock=()=>{
-    if(password!=='0000'){setGateError('Неверный пароль');return}
+  const unlock=async()=>{
+    if(!await pos().verifyAdminCode(password)){setGateError('Неверный пароль');return}
     setGateOpen(false);setOpen(true);setPassword('');void refresh()
   }
   const close=()=>{setOpen(false);setShowPairing(false);setMessage('')}
@@ -71,16 +71,10 @@ export default function SettingsHub(){
   const saveConnection=async()=>{
     setBusy(true);setMessage('Проверяем подключение к Распечатка OS…')
     try{
-      await pos().saveConnection({...pairing,cashierId:undefined})
+      await pos().saveConnection(pairing)
       const next=await pos().syncNow();setBoot(next);setShowPairing(false);setPairing((x)=>({...x,token:''}))
       await refresh();setMessage('Касса подключена к точке '+next.pointName)
     }catch(error){setMessage(error instanceof Error?error.message:String(error))}finally{setBusy(false)}
-  }
-  const selectCashier=async(id:string)=>{
-    if(!id)return
-    setBusy(true)
-    try{const next=await pos().setActiveCashier(id);setBoot(next);await refresh();setMessage('Кассир: '+next.cashierName)}
-    catch(error){setMessage(error instanceof Error?error.message:String(error))}finally{setBusy(false)}
   }
   const syncNow=async()=>{
     setBusy(true);setMessage('Синхронизация…')
@@ -97,7 +91,7 @@ export default function SettingsHub(){
   const statusItems=useMemo(()=>devices?[['OS',devices.os.ready,devices.os.message],['ККТ',devices.fiscal.ready,devices.fiscal.message],['Эквайринг',devices.payment.ready,devices.payment.message],['Принтер',devices.printer.ready,devices.printer.message],['Смена',devices.shift.ready,devices.shift.message]] as const:[],[devices])
 
   return <>
-    {gateOpen&&<div className="settings-gate-backdrop"><form className="settings-gate" onSubmit={(e)=>{e.preventDefault();unlock()}}>
+    {gateOpen&&<div className="settings-gate-backdrop"><form className="settings-gate" onSubmit={(e)=>{e.preventDefault();void unlock()}}>
       <small>ЗАЩИЩЁННЫЙ РАЗДЕЛ</small><h2>Настройки кассы</h2><p>Введите пароль администратора.</p>
       <input autoFocus type="password" inputMode="numeric" maxLength={4} value={password} onChange={(e)=>setPassword(e.target.value.replace(/\D/g,'').slice(0,4))} placeholder="••••"/>
       {gateError&&<div className="settings-error">{gateError}</div>}
@@ -116,7 +110,7 @@ export default function SettingsHub(){
             <div><small>СТАТУС</small><b>{boot?.online?'На связи':'Локальный режим'}</b></div><div><small>ТОЧКА</small><b>{boot?.source==='frappe'?boot.pointName:'Ожидает синхронизации'}</b></div><div><small>РАБОЧЕЕ МЕСТО</small><b>{boot?.workstationName||'—'}</b></div><div><small>DEVICE ID</small><b>{connection.deviceId||'—'}</b></div>
             <div><small>СОТРУДНИК</small><b>{boot?.cashierName||'Не выбран'}</b></div><div><small>ПОСЛЕДНЯЯ СИНХРОНИЗАЦИЯ</small><b>{boot?.lastSyncAt?new Date(boot.lastSyncAt).toLocaleString('ru-RU'):'Ещё не было'}</b></div><div><small>ОЧЕРЕДЬ</small><b>{boot?.pendingSync||0}</b></div>
           </div>:<div className="settings-form-grid"><label><span>Адрес OS</span><input value={pairing.serverUrl} onChange={(e)=>setPairing({...pairing,serverUrl:e.target.value})}/></label><label><span>Device ID</span><input value={pairing.deviceId||''} onChange={(e)=>setPairing({...pairing,deviceId:e.target.value})} placeholder="POS-…"/></label><label className="wide"><span>Token</span><input type="password" value={pairing.token||''} onChange={(e)=>setPairing({...pairing,token:e.target.value})} placeholder="Показывается в OS один раз" autoComplete="new-password"/></label><button className="primary wide" disabled={busy||!pairing.deviceId?.trim()||!pairing.token?.trim()} onClick={()=>void saveConnection()}>Подключить кассу</button></div>}
-          {boot?.employees.length?<div className="cashier-row"><label><span>Сотрудник этой точки</span><select value={connection?.cashierId||''} disabled={Boolean(boot.shift)||busy} onChange={(e)=>void selectCashier(e.target.value)}><option value="">Выберите сотрудника</option>{boot.employees.map((x)=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label><button disabled={busy||!connection?.configured} onClick={()=>void syncNow()}>Синхронизировать сейчас</button>{boot.shift&&<small>Сменить сотрудника можно только после закрытия смены.</small>}</div>:connection?.configured&&<div className="settings-warning">К этой точке не прикреплены активные сотрудники.</div>}
+          {boot?.employees.length?<div className="cashier-row"><span>Подтверждённых кассиров точки: <b>{boot.employees.length}</b></span><button disabled={busy||!connection?.configured} onClick={()=>void syncNow()}>Синхронизировать сейчас</button></div>:connection?.configured&&<div className="settings-warning">К этой точке не прикреплены активные сотрудники.</div>}
           {connection?.lastError&&<div className="settings-error">{connection.lastError}</div>}
         </section>
 

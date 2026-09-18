@@ -58,6 +58,6 @@ describe('offline working state',()=>{
 
   it('keeps commodity printing out of complete-sale and selects cashiers locally',()=>{
     const ipc=readFileSync(new URL('./ipc.ts',import.meta.url),'utf8');const handler=ipc.slice(ipc.indexOf("ipcMain.handle('pos:complete-sale'"),ipc.indexOf("ipcMain.handle('pos:create-return'"));expect(handler).not.toContain('printQueue.printSale');expect(handler).toContain('transactionEngine.completeSale')
-    const pairing=readFileSync(new URL('./pairing-ipc.ts',import.meta.url),'utf8');expect(pairing).toContain('database.listPointEmployees()');expect(pairing).toContain('if(database.currentShift())');expect(pairing).not.toContain('performSync')
+    const pairing=readFileSync(new URL('./pairing-ipc.ts',import.meta.url),'utf8');expect(pairing).toContain('CashierAuthSession');expect(pairing).not.toContain('set-active-cashier');expect(pairing).not.toContain('performSync')
   })
 })

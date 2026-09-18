@@ -13,6 +13,7 @@ import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers
 import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performSync } from './sync'
 import { PosTransactionEngine } from './transaction-engine'
+import { CashierAuthSession } from './cashier-auth'
 
 const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='cash'?rules.acceptsCash:
@@ -32,14 +33,15 @@ export function registerIpcHandlers(dependencies:{
   transactionEngine:PosTransactionEngine
   shiftCoordinator:ShiftCoordinator
   diagnostics:PosDiagnostics
+  cashierAuth:CashierAuthSession
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics}=dependencies
-  const bootState=()=>buildBootState(database)
-  const assertCashierAccess=()=>{
-    const boot=bootState()
-    if(!boot.cashierId)throw new Error('Выберите кассира из подтверждённого списка этой точки')
-    if(boot.accessRevoked)throw new Error('Доступ кассира отозван. Новые операции запрещены; открытую смену можно только закрыть.')
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics,cashierAuth}=dependencies
+  const bootState=()=>{
+    const boot=buildBootState(database)
+    const auth=cashierAuth.state()
+    return {...boot,cashierId:auth.employee?.id,cashierName:auth.employee?.name||'Выберите сотрудника',accessRevoked:Boolean(auth.employee)&&!boot.employees.some((row)=>row.id===auth.employee?.id)}
   }
+  const assertCashierAccess=()=>cashierAuth.requireAuthenticated()
 
   const errorMessage=(error:unknown)=>error instanceof Error?error.message:String(error)
   const assertFiscalShiftReady=async(action:string)=>{
@@ -152,19 +154,19 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:get-workplace-data',()=>database.getWorkplaceData())
   ipcMain.handle('pos:report-stock-write-off',(_event,request:StockWriteOffRequest)=>{assertCashierAccess();return database.reportStockWriteOff(request)})
   ipcMain.handle('pos:create-supply-request',(_event,request:SupplyRequestInput)=>{assertCashierAccess();return database.createSupplyRequest(request)})
-  ipcMain.handle('pos:record-cleaner-visit',()=>{assertCashierAccess();return database.recordCleanerVisit(bootState().cashierName)})
+  ipcMain.handle('pos:record-cleaner-visit',()=>database.recordCleanerVisit(assertCashierAccess().name))
   ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>{assertCashierAccess();return database.payCleaner(amountMinor)})
-  ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>database.saveCashCount(countType,lines))
+  ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>{assertCashierAccess();return database.saveCashCount(countType,lines)})
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
   ipcMain.handle('pos:list-orders',()=>database.listOrders())
   ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{assertCashierAccess();return database.createUnpaidOrder(request)})
   ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>{assertCashierAccess();return database.updateOrder(request)})
 
   ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
-    assertCashierAccess()
+    const cashier=assertCashierAccess()
     diagnostics.record({source:'shift',eventType:'shift.open_started',message:'Начинаем открытие локальной и фискальной смены'})
     try{
-      const shift=await shiftCoordinator.openShift(bootState().cashierName)
+      const shift=await shiftCoordinator.openShift(cashier.id,cashier.name)
       diagnostics.record({source:'shift',eventType:'shift.open_completed',message:'Смена успешно открыта',operationId:shift.id})
       return shift
     }catch(error){
@@ -174,6 +176,8 @@ export function registerIpcHandlers(dependencies:{
   })
   ipcMain.handle('pos:close-shift',async()=>{
     const shift=database.currentShift()
+    const cashier=cashierAuth.requireAuthenticated({allowRevokedForClose:true})
+    if(!shift||(shift.cashierId?shift.cashierId!==cashier.id:shift.cashierName!==cashier.name))throw new Error('Закрыть смену может только открывший её кассир после входа по PIN')
     diagnostics.record({source:'shift',eventType:'shift.close_started',message:'Начинаем закрытие локальной и фискальной смены',operationId:shift?.id})
     try{
       const shiftSummary=database.getShiftSummary()
@@ -185,6 +189,7 @@ export function registerIpcHandlers(dependencies:{
         diagnostics.record({source:'payment',eventType:'payment.reconcile_completed',message:reconciliation.message,operationId:shift?.id})
       }
       const summary=await shiftCoordinator.closeShift(transactionEngine.listUnresolved().length>0)
+      cashierAuth.logout()
       diagnostics.record({source:'shift',eventType:'shift.close_completed',message:'Смена успешно закрыта',operationId:shift?.id,details:{receipts:summary.receipts,revenueMinor:summary.revenueMinor}})
       return summary
     }catch(error){
@@ -203,14 +208,14 @@ export function registerIpcHandlers(dependencies:{
     )
     if(identityChanged&&database.currentShift())throw new Error('Нельзя изменить подключение к точке во время открытой смены')
     if(identityChanged)database.clearConfirmedPointData()
-    connectionStore.save(identityChanged?{...config,cashierId:undefined}:config);database.setState('sync_error','')
+    connectionStore.save(config);database.setState('sync_error','')
     diagnostics.record({source:'sync',eventType:'sync.connection_saved',message:'Настройки подключения к Raspechatka OS сохранены'})
     return connectionStore.status(bootState().lastSyncAt)
   })
   ipcMain.handle('pos:sync-now',async()=>{
     diagnostics.record({source:'sync',eventType:'sync.manual_started',message:'Запущена ручная синхронизация'})
     try{
-      const result=await performSync(database,connectionStore)
+      const result=await performSync(database,connectionStore,cashierAuth.state().employee?.id)
       diagnostics.record({source:'sync',eventType:'sync.manual_completed',message:`Синхронизация завершена · к отправке ${result.pendingSync}`})
       return result
     }catch(error){

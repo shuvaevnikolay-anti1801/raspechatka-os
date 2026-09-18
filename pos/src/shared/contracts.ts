@@ -31,8 +31,15 @@ export type Customer = {
 export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
-export type Shift = { id: string; openedAt: string; closedAt?: string; cashierName: string }
+export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string }
 export type PointEmployee = { id:string; name:string }
+export type CashierAuthState = {
+  status:'signed_out'|'authenticated'|'locked'
+  employee?:PointEmployee
+  openShiftCashierId?:string
+  openShiftCashierName?:string
+  requiresPinSetup?:boolean
+}
 export type ReceiptMirror = SaleDetails & { pointId:string; serverId:string; externalId?:string }
 export type PointRules = {
   allowFreePrice: boolean
@@ -63,8 +70,8 @@ export type BootState = {
   rules: PointRules
 }
 
-export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; cashierId?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
-export type ConnectionStatus = { configured: boolean; serverUrl: string; deviceId?: string; cashierId?: string; workplaceCode?:string; lastSyncAt?: string; lastError?: string }
+export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
+export type ConnectionStatus = { configured: boolean; serverUrl: string; deviceId?: string; workplaceCode?:string; lastSyncAt?: string; lastError?: string }
 
 export type CompleteSaleRequest = {
   clientRequestId: string
@@ -229,6 +236,14 @@ export type PosApi = {
   completeSale: (request: CompleteSaleRequest) => Promise<CompleteSaleResult>
   getConnectionStatus: () => Promise<ConnectionStatus>
   saveConnection: (config: ConnectionConfig) => Promise<ConnectionStatus>
-  setActiveCashier: (cashierId:string) => Promise<BootState>
+  getCashierAuthState: () => Promise<CashierAuthState>
+  beginCashierLogin: (cashierId:string) => Promise<{requiresPinSetup:boolean}>
+  createCashierPin: (cashierId:string,pin:string,confirmation:string) => Promise<CashierAuthState>
+  loginCashier: (cashierId:string,pin:string) => Promise<CashierAuthState>
+  lockCashier: () => Promise<CashierAuthState>
+  unlockCashier: (pin:string) => Promise<CashierAuthState>
+  logoutCashier: () => Promise<CashierAuthState>
+  verifyAdminCode: (code:string) => Promise<boolean>
+  resetCashierPin: (cashierId:string,adminCode:string,newPin:string,confirmation:string) => Promise<void>
   syncNow: () => Promise<BootState>
 }

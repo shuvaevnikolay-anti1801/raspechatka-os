@@ -19,6 +19,7 @@ import { CommodityPrintQueue } from './print-jobs'
 import { buildBootState, startAutomaticSync } from './sync'
 import { PosDiagnostics } from './diagnostics'
 import { InpasPaymentProvider, InpasSettingsStore } from './providers/inpas'
+import { CashierAuthSession } from './cashier-auth'
 
 let stopAutomaticSync:(()=>void)|undefined
 let stopAutomaticPrintRetry:(()=>void)|undefined
@@ -76,6 +77,7 @@ if(!hasLock){
     diagnostics = new PosDiagnostics(join(userData,'raspechatka-pos-diagnostics.sqlite'))
     diagnostics.record({source:'app',eventType:'app.started',message:'Касса Распечатка запущена'})
     const connectionStore=new ConnectionStore(join(userData, 'connection.bin'))
+    const cashierAuth=new CashierAuthSession(database)
     const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
     const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
     const inpasSettingsStore=new InpasSettingsStore(join(userData,'inpas-settings.json'))
@@ -119,13 +121,13 @@ if(!hasLock){
       diagnostics.record({source:'recovery',level:'error',eventType:'transaction.recovery_failed',message})
     }
 
-    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics})
+    registerIpcHandlers({database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics,cashierAuth})
     registerPosV2Ipc(connectionStore)
     registerShiftRecoveryIpc({database,fiscalProvider,shiftCoordinator,diagnostics})
     registerPilotIpc(diagnostics)
-    registerPairingIpc({database,connectionStore,diagnostics})
+    registerPairingIpc({diagnostics,cashierAuth})
     registerHardwareSettingsIpc(atolSettingsStore,inpasSettingsStore,trainingMode?undefined:inpasProvider,diagnostics)
-    stopAutomaticSync=startAutomaticSync(database,connectionStore)
+    stopAutomaticSync=startAutomaticSync(database,connectionStore,()=>cashierAuth.state().employee?.id)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
     createWindow()
 

@@ -68,15 +68,15 @@ async function post<T>(config:ConnectionConfig,method:string,body:Record<string,
 export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):Promise<string[]> {
   if(!events.length)return []
   const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_v2.push_events',{
-    device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null,
+    device_id:config.deviceId,token:config.token,
     events,app_version:'0.1.2'
   },20000)
   return result.accepted||[]
 }
 
-export async function loadBootstrap(config:ConnectionConfig):Promise<BootstrapResponse> {
+export async function loadBootstrap(config:ConnectionConfig,cashierId?:string):Promise<BootstrapResponse> {
   return post<BootstrapResponse>(config,'raspechatka.api.pos_v2.get_bootstrap',{
-    device_id:config.deviceId,token:config.token,cashier_id:config.cashierId||null
+    device_id:config.deviceId,token:config.token,cashier_id:cashierId||null
   },15000)
 }
 

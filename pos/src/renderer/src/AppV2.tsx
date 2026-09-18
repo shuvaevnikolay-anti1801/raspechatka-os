@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { calculateSubtotalMinor, calculateTotalMinor } from '../../shared/cart'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import type {
-  BootState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
+  BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, ReturnSummary, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, WorkplaceData
@@ -18,6 +18,7 @@ const emptyWorkplace:WorkplaceData={schedule:[],deliveries:[],supplyRequests:[],
 
 export default function AppV2(){
   const [boot,setBoot]=useState<BootState|null>(null)
+  const [auth,setAuth]=useState<CashierAuthState|null>(null)
   const [products,setProducts]=useState<Product[]>([])
   const [customers,setCustomers]=useState<Customer[]>([])
   const [sales,setSales]=useState<SaleSummary[]>([])
@@ -47,6 +48,7 @@ export default function AppV2(){
   const [receiptQuery,setReceiptQuery]=useState('')
 
   const refresh=async()=>{
+    const nextAuth=await window.raspechatkaPos.getCashierAuthState()
     const result=await Promise.all([
       window.raspechatkaPos.getBootState(),window.raspechatkaPos.listProducts(),
       window.raspechatkaPos.listCustomers(),window.raspechatkaPos.listSales(),
@@ -58,6 +60,7 @@ export default function AppV2(){
     setBoot(result[0]);setProducts(result[1]);setCustomers(result[2]);setSales(result[3])
     setReturns(result[4]);setHeld(result[5]);setSummary(result[6]);setCashOperations(result[7]);setConnection(result[8])
     setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11])
+    setAuth(nextAuth)
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
 
@@ -132,11 +135,12 @@ export default function AppV2(){
     return sales.filter((sale)=>(sale.receiptNumber+' '+(sale.customerName||'')).toLocaleLowerCase('ru').includes(text))
   },[sales,receiptQuery])
 
-  if(!boot)return <div className="loading"><i/>Запускаем кассу…</div>
+  if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
+  if(auth.status!=='authenticated')return <CashierLogin boot={boot} auth={auth} onAuthenticated={refresh}/>
   return <div className="app-shell">
     <header className="topbar pos-v2-topbar">
       <div className="point pos-v2-point"><b>{boot.pointName}</b></div>
-      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={()=>setScreen('settings')}>{boot.cashierName}</button></div>
+      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {boot.cashierName}</button>{!boot.shift&&<button onClick={async()=>setAuth(await window.raspechatkaPos.logoutCashier())}>Выйти</button>}</div>
     </header>
     <nav className="main-nav">
       <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
@@ -201,6 +205,44 @@ export default function AppV2(){
     {freePriceOpen&&<FreePriceModal onClose={()=>setFreePriceOpen(false)} onAdd={(name,price)=>{setCart((current)=>[...current,{productId:'free-'+crypto.randomUUID(),name,quantity:1,unitPriceMinor:price}]);setFreePriceOpen(false)}}/>}
     {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
+}
+
+function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<void>}){
+  const forced=auth.openShiftCashierId
+  const [employeeId,setEmployeeId]=useState(forced||'')
+  const [pin,setPin]=useState('')
+  const [confirmation,setConfirmation]=useState('')
+  const [setup,setSetup]=useState(false)
+  const [adminReset,setAdminReset]=useState(false)
+  const [adminCode,setAdminCode]=useState('')
+  const [error,setError]=useState('')
+  const selected=boot.employees.find((row)=>row.id===employeeId)||(forced===employeeId?{id:employeeId,name:auth.openShiftCashierName||employeeId}:undefined)
+  const numeric=(value:string)=>value.replace(/\D/g,'').slice(0,4)
+  const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setError('');if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setError(e instanceof Error?e.message:String(e))}}}
+  useEffect(()=>{if(forced)void choose(forced)},[forced])
+  const submit=async()=>{try{
+    if(auth.status==='locked')await window.raspechatkaPos.unlockCashier(pin)
+    else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)
+    else await window.raspechatkaPos.loginCashier(employeeId,pin)
+    await onAuthenticated()
+  }catch(e){setError(e instanceof Error?e.message:String(e));setPin('');setConfirmation('')}}
+  const reset=async()=>{try{await window.raspechatkaPos.resetCashierPin(employeeId,adminCode,pin,confirmation);setAdminReset(false);setAdminCode('');setSetup(false);setError('PIN изменён. Теперь войдите с новым PIN.');setPin('');setConfirmation('')}catch(e){setError(e instanceof Error?e.message:String(e))}}
+  const lockedEmployee=auth.employee
+  return <main className="cashier-login-screen"><section className="cashier-login-card">
+    <small>{auth.status==='locked'?'КАССА ЗАБЛОКИРОВАНА':'КТО РАБОТАЕТ?'}</small><h1>{auth.status==='locked'?lockedEmployee?.name:'Выберите себя'}</h1>
+    {forced&&<p>После перезапуска открытую смену может продолжить только <b>{auth.openShiftCashierName}</b>.</p>}
+    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{employee.name}</button>)}</div>}
+    {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
+    {(selected||lockedEmployee)&&<form onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
+      {adminReset&&<label><span>Код администратора</span><input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminCode} onChange={(e)=>setAdminCode(numeric(e.target.value))}/></label>}
+      <label><span>{setup||adminReset?'Новый PIN':'PIN кассира'}</span><input autoFocus={!adminReset} type="password" inputMode="numeric" maxLength={4} value={pin} onChange={(e)=>setPin(numeric(e.target.value))}/></label>
+      {(setup||adminReset)&&<label><span>Повторите PIN</span><input type="password" inputMode="numeric" maxLength={4} value={confirmation} onChange={(e)=>setConfirmation(numeric(e.target.value))}/></label>}
+      {error&&<div className="cashier-login-error">{error}</div>}
+      <button className="primary" type="submit">{adminReset?'Сбросить PIN':setup?'Создать PIN и войти':'Войти'}</button>
+      {auth.status!=='locked'&&!setup&&!adminReset&&<button type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>}
+    </form>}
+    {auth.status!=='locked'&&<button className="settings-open-trigger" type="button">Настройки кассы</button>}
+  </section></main>
 }
 
 function LocalReceiptTable({rows,onPrint,onReturn}:{rows:SaleSummary[];onPrint:(id:string,kind:'fiscal-copy'|'commodity')=>Promise<void>;onReturn:(sale:SaleSummary)=>Promise<void>}){

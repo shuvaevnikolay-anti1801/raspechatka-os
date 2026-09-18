@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, now_datetime
 
+from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
@@ -271,7 +272,9 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 	per_review = max(
 		0,
 		round(
-			flt(frappe.db.get_value("Business Point", connection.business_point, "review_discount_per_review"))
+			flt(
+				frappe.db.get_value("Business Point", connection.business_point, "review_discount_per_review")
+			)
 			* 100
 		),
 	)
@@ -335,13 +338,11 @@ def _sale_receipt(payload, cashier_id, connection):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
 	"""POS outbox ingestion with correct receipt-level discount allocation."""
 	connection = base_pos._authenticate(device_id, token)
 	employees = base_pos._point_employees(connection.business_point)
-	selected = base_pos._selected_employee(employees, cashier_id)
-	if not selected:
-		frappe.throw(_("Перед синхронизацией выберите сотрудника точки"))
 	events = frappe.parse_json(events) if isinstance(events, str) else (events or [])
 	if not isinstance(events, list):
 		frappe.throw(_("Ожидается список событий"))
@@ -353,13 +354,19 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			event_id = str(event.get("id") or "").strip()
 			event_type = str(event.get("eventType") or "").strip()
 			payload = event.get("payload") or {}
+			event_cashier_id = payload.get("cashierId") or payload.get("cashier_id") or cashier_id
+			selected = base_pos._selected_employee(employees, event_cashier_id) if event_cashier_id else None
 			if not event_id or not event_type:
 				frappe.throw(_("В событии отсутствует id или eventType"))  # noqa: RUF001
+			if not selected:
+				frappe.throw(_("Кассир события не назначен на текущую точку"))
 			stats = {"created": 0, "duplicates": 0, "errors": []}
 			if event_type == "shift.opened":
 				sales_api._ingest_shift(base_pos._shift(payload, selected["id"]), connection, stats)
 			elif event_type == "shift.closed":
-				sales_api._ingest_shift(base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True)
+				sales_api._ingest_shift(
+					base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True
+				)
 			elif event_type == "sale.completed":
 				receipt, review_count = _sale_receipt(payload, selected["id"], connection)
 				sales_api._ingest_receipt(receipt, connection, stats)
@@ -375,11 +382,15 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 						)
 						update_shift_totals(doc.shift)
 			elif event_type == "sale.returned":
-				sales_api._ingest_receipt(base_pos._return_receipt(payload, selected["id"]), connection, stats)
+				sales_api._ingest_receipt(
+					base_pos._return_receipt(payload, selected["id"]), connection, stats
+				)
 			elif event_type == "cash.deposited":
 				sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Deposit"), connection, stats)
 			elif event_type == "cash.withdrawn":
-				sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats)
+				sales_api._ingest_cash(
+					base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats
+				)
 			elif event_type in ("order.created", "order.updated"):
 				base_pos._ingest_order(event_type, event_id, connection, payload)
 			else:
@@ -414,7 +425,11 @@ def search_receipts(device_id, token, query=None, limit=100):
 			frappe.get_all(
 				"Sales Receipt",
 				filters=base_filters,
-				or_filters={"name": ["like", value], "external_id": ["like", value], "comment": ["like", value]},
+				or_filters={
+					"name": ["like", value],
+					"external_id": ["like", value],
+					"comment": ["like", value],
+				},
 				pluck="name",
 				limit_page_length=1000,
 			)
