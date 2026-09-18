@@ -272,7 +272,9 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 	per_review = max(
 		0,
 		round(
-			flt(frappe.db.get_value("Business Point", connection.business_point, "review_discount_per_review"))
+			flt(
+				frappe.db.get_value("Business Point", connection.business_point, "review_discount_per_review")
+			)
 			* 100
 		),
 	)
@@ -362,7 +364,9 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			if event_type == "shift.opened":
 				sales_api._ingest_shift(base_pos._shift(payload, selected["id"]), connection, stats)
 			elif event_type == "shift.closed":
-				sales_api._ingest_shift(base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True)
+				sales_api._ingest_shift(
+					base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True
+				)
 			elif event_type == "sale.completed":
 				receipt, review_count = _sale_receipt(payload, selected["id"], connection)
 				sales_api._ingest_receipt(receipt, connection, stats)
@@ -378,11 +382,15 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 						)
 						update_shift_totals(doc.shift)
 			elif event_type == "sale.returned":
-				sales_api._ingest_receipt(base_pos._return_receipt(payload, selected["id"]), connection, stats)
+				sales_api._ingest_receipt(
+					base_pos._return_receipt(payload, selected["id"]), connection, stats
+				)
 			elif event_type == "cash.deposited":
 				sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Deposit"), connection, stats)
 			elif event_type == "cash.withdrawn":
-				sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats)
+				sales_api._ingest_cash(
+					base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats
+				)
 			elif event_type in ("order.created", "order.updated"):
 				base_pos._ingest_order(event_type, event_id, connection, payload)
 			else:
@@ -417,7 +425,11 @@ def search_receipts(device_id, token, query=None, limit=100):
 			frappe.get_all(
 				"Sales Receipt",
 				filters=base_filters,
-				or_filters={"name": ["like", value], "external_id": ["like", value], "comment": ["like", value]},
+				or_filters={
+					"name": ["like", value],
+					"external_id": ["like", value],
+					"comment": ["like", value],
+				},
 				pluck="name",
 				limit_page_length=1000,
 			)
