@@ -111,5 +111,19 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents().map((x)=>x.eventType)).toEqual(expect.arrayContaining([
       'cash.counted','stock.write_off.requested','point.supply.requested','cleaner.visit.recorded','cleaner.paid'
     ]))
+    expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
+  })
+
+  it('assigns morning and evening explicitly and preserves them after restart',()=>{
+    const database=createDatabase()
+    const morning=database.openShift({id:'shift-morning',openedAt:'2026-09-06T06:00:00.000Z',cashierName:'Анна'})
+    expect(morning.shiftType).toBe('Утро')
+    database.closeShift()
+    const evening=database.openShift({id:'shift-evening',openedAt:'2026-09-06T14:00:00.000Z',cashierName:'Анна'})
+    expect(evening.shiftType).toBe('Вечер')
+    expect(database.currentShift()?.shiftType).toBe('Вечер')
+    database.closeShift()
+    const nextMorning=database.openShift({id:'shift-next-day',openedAt:'2026-09-07T06:00:00.000Z',cashierName:'Анна'})
+    expect(nextMorning.shiftType).toBe('Утро')
   })
 })

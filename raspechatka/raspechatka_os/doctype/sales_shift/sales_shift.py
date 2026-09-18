@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -22,7 +23,9 @@ class SalesShift(Document):
 		if self.closed_at and get_datetime(self.closed_at) < get_datetime(self.opened_at):
 			frappe.throw(_("Смена не может закрыться раньше открытия"))
 		if not self.shift_type:
-			self.shift_type = "Утро" if get_datetime(self.opened_at).hour < 14 else "Вечер"
+			from raspechatka.sales import resolve_shift_type
+
+			self.shift_type = resolve_shift_type(self.business_point, self.opened_at, self.name)
 		if self.status == "Closed" and not self.closed_at:
 			frappe.throw(_("Для закрытой смены укажите время закрытия"))
 		other = frappe.db.exists("Sales Shift", {"business_point": self.business_point, "status": "Open", "name": ["!=", self.name or ""]})

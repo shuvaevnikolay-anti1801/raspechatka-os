@@ -1,7 +1,26 @@
 from collections import defaultdict
+from datetime import UTC
+from zoneinfo import ZoneInfo
 
 import frappe
-from frappe.utils import flt, now_datetime
+from frappe.utils import flt, get_datetime, now_datetime
+
+
+def resolve_shift_type(business_point, opened_at, exclude_name=None):
+	"""Resolve the first/subsequent shift for the point's local calendar day."""
+	point_timezone = frappe.db.get_value("Business Point", business_point, "timezone") or "Europe/Moscow"
+	opened = get_datetime(opened_at)
+	if opened.tzinfo is None:
+		opened = opened.replace(tzinfo=UTC)
+	local_date = opened.astimezone(ZoneInfo(point_timezone)).date()
+	filters = {
+		"business_point": business_point,
+		"status": ["!=", "Cancelled"],
+		"opened_at": ["between", [f"{local_date} 00:00:00", f"{local_date} 23:59:59"]],
+	}
+	if exclude_name:
+		filters["name"] = ["!=", exclude_name]
+	return "Вечер" if frappe.db.exists("Sales Shift", filters) else "Утро"
 
 
 def log_cashier_action(document, action_type, external_id=None, details=None, metric_value=1, gift_tier=None):
@@ -57,7 +76,7 @@ def update_shift_totals(shift_name):
 		"gift_orders_1": gifts["GIFT_1"], "gift_orders_2": gifts["GIFT_2"], "gift_orders_3": gifts["GIFT_3"],
 	}
 	values["net_sales"] = values["gross_sales"] - values["returns_total"]
-	values["average_check"] = values["sales_before_discount"] / len(sales) if sales else 0
+	values["average_check"] = values["gross_sales"] / len(sales) if sales else 0
 	values["discount_conversion"] = values["discounted_receipt_count"] / len(sales) * 100 if sales else 0
 	values["expected_cash"] = flt(shift.opening_cash) + channels["Cash"] + deposits - withdrawals
 	frappe.db.set_value("Sales Shift", shift_name, values, update_modified=False)

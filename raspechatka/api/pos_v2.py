@@ -294,9 +294,7 @@ def _sale_receipt(payload, cashier_id, connection):
 		manual_discount,
 		receipt_other_discount,
 		club_discount_percent,
-	) = _review_breakdown(
-		payload, connection, sum(raw), paid_total
-	)
+	) = _review_breakdown(payload, connection, sum(raw), paid_total)
 	line_discount = sum(gross) - sum(raw)
 
 	items = []
@@ -360,6 +358,53 @@ def _sale_receipt(payload, cashier_id, connection):
 	}, review_count
 
 
+def _trusted_event_cashier(connection, employees, event_type, payload, fallback_cashier=None):
+	"""Bind delayed events to the authenticated cashier who opened their shift."""
+	shift_external_id = payload.get("id") if event_type.startswith("shift.") else payload.get("shiftId")
+	shift = None
+	if shift_external_id:
+		shift = frappe.db.get_value(
+			"Sales Shift",
+			{"external_id": shift_external_id, "business_point": connection.business_point},
+			["cashier", "business_point"],
+			as_dict=True,
+		)
+	incoming = str(payload.get("cashierId") or payload.get("cashier_id") or fallback_cashier or "").strip()
+	if shift:
+		if incoming and incoming != shift.cashier:
+			frappe.throw(
+				_("Кассир события не совпадает с кассиром открытой смены"),  # noqa: RUF001
+				frappe.PermissionError,
+			)
+		return {"id": shift.cashier}
+	return base_pos._selected_employee(employees, incoming) if incoming else None
+
+
+def _ingest_cash_count(event_id, payload, connection, cashier_id):
+	shift = sales_api._shift_name(payload.get("shiftId"), connection.business_point)
+	doc = frappe.get_doc("Sales Shift", shift)
+	if doc.cashier != cashier_id:
+		frappe.throw(_("Пересчёт наличных выполнен не кассиром смены"), frappe.PermissionError)
+	if frappe.db.exists("Cashier Action", {"external_id": event_id}):
+		return
+	count_type = str(payload.get("countType") or "")
+	amount = flt(payload.get("totalMinor")) / 100
+	if count_type == "opening":
+		doc.opening_cash = amount
+	elif count_type == "closing":
+		doc.closing_cash = amount
+	elif count_type != "control":
+		frappe.throw(_("Неизвестный тип пересчёта наличных"))
+	doc.save(ignore_permissions=True)
+	log_cashier_action(
+		doc,
+		"CASH_COUNT",
+		external_id=event_id,
+		details=frappe.as_json({"count_type": count_type, "amount": amount}),
+	)
+	update_shift_totals(shift)
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
@@ -377,8 +422,7 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			event_id = str(event.get("id") or "").strip()
 			event_type = str(event.get("eventType") or "").strip()
 			payload = event.get("payload") or {}
-			event_cashier_id = payload.get("cashierId") or payload.get("cashier_id") or cashier_id
-			selected = base_pos._selected_employee(employees, event_cashier_id) if event_cashier_id else None
+			selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)
 			if not event_id or not event_type:
 				frappe.throw(_("В событии отсутствует id или eventType"))  # noqa: RUF001
 			if not selected:
@@ -414,6 +458,8 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 				sales_api._ingest_cash(
 					base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats
 				)
+			elif event_type == "cash.counted":
+				_ingest_cash_count(event_id, payload, connection, selected["id"])
 			elif event_type in ("order.created", "order.updated"):
 				base_pos._ingest_order(event_type, event_id, connection, payload)
 			else:

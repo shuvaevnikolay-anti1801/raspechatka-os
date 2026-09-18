@@ -171,7 +171,7 @@
     {
       "fieldname": "gross_sales",
       "fieldtype": "Currency",
-      "label": "Выручка",
+      "label": "Продажи после скидок",
       "default": "0",
       "read_only": 1
     },
@@ -193,7 +193,7 @@
     {
       "fieldname": "sales_before_discount",
       "fieldtype": "Currency",
-      "label": "Выручка без скидок",
+      "label": "Продажи до скидок",
       "default": "0",
       "read_only": 1
     },

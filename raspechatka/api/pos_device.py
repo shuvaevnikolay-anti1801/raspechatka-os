@@ -221,13 +221,15 @@ def _shift(payload, cashier_id, closed=False):
 	return {
 		"external_id": payload.get("id"),
 		"status": "Closed" if closed else "Open",
-		"shift_type": "Regular",
+		"shift_type": payload.get("shiftType") or payload.get("shift_type"),
 		"opened_at": payload.get("openedAt"),
 		"closed_at": payload.get("closedAt") if closed else None,
 		"cashier": cashier_id,
 		"opening_cash": 0,
 		"closing_cash": (
-			flt((payload.get("summary") or {}).get("expectedCashMinor")) / 100 if closed else None
+			flt(payload.get("closingCashMinor")) / 100
+			if closed and payload.get("closingCashMinor") is not None
+			else None
 		),
 	}
 

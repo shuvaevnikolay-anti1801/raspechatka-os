@@ -90,6 +90,7 @@ const actionLabel = (v) =>
 	({
 		OPEN_SHIFT: "Открытие смены",
 		CLOSE_SHIFT: "Закрытие смены",
+		CASH_COUNT: "Пересчёт наличных",
 		SALE: "Продажа",
 		RETURN: "Возврат",
 		DEPOSIT: "Внесение",
@@ -114,7 +115,7 @@ const columns = computed(
 				c("business_point", "Точка", "point"),
 				c("cashier", "Кассир", "employee"),
 				c("receipt_count", "Чеки"),
-				c("gross_sales", "Выручка", "money"),
+				c("gross_sales", "Продажи после скидок", "money"),
 				c("returns_total", "Возвраты", "money"),
 				c("net_sales", "Чистая выручка", "money"),
 				c("average_check", "Средний чек", "money"),
@@ -250,6 +251,7 @@ const filterFields = computed(() => {
 			options: [
 				"OPEN_SHIFT",
 				"CLOSE_SHIFT",
+				"CASH_COUNT",
 				"REMOVE_ITEM",
 				"PRICE_OVERRIDE",
 				"DISCOUNT",
@@ -683,15 +685,38 @@ onMounted(init);
 					</tbody>
 				</table></template
 			><template v-else
-				><div class="shift-detail-kpis">
+				><div class="document-summary">
+					<span>Точка <b>{{ pointMap[selectedDoc.business_point] || selectedDoc.business_point }}</b></span>
+					<span>Кассир <b>{{ employeeMap[selectedDoc.cashier] || selectedDoc.cashier || "—" }}</b></span>
+					<span>Тип <b>{{ selectedDoc.shift_type || "—" }}</b></span>
+					<span>Статус <b>{{ selectedDoc.status }}</b></span>
+					<span>Открыта <b>{{ date(selectedDoc.opened_at) }}</b></span>
+					<span>Закрыта <b>{{ date(selectedDoc.closed_at) }}</b></span>
+				</div>
+				<div class="shift-detail-kpis">
 					<span
-						>Чистая выручка <b>{{ money(selectedDoc.net_sales) }}</b></span
+						>Продажи до скидок <b>{{ money(selectedDoc.sales_before_discount) }}</b></span
 					><span
-						>Чеков <b>{{ selectedDoc.receipt_count }}</b></span
+						>Скидки <b>{{ money(selectedDoc.discounts_total) }}</b></span
+					><span>Скидки за отзывы <b>{{ money(selectedDoc.review_discounts) }}</b></span
+					><span>Прочие скидки <b>{{ money(selectedDoc.other_discounts) }}</b></span
+					><span>Чеков со скидкой <b>{{ selectedDoc.discounted_receipt_count || 0 }} ({{ Number(selectedDoc.discount_conversion || 0).toFixed(1) }}%)</b></span
 					><span
-						>Средний чек <b>{{ money(selectedDoc.average_check) }}</b></span
+						>Продажи после скидок <b>{{ money(selectedDoc.gross_sales) }}</b></span
 					><span
-						>Касса <b>{{ money(selectedDoc.expected_cash) }}</b></span
+						>Возвраты <b>{{ money(selectedDoc.returns_total) }}</b></span
+					><span>Чистая выручка <b>{{ money(selectedDoc.net_sales) }}</b></span
+					><span>Чеков <b>{{ selectedDoc.receipt_count }}</b></span
+					><span>Средний чек <b>{{ money(selectedDoc.average_check) }}</b></span
+					><span>Отзывы <b>{{ selectedDoc.reviews_count || 0 }}</b></span
+					><span>Клуб <b>{{ selectedDoc.club_registrations || 0 }}</b></span
+					><span>Подарки <b>{{ selectedDoc.gift_orders || 0 }} ({{ selectedDoc.gift_orders_1 || 0 }}/{{ selectedDoc.gift_orders_2 || 0 }}/{{ selectedDoc.gift_orders_3 || 0 }})</b></span
+					><span>Наличные <b>{{ money(selectedDoc.cash_sales) }}</b></span
+					><span>Карта <b>{{ money(selectedDoc.card_sales) }}</b></span
+					><span>QR <b>{{ money(selectedDoc.qr_sales) }}</b></span
+					><span>При открытии <b>{{ money(selectedDoc.opening_cash) }}</b></span
+					><span>Ожидается <b>{{ money(selectedDoc.expected_cash) }}</b></span
+					><span>При закрытии <b>{{ money(selectedDoc.closing_cash) }}</b></span
 					>
 				</div>
 				<h3>Документы смены</h3>
@@ -714,6 +739,16 @@ onMounted(init);
 							<td>{{ money(x.total_amount) }}</td>
 						</tr>
 					</tbody>
+				</table>
+				<h3>Движение наличных</h3>
+				<table>
+					<thead><tr><th>Время</th><th>Операция</th><th>Сумма</th><th>Причина</th></tr></thead>
+					<tbody><tr v-for="x in selectedDoc.cash_movements" :key="x.name"><td>{{ date(x.posting_datetime) }}</td><td>{{ x.movement_type === "Deposit" ? "Внесение" : "Выплата" }}</td><td>{{ money(x.amount) }}</td><td>{{ x.reason || "—" }}</td></tr></tbody>
+				</table>
+				<h3>Действия кассира</h3>
+				<table>
+					<thead><tr><th>Время</th><th>Действие</th><th>Количество</th><th>Подробности</th></tr></thead>
+					<tbody><tr v-for="x in selectedDoc.actions" :key="x.name"><td>{{ date(x.action_datetime) }}</td><td>{{ actionLabel(x.action_type) }}</td><td>{{ x.metric_value || 0 }}</td><td>{{ x.details || x.reference_document || "—" }}</td></tr></tbody>
 				</table></template
 			></AppModal
 		>
