@@ -27,14 +27,26 @@ export function registerHardwareSettingsIpc(
         baseUrl: string;
         taxationType: string;
         taxType: string;
+        configureDevice?: boolean;
       }
     ) => {
+      const { configureDevice, ...settings } = value;
       const saved = atolSettingsStore.save({
-        ...value,
+        ...settings,
         baseUrl: "http://127.0.0.1:16732/api/v2",
       });
       if (saved.enabled) {
         await atolManager?.ensureReady();
+        if (configureDevice) {
+          if (!atolManager)
+            throw new Error("Настройка реального АТОЛ недоступна в учебном режиме");
+          await atolManager.configureAtol1F();
+          diagnostics.record({
+            source: "fiscal",
+            eventType: "atol.device_configured",
+            message: "АТОЛ 1Ф добавлен в Web Requests и активирован",
+          });
+        }
         const health = await fiscalProvider?.healthCheck();
         if (health && !health.ready) throw new Error(health.message);
       }
