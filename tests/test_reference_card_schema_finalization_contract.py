@@ -73,6 +73,18 @@ def test_point_contacts_timezone_and_working_hours_round_trip_contract():
 	assert '"opens_at": _normalize_clock_time(row.get("opens_at"))' in api
 
 
+def test_point_card_shows_generated_system_code_as_read_only():
+	ui = source("frontend/src/pages/ReferencesPage.vue")
+	assert "Системный код точки" in ui
+	assert 'v-model="form.point_code"' in ui
+	point_code_input = ui.split('v-model="form.point_code"', 1)[1].split("/>", 1)[0]
+	assert "readonly" in point_code_input
+
+	api = source("raspechatka/api/references.py")
+	point_fields = api.split('elif reference == "points":', 1)[1].split(")", 1)[0]
+	assert '"point_code"' not in point_fields
+
+
 def test_pos_rules_have_one_network_wide_source_of_truth():
 	settings = doctype("pos_sales_settings")
 	assert settings["issingle"] == 1

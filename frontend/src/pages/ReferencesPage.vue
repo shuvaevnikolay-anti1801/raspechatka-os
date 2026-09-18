@@ -660,6 +660,12 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 								</option>
 							</select></label
 						>
+						<label v-if="form.point_code"
+							>Системный код точки<input
+								v-model="form.point_code"
+								readonly
+								aria-readonly="true"
+						/></label>
 					</div>
 				</div>
 				<div class="form-section">
