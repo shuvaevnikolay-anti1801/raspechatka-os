@@ -33,5 +33,7 @@ def test_receipt_search_keeps_pos_connection_point_authoritative():
 
 def test_sync_fetches_large_master_data_only_once_per_cycle():
 	source = (ROOT / "pos/src/main/sync.ts").read_text(encoding="utf-8")
-	perform_sync = source[source.index("export async function performSync") : source.index("export function startAutomaticSync")]
+	perform_sync = source[
+		source.index("export async function performSync") : source.index("export function startAutomaticSync")
+	]
 	assert perform_sync.count("await applyBootstrap()") == 1
