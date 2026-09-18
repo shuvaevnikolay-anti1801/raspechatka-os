@@ -7,7 +7,7 @@ const STATE_KEY='fiscal_shift_transition_v1'
 
 type ShiftTransition =
   | {action:'open';shiftId:string;openedAt:string;cashierName:string;startedAt:string}
-  | {action:'close';shiftId:string;startedAt:string}
+  | {action:'close';shiftId:string;cashierName?:string;startedAt:string}
 
 export type ShiftRecoveryResult = {
   recovered:boolean
@@ -65,7 +65,7 @@ export class ShiftCoordinator {
       }
 
       try{
-        await this.fiscalProvider.openShift()
+        await this.fiscalProvider.openShift(transition.cashierName)
         this.clearTransition()
         return {recovered:true,pending:false,message:'Фискальная смена ККТ открыта после восстановления связи.'}
       }catch(error){
@@ -81,7 +81,7 @@ export class ShiftCoordinator {
     }
 
     try{
-      await this.fiscalProvider.closeShift()
+      await this.fiscalProvider.closeShift(transition.cashierName)
       this.clearTransition()
       return {recovered:true,pending:false,message:'Отложенное закрытие фискальной смены ККТ завершено.'}
     }catch(error){
@@ -115,7 +115,7 @@ export class ShiftCoordinator {
     // эквайринга и recovery-операций. Это не означает, что фискальная смена
     // закрыта: для неё сохраняется отдельный pending transition.
     const summary=this.database.closeShift()
-    this.saveTransition({action:'close',shiftId:current.id,startedAt:new Date().toISOString()})
+    this.saveTransition({action:'close',shiftId:current.id,cashierName:current.cashierName,startedAt:new Date().toISOString()})
 
     try{
       await this.recoverPendingTransition()

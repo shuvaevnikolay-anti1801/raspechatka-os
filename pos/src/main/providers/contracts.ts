@@ -72,8 +72,8 @@ export interface PaymentProvider {
 export interface FiscalProvider {
   healthCheck(): Promise<DeviceHealth>
   getShiftStatus(): Promise<FiscalShiftStatus>
-  openShift(): Promise<void>
-  closeShift(): Promise<{message:string;reportNumber?:string}>
+  openShift(operatorName?:string): Promise<void>
+  closeShift(operatorName?:string): Promise<{message:string;reportNumber?:string}>
   fiscalizeSale(request: FiscalRequest): Promise<FiscalResult>
   fiscalizeReturn(request: FiscalReturnRequest): Promise<FiscalResult>
   getOperationStatus(request:{operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number}):Promise<FiscalOperationStatus>

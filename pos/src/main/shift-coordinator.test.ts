@@ -11,6 +11,10 @@ import { ShiftCoordinator } from './shift-coordinator'
 
 class ShiftFiscalProvider implements FiscalProvider {
   state:FiscalShiftStatus['state']='opened'
+  failClose=false
+  lastOpenOperator?:string
+  lastCloseOperator?:string
+
   async healthCheck():Promise<DeviceHealth>{
     return this.state==='expired'
       ?{ready:false,status:'error',message:'expired'}
@@ -23,8 +27,13 @@ class ShiftFiscalProvider implements FiscalProvider {
         ?{open:true,state:'expired',message:'expired'}
         :{open:true,state:'opened',message:'open'}
   }
-  async openShift(){this.state='opened'}
-  async closeShift(){this.state='closed';return {message:'closed'}}
+  async openShift(operatorName?:string){this.lastOpenOperator=operatorName;this.state='opened'}
+  async closeShift(operatorName?:string){
+    this.lastCloseOperator=operatorName
+    if(this.failClose)throw new Error('ККТ недоступна')
+    this.state='closed'
+    return {message:'closed'}
+  }
   async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{return {receiptNumber:'1'}}
   async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{return {receiptNumber:'2'}}
   async getOperationStatus():Promise<FiscalOperationStatus>{return {status:'not_found'}}
@@ -120,5 +129,33 @@ describe('ShiftCoordinator recovery',()=>{
 
     expect(shift.id).toBe('shift-open')
     expect(database.currentShift()?.id).toBe('shift-open')
+  })
+
+  it('preserves the cashier name when KKT close is recovered after POS restart',async()=>{
+    database.openShift({
+      id:'shift-restart',openedAt:'2026-09-18T08:00:00.000Z',
+      cashierId:'employee-1',cashierName:'Мария Иванова'
+    })
+    fiscal.state='opened'
+    fiscal.failClose=true
+
+    await coordinator.closeShift(false)
+
+    const pending=JSON.parse(database.getState('fiscal_shift_transition_v1')||'{}')
+    expect(pending.cashierName).toBe('Мария Иванова')
+    expect(database.currentShift()).toBeNull()
+
+    database.close()
+    database=new PosDatabase(join(dir,'pos.sqlite'))
+    fiscal=new ShiftFiscalProvider()
+    fiscal.state='opened'
+    coordinator=new ShiftCoordinator(database,fiscal)
+
+    const result=await coordinator.recoverPendingTransition()
+
+    expect(result.recovered).toBe(true)
+    expect(result.pending).toBe(false)
+    expect(fiscal.lastCloseOperator).toBe('Мария Иванова')
+    expect(database.getState('fiscal_shift_transition_v1')).toBe('')
   })
 })
