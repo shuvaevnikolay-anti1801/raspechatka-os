@@ -5,6 +5,8 @@
  "issingle": 1,
  "field_order": [
   "enabled",
+  "frozen",
+  "direct_cutover_enabled",
   "business_point",
   "source_id",
   "shared_secret",
@@ -15,6 +17,18 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Принимать данные Google"
+  },
+  {
+   "fieldname": "frozen",
+   "fieldtype": "Check",
+   "label": "Заморозить запись из Google",
+   "default": "0"
+  },
+  {
+   "fieldname": "direct_cutover_enabled",
+   "fieldtype": "Check",
+   "label": "Прямой клуб OS включён",
+   "default": "0"
   },
   {
    "fieldname": "business_point",
@@ -52,4 +66,3 @@
   }
  ]
 }
-
