@@ -226,6 +226,7 @@ def get_stock_turnover(
 
 
 @frappe.whitelist()
+@access_contract(area="page.warehouse.movements", action="read", scope="point")
 def get_stock_movements(
 	from_date=None,
 	to_date=None,
@@ -323,7 +324,8 @@ def get_stock_movements(
 				"Stock Ledger Entry",
 				filters=filters,
 				or_filters=_effective_ledger_or_filters(),
-				fields=["count(name) as total"],
+				fields=[{"COUNT": "*", "as": "total"}],
+				limit_page_length=1,
 			)[0].total
 		),
 		"from_date": str(from_date),
