@@ -429,6 +429,7 @@ def save_pos_sales_settings(data):
 		"allow_free_price",
 		"allow_discounts",
 		"max_discount_percent",
+		"review_discount_per_review",
 		"allow_remove_cart_item",
 		"accepts_cash",
 		"accepts_card",

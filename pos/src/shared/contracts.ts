@@ -24,7 +24,36 @@ export type Customer = {
   phone: string
   discountPercent: number
 }
-export type CartLine = { productId: string; name: string; quantity: number; unitPriceMinor: number; discountPercent?: number }
+export type CartLine = {
+  productId: string
+  name: string
+  quantity: number
+  unitPriceMinor: number
+  discountPercent?: number
+  catalogUnitPriceMinor?: number
+  priceOverrideReason?: string
+  preventDiscounts?: boolean
+}
+export type ManualDiscountType = 'percent' | 'amount'
+export type ManualDiscount = { type: ManualDiscountType; value: number }
+export type DiscountRulesSnapshot = {
+  allowDiscounts: boolean
+  maxDiscountPercent: number
+  reviewDiscountPerReviewMinor: number
+}
+export type DiscountBreakdown = {
+  subtotalMinor: number
+  discountableSubtotalMinor: number
+  clubDiscountPercent: number
+  clubDiscountMinor: number
+  reviewCount: number
+  reviewDiscountMinor: number
+  manualDiscountType?: ManualDiscountType
+  manualDiscountValue: number
+  manualDiscountMinor: number
+  totalDiscountMinor: number
+  totalMinor: number
+}
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string }
@@ -76,6 +105,16 @@ export type CompleteSaleRequest = {
   customer?: Customer | null
   receiptDiscountPercent?: number
   clubDiscountPercent?: number
+  clubDiscountMinor?: number
+  reviewCount?: number
+  reviewDiscountMinor?: number
+  manualDiscount?: ManualDiscount | null
+  manualDiscountType?: ManualDiscountType | null
+  manualDiscountValue?: number
+  manualDiscountMinor?: number
+  discountBreakdown?: DiscountBreakdown
+  totalDiscountMinor?: number
+  discountRules?: DiscountRulesSnapshot
   cashReceivedMinor?: number
   remotePaymentConfirmation?: RemotePaymentConfirmation
   order?: { phone:string; comment?:string; dueAt?:string }
@@ -118,7 +157,16 @@ export type PrintJobSummary = {
   printedAt?:string
 }
 
-export type HeldReceipt = { id: string; label: string; lines: CartLine[]; customer?: Customer | null; discountPercent: number; createdAt: string }
+export type HeldReceipt = {
+  id: string
+  label: string
+  lines: CartLine[]
+  customer?: Customer | null
+  discountPercent: number
+  reviewCount?: number
+  manualDiscount?: ManualDiscount | null
+  createdAt: string
+}
 export type CashOperationType = 'deposit' | 'withdrawal'
 export type CashOperation = { id: string; type: CashOperationType; amountMinor: number; reason: string; createdAt: string }
 export type ShiftSummary = {

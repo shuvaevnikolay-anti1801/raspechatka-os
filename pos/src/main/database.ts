@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
   CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
-  CashCount, CashCountLine, CleanerVisitResult, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
+  CashCount, CashCountLine, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
   SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
@@ -141,6 +141,7 @@ export class PosDatabase {
     this.ensureColumn('sales', 'customer_name', 'TEXT')
     this.ensureColumn('sales', 'receipt_discount_percent', 'REAL NOT NULL DEFAULT 0')
     this.ensureColumn('sales', 'remote_payment_confirmation_json', 'TEXT')
+    this.ensureColumn('sales', 'discount_breakdown_json', 'TEXT')
     this.ensureColumn('sales', 'status', "TEXT NOT NULL DEFAULT 'completed'")
     this.ensureColumn('customers', 'purchase_count', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('customers', 'total_spent_minor', 'INTEGER NOT NULL DEFAULT 0')
@@ -260,11 +261,11 @@ export class PosDatabase {
     return (this.db.prepare('SELECT id saleId,fiscal_number receiptNumber,total_minor totalMinor FROM sales WHERE client_request_id=?').get(id) as {saleId:string;receiptNumber:string;totalMinor:number}|undefined)??null
   }
 
-  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;clubDiscountPercent?:number;lines:CartLine[];payments:PaymentPart[];remotePaymentConfirmation?:RemotePaymentConfirmation;order?:{phone:string;comment?:string;dueAt?:string}}):void {
+  saveSale(input:{id:string;clientRequestId:string;shiftId:string;totalMinor:number;paymentMethod:string;fiscalNumber:string;createdAt:string;customerId?:string;customerName?:string;receiptDiscountPercent:number;clubDiscountPercent?:number;clubDiscountMinor?:number;reviewCount?:number;reviewDiscountMinor?:number;manualDiscount?:ManualDiscount|null;manualDiscountType?:ManualDiscount['type']|null;manualDiscountValue?:number;manualDiscountMinor?:number;totalDiscountMinor?:number;discountBreakdown?:DiscountBreakdown;lines:CartLine[];payments:PaymentPart[];remotePaymentConfirmation?:RemotePaymentConfirmation;order?:{phone:string;comment?:string;dueAt?:string}}):void {
     this.db.exec('BEGIN')
     try {
-      this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,remote_payment_confirmation_json,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerId??null,input.customerName??null,input.receiptDiscountPercent,input.remotePaymentConfirmation?JSON.stringify(input.remotePaymentConfirmation):null,input.createdAt)
+      this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,remote_payment_confirmation_json,discount_breakdown_json,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerId??null,input.customerName??null,input.receiptDiscountPercent,input.remotePaymentConfirmation?JSON.stringify(input.remotePaymentConfirmation):null,input.discountBreakdown?JSON.stringify(input.discountBreakdown):null,input.createdAt)
       const lineRaw=input.lines.map((line)=>Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent??0)/100)))
       const rawTotal=lineRaw.reduce((sum,x)=>sum+x,0)
       const insertLine=this.db.prepare('INSERT INTO sale_items (sale_id,product_id,name,quantity,unit_price_minor,discount_percent,line_total_minor) VALUES (?,?,?,?,?,?,?)')
@@ -301,7 +302,7 @@ export class PosDatabase {
     const sale=this.listSales().find((x)=>x.id===id);if(!sale)throw new Error('Чек не найден')
     const lines=this.db.prepare(`SELECT sale_items.id,product_id productId,name,quantity,unit_price_minor unitPriceMinor,
       discount_percent discountPercent,COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
-      FROM sale_items WHERE sale_id=? ORDER BY id`).all(id) as SaleDetails['lines']
+      FROM sale_items WHERE sale_id=? ORDER BY id`).all(id) as unknown as SaleDetails['lines']
     const payments=this.db.prepare('SELECT method,amount_minor amountMinor,transaction_id transactionId FROM sale_payments WHERE sale_id=? ORDER BY id').all(id) as PaymentPart[]
     const rawRemote=(this.db.prepare('SELECT remote_payment_confirmation_json value FROM sales WHERE id=?').get(id) as {value:string|null}|undefined)?.value
     return {...sale,lines,payments,remotePaymentConfirmation:rawRemote?JSON.parse(rawRemote) as RemotePaymentConfirmation:undefined}

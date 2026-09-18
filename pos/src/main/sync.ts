@@ -24,7 +24,9 @@ export function buildBootState(database:PosDatabase):BootState{
   }
 }
 
-export async function performSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
+const syncFlights=new WeakMap<PosDatabase,Promise<BootState>>()
+
+async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
   const config=connectionStore.load()
   if(!config)throw new Error('Сначала подключите кассу к Распечатка OS по Device ID и Token')
 
@@ -89,6 +91,16 @@ export async function performSync(database:PosDatabase,connectionStore:Connectio
     throw new Error(syncError||'Не удалось связаться с Распечатка OS')
   }
   return buildBootState(database)
+}
+
+export function performSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
+  const active=syncFlights.get(database)
+  if(active)return active
+  const flight=runSync(database,connectionStore,cashierId).finally(()=>{
+    if(syncFlights.get(database)===flight)syncFlights.delete(database)
+  })
+  syncFlights.set(database,flight)
+  return flight
 }
 
 export function startAutomaticSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId:()=>string|undefined=()=>undefined):()=>void{

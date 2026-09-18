@@ -153,10 +153,8 @@ def _receipt_mirror(point_name):
 	return result
 
 
-def _rules(point):
-	rules = get_pos_sales_rules()
-	rules["reviewDiscountPerReviewMinor"] = max(0, round(flt(point.review_discount_per_review) * 100))
-	return rules
+def _rules(_point):
+	return get_pos_sales_rules()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -254,27 +252,34 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 			title="POS club discount mismatch",
 		)
 	if receipt_discount <= 0:
-		return 0, 0, 0, 0
+		return 0, 0, 0, 0, 0, 0
 	club_discount = min(
 		receipt_discount,
 		raw_total - round(raw_total * (1 - reported_club_percent / 100)),
 	)
+	if "clubDiscountMinor" in payload:
+		club_discount = min(receipt_discount, max(0, round(flt(payload.get("clubDiscountMinor")))))
 	remaining = max(0, receipt_discount - club_discount)
-	per_review = max(
-		0,
-		round(
-			flt(
-				frappe.db.get_value("Business Point", connection.business_point, "review_discount_per_review")
-			)
-			* 100
-		),
-	)
+	if "reviewDiscountMinor" in payload or "manualDiscountMinor" in payload:
+		review_discount = min(remaining, max(0, round(flt(payload.get("reviewDiscountMinor")))))
+		remaining -= review_discount
+		manual_discount = min(remaining, max(0, round(flt(payload.get("manualDiscountMinor")))))
+		remaining -= manual_discount
+		return (
+			max(0, round(flt(payload.get("reviewCount")))),
+			club_discount,
+			review_discount,
+			manual_discount,
+			remaining,
+			reported_club_percent,
+		)
+	per_review = max(0, round(flt(get_pos_sales_rules()["reviewDiscountPerReviewMinor"])))
 	if not per_review or not remaining:
-		return 0, 0, remaining, reported_club_percent
+		return 0, club_discount, 0, 0, remaining, reported_club_percent
 	review_count = max(0, round(remaining / per_review))
 	review_discount = min(remaining, review_count * per_review)
 	other_discount = max(0, remaining - review_discount)
-	return review_count, review_discount, other_discount, reported_club_percent
+	return review_count, club_discount, review_discount, 0, other_discount, reported_club_percent
 
 
 def _sale_receipt(payload, cashier_id, connection):
@@ -282,7 +287,14 @@ def _sale_receipt(payload, cashier_id, connection):
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
 	gross, raw, allocated = _allocate_final_amounts(lines, paid_total)
-	review_count, review_discount, receipt_other_discount, club_discount_percent = _review_breakdown(
+	(
+		review_count,
+		club_discount,
+		review_discount,
+		manual_discount,
+		receipt_other_discount,
+		club_discount_percent,
+	) = _review_breakdown(
 		payload, connection, sum(raw), paid_total
 	)
 	line_discount = sum(gross) - sum(raw)
@@ -322,12 +334,25 @@ def _sale_receipt(payload, cashier_id, connection):
 		"client": payload.get("customerId"),
 		"comment": f"Фискальный чек: {payload.get('fiscalNumber')}" if payload.get("fiscalNumber") else None,
 		"review_discount_amount": review_discount / 100,
+		"club_discount_percent": club_discount_percent,
+		"club_discount_amount": club_discount / 100,
+		"review_count": review_count,
+		"manual_discount_type": payload.get("manualDiscountType"),
+		"manual_discount_value": (
+			flt(payload.get("manualDiscountValue")) / 100
+			if payload.get("manualDiscountType") == "amount"
+			else flt(payload.get("manualDiscountValue"))
+		),
+		"manual_discount_amount": manual_discount / 100,
 		"other_discount_amount": (receipt_other_discount + line_discount) / 100,
 		"source_payload_json": frappe.as_json(
 			{
 				"fiscalNumber": payload.get("fiscalNumber"),
 				"clubDiscountPercent": club_discount_percent,
 				"receiptDiscountPercent": flt(payload.get("receiptDiscountPercent")),
+				"reviewCount": review_count,
+				"reviewDiscountMinor": review_discount,
+				"manualDiscountMinor": manual_discount,
 			}
 		),
 		"items": items,

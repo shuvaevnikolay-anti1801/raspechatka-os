@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { calculateTotalMinor } from '../shared/cart'
+import { calculateDiscountBreakdown, calculateTotalMinor } from '../shared/cart'
 import type {
   CartLine, CompleteSaleRequest, CompleteSaleResult, CreateReturnRequest, PaymentPart, ReturnResult, SaleDetails
 } from '../shared/contracts'
@@ -44,7 +44,11 @@ export class PosTransactionEngine {
   }
 
   async completeSale(request:CompleteSaleRequest,shiftId:string,totalMinor?:number):Promise<CompleteSaleResult>{
-    const amount=totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
+    const recalculated=request.discountRules?calculateDiscountBreakdown(
+      request.lines,request.discountRules,request.clubDiscountPercent??0,request.reviewCount??0,request.manualDiscount,
+    ):undefined
+    const amount=totalMinor??recalculated?.totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
+    if(totalMinor!=null&&recalculated&&totalMinor!==recalculated.totalMinor)throw new Error('Итог чека не совпадает с пересчётом скидок')
     this.validatePayments(request.payments,amount,'оплаты')
     if(request.payments.some((payment)=>payment.method==='remote_payment')&&!request.remotePaymentConfirmation?.confirmed){
       throw new Error('Удалённая оплата не подтверждена кассиром. Операция не начата.')
@@ -160,6 +164,12 @@ export class PosTransactionEngine {
           fiscalNumber:current.fiscalReceiptNumber!,createdAt:current.createdAt,
           customerId:request.customer?.id,customerName:request.customer?.name,
           receiptDiscountPercent:request.receiptDiscountPercent??0,clubDiscountPercent:request.clubDiscountPercent??0,
+          clubDiscountMinor:request.clubDiscountMinor,
+          reviewCount:request.reviewCount,reviewDiscountMinor:request.reviewDiscountMinor,
+          manualDiscount:request.manualDiscount,manualDiscountType:request.manualDiscountType,
+          manualDiscountValue:request.manualDiscountValue,manualDiscountMinor:request.manualDiscountMinor,
+          totalDiscountMinor:request.totalDiscountMinor,
+          discountBreakdown:request.discountBreakdown,
           lines:request.lines,payments:current.confirmedPayments,
           remotePaymentConfirmation:request.remotePaymentConfirmation,order:request.order
         })

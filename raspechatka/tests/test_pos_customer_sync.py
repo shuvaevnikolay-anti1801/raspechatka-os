@@ -38,9 +38,7 @@ class TestPosCustomerSync(TestCase):
 		get_value = Mock(
 			side_effect=[
 				Row(active=1, club_status="Активен", discount_percent=5),
-				0,
 				Row(active=0, club_status="Заблокирован", discount_percent=0),
-				0,
 			]
 		)
 		fake = SimpleNamespace(db=SimpleNamespace(get_value=get_value), log_error=Mock())
@@ -50,7 +48,11 @@ class TestPosCustomerSync(TestCase):
 			patch.object(
 				pos_v2,
 				"get_pos_sales_rules",
-				return_value={"allowDiscounts": True, "maxDiscountPercent": 10},
+				return_value={
+					"allowDiscounts": True,
+					"maxDiscountPercent": 10,
+					"reviewDiscountPerReviewMinor": 0,
+				},
 			),
 		):
 			current = pos_v2._review_breakdown(
@@ -60,8 +62,8 @@ class TestPosCustomerSync(TestCase):
 				{"customerId": "CLIENT-1", "clubDiscountPercent": 5}, connection, 10000, 9500
 			)
 
-		self.assertEqual(current, (0, 0, 0, 5.0))
-		self.assertEqual(offline, (0, 0, 0, 5.0))
+		self.assertEqual(current, (0, 500, 0, 0, 0, 5.0))
+		self.assertEqual(offline, (0, 500, 0, 0, 0, 5.0))
 		fake.log_error.assert_called_once()
 
 	def test_receipt_ingestion_persists_explicit_club_percent_for_history(self):
@@ -76,3 +78,25 @@ class TestPosCustomerSync(TestCase):
 		self.assertIn(
 			'payload.get("clubDiscountPercent", payload.get("receiptDiscountPercent"))', receipt_source
 		)
+
+	def test_explicit_discount_breakdown_is_not_reconstructed_from_remainder(self):
+		fake = SimpleNamespace(db=SimpleNamespace(get_value=Mock(return_value=None)), log_error=Mock())
+		with (
+			patch.object(pos_v2, "frappe", fake),
+			patch.object(
+				pos_v2,
+				"get_pos_sales_rules",
+				return_value={
+					"allowDiscounts": True,
+					"maxDiscountPercent": 30,
+					"reviewDiscountPerReviewMinor": 500,
+				},
+			),
+		):
+			result = pos_v2._review_breakdown(
+				{"reviewCount": 2, "reviewDiscountMinor": 1000, "manualDiscountMinor": 700},
+				SimpleNamespace(business_point="POINT-1"),
+				10000,
+				8000,
+			)
+		self.assertEqual(result, (2, 0, 1000, 700, 300, 0))

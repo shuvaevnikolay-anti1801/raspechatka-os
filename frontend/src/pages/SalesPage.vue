@@ -21,6 +21,7 @@ const posSettings = reactive({
 	allow_free_price: 0,
 	allow_discounts: 1,
 	max_discount_percent: 100,
+	review_discount_per_review: 0,
 	allow_remove_cart_item: 1,
 	accepts_cash: 1,
 	accepts_card: 1,
@@ -479,7 +480,7 @@ onMounted(init);
 							:true-value="1"
 							:false-value="0"
 							:disabled="!canEditIntegration"
-						/>Свободная цена</label
+						/>Разрешить изменение цены позиции</label
 					>
 					<label class="check-field"
 						><input
@@ -496,6 +497,14 @@ onMounted(init);
 							type="number"
 							min="0"
 							max="100"
+							:disabled="!canEditIntegration || !posSettings.allow_discounts"
+					/></label>
+					<label
+						>Скидка за один отзыв, ₽<input
+							v-model.number="posSettings.review_discount_per_review"
+							type="number"
+							min="0"
+							step="0.01"
 							:disabled="!canEditIntegration || !posSettings.allow_discounts"
 					/></label>
 					<label class="check-field"
