@@ -2,7 +2,6 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
-import ClubShadowPanel from "../components/ClubShadowPanel.vue";
 const stats = reactive({}),
 	form = reactive({ discount_rules: [] }),
 	loading = ref(true),
@@ -280,7 +279,6 @@ onMounted(load);
 				</div></div
 		></template>
 		<p v-if="error" class="form-error">{{ error }}</p>
-		<ClubShadowPanel v-if="canAccess('page.clients.club', 'Admin')" />
 		<AppModal
 			v-if="recalculationOpen"
 			title="Пересчитать скидки всей клиентской базы?"

@@ -204,11 +204,6 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 					<small>СКИДКА КЛУБА</small><b>{{ Number(form.discount_percent || 0) }}%</b>
 				</div>
 			</div>
-			<p v-if="form.legacy_club_id" class="empty-panel">
-				Параллельная копия Google ·
-				{{ form.legacy_club_synced_at || "ожидание синхронизации" }}. Изменения пока
-				вносятся в действующей системе клуба.
-			</p>
 			<div class="editor-tabs">
 				<button
 					v-for="item in [
@@ -377,11 +372,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 				<div class="footer-actions">
 					<button class="button button-secondary" @click="detail = null">Закрыть</button
 					><button
-						v-if="
-							canEdit &&
-							!form.legacy_club_id &&
-							(tab === 'profile' || tab === 'club')
-						"
+						v-if="canEdit && (tab === 'profile' || tab === 'club')"
 						class="button button-primary"
 						:disabled="saving"
 						@click="save"
