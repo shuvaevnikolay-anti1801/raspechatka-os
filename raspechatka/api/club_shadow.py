@@ -8,6 +8,7 @@ import frappe
 from frappe.utils import get_datetime, now_datetime
 
 from raspechatka.access import get_scope, require_access
+from raspechatka.access_contract import access_contract
 from raspechatka.club_sync_protocol import digest, identifier, truth, verify
 from raspechatka.raspechatka_os.doctype.client.client import normalize_phone
 
@@ -33,16 +34,47 @@ def _validate_point(point):
 	return point
 
 
+def _recent_direct_events():
+	rows = frappe.get_all(
+		"Client Event Log",
+		filters={
+			"event_type": [
+				"in",
+				[
+					"CLIENT_CREATED",
+					"CLIENT_OPENED",
+					"CHANNEL_CONNECTED",
+					"CHANNEL_DISCONNECTED",
+					"BOTHELP_WEBHOOK",
+				],
+			]
+		},
+		fields=["event_datetime", "event_type", "channel", "status", "error"],
+		order_by="event_datetime desc",
+		limit_page_length=20,
+	)
+	# The readiness panel must never surface legacy tracebacks or request fragments.
+	for row in rows:
+		row["has_error"] = bool(row.pop("error", None))
+	return rows
+
+
 @frappe.whitelist()
+@access_contract(area="page.clients.club", action="admin", scope="network")
 def status():
 	_admin()
 	s = _settings()
 	return {
 		"enabled": bool(s.enabled),
+		"frozen": bool(s.frozen),
+		"direct_cutover_enabled": bool(s.direct_cutover_enabled),
 		"business_point": s.business_point,
 		"source_id": s.source_id,
 		"secret_configured": bool(s.get_password("shared_secret", raise_exception=False)),
 		"clients": frappe.db.count("Client", {"legacy_club_id": ["is", "set"]}),
+		"canonical_clients": frappe.db.count("Client"),
+		"directly_updated_clients": frappe.db.count("Client", {"direct_club_updated_at": ["is", "set"]}),
+		"differences": frappe.db.count("Club Sync Receipt", {"outcome": "DIFFERENCE"}),
 		"last_received_at": s.last_received_at,
 		"recent": frappe.get_all(
 			"Club Sync Receipt",
@@ -50,6 +82,7 @@ def status():
 			order_by="received_at desc",
 			limit_page_length=20,
 		),
+		"recent_direct_events": _recent_direct_events(),
 		"points": frappe.get_all(
 			"Business Point", filters={"active": 1}, fields=["name", "point_name", "city", "address"]
 		),
@@ -57,6 +90,7 @@ def status():
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.clients.club", action="admin", scope="network")
 def configure(data):
 	_admin()
 	data = frappe.parse_json(data)
@@ -70,6 +104,10 @@ def configure(data):
 			raise ValueError("SECRET_MINIMUM_32_CHARACTERS")
 		s.shared_secret = data["shared_secret"]
 	s.enabled = int(truth(data.get("enabled")))
+	s.frozen = int(truth(data.get("frozen")))
+	s.direct_cutover_enabled = int(truth(data.get("direct_cutover_enabled")))
+	if s.direct_cutover_enabled and not s.frozen:
+		raise ValueError("FREEZE_REQUIRED_FOR_DIRECT_CUTOVER")
 	if s.enabled and not (
 		data.get("shared_secret") or s.get_password("shared_secret", raise_exception=False)
 	):
@@ -147,6 +185,8 @@ def _apply(data, settings):
 		raise ValueError("OS_CLIENT_REQUIRES_MANUAL_MATCH")
 	if int(data.get("revision") or 0) <= int(doc.get("legacy_club_revision") or 0):
 		return "MATCH"
+	if doc.get("direct_club_updated_at"):
+		raise ValueError("CANONICAL_STATE_NEWER")
 	# One source row at a time; the receiver holds a transaction row lock.
 	doc.flags.club_shadow_import = True
 	doc.client_id = legacy_id
@@ -226,10 +266,13 @@ def _apply(data, settings):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="webhook", scope="provider")
 def receive(payload=None, timestamp=None, signature=None):
 	s = _settings()
 	if not s.enabled:
 		return {"ok": False, "error": "SYNC_DISABLED"}
+	if s.frozen or s.direct_cutover_enabled:
+		return {"ok": False, "error": "SHADOW_FROZEN"}
 	try:
 		data = verify(
 			payload, timestamp, signature, s.get_password("shared_secret", raise_exception=False), time.time()
@@ -265,6 +308,7 @@ def receive(payload=None, timestamp=None, signature=None):
 			"OS_CLIENT_REQUIRES_MANUAL_MATCH",
 			"UNKNOWN_CHANNEL",
 			"AUDIT_ID_REQUIRED",
+			"CANONICAL_STATE_NEWER",
 		}
 		return {"ok": False, "error": str(exc) if str(exc) in known else "INVALID_SOURCE_VALUE"}
 	except Exception:

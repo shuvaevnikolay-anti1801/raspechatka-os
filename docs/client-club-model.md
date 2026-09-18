@@ -23,13 +23,35 @@
 
 Фактическая отправка сообщений будет подключена к провайдеру рассылок отдельной интеграцией. Модель и интерфейс уже не зависят от Google Sheets или МоегоСклада.
 
-## Публичная регистрация
+## Публичный gateway и прямой клуб OS
 
-Существующая публичная страница остаётся на текущем месте. «Распечатка ОС» не создаёт и не публикует вторую страницу регистрации или входа. Для постепенного переключения существующей страницы предусмотрен совместимый шлюз `/api/method/raspechatka.api.clients.club_gateway`. Он поддерживает текущий JSONP-запрос `action=get_client&link_token=...&callback=...`.
+`Client` в Распечатка OS является основным источником статуса клуба, согласий, каналов и скидки. Google-поля используются только для сверки и миграции; внешние `discount` и `active_channels` gateway не принимает как рабочие значения.
+
+Существующая Tilda-страница использует совместимый шлюз `/api/method/raspechatka.api.clients.club_gateway`:
+
+- `GET action=check_phone&phone=...` — сообщает только факт существования и необходимость проверки;
+- `POST action=register` — регистрирует клиента, согласия и выдаёт link/session token;
+- `POST action=open_client` — временный compatibility-login по телефону и новому `link_token`;
+- `GET action=get_client&link_token|session_token=...` — публичное состояние кабинета;
+- `POST action=connect_channel|disconnect_channel` — изменение канала по клиентскому token;
+- JSONP `callback` поддерживается для read-операций старого Tilda UI.
+
+Cross-origin доступ ограничен `https://rpechatka.ru`, `https://www.rpechatka.ru`, HTTPS-поддоменами Tilda (`*.tilda.ws`, `*.tilda.cc`) и дополнительным allowlist `raspechatka_club_cors_origins` в site config. Внутренние API под эту CORS-политику не попадают.
 
 Форма регистрации может вызывать тот же шлюз или `POST /api/method/raspechatka.api.clients.register_client`. В `data` передаются телефон, имя, `point_code` из QR-ссылки, три согласия, версии/URL документов и служебный `link_token`. Повторная регистрация существующего телефона без его действующего session/link token возвращает `verification_required` и не раскрывает данные клиента.
 
 BotHelp отправляет событие в `POST /api/method/raspechatka.api.clients.bothelp_webhook` с `club_link_token`, каналом и ID подписчика. Если в `Loyalty Settings` задан секрет webhook, он обязателен в запросе.
+
+## Cutover Google → OS
+
+До переключения shadow-перенос может продолжать сверку с Google. Перед направлением Tilda/BotHelp напрямую в OS администратор в панели shadow должен:
+
+1. включить «Заморозить запись из Google»;
+2. включить «Прямой клуб OS»;
+3. убедиться, что диагностические счётчики клиентов и расхождений ожидаемы;
+4. переключить внешний Tilda/BotHelp код отдельно от этого релиза.
+
+При заморозке `club_shadow.receive` отклоняет новые записи. Кроме того, клиент с `direct_club_updated_at` не может быть перезаписан более поздней legacy-revision даже при ошибочной разморозке. Google Sheets/Apps Script остаются временным контуром МоегоСклада и не определяют рабочую скидку OS.
 
 Будущий POS использует:
 

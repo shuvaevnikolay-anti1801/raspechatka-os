@@ -109,7 +109,11 @@ class Client(Document):
 		self.registration_source = self.registration_source or "Распечатка ОС"  # noqa: RUF001
 
 	def validate(self):
-		if self.get("legacy_club_id") and not self.flags.club_shadow_import:
+		if (
+			self.get("legacy_club_id")
+			and not self.flags.club_shadow_import
+			and not self.flags.club_direct_update
+		):
 			frappe.throw(_("Клиент синхронизируется из Google. Измените данные в действующей системе клуба."))
 		self.phone = normalize_phone(self.phone)
 		if not self.phone:

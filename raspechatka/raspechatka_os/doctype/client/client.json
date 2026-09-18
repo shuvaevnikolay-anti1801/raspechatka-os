@@ -1,6 +1,6 @@
 {
  "doctype":"DocType","name":"Client","module":"Raspechatka OS","autoname":"hash","title_field":"client_name","allow_import":1,"track_changes":1,
- "field_order":["client_id","client_name","active","identity_section","last_name","first_name","middle_name","birth_date","phone","email","registration_section","registration_point","registration_source","registered_by","registered_at","club_section","club_status","discount_percent","active_channels","primary_channel","backup_channel","telegram_active","max_active","vk_active","messengers","consent_section","personal_data_consent","personal_data_consent_at","marketing_consent","marketing_consent_at","club_rules_consent","club_rules_consent_at","technical_section","link_token","session_token","session_created","session_expires","channel_token","channel_token_expires","notes"],
+ "field_order":["client_id","client_name","active","identity_section","last_name","first_name","middle_name","birth_date","phone","email","registration_section","registration_point","registration_source","registered_by","registered_at","club_section","club_status","discount_percent","active_channels","primary_channel","backup_channel","telegram_active","max_active","vk_active","messengers","consent_section","personal_data_consent","personal_data_consent_at","marketing_consent","marketing_consent_at","club_rules_consent","club_rules_consent_at","technical_section","link_token","session_token","session_created","session_expires","channel_token","channel_token_expires","direct_club_updated_at","notes"],
  "fields":[
   {"fieldname":"client_id","fieldtype":"Data","label":"ID клиента","read_only":1,"unique":1,"in_list_view":1,"in_global_search":1,"search_index":1},
   {"fieldname":"client_name","fieldtype":"Data","label":"ФИО","read_only":1,"bold":1,"in_list_view":1,"in_global_search":1},
@@ -41,6 +41,7 @@
   {"fieldname":"session_expires","fieldtype":"Datetime","label":"Session Expires","no_copy":1,"hidden":1},
   {"fieldname":"channel_token","fieldtype":"Data","label":"Channel Token","unique":1,"no_copy":1,"hidden":1},
   {"fieldname":"channel_token_expires","fieldtype":"Datetime","label":"Channel Token Expires","no_copy":1,"hidden":1},
+  {"fieldname":"direct_club_updated_at","fieldtype":"Datetime","label":"Последнее прямое изменение клуба","read_only":1,"no_copy":1,"hidden":1},
   {"fieldname":"notes","fieldtype":"Small Text","label":"Комментарий"}
  ],
  "permissions":[{"role":"System Manager","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1,"print":1,"share":1},{"role":"Raspechatka Network Admin","read":1,"write":1,"create":1,"delete":1,"report":1,"export":1,"import":1},{"role":"Raspechatka Franchise Owner","read":1,"write":1,"create":1,"report":1},{"role":"Raspechatka Point Manager","read":1,"write":1,"create":1,"report":1},{"role":"Raspechatka Cashier","read":1,"write":1,"create":1}],

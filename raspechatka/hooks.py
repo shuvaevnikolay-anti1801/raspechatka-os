@@ -234,7 +234,7 @@ scheduler_events = {
 # Request Events
 # ----------------
 before_request = ["raspechatka.security.enforce_cashier_pos_only"]
-# after_request = ["raspechatka.utils.after_request"]
+after_request = ["raspechatka.club_cors.apply_public_club_cors"]
 
 # Job Events
 # ----------

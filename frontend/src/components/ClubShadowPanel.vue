@@ -7,6 +7,8 @@ const error = ref("");
 const busy = ref(false);
 const form = reactive({
 	enabled: false,
+	frozen: false,
+	direct_cutover_enabled: false,
 	business_point: "",
 	source_id: "",
 	shared_secret: "",
@@ -16,6 +18,8 @@ async function load() {
 		state.value = await call("raspechatka.api.club_shadow.status");
 		Object.assign(form, {
 			enabled: state.value.enabled,
+			frozen: state.value.frozen,
+			direct_cutover_enabled: state.value.direct_cutover_enabled,
 			business_point: state.value.business_point || "",
 			source_id: state.value.source_id || "",
 		});
@@ -30,7 +34,7 @@ async function save() {
 		await call(
 			"raspechatka.api.club_shadow.configure",
 			{ data: JSON.stringify(form) },
-			{ method: "POST" }
+			{ method: "POST" },
 		);
 		form.shared_secret = "";
 		await load();
@@ -47,8 +51,8 @@ onMounted(load);
 	<section class="settings-panel shadow-panel">
 		<h2>Параллельный перенос из Google</h2>
 		<p>
-			Google пока остаётся основной системой. Этот обмен не изменяет Tilda, BotHelp и
-			МойСклад. Импортированные карточки защищены от ручных изменений.
+			До переключения Google может работать как shadow-контур. Перед включением прямого клуба
+			OS заморозьте запись из Google: после этого рабочее состояние определяется OS.
 		</p>
 		<p v-if="error" role="alert" class="form-error">{{ error }}</p>
 		<template v-if="state">
@@ -85,12 +89,22 @@ onMounted(load);
 					><input v-model="form.enabled" type="checkbox" /> Принимать данные из
 					Google</label
 				>
+				<label
+					><input v-model="form.frozen" type="checkbox" /> Заморозить запись из
+					Google</label
+				>
+				<label
+					><input v-model="form.direct_cutover_enabled" type="checkbox" /> Прямой клуб OS
+					включён</label
+				>
 				<button class="button button-primary" :disabled="busy">
 					{{ busy ? "Сохраняем…" : "Сохранить обмен" }}
 				</button>
 			</form>
 			<p>
-				Перенесено клиентов: {{ state.clients }}. Последний приём:
+				Клиентов OS: {{ state.canonical_clients }}; legacy: {{ state.clients }}; изменено
+				напрямую: {{ state.directly_updated_clients }}; расхождений:
+				{{ state.differences }}. Последний приём:
 				{{ state.last_received_at || "ещё не было" }}.
 			</p>
 			<button class="button button-secondary" @click="load">Обновить состояние</button>
@@ -102,6 +116,18 @@ onMounted(load);
 							? "Скидка и число каналов совпадают"
 							: "Есть расхождение — проверьте правила клуба"
 					}}
+				</li>
+			</ul>
+			<h3>Последние прямые события клуба</h3>
+			<p v-if="!state.recent_direct_events?.length">Событий пока нет.</p>
+			<ul v-else>
+				<li
+					v-for="event in state.recent_direct_events"
+					:key="`${event.event_datetime}-${event.event_type}`"
+				>
+					{{ event.event_datetime }} — {{ event.event_type }}
+					<span v-if="event.channel"> ({{ event.channel }})</span>
+					<span v-if="event.has_error"> — зафиксирована ошибка</span>
 				</li>
 			</ul>
 		</template>

@@ -1,9 +1,11 @@
 import json
 import re
 from datetime import date
+from hashlib import sha256
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils import add_days, cint, date_diff, flt, getdate, now_datetime, today
 
 from raspechatka.access import get_scope, require_access
@@ -91,6 +93,26 @@ MARKETING_TYPES = {
 	},
 }
 
+PUBLIC_SECRET_FIELDS = {
+	"secret",
+	"link_token",
+	"club_link_token",
+	"session_token",
+	"channel_token",
+	"token",
+}
+
+
+def _idempotency_key(*parts):
+	value = ":".join(str(part or "") for part in parts)
+	return sha256(value.encode("utf-8")).hexdigest()
+
+
+def _safe_details(details):
+	if not isinstance(details, dict):
+		return details
+	return {key: value for key, value in details.items() if key not in PUBLIC_SECRET_FIELDS}
+
 
 def _sum_field(doctype, fieldname, filters=None):
 	rows = frappe.get_all(
@@ -148,8 +170,11 @@ def _log(
 	external_id=None,
 	details=None,
 	error=None,
+	idempotency_key=None,
 ):
-	frappe.get_doc(
+	if idempotency_key and frappe.db.exists("Client Event Log", {"idempotency_key": idempotency_key}):
+		return
+	doc = frappe.get_doc(
 		{
 			"doctype": "Client Event Log",
 			"client": client,
@@ -158,12 +183,19 @@ def _log(
 			"source": source,
 			"status": status,
 			"external_id": external_id,
-			"details": json.dumps(details, ensure_ascii=False, default=str)
+			"idempotency_key": idempotency_key,
+			"details": json.dumps(_safe_details(details), ensure_ascii=False, default=str)
 			if isinstance(details, (dict, list))
 			else details,
 			"error": error,
 		}
-	).insert(ignore_permissions=True)
+	)
+	try:
+		doc.insert(ignore_permissions=True)
+	except frappe.DuplicateEntryError:
+		# A unique idempotency key is the final guard when two deliveries race.
+		if not idempotency_key:
+			raise
 
 
 def _record_consent(
@@ -177,7 +209,12 @@ def _record_consent(
 	ip_address=None,
 	user_agent=None,
 ):
-	frappe.get_doc(
+	idempotency_key = (
+		_idempotency_key("consent", client, consent_type, submission_id) if submission_id else None
+	)
+	if idempotency_key and frappe.db.exists("Client Consent", {"idempotency_key": idempotency_key}):
+		return False
+	doc = frappe.get_doc(
 		{
 			"doctype": "Client Consent",
 			"client": client,
@@ -187,18 +224,26 @@ def _record_consent(
 			"document_url": url,
 			"source": source,
 			"submission_id": submission_id,
+			"idempotency_key": idempotency_key,
 			"ip_address": ip_address,
 			"user_agent": user_agent,
 			"revoked_at": None if accepted else now_datetime(),
 		}
-	).insert(ignore_permissions=True)
+	)
+	try:
+		doc.insert(ignore_permissions=True)
+	except frappe.DuplicateEntryError:
+		if idempotency_key:
+			return False
+		raise
+	return True
 
 
 def _point_name(value):
 	value = str(value or "").strip()
 	if not value:
 		return None
-	if frappe.db.exists("Business Point", value):
+	if frappe.db.exists("Business Point", {"name": value, "active": 1}):
 		return value
 	return frappe.db.get_value("Business Point", {"point_code": value, "active": 1}, "name")
 
@@ -217,6 +262,16 @@ def _public_client(data):
 		if name:
 			return frappe.get_doc("Client", name)
 	return None
+
+
+def _client_by_phone(phone):
+	name = frappe.db.get_value("Client", {"phone": phone}, "name")
+	return frappe.get_doc("Client", name) if name else None
+
+
+def _mark_direct_update(doc):
+	doc.flags.club_direct_update = True
+	doc.direct_club_updated_at = now_datetime()
 
 
 def _public_result(doc):
@@ -252,23 +307,32 @@ def _external_response(result, callback=None):
 
 
 @frappe.whitelist(allow_guest=True)
+@access_contract(auth="guest", scope="none")
+@rate_limit(limit=30, seconds=60, methods=["GET", "POST"], ip_based=True)
 def club_gateway(data=None, **kwargs):
 	"""Compatibility gateway for the existing Tilda/BotHelp page."""
 	payload = frappe.parse_json(data) if data else kwargs
 	callback = payload.get("callback")
-	if payload.get("bothelp_user_id") or (payload.get("user_id") and payload.get("club_link_token")):
-		return _external_response(bothelp_webhook(data=payload))
+	if (
+		payload.get("bothelp_user_id")
+		or payload.get("subscriber_id")
+		or payload.get("platform_user_id")
+		or (payload.get("user_id") and payload.get("club_link_token"))
+	):
+		return _external_response(_bothelp_webhook(payload))
 	action = str(payload.get("action") or "register").strip()
 	if action == "check_phone":
-		result = check_phone(payload.get("phone"), payload.get("session_token"), payload.get("link_token"))
+		result = _check_phone(payload.get("phone"), payload.get("session_token"), payload.get("link_token"))
 		return _external_response(result, callback)
 	if action == "register":
-		return _external_response(register_client(data=payload))
+		return _external_response(_register_client_request(payload))
 	if action == "connect_channel":
-		return _external_response(connect_channel(data=payload))
+		return _external_response(_connect_channel_request(payload))
 	if action == "disconnect_channel":
-		return _external_response(disconnect_channel(data=payload))
-	if action in ("get_client", "open_client"):
+		return _external_response(_disconnect_channel(payload))
+	if action == "open_client":
+		return _external_response(_open_client(payload), callback)
+	if action == "get_client":
 		doc = _public_client(payload)
 		result = (
 			_public_result(doc)
@@ -279,6 +343,51 @@ def club_gateway(data=None, **kwargs):
 	return _external_response(
 		{"ok": False, "error": "UNKNOWN_ACTION", "message": f"Неизвестное действие: {action}"}
 	)
+
+
+def _open_client(data):
+	"""Compatibility login: bind a fresh Tilda link token after phone lookup."""
+	phone = normalize_phone(data.get("phone"))
+	link_token = str(data.get("link_token") or data.get("club_link_token") or "").strip()
+	if not phone:
+		return {"ok": False, "error": "INVALID_PHONE"}
+	if len(link_token) < 16:
+		return {"ok": False, "error": "LINK_TOKEN_REQUIRED"}
+	doc = _client_by_phone(phone)
+	if not doc:
+		return {"ok": False, "error": "CLIENT_NOT_FOUND"}
+	existing_owner = frappe.db.get_value("Client", {"link_token": link_token}, "name")
+	if existing_owner and existing_owner != doc.name:
+		return {"ok": False, "error": "TOKEN_CONFLICT"}
+	_mark_direct_update(doc)
+	doc.link_token = link_token
+	session_token = doc.issue_session()
+	doc.save(ignore_permissions=True)
+	_log(
+		doc.name,
+		"CLIENT_OPENED",
+		source=data.get("source") or "Tilda",
+		details={"compatibility_login": True},
+	)
+	_log(
+		doc.name,
+		"CLIENT_SESSION_RENEWED",
+		source=data.get("source") or "Tilda",
+		details={"reason": "open_client"},
+	)
+	return {
+		**_public_result(doc),
+		"exists": True,
+		"link_token": link_token,
+		"session_token": session_token,
+	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="guest", scope="none")
+@rate_limit(limit=10, seconds=60, methods=["POST"], ip_based=True)
+def open_client(data=None, **kwargs):
+	return _open_client(frappe.parse_json(data) if data else kwargs)
 
 
 @frappe.whitelist()
@@ -877,8 +986,7 @@ def save_marketing_record(kind, data):
 	return {"name": doc.name}
 
 
-@frappe.whitelist(allow_guest=True)
-def check_phone(phone, session_token=None, link_token=None):
+def _check_phone(phone, session_token=None, link_token=None):
 	phone = normalize_phone(phone)
 	if not phone:
 		return {"ok": False, "error": "INVALID_PHONE", "message": "Некорректный номер телефона"}
@@ -904,6 +1012,15 @@ def check_phone(phone, session_token=None, link_token=None):
 
 
 @frappe.whitelist(allow_guest=True)
+@access_contract(auth="guest", scope="none")
+@rate_limit(limit=20, seconds=60, methods=["GET", "POST"], ip_based=True)
+def check_phone(phone, session_token=None, link_token=None):
+	return _check_phone(phone, session_token, link_token)
+
+
+@frappe.whitelist(allow_guest=True)
+@access_contract(auth="guest", scope="none")
+@rate_limit(limit=60, seconds=60, methods=["GET"], ip_based=True)
 def get_club_config(point_code=None):
 	settings = frappe.get_single("Loyalty Settings")
 	point = _point_name(point_code)
@@ -935,9 +1052,8 @@ def get_club_config(point_code=None):
 	}
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def register_client(data=None, **kwargs):
-	data = frappe.parse_json(data) if data else kwargs
+def _register_client_unlocked(data):
+	data = frappe.parse_json(data) if data else {}
 	phone = normalize_phone(data.get("phone"))
 	point = _point_name(data.get("registration_point") or data.get("point") or data.get("point_code"))
 	if not phone:
@@ -962,6 +1078,7 @@ def register_client(data=None, **kwargs):
 		}
 	name = frappe.db.get_value("Client", {"phone": phone}, "name")
 	link_token = (data.get("link_token") or frappe.generate_hash(length=40)).strip()
+	submission_id = data.get("submission_id") or _idempotency_key("registration", phone, link_token)
 	if name:
 		doc = frappe.get_doc("Client", name)
 		auth = _public_client(data)
@@ -982,6 +1099,7 @@ def register_client(data=None, **kwargs):
 		doc.registration_source = data.get("source") or "Клуб Распечатка"
 	for fieldname, value in consent_values.items():
 		doc.set(fieldname, value)
+	_mark_direct_update(doc)
 	doc.link_token = link_token
 	session_token = doc.issue_session()
 	channel_token = doc.issue_channel_token()
@@ -1007,23 +1125,23 @@ def register_client(data=None, **kwargs):
 		),
 	)
 	for fieldname, consent_type, version, url in consent_meta:
-		if consent_values[fieldname]:
-			_record_consent(
-				doc.name,
-				consent_type,
-				True,
-				version,
-				url,
-				data.get("source") or "Клуб Распечатка",
-				data.get("submission_id"),
-				data.get("ip") or getattr(frappe.local, "request_ip", None),
-				data.get("user_agent") or frappe.get_request_header("User-Agent"),
-			)
+		_record_consent(
+			doc.name,
+			consent_type,
+			bool(consent_values[fieldname]),
+			version,
+			url,
+			data.get("source") or "Клуб Распечатка",
+			submission_id,
+			data.get("ip") or getattr(frappe.local, "request_ip", None),
+			data.get("user_agent") or frappe.get_request_header("User-Agent"),
+		)
 	_log(
 		doc.name,
 		"CLIENT_SESSION_RENEWED" if name else "CLIENT_CREATED",
 		source=doc.registration_source,
 		details={"point": point},
+		idempotency_key=_idempotency_key("registration", doc.name, submission_id),
 	)
 	return {
 		**_public_result(doc),
@@ -1034,15 +1152,48 @@ def register_client(data=None, **kwargs):
 	}
 
 
+def _register_client_request(data):
+	data = frappe.parse_json(data) if data else {}
+	phone = normalize_phone(data.get("phone"))
+	if not phone:
+		return {"ok": False, "error": "INVALID_PHONE", "message": "Некорректный номер телефона"}
+	lock_name = f"raspechatka:club-register:{_idempotency_key(phone)[:24]}"
+	locked = frappe.db.sql("SELECT GET_LOCK(%s, 5)", (lock_name,))[0][0]
+	if not cint(locked):
+		return {"ok": False, "error": "REGISTER_BUSY", "message": "Регистрация уже выполняется"}
+	try:
+		return _register_client_unlocked(data)
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (lock_name,))
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="guest", scope="none")
+@rate_limit(limit=10, seconds=60, methods=["POST"], ip_based=True)
+def register_client(data=None, **kwargs):
+	return _register_client_request(frappe.parse_json(data) if data else kwargs)
+
+
 @frappe.whitelist(allow_guest=True)
+@access_contract(auth="guest", scope="none")
+@rate_limit(limit=60, seconds=60, methods=["GET"], ip_based=True)
 def get_public_client(session_token=None, link_token=None):
 	doc = _public_client({"session_token": session_token, "link_token": link_token})
 	return _public_result(doc) if doc else {"ok": False, "error": "CLIENT_NOT_FOUND"}
 
 
-def _connect_channel(doc, channel, platform_user_id=None, bothelp_subscriber_id=None, contact=None):
+def _connect_channel(
+	doc,
+	channel,
+	platform_user_id=None,
+	bothelp_subscriber_id=None,
+	contact=None,
+	*,
+	event_key=None,
+	source=None,
+):
 	if channel not in CHANNELS:
-		frappe.throw(_("Неизвестный канал"))
+		return {"ok": False, "error": "UNKNOWN_CHANNEL", "message": "Неизвестный канал"}
 	row = next((item for item in doc.messengers if item.messenger_type == channel), None)
 	if (not row or row.status != "Активен") and cint(doc.active_channels) >= cint(
 		frappe.get_single("Loyalty Settings").max_active_channels or 2
@@ -1064,20 +1215,27 @@ def _connect_channel(doc, channel, platform_user_id=None, bothelp_subscriber_id=
 	row.health = "ACTIVE"
 	row.last_error = ""
 	row.disconnected_at = None
+	_mark_direct_update(doc)
 	doc.save(ignore_permissions=True)
 	_log(
 		doc.name,
 		"CHANNEL_CONNECTED",
 		channel=channel,
-		source="BotHelp" if bothelp_subscriber_id else "Клуб Распечатка",
+		source=source or ("BotHelp" if bothelp_subscriber_id else "Клуб Распечатка"),
 		external_id=bothelp_subscriber_id or platform_user_id,
+		idempotency_key=event_key,
 	)
 	return {**_public_result(doc), "channel": channel}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="public_token", scope="client")
+@rate_limit(limit=30, seconds=60, methods=["POST"], ip_based=True)
 def connect_channel(data=None, **kwargs):
-	data = frappe.parse_json(data) if data else kwargs
+	return _connect_channel_request(frappe.parse_json(data) if data else kwargs)
+
+
+def _connect_channel_request(data):
 	token = (data.get("token") or "").strip()
 	doc = None
 	if token:
@@ -1098,19 +1256,34 @@ def connect_channel(data=None, **kwargs):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="public_token", scope="client")
+@rate_limit(limit=30, seconds=60, methods=["POST"], ip_based=True)
 def disconnect_channel(data=None, **kwargs):
-	data = frappe.parse_json(data) if data else kwargs
+	return _disconnect_channel(frappe.parse_json(data) if data else kwargs)
+
+
+def _disconnect_channel(data):
 	doc = _public_client(data)
 	if not doc:
 		return {"ok": False, "error": "SESSION_REQUIRED"}
-	channel = _normalize_channel(data.get("channel"))
+	return _disconnect_doc_channel(doc, _normalize_channel(data.get("channel")), source="Клуб Распечатка")
+
+
+def _disconnect_doc_channel(doc, channel, *, source, event_key=None):
 	row = next((item for item in doc.messengers if item.messenger_type == channel), None)
 	if row:
 		row.status = "Отключен"
 		row.health = "DEAD"
 		row.disconnected_at = now_datetime()
+		_mark_direct_update(doc)
 		doc.save(ignore_permissions=True)
-		_log(doc.name, "CHANNEL_DISCONNECTED", channel=channel, source="Клуб Распечатка")
+		_log(
+			doc.name,
+			"CHANNEL_DISCONNECTED",
+			channel=channel,
+			source=source,
+			idempotency_key=event_key,
+		)
 	return _public_result(doc)
 
 
@@ -1128,8 +1301,14 @@ def _normalize_channel(value):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="webhook", scope="client")
+@rate_limit(limit=120, seconds=60, methods=["POST"], ip_based=True)
 def bothelp_webhook(data=None, **kwargs):
 	data = frappe.parse_json(data) if data else kwargs
+	return _bothelp_webhook(data)
+
+
+def _bothelp_webhook(data):
 	settings = frappe.get_single("Loyalty Settings")
 	secret = settings.get_password("bothelp_webhook_secret", raise_exception=False)
 	if secret and data.get("secret") != secret:
@@ -1138,6 +1317,9 @@ def bothelp_webhook(data=None, **kwargs):
 		data.get("utm_campaign") if str(data.get("utm_source", "")).lower() == "club" else None
 	)
 	doc = _public_client({"link_token": link})
+	if not doc and data.get("club_client_id"):
+		name = frappe.db.get_value("Client", {"client_id": data.get("club_client_id")}, "name")
+		doc = frappe.get_doc("Client", name) if name else None
 	if not doc:
 		return {"ok": False, "error": "CLIENT_NOT_FOUND"}
 	channel = _normalize_channel(
@@ -1146,8 +1328,67 @@ def bothelp_webhook(data=None, **kwargs):
 		or data.get("messenger")
 		or ("vk" if str(data.get("utm_medium", "")).lower() == "vk" else "telegram")
 	)
-	result = _connect_channel(doc, channel, data.get("user_id"), data.get("bothelp_user_id"))
-	_log(doc.name, "BOTHELP_WEBHOOK", channel=channel, source="BotHelp", details=data)
+	# Subscriber/user IDs identify a channel, not a delivery. Only provider event IDs
+	# are safe deduplication keys: the same subscriber may disconnect and reconnect.
+	external_event = data.get("event_id") or data.get("webhook_id")
+	if not channel:
+		return {"ok": False, "error": "UNKNOWN_CHANNEL"}
+	lock_name = f"raspechatka:club-channel:{_idempotency_key(doc.name, channel)[:24]}"
+	locked = frappe.db.sql("SELECT GET_LOCK(%s, 5)", (lock_name,))[0][0]
+	if not cint(locked):
+		return {"ok": False, "error": "CHANNEL_BUSY"}
+	try:
+		return _apply_bothelp_event(doc, channel, external_event, data)
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", (lock_name,))
+
+
+def _apply_bothelp_event(doc, channel, external_event, data):
+	event_key = (
+		_idempotency_key("bothelp", doc.name, channel, external_event, "connected")
+		if external_event
+		else None
+	)
+	event_name = str(data.get("event") or data.get("status") or "").lower()
+	final_key = (
+		_idempotency_key("bothelp", doc.name, channel, external_event, "disconnected")
+		if external_event
+		and event_name in {"disconnect", "disconnected", "unsubscribe", "unsubscribed", "dead"}
+		else event_key
+	)
+	if final_key and frappe.db.exists("Client Event Log", {"idempotency_key": final_key}):
+		return {**_public_result(doc), "duplicate": True}
+	if event_name in {"disconnect", "disconnected", "unsubscribe", "unsubscribed", "dead"}:
+		return _disconnect_doc_channel(
+			doc,
+			channel,
+			source="BotHelp",
+			event_key=final_key,
+		)
+	result = _connect_channel(
+		doc,
+		channel,
+		data.get("platform_user_id") or data.get("user_id"),
+		data.get("bothelp_user_id") or data.get("subscriber_id"),
+		event_key=event_key,
+		source="BotHelp",
+	)
+	_log(
+		doc.name,
+		"BOTHELP_WEBHOOK",
+		channel=channel,
+		source="BotHelp",
+		external_id=external_event
+		or data.get("bothelp_user_id")
+		or data.get("subscriber_id")
+		or data.get("user_id"),
+		details={"event": data.get("event") or "channel_connected"},
+		idempotency_key=(
+			_idempotency_key("bothelp-received", doc.name, channel, external_event)
+			if external_event
+			else None
+		),
+	)
 	return result
 
 
