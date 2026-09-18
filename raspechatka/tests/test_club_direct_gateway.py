@@ -259,7 +259,7 @@ class TestClubDirectContracts(TestCase):
 		self.assertNotIn("Club Shadow Settings", source)
 		self.assertEqual(
 			club_shadow.receive._raspechatka_access_contract,
-			{"area": None, "action": None, "scope": "provider", "auth": "webhook"},
+			{"area": None, "action": "read", "scope": "provider", "auth": "webhook"},
 		)
 
 		response = SimpleNamespace(http_status_code=200)
