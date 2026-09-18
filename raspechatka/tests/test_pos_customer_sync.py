@@ -14,9 +14,7 @@ class Row(dict):
 class TestPosCustomerSync(TestCase):
 	def test_network_snapshot_is_active_club_only_minimal_and_unlimited(self):
 		get_all = Mock(
-			return_value=[
-				Row(name="CLIENT-1", client_name="Иван", phone="+79991234821", discount_percent=5)
-			]
+			return_value=[Row(name="CLIENT-1", client_name="Иван", phone="+79991234821", discount_percent=5)]
 		)
 		with patch.object(pos_device, "frappe", SimpleNamespace(get_all=get_all)):
 			result = pos_device._customers()
@@ -75,4 +73,6 @@ class TestPosCustomerSync(TestCase):
 		).read_text(encoding="utf-8")
 		self.assertIn('"clubDiscountPercent": club_discount_percent', pos_source)
 		self.assertIn('"source_payload_json"', sales_source)
-		self.assertIn('payload.get("clubDiscountPercent", payload.get("receiptDiscountPercent"))', receipt_source)
+		self.assertIn(
+			'payload.get("clubDiscountPercent", payload.get("receiptDiscountPercent"))', receipt_source
+		)
