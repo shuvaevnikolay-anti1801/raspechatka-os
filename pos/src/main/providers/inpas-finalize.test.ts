@@ -38,7 +38,7 @@ function inpasSettings(executablePath = "") {
 }
 
 describe("INPAS launcher discovery", () => {
-  it("auto-discovers DCConsole.jar in the standard INPAS directory", () => {
+  it("auto-discovers DCConsole.jar when BAT is absent", () => {
     const root = mkdtempSync(join(tmpdir(), "raspechatka-inpas-programfiles-"));
     try {
       const connector = join(root, "INPAS", "DualConnector");
@@ -86,7 +86,7 @@ describe("INPAS launcher discovery", () => {
     }
   });
 
-  it("falls back to the standard DCConsole.bat", () => {
+  it("uses the standard DCConsole.bat", () => {
     const root = mkdtempSync(join(tmpdir(), "raspechatka-inpas-bat-"));
     try {
       const connector = join(root, "INPAS", "DualConnector");
@@ -100,13 +100,12 @@ describe("INPAS launcher discovery", () => {
       process.env.ComSpec = "C:\\Windows\\System32\\cmd.exe";
 
       const store = new InpasSettingsStore(join(root, "settings.json"));
-      const launcher = store.resolveLauncher(inpasSettings());
-      expect(launcher).toMatchObject({
+      expect(store.resolveLauncher(inpasSettings())).toEqual({
         path: bat,
         type: "bat",
         command: "C:\\Windows\\System32\\cmd.exe",
+        prefixArgs: ["/d", "/s", "/c"],
       });
-      expect(launcher?.prefixArgs).toEqual(["/d", "/s", "/c", `"${bat}"`]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -155,7 +154,7 @@ describe("INPAS runner final result contract", () => {
   it("launches JAR through java -jar and treats SA [39]=1 as authoritative", async () => {
     const directory = mkdtempSync(join(tmpdir(), "raspechatka-inpas-jar-run-"));
     try {
-      const jar = join(directory, "DCConsole.jar");
+      const jar = join(directory, "OnlyConsole.jar");
       const java = join(directory, "jre", "bin", "java.exe");
       mkdirSync(join(directory, "jre", "bin"), { recursive: true });
       writeFileSync(jar, "jar");
@@ -215,7 +214,7 @@ describe("INPAS runner final result contract", () => {
     }
   });
 
-  it("launches BAT through fixed cmd.exe with separated operation arguments", async () => {
+  it("launches BAT through cmd.exe CALL with one command string", async () => {
     const directory = mkdtempSync(join(tmpdir(), "raspechatka-inpas-bat-run-"));
     try {
       const bat = join(directory, "DCConsole.bat");
@@ -251,12 +250,7 @@ describe("INPAS runner final result contract", () => {
         "/d",
         "/s",
         "/c",
-        `"${bat}"`,
-        "-o26",
-        "-z40000037",
-        "-a10",
-        "-c643",
-        "-s60",
+        `call "${bat}" -o26 -z40000037 -a10 -c643 -s60`,
       ]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
