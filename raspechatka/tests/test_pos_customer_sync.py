@@ -48,7 +48,11 @@ class TestPosCustomerSync(TestCase):
 			patch.object(
 				pos_v2,
 				"get_pos_sales_rules",
-				return_value={"allowDiscounts": True, "maxDiscountPercent": 10, "reviewDiscountPerReviewMinor": 0},
+				return_value={
+					"allowDiscounts": True,
+					"maxDiscountPercent": 10,
+					"reviewDiscountPerReviewMinor": 0,
+				},
 			),
 		):
 			current = pos_v2._review_breakdown(
@@ -82,7 +86,11 @@ class TestPosCustomerSync(TestCase):
 			patch.object(
 				pos_v2,
 				"get_pos_sales_rules",
-				return_value={"allowDiscounts": True, "maxDiscountPercent": 30, "reviewDiscountPerReviewMinor": 500},
+				return_value={
+					"allowDiscounts": True,
+					"maxDiscountPercent": 30,
+					"reviewDiscountPerReviewMinor": 500,
+				},
 			),
 		):
 			result = pos_v2._review_breakdown(
