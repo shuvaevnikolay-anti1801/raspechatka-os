@@ -38,6 +38,20 @@ def test_pos_cashier_list_requires_active_cashier_profile_user_and_profile_point
 	assert '"Employee Point Assignment"' not in section
 
 
+def test_cashier_profile_requires_active_employee_link():
+	profile = (
+		ROOT / "raspechatka/raspechatka_os/doctype/raspechatka_user_profile/raspechatka_user_profile.py"
+	).read_text(encoding="utf-8")
+	schema = (
+		ROOT / "raspechatka/raspechatka_os/doctype/raspechatka_user_profile/raspechatka_user_profile.json"
+	).read_text(encoding="utf-8")
+	assert "def _validate_employee_link" in profile
+	assert 'self.access_profile == "Raspechatka Cashier" and not self.linked_employee' in profile
+	assert "Для роли «Кассир» выберите связанного сотрудника" in profile
+	assert "Связанный сотрудник должен быть активным" in profile
+	assert '"mandatory_depends_on": "eval:doc.access_profile==\'Raspechatka Cashier\'"' in schema
+
+
 def test_pos_rejects_cross_point_cashier_filters_and_unknown_selection():
 	receipts = (ROOT / "raspechatka/api/receipt_search.py").read_text(encoding="utf-8")
 	device = (ROOT / "raspechatka/api/pos_device.py").read_text(encoding="utf-8")
