@@ -38,6 +38,8 @@ export class AtolCredentialStore {
 
 export class AtolWebManager {
   private pending?: Promise<AtolWebStatus>;
+  private authorizationRecovery?: Promise<void>;
+
   constructor(private readonly credentials: AtolCredentialStore) {}
 
   ensureReady(): Promise<AtolWebStatus> {
@@ -55,6 +57,14 @@ export class AtolWebManager {
           "base64"
         )}`
       : undefined;
+  }
+
+  recoverAuthorization(): Promise<void> {
+    if (!this.authorizationRecovery)
+      this.authorizationRecovery = this.recoverAuthorizationOnce().finally(() => {
+        this.authorizationRecovery = undefined;
+      });
+    return this.authorizationRecovery;
   }
 
   private async ensureReadyOnce(): Promise<AtolWebStatus> {
@@ -91,50 +101,64 @@ export class AtolWebManager {
         throw new Error(
           "Не найдена утилита создания пользователя ATOL Web Server"
         );
-      const value = {
-        username: "raspechatka",
-        password: `Rp${randomBytes(16).toString("base64url")}9a`,
-      };
-      const listed = spawnSync(usersExecutable, ["list"], {
-        cwd: dirname(usersExecutable),
-        windowsHide: true,
-        encoding: "utf8",
-      });
-      if (listed.status !== 0)
-        throw new Error("Не удалось проверить пользователей ATOL Web Server");
-      if (
-        new RegExp(`(^|\\s)${value.username}(\\s|$)`, "mi").test(
-          `${listed.stdout}\n${listed.stderr}`
-        )
-      ) {
-        const removed = spawnSync(usersExecutable, ["del", value.username], {
-          cwd: dirname(usersExecutable),
-          windowsHide: true,
-          encoding: "utf8",
-        });
-        if (removed.status !== 0)
-          throw new Error(
-            "Найдена служебная учётная запись АТОЛ без сохранённого пароля; автоматическая ротация не удалась"
-          );
-      }
-      const result = spawnSync(
-        usersExecutable,
-        ["add", value.username, value.password],
-        { cwd: dirname(usersExecutable), windowsHide: true, encoding: "utf8" }
-      );
-      if (result.status !== 0)
-        throw new Error(
-          `Не удалось создать пользователя ATOL Web Server${
-            result.stderr ? `: ${result.stderr.trim()}` : ""
-          }`
-        );
-      this.credentials.save(value);
+      this.provisionCredentials(usersExecutable);
     }
     return {
       ready: true,
       message: "ATOL Web Server подключён",
       executable: webExecutable,
     };
+  }
+
+  private async recoverAuthorizationOnce(): Promise<void> {
+    await this.ensureReady();
+    const usersExecutable = this.find("atol-fptr-web-requests-users.exe");
+    if (!usersExecutable)
+      throw new Error(
+        "Не найдена утилита восстановления пользователя ATOL Web Server"
+      );
+    this.provisionCredentials(usersExecutable);
+  }
+
+  private provisionCredentials(usersExecutable: string): void {
+    const value = {
+      username: "raspechatka",
+      password: `Rp${randomBytes(16).toString("base64url")}9a`,
+    };
+    const listed = spawnSync(usersExecutable, ["list"], {
+      cwd: dirname(usersExecutable),
+      windowsHide: true,
+      encoding: "utf8",
+    });
+    if (listed.status !== 0)
+      throw new Error("Не удалось проверить пользователей ATOL Web Server");
+    if (
+      new RegExp(`(^|\\s)${value.username}(\\s|$)`, "mi").test(
+        `${listed.stdout}\n${listed.stderr}`
+      )
+    ) {
+      const removed = spawnSync(usersExecutable, ["del", value.username], {
+        cwd: dirname(usersExecutable),
+        windowsHide: true,
+        encoding: "utf8",
+      });
+      if (removed.status !== 0)
+        throw new Error(
+          "Не удалось обновить служебную учётную запись ATOL Web Server"
+        );
+    }
+    const result = spawnSync(
+      usersExecutable,
+      ["add", value.username, value.password],
+      { cwd: dirname(usersExecutable), windowsHide: true, encoding: "utf8" }
+    );
+    if (result.status !== 0)
+      throw new Error(
+        `Не удалось создать пользователя ATOL Web Server${
+          result.stderr ? `: ${result.stderr.trim()}` : ""
+        }`
+      );
+    this.credentials.save(value);
   }
 
   private async reachable(): Promise<boolean> {
