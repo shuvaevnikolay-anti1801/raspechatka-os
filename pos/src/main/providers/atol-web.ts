@@ -181,21 +181,23 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     throw new Error(`АТОЛ вернул неизвестное состояние смены: ${state}`);
   }
 
-  async openShift(): Promise<void> {
+  async openShift(operatorName?: string): Promise<void> {
     const request: Record<string, unknown> = {
       type: "openShift",
       electronically: false,
     };
-    this.applyOperator(request);
+    this.applyOperator(request, operatorName);
     await this.execute(randomUUID(), request, 20000);
   }
 
-  async closeShift(): Promise<{ message: string; reportNumber?: string }> {
+  async closeShift(
+    operatorName?: string
+  ): Promise<{ message: string; reportNumber?: string }> {
     const request: Record<string, unknown> = {
       type: "closeShift",
       electronically: false,
     };
-    this.applyOperator(request);
+    this.applyOperator(request, operatorName);
     const task = await this.execute(randomUUID(), request, 30000);
     const result = task.result ?? {};
     return {
@@ -447,41 +449,51 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     init: RequestInit,
     timeoutMs: number
   ): Promise<unknown> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const authorization = this.manager?.authorizationHeader();
-      const headers = new Headers(init.headers);
-      if (authorization) headers.set("Authorization", authorization);
-      const response = await fetch(url, {
-        ...init,
-        headers,
-        signal: controller.signal,
-      });
-      const text = await response.text();
-      if (!response.ok)
-        throw new Error(
-          `ATOL Web Server: HTTP ${response.status}${
-            text ? ` · ${text.slice(0, 250)}` : ""
-          }`
-        );
-      return text ? JSON.parse(text) : {};
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError")
-        throw new Error("ATOL Web Server не ответил вовремя");
-      if (error instanceof TypeError) {
-        throw new Error(
-          "Нет связи с ATOL Web Server. Проверьте адрес в настройках и убедитесь, что Драйвер ККТ / Web Server запущен на этом компьютере."
-        );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const authorization = this.manager?.authorizationHeader();
+        const headers = new Headers(init.headers);
+        if (authorization) headers.set("Authorization", authorization);
+        const response = await fetch(url, {
+          ...init,
+          headers,
+          signal: controller.signal,
+        });
+        const text = await response.text();
+        if (response.status === 401 && attempt === 0 && this.manager) {
+          await this.manager.recoverAuthorization();
+          continue;
+        }
+        if (!response.ok)
+          throw new Error(
+            `ATOL Web Server: HTTP ${response.status}${
+              text ? ` · ${text.slice(0, 250)}` : ""
+            }`
+          );
+        return text ? JSON.parse(text) : {};
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError")
+          throw new Error("ATOL Web Server не ответил вовремя");
+        if (error instanceof TypeError) {
+          throw new Error(
+            "Нет связи с ATOL Web Server. Проверьте адрес в настройках и убедитесь, что Драйвер ККТ / Web Server запущен на этом компьютере."
+          );
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
       }
-      throw error;
-    } finally {
-      clearTimeout(timer);
     }
+    throw new Error("ATOL Web Server не авторизовал служебную учётную запись");
   }
 
-  private applyOperator(request: Record<string, unknown>): void {
-    const name = this.currentOperator()?.trim();
+  private applyOperator(
+    request: Record<string, unknown>,
+    operatorName?: string
+  ): void {
+    const name = operatorName?.trim() || this.currentOperator()?.trim();
     if (name) request.operator = { name };
   }
 
