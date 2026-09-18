@@ -81,6 +81,45 @@ class TestCatalogPriceCalculator(TestCase):
 		self.assertIsNone(price)
 		self.assertIn("себестоимости", reason)
 
+	def test_markup_with_zero_cost_is_safely_skipped(self):
+		price, reason = catalog_pricing.calculate_price(
+			100, 0, {"mode": "markup", "value": 50, "rounding_step": 0}
+		)
+		self.assertIsNone(price)
+		self.assertIn("нулевой себестоимости", reason)
+
+	def test_absolute_addition_from_zero_cost_is_allowed(self):
+		price, reason = catalog_pricing.calculate_price(
+			100,
+			0,
+			{
+				"mode": "change",
+				"base": "cost",
+				"operation": "add",
+				"unit": "ruble",
+				"value": 30,
+				"rounding_step": 0,
+			},
+		)
+		self.assertIsNone(reason)
+		self.assertEqual(price, Decimal("30"))
+
+	def test_percent_change_from_zero_cost_is_predictable_zero(self):
+		price, reason = catalog_pricing.calculate_price(
+			100,
+			0,
+			{
+				"mode": "change",
+				"base": "cost",
+				"operation": "add",
+				"unit": "percent",
+				"value": 50,
+				"rounding_step": 0,
+			},
+		)
+		self.assertIsNone(reason)
+		self.assertEqual(price, Decimal("0"))
+
 
 class TestCatalogPricingContracts(TestCase):
 	def test_copy_skips_missing_source_without_zeroing_target(self):
@@ -92,7 +131,18 @@ class TestCatalogPricingContracts(TestCase):
 				"resolve_point_prices",
 				side_effect=[{"ITEM": None}, {"ITEM": {"rate": 125}}],
 			),
-			patch.object(catalog_pricing, "get_point_average_rates", return_value={"ITEM": 50}),
+			patch.object(
+				catalog_pricing,
+				"get_point_item_costs",
+				return_value={
+					"ITEM": {
+						"cost": 50,
+						"status": "available",
+						"reason": None,
+						"reason_message": None,
+					}
+				},
+			),
 		):
 			rows, _payload = catalog_pricing._copy_preview("TARGET", "SOURCE")
 		self.assertEqual(rows[0]["status"], "skipped")

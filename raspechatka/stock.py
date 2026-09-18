@@ -142,8 +142,31 @@ def get_average_rate(item, warehouse, posting_datetime=None, import_batch_overri
 	return flt(balance["value"] / balance["qty"]) if balance["qty"] else 0
 
 
+def get_warehouse_average_rates(items, warehouse):
+	"""Batch current physical moving-average valuation for one warehouse."""
+	requested = list(dict.fromkeys(items or []))
+	if not requested:
+		return {}
+	balances = frappe.get_all(
+		"Stock Balance",
+		filters={"item": ["in", requested], "warehouse": warehouse},
+		fields=["item", "actual_qty", "stock_value", "average_rate"],
+		limit_page_length=0,
+	)
+	by_item = {row.item: row for row in balances}
+	result = {}
+	for item in requested:
+		balance = by_item.get(item)
+		if not balance or flt(balance.actual_qty) <= 0:
+			result[item] = None
+			continue
+		rate = flt(balance.average_rate) or flt(balance.stock_value) / flt(balance.actual_qty)
+		result[item] = rate if rate > 0 else None
+	return result
+
+
 def get_point_average_rates(items, business_point):
-	"""Batch current moving-average costs using each assortment's working warehouse."""
+	"""Legacy batch physical valuation using assortment/default warehouse selection."""
 	requested = list(dict.fromkeys(items or []))
 	if not requested:
 		return {}
