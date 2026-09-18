@@ -160,6 +160,7 @@ def _rules(point):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def get_bootstrap(device_id, token, cashier_id=None):
 	"""Point-scoped POS bootstrap with point catalog groups and club metadata."""
 	connection = base_pos._authenticate(device_id, token)
