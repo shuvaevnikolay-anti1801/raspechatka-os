@@ -313,9 +313,6 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 	"""Accept the Windows POS outbox using Device ID + one-time-issued token."""
 	connection = _authenticate(device_id, token)
 	employees = _point_employees(connection.business_point)
-	selected = _selected_employee(employees, cashier_id)
-	if not selected:
-		frappe.throw(_("Перед синхронизацией выберите сотрудника точки"))
 	events = frappe.parse_json(events) if isinstance(events, str) else (events or [])
 	if not isinstance(events, list):
 		frappe.throw(_("Ожидается список событий"))
@@ -327,8 +324,12 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			event_id = str(event.get("id") or "").strip()
 			event_type = str(event.get("eventType") or "").strip()
 			payload = event.get("payload") or {}
+			event_cashier_id = payload.get("cashierId") or payload.get("cashier_id") or cashier_id
+			selected = _selected_employee(employees, event_cashier_id) if event_cashier_id else None
 			if not event_id or not event_type:
 				frappe.throw(_("В событии отсутствует id или eventType"))
+			if not selected:
+				frappe.throw(_("Кассир события не назначен на текущую точку"))
 			if event_type == "shift.opened":
 				sales_api._ingest_shift(
 					_shift(payload, selected["id"]),

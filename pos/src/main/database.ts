@@ -46,7 +46,8 @@ export class PosDatabase {
         total_spent_minor INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
       );
       CREATE TABLE IF NOT EXISTS shifts (
-        id TEXT PRIMARY KEY, opened_at TEXT NOT NULL, closed_at TEXT, cashier_name TEXT NOT NULL
+        id TEXT PRIMARY KEY, opened_at TEXT NOT NULL, closed_at TEXT, cashier_name TEXT NOT NULL,
+        cashier_id TEXT NOT NULL DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS sales (
         id TEXT PRIMARY KEY, client_request_id TEXT NOT NULL UNIQUE, shift_id TEXT NOT NULL,
@@ -113,6 +114,10 @@ export class PosDatabase {
       CREATE TABLE IF NOT EXISTS point_employees (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, confirmed_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS cashier_credentials (
+        employee_id TEXT PRIMARY KEY, pin_salt TEXT NOT NULL, pin_verifier TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS receipt_mirror (
         id TEXT PRIMARY KEY, server_id TEXT NOT NULL UNIQUE, external_id TEXT,
         point_id TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL,
@@ -147,6 +152,7 @@ export class PosDatabase {
     legacyPhones.forEach((row)=>updatePhone.run(normalizeRussianPhone(row.phone),row.id))
     this.ensureColumn('sale_items', 'discount_percent', 'REAL NOT NULL DEFAULT 0')
     this.ensureColumn('sale_items', 'line_total_minor', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('shifts', 'cashier_id', "TEXT NOT NULL DEFAULT ''")
   }
 
   private ensureColumn(table:string,column:string,definition:string):void {
@@ -214,11 +220,11 @@ export class PosDatabase {
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
-  currentShift():Shift|null{return (this.db.prepare(`SELECT id,opened_at AS openedAt,closed_at AS closedAt,cashier_name AS cashierName
+  currentShift():Shift|null{return (this.db.prepare(`SELECT id,opened_at AS openedAt,closed_at AS closedAt,cashier_id AS cashierId,cashier_name AS cashierName
     FROM shifts WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`).get() as Shift|undefined)??null}
   openShift(shift:Shift):Shift {
     const current=this.currentShift();if(current)return current
-    this.db.prepare('INSERT INTO shifts (id,opened_at,cashier_name) VALUES (?,?,?)').run(shift.id,shift.openedAt,shift.cashierName)
+    this.db.prepare('INSERT INTO shifts (id,opened_at,cashier_id,cashier_name) VALUES (?,?,?,?)').run(shift.id,shift.openedAt,shift.cashierId??'',shift.cashierName)
     this.queue('shift.opened',shift,shift.openedAt);return shift
   }
   closeShift():ShiftSummary {
@@ -308,6 +314,13 @@ export class PosDatabase {
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
   listPointEmployees():PointEmployee[]{return this.db.prepare('SELECT id,name FROM point_employees ORDER BY name').all() as PointEmployee[]}
+  hasCashierPin(employeeId:string):boolean{return Boolean(this.db.prepare('SELECT 1 value FROM cashier_credentials WHERE employee_id=?').get(employeeId))}
+  getCashierPin(employeeId:string):{salt:string;verifier:string}|undefined{return this.db.prepare('SELECT pin_salt salt,pin_verifier verifier FROM cashier_credentials WHERE employee_id=?').get(employeeId) as {salt:string;verifier:string}|undefined}
+  saveCashierPin(employeeId:string,value:{salt:string;verifier:string}):void{
+    this.db.prepare(`INSERT INTO cashier_credentials (employee_id,pin_salt,pin_verifier,updated_at) VALUES (?,?,?,?)
+      ON CONFLICT(employee_id) DO UPDATE SET pin_salt=excluded.pin_salt,pin_verifier=excluded.pin_verifier,updated_at=excluded.updated_at`)
+      .run(employeeId,value.salt,value.verifier,new Date().toISOString())
+  }
 
   replaceReceiptMirror(pointId:string,receipts:ReceiptMirror[],retentionDays=60):void {
     const upsert=this.db.prepare(`INSERT INTO receipt_mirror (id,server_id,external_id,point_id,created_at,payload_json,synced_at)
@@ -505,7 +518,13 @@ export class PosDatabase {
   deleteHeldReceipt(id:string):void{this.db.prepare('DELETE FROM held_receipts WHERE id=?').run(id)}
 
   private queue(eventType:string,payload:unknown,createdAt=new Date().toISOString()):void {
-    this.db.prepare('INSERT INTO outbox (id,event_type,payload_json,created_at) VALUES (?,?,?,?)').run(randomUUID(),eventType,JSON.stringify(payload),createdAt)
+    const value=payload&&typeof payload==='object'?payload as Record<string,unknown>:undefined
+    const shiftId=String(value?.shiftId||value?.shift_id||'')
+    const shift=(shiftId
+      ?this.db.prepare('SELECT cashier_id cashierId FROM shifts WHERE id=?').get(shiftId)
+      :this.db.prepare('SELECT cashier_id cashierId FROM shifts WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1').get()) as {cashierId:string}|undefined
+    const securedPayload=value&&shift?.cashierId?{...value,cashierId:shift.cashierId}:payload
+    this.db.prepare('INSERT INTO outbox (id,event_type,payload_json,created_at) VALUES (?,?,?,?)').run(randomUUID(),eventType,JSON.stringify(securedPayload),createdAt)
   }
   pendingEvents(limit=100):OutboxEvent[]{return (this.db.prepare(`SELECT id,event_type eventType,payload_json payload,created_at createdAt
     FROM outbox WHERE sent_at IS NULL ORDER BY created_at LIMIT ?`).all(limit) as Array<{id:string;eventType:string;payload:string;createdAt:string}>)

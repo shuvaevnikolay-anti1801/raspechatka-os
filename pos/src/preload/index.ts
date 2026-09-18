@@ -99,7 +99,15 @@ const api: ExtendedPosApi = {
   },
   getConnectionStatus: () => ipcRenderer.invoke('pos:get-connection-status'),
   saveConnection: (config:ConnectionConfig) => ipcRenderer.invoke('pos:save-connection',config),
-  setActiveCashier: (cashierId:string) => ipcRenderer.invoke('pos:set-active-cashier',cashierId),
+  getCashierAuthState: () => ipcRenderer.invoke('pos:get-cashier-auth-state'),
+  beginCashierLogin: (cashierId:string) => ipcRenderer.invoke('pos:begin-cashier-login',cashierId),
+  createCashierPin: (cashierId:string,pin:string,confirmation:string) => ipcRenderer.invoke('pos:create-cashier-pin',cashierId,pin,confirmation),
+  loginCashier: (cashierId:string,pin:string) => ipcRenderer.invoke('pos:login-cashier',cashierId,pin),
+  lockCashier: () => ipcRenderer.invoke('pos:lock-cashier'),
+  unlockCashier: (pin:string) => ipcRenderer.invoke('pos:unlock-cashier',pin),
+  logoutCashier: () => ipcRenderer.invoke('pos:logout-cashier'),
+  verifyAdminCode: (code:string) => ipcRenderer.invoke('pos:verify-admin-code',code),
+  resetCashierPin: (cashierId:string,adminCode:string,pin:string,confirmation:string) => ipcRenderer.invoke('pos:reset-cashier-pin',cashierId,adminCode,pin,confirmation),
   syncNow: () => ipcRenderer.invoke('pos:sync-now')
 }
 

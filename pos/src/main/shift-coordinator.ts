@@ -89,15 +89,15 @@ export class ShiftCoordinator {
     }
   }
 
-  async openShift(cashierName:string):Promise<Shift>{
+  async openShift(cashierId:string,cashierName?:string):Promise<Shift>{
     const current=this.database.currentShift()
     if(current)return current
 
     // Рабочая смена открывается явно сотрудником и не зависит от доступности
     // ККТ. Если ККТ недоступна, продажи будут заблокированы отдельной проверкой.
-    const shift:Shift={id:randomUUID(),openedAt:new Date().toISOString(),cashierName}
+    const shift:Shift={id:randomUUID(),openedAt:new Date().toISOString(),cashierId:cashierName?cashierId:'',cashierName:cashierName||cashierId}
     const saved=this.database.openShift(shift)
-    this.saveTransition({action:'open',shiftId:shift.id,openedAt:shift.openedAt,cashierName,startedAt:new Date().toISOString()})
+    this.saveTransition({action:'open',shiftId:shift.id,openedAt:shift.openedAt,cashierName:shift.cashierName,startedAt:new Date().toISOString()})
 
     try{
       await this.recoverPendingTransition()
