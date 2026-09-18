@@ -26,7 +26,7 @@
   {"fieldname": "assigned_points", "fieldtype": "Table", "label": "Доступные точки", "options": "Raspechatka User Point", "depends_on": "eval:doc.scope_type=='Points'", "mandatory_depends_on": "eval:doc.scope_type=='Points'"},
   {"fieldname": "connection_tab", "fieldtype": "Tab Break", "label": "Связи"},
   {"fieldname": "system_user", "fieldtype": "Link", "label": "Системная учётная запись", "options": "User", "read_only": 1, "unique": 1},
-  {"fieldname": "linked_employee", "fieldtype": "Link", "label": "Карточка сотрудника", "options": "Employee", "unique": 1},
+  {"fieldname": "linked_employee", "fieldtype": "Link", "label": "Карточка сотрудника", "options": "Employee", "unique": 1, "mandatory_depends_on": "eval:doc.access_profile=='Raspechatka Cashier'"},
   {"fieldname": "invitation_status", "fieldtype": "Select", "label": "Приглашение", "options": "Not Generated\nGenerated\nActivated", "default": "Not Generated", "read_only": 1, "in_list_view": 1},
   {"fieldname": "invited_at", "fieldtype": "Datetime", "label": "Приглашение сформировано", "read_only": 1}
  ],
