@@ -7,7 +7,7 @@ const STATE_KEY='fiscal_shift_transition_v1'
 
 type ShiftTransition =
   | {action:'open';shiftId:string;openedAt:string;cashierName:string;startedAt:string}
-  | {action:'close';shiftId:string;cashierName:string;startedAt:string}
+  | {action:'close';shiftId:string;cashierName?:string;startedAt:string}
 
 export type ShiftRecoveryResult = {
   recovered:boolean
