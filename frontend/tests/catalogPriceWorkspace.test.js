@@ -12,17 +12,14 @@ const page = readFileSync(
 );
 
 test("point pricing table exposes the canonical business columns", () => {
-	for (const label of [
-		"Позиция",
-		"Тип / группа",
-		"Закупочная цена",
-		"Цена продажи",
-		"Наценка",
-	]) {
+	for (const label of ["Позиция", "Тип / группа", "Себестоимость", "Цена продажи", "Наценка"]) {
 		assert.match(workspace, new RegExp(label));
 	}
 	assert.doesNotMatch(workspace, />Источник</);
 	assert.doesNotMatch(workspace, /v-model(?:\.number)?="row\.cost"/);
+	assert.doesNotMatch(workspace, /Закупочная цена/);
+	assert.match(workspace, /markupLabel/);
+	assert.match(workspace, /Number\(cost\) === 0/);
 });
 
 test("view-only mode hides every price mutation control", () => {

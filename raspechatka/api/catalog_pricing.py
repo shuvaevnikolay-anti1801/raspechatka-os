@@ -15,8 +15,8 @@ from raspechatka.access import require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.api.catalog_layers import _ensure_point
 from raspechatka.api.frontend import _catalog_group_branch
+from raspechatka.costing import get_point_item_costs
 from raspechatka.pricing import resolve_point_prices, set_point_price
-from raspechatka.stock import get_point_average_rates
 
 MAX_BULK_ITEMS = 5000
 
@@ -46,7 +46,14 @@ def _token(kind, point, payload, rows):
 		"point": point,
 		"payload": payload,
 		"rows": [
-			[row["item"], row.get("current_rate"), row.get("new_rate"), row.get("status")] for row in rows
+			[
+				row["item"],
+				row.get("cost"),
+				row.get("current_rate"),
+				row.get("new_rate"),
+				row.get("status"),
+			]
+			for row in rows
 		],
 	}
 	return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()
@@ -67,6 +74,14 @@ def _markup(rate, cost):
 	return (flt(rate) - flt(cost)) / flt(cost) * 100
 
 
+def _markup_status(rate, cost):
+	if cost is None:
+		return "unavailable"
+	if flt(cost) == 0:
+		return "infinite" if rate is not None and flt(rate) > 0 else "zero"
+	return "percent"
+
+
 def _lock_scope_items(point, catalog_group=None):
 	for item in _items(point, catalog_group):
 		frappe.db.sql("select name from `tabCatalog Item` where name=%s for update", item.name)
@@ -77,12 +92,13 @@ def _copy_preview(target_point, source_point, catalog_group=None):
 	names = [row.name for row in items]
 	source = resolve_point_prices(names, source_point)
 	target = resolve_point_prices(names, target_point)
-	costs = get_point_average_rates(names, target_point)
+	costs = get_point_item_costs(names, target_point)
 	rows = []
 	for item in items:
 		old = target.get(item.name)
 		new = source.get(item.name)
-		cost = costs.get(item.name)
+		cost_result = costs[item.name]
+		cost = cost_result["cost"]
 		status = "skipped" if not new else "unchanged" if old and old["rate"] == new["rate"] else "changed"
 		rows.append(
 			{
@@ -91,8 +107,13 @@ def _copy_preview(target_point, source_point, catalog_group=None):
 				"current_rate": old["rate"] if old else None,
 				"new_rate": new["rate"] if new else None,
 				"cost": cost,
+				"cost_status": cost_result["status"],
+				"cost_reason": cost_result["reason"],
+				"cost_reason_message": cost_result["reason_message"],
 				"current_markup": _markup(old["rate"] if old else None, cost),
 				"new_markup": _markup(new["rate"] if new else None, cost),
+				"current_markup_status": _markup_status(old["rate"] if old else None, cost),
+				"new_markup_status": _markup_status(new["rate"] if new else None, cost),
 				"status": status,
 				"reason": _("В точке-источнике цена не задана") if not new else None,
 			}
@@ -145,6 +166,8 @@ def calculate_price(current_rate, cost, spec):
 	if mode == "markup":
 		if cost is None:
 			return None, _("Нет расчётной себестоимости")
+		if _decimal(cost, "Себестоимость") == 0:
+			return None, _("Нельзя установить процентную наценку при нулевой себестоимости")
 		value = _decimal(cost, "Себестоимость") * (
 			Decimal("1") + _decimal(spec.get("value"), "Наценка") / 100
 		)
@@ -199,12 +222,13 @@ def _calculator_preview(point, catalog_group, spec):
 	items = _items(point, catalog_group)
 	names = [row.name for row in items]
 	prices = resolve_point_prices(names, point)
-	costs = get_point_average_rates(names, point)
+	costs = get_point_item_costs(names, point)
 	rows = []
 	for item in items:
 		current = prices.get(item.name)
 		current_rate = current["rate"] if current else None
-		cost = costs.get(item.name)
+		cost_result = costs[item.name]
+		cost = cost_result["cost"]
 		status, reason, new_rate = "changed", None, None
 		current_markup = _markup(current_rate, cost)
 		uses_cost = spec.get("mode") == "markup" or spec.get("base") == "cost"
@@ -236,10 +260,15 @@ def _calculator_preview(point, catalog_group, spec):
 				"item": item.name,
 				"item_name": item.item_name,
 				"cost": cost,
+				"cost_status": cost_result["status"],
+				"cost_reason": cost_result["reason"],
+				"cost_reason_message": cost_result["reason_message"],
 				"current_rate": current_rate,
 				"new_rate": new_rate,
 				"current_markup": current_markup,
 				"new_markup": _markup(new_rate, cost),
+				"current_markup_status": _markup_status(current_rate, cost),
+				"new_markup_status": _markup_status(new_rate, cost),
 				"status": status,
 				"reason": reason,
 			}

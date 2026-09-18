@@ -138,7 +138,7 @@ class TestCatalogLayerContracts(TestCase):
 		source = (root / "frontend/src/pages/CatalogPointLayerPage.vue").read_text(encoding="utf-8")
 		toolbar = (root / "frontend/src/components/CatalogPointLayerToolbar.vue").read_text(encoding="utf-8")
 		self.assertIn('v-if="allowAll" value="__all__"', toolbar)
-		self.assertIn(':allow-all="layer === \'assortment\'"', source)
+		self.assertIn(":allow-all=\"layer === 'assortment'\"", source)
 		self.assertIn("layer === 'assortment'", source)
 		self.assertNotIn('placeholder="Название, код или артикул"', source)
 		self.assertNotIn("filters.search", source)
@@ -152,7 +152,7 @@ class TestCatalogLayerContracts(TestCase):
 		self.assertIn('filters={"business_point": point, "enabled": 1}', rows_source)
 		self.assertIn('filters["name"] = ["in", assortment_items', rows_source)
 		self.assertIn("resolve_point_prices", price_source)
-		self.assertIn("get_point_average_rates", price_source)
+		self.assertIn("get_point_item_costs", price_source)
 		self.assertNotIn("resolve_item_price(", price_source)
 
 	def test_price_workspace_has_no_legacy_source_column(self):
@@ -163,7 +163,8 @@ class TestCatalogLayerContracts(TestCase):
 		self.assertNotIn("<th>Источник</th>", source)
 		self.assertIn("Копировать из точки", toolbar)
 		self.assertIn('v-model:source-point="sourcePoint"', page_source)
-		self.assertIn("Закупочная цена", source)
+		self.assertIn("Себестоимость", source)
+		self.assertNotIn("Закупочная цена", source)
 		self.assertIn("Наценка", source)
 
 	def test_write_endpoints_declare_page_and_point_contracts(self):

@@ -44,13 +44,20 @@ const money = (value) =>
 	value == null
 		? "—"
 		: `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value)} ₽`;
-const markup = (row) =>
-	row.cost && row.rate != null
-		? ((Number(row.rate) - Number(row.cost)) / Number(row.cost)) * 100
-		: null;
+const markup = (row) => {
+	if (row.cost == null || row.rate == null || Number(row.cost) === 0) return null;
+	return ((Number(row.rate) - Number(row.cost)) / Number(row.cost)) * 100;
+};
+const markupLabel = (rate, cost, value = null) => {
+	if (cost == null) return "—";
+	if (rate == null) return "—";
+	if (Number(cost) === 0) return rate != null && Number(rate) > 0 ? "∞" : "—";
+	const percent = value == null ? ((Number(rate) - Number(cost)) / Number(cost)) * 100 : value;
+	return `${Number(percent).toFixed(1)} %`;
+};
 const markupClass = (row) => {
 	const value = markup(row);
-	if (value == null) return "neutral";
+	if (value == null || Number(row.cost) === 0) return "neutral";
 	if (value < row.markup_lower_threshold) return "danger";
 	if (value < row.markup_upper_threshold) return "warning";
 	return "success";
@@ -164,7 +171,7 @@ defineExpose({ openCalculator, previewCopy });
 					<tr>
 						<th>Позиция</th>
 						<th>Тип / группа</th>
-						<th>Закупочная цена</th>
+						<th>Себестоимость</th>
 						<th>Цена продажи</th>
 						<th>Наценка</th>
 						<th v-if="canEdit">Сохранить</th>
@@ -180,7 +187,7 @@ defineExpose({ openCalculator, previewCopy });
 							{{ row.item_type
 							}}<small>{{ row.catalog_group || "Без группы" }}</small>
 						</td>
-						<td>{{ money(row.cost) }}</td>
+						<td :title="row.cost_reason_message || ''">{{ money(row.cost) }}</td>
 						<td>
 							<input
 								v-model.number="row.rate"
@@ -194,7 +201,7 @@ defineExpose({ openCalculator, previewCopy });
 						</td>
 						<td>
 							<span class="markup-badge" :class="markupClass(row)">{{
-								markup(row) == null ? "—" : `${markup(row).toFixed(1)} %`
+								markupLabel(row.rate, row.cost, markup(row))
 							}}</span>
 						</td>
 						<td v-if="canEdit">
@@ -358,20 +365,16 @@ defineExpose({ openCalculator, previewCopy });
 			</div>
 			<div class="preview-list">
 				<div class="preview-head">
-					<b>Позиция</b><b>Закупочная цена</b><b>Текущая</b><b>Новая</b
-					><b>Наценка была</b><b>Наценка станет</b><b>Результат</b>
+					<b>Позиция</b><b>Себестоимость</b><b>Текущая</b><b>Новая</b><b>Наценка была</b
+					><b>Наценка станет</b><b>Результат</b>
 				</div>
 				<div v-for="row in preview.rows" :key="row.item">
 					<span>{{ row.item_name }}</span
-					><span>{{ money(row.cost) }}</span
+					><span :title="row.cost_reason_message || ''">{{ money(row.cost) }}</span
 					><span>{{ money(row.current_rate) }}</span
 					><span>{{ money(row.new_rate) }}</span
-					><span>{{
-						row.current_markup == null ? "—" : `${row.current_markup.toFixed(1)} %`
-					}}</span
-					><span>{{
-						row.new_markup == null ? "—" : `${row.new_markup.toFixed(1)} %`
-					}}</span
+					><span>{{ markupLabel(row.current_rate, row.cost, row.current_markup) }}</span
+					><span>{{ markupLabel(row.new_rate, row.cost, row.new_markup) }}</span
 					><small>{{ row.reason || row.status }}</small>
 				</div>
 			</div>

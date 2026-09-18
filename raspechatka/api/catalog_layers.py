@@ -12,6 +12,7 @@ from frappe.utils import add_days, cint, flt, getdate, now_datetime, nowdate
 from raspechatka.access import get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.api.frontend import _catalog_group_branch
+from raspechatka.costing import get_point_item_costs
 from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.pricing import (
 	get_default_price_type,
@@ -19,7 +20,6 @@ from raspechatka.pricing import (
 	resolve_point_prices,
 	set_point_price,
 )
-from raspechatka.stock import get_point_average_rates
 
 AREA_BY_LAYER = {
 	"assortment": "page.catalog.assortment",
@@ -339,14 +339,24 @@ def _price_rows(point, items):
 	price_type = get_default_price_type(point)
 	item_names = [item.name for item in items]
 	prices = resolve_point_prices(item_names, point, price_type=price_type)
-	costs = get_point_average_rates(item_names, point)
+	costs = get_point_item_costs(item_names, point)
 	settings = get_pos_sales_settings()
 	rows = []
 	for item in items:
 		price = prices.get(item.name)
-		cost = costs.get(item.name)
+		cost_result = costs[item.name]
+		cost = cost_result["cost"]
 		rate = price.get("rate") if price else None
 		markup = ((flt(rate) - flt(cost)) / flt(cost) * 100) if cost and rate is not None else None
+		markup_status = (
+			"infinite"
+			if cost == 0 and rate is not None and flt(rate) > 0
+			else "zero"
+			if cost == 0
+			else "unavailable"
+			if cost is None
+			else "percent"
+		)
 		rows.append(
 			{
 				**item,
@@ -355,7 +365,12 @@ def _price_rows(point, items):
 				"saved_rate": rate,
 				"currency": price.get("currency") if price else "RUB",
 				"cost": cost,
+				"cost_status": cost_result["status"],
+				"cost_source": cost_result["source"],
+				"cost_reason": cost_result["reason"],
+				"cost_reason_message": cost_result["reason_message"],
 				"markup_percent": markup,
+				"markup_status": markup_status,
 				"markup_lower_threshold": settings["markup_lower_threshold"],
 				"markup_upper_threshold": settings["markup_upper_threshold"],
 			}
