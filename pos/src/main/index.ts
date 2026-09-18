@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import { PosDatabase } from './database'
 import { PosDatabaseV2 } from './database-v2'
 import { ConnectionStore } from './connection'
@@ -134,6 +134,10 @@ if(!hasLock){
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+  }).catch((error)=>{
+    const message=error instanceof Error?(error.stack||error.message):String(error)
+    dialog.showErrorBox('Не удалось запустить Кассу Распечатка',message)
+    app.quit()
   })
 }
 
