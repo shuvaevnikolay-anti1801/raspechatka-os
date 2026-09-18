@@ -691,7 +691,7 @@ export default function SettingsHub() {
                         <span>{x.message}</span>
                       </div>
                     </article>
-                  ))}
+                  ))
                 ) : (
                   <div className="settings-ok">
                     Диагностических событий пока нет.
