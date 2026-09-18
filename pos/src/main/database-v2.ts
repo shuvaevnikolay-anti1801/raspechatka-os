@@ -2,10 +2,28 @@ import { DatabaseSync } from 'node:sqlite'
 import type { ShiftSummary } from '../shared/contracts'
 import { PosDatabase } from './database'
 
+const prepareLegacyDatabase=(filePath:string):void=>{
+  const db=new DatabaseSync(filePath)
+  try{
+    const customersTable=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'").get()
+    if(!customersTable)return
+    const columns=db.prepare('PRAGMA table_info(customers)').all() as Array<{name:string}>
+    if(!columns.some((item)=>item.name==='normalized_phone')){
+      db.exec("ALTER TABLE customers ADD COLUMN normalized_phone TEXT NOT NULL DEFAULT ''")
+    }
+  }finally{
+    db.close()
+  }
+}
+
 export class PosDatabaseV2 extends PosDatabase {
   private readonly v2db:DatabaseSync
 
   constructor(filePath:string){
+    // Older installed POS versions created customers without normalized_phone.
+    // PosDatabase creates an index for that column during migrate(), so add the
+    // column before super() opens the normal migration path.
+    prepareLegacyDatabase(filePath)
     super(filePath)
     this.v2db=new DatabaseSync(filePath)
     this.v2db.exec('PRAGMA journal_mode = WAL')
