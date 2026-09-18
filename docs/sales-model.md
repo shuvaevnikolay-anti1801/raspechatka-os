@@ -26,7 +26,35 @@
 
 Возврат выполняет обратные складские и финансово-управленческие движения. В финансовом ОПиУ кассовая выручка и себестоимость берутся из продаж; банковская операция со статьёй «Выручка» не учитывается второй раз при наличии кассовых данных. ДДС при этом остаётся отчётом по фактическим движениям денег.
 
+## Каноническая смена Windows POS
+
+Для новых смен источником событий является Windows POS (`raspechatka.api.pos_v2.push_events`), а источником итогов — только собственные первичные документы Raspechatka OS. Google и МойСклад не участвуют в расчёте POS-смены. Исторические смены с `source=MoySklad` или `source=Import` сохраняются без переписывания источника.
+
+| Поле Sales Shift | Канонический источник |
+| --- | --- |
+| `cashier` | Кассир локальной PIN-сессии, зафиксированный в `shift.opened`; все последующие события сверяются с кассиром сохранённой смены |
+| `shift_type` | Явное значение POS: первая смена локального календарного дня — «Утро», последующие — «Вечер»; серверный fallback использует ту же последовательность, а не время открытия |
+| `receipt_count`, `sale_count` | Количество проведённых `Sales Receipt` типа Sale |
+| `return_count`, `returns_total` | Количество и итог проведённых `Sales Receipt` типа Return |
+| `sales_before_discount` | Сумма `gross_amount` продаж |
+| `discounts_total` | Сумма `discount_amount` продаж |
+| `gross_sales` | Сумма `total_amount` продаж после скидок; техническое имя сохранено для совместимости |
+| `net_sales` | `gross_sales - returns_total` |
+| `average_check` | `gross_sales / sale_count` |
+| `cash_sales`, `card_sales`, `qr_sales` | Суммы `Sales Receipt Payment` продаж минус возвраты по каждому каналу |
+| `opening_cash`, `closing_cash` | Явные события `cash.counted` при открытии/закрытии |
+| `expected_cash` | `opening_cash + cash_sales + deposits - withdrawals` |
+| `reviews_count` | Сумма идемпотентных `Cashier Action.REVIEW_RECEIVED`, создаваемых из явного `reviewCount` продажи |
+| `review_discounts` | Сумма явного `Sales Receipt.review_discount_amount`; fallback применяется только при разборе старого POS payload |
+| клуб и подарки | Сумма `CLUB_REGISTRATION` и `GIFT_ORDER`/`GIFT_1..3` в `Cashier Action` |
+
+Пока первичного события Windows POS нет для регистраций клуба и заказов подарков. Значения не синтезируются: они остаются нулевыми, пока соответствующий существующий пользовательский сценарий не начнёт отправлять actions. Комиссии карты/QR также не вычисляются без первичного источника.
+
 ## Обмен с кассой
+
+Рабочий endpoint Windows POS: `POST /api/method/raspechatka.api.pos_v2.push_events`. События хранятся в локальном outbox и повторно отправляются до подтверждения, поэтому серверная обработка каждого факта идемпотентна.
+
+Legacy batch-контракт ниже сохраняется для совместимости существующих интеграций и импортных данных, но не является источником новой Windows POS-смены.
 
 Endpoint: `POST /api/method/raspechatka.api.sales.push_batch`.
 

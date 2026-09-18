@@ -506,6 +506,8 @@ def _ingest_shift(row, connection, result, update_existing=False):
 	if not name:
 		doc.external_id = external_id
 	_set_shift_scope(doc, connection)
+	if name and row.get("cashier") and row.get("cashier") != doc.cashier:
+		frappe.throw(_("Кассир события не совпадает с кассиром открытой смены"), frappe.PermissionError)
 	for field in (
 		"status",
 		"shift_type",
@@ -518,9 +520,10 @@ def _ingest_shift(row, connection, result, update_existing=False):
 		"qr_commission_amount",
 		"comment",
 	):
-		if field in row:
+		if field in row and row.get(field) not in (None, ""):
 			doc.set(field, row.get(field))
-	doc.source = "POS"
+	if not name:
+		doc.source = "POS"
 	doc.save(ignore_permissions=True)
 	if not name:
 		log_cashier_action(doc, "OPEN_SHIFT", f"{external_id}:open")
@@ -545,7 +548,13 @@ def _ingest_receipt(row, connection, result):
 		"posting_datetime",
 		"cashier",
 		"client",
+		"club_discount_percent",
+		"club_discount_amount",
+		"review_count",
 		"review_discount_amount",
+		"manual_discount_type",
+		"manual_discount_value",
+		"manual_discount_amount",
 		"other_discount_amount",
 		"promo_code",
 		"campaign",

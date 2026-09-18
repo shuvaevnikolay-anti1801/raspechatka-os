@@ -47,7 +47,7 @@ export class PosDatabase {
       );
       CREATE TABLE IF NOT EXISTS shifts (
         id TEXT PRIMARY KEY, opened_at TEXT NOT NULL, closed_at TEXT, cashier_name TEXT NOT NULL,
-        cashier_id TEXT NOT NULL DEFAULT ''
+        cashier_id TEXT NOT NULL DEFAULT '', shift_type TEXT NOT NULL DEFAULT 'Утро'
       );
       CREATE TABLE IF NOT EXISTS sales (
         id TEXT PRIMARY KEY, client_request_id TEXT NOT NULL UNIQUE, shift_id TEXT NOT NULL,
@@ -154,6 +154,7 @@ export class PosDatabase {
     this.ensureColumn('sale_items', 'discount_percent', 'REAL NOT NULL DEFAULT 0')
     this.ensureColumn('sale_items', 'line_total_minor', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('shifts', 'cashier_id', "TEXT NOT NULL DEFAULT ''")
+    this.ensureColumn('shifts', 'shift_type', "TEXT NOT NULL DEFAULT 'Утро'")
   }
 
   private ensureColumn(table:string,column:string,definition:string):void {
@@ -221,12 +222,15 @@ export class PosDatabase {
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
-  currentShift():Shift|null{return (this.db.prepare(`SELECT id,opened_at AS openedAt,closed_at AS closedAt,cashier_id AS cashierId,cashier_name AS cashierName
+  currentShift():Shift|null{return (this.db.prepare(`SELECT id,opened_at AS openedAt,closed_at AS closedAt,cashier_id AS cashierId,cashier_name AS cashierName,shift_type AS shiftType
     FROM shifts WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`).get() as Shift|undefined)??null}
   openShift(shift:Shift):Shift {
     const current=this.currentShift();if(current)return current
-    this.db.prepare('INSERT INTO shifts (id,opened_at,cashier_id,cashier_name) VALUES (?,?,?,?)').run(shift.id,shift.openedAt,shift.cashierId??'',shift.cashierName)
-    this.queue('shift.opened',shift,shift.openedAt);return shift
+    const opened=new Date(shift.openedAt),dayStart=new Date(opened);dayStart.setHours(0,0,0,0);const dayEnd=new Date(dayStart);dayEnd.setDate(dayEnd.getDate()+1)
+    const count=(this.db.prepare('SELECT COUNT(*) count FROM shifts WHERE opened_at>=? AND opened_at<?').get(dayStart.toISOString(),dayEnd.toISOString()) as {count:number}).count
+    const persisted={...shift,shiftType:count===0?'Утро' as const:'Вечер' as const}
+    this.db.prepare('INSERT INTO shifts (id,opened_at,cashier_id,cashier_name,shift_type) VALUES (?,?,?,?,?)').run(persisted.id,persisted.openedAt,persisted.cashierId??'',persisted.cashierName,persisted.shiftType)
+    this.queue('shift.opened',persisted,persisted.openedAt);return persisted
   }
   closeShift():ShiftSummary {
     const current=this.currentShift();if(!current)throw new Error('Нет открытой смены')
@@ -253,8 +257,9 @@ export class PosDatabase {
       COALESCE(SUM(CASE WHEN operation_type='deposit' THEN amount_minor ELSE 0 END),0) depositsMinor,
       COALESCE(SUM(CASE WHEN operation_type='withdrawal' THEN amount_minor ELSE 0 END),0) withdrawalsMinor
       FROM cash_operations WHERE shift_id=?`).get(shift.id) as Pick<ShiftSummary,'depositsMinor'|'withdrawalsMinor'>
+    const opening=(this.db.prepare("SELECT total_minor value FROM cash_counts WHERE shift_id=? AND count_type='opening' ORDER BY created_at LIMIT 1").get(shift.id) as {value:number}|undefined)?.value??0
     return {...sales,...payments,returnsMinor:refunds.returnsMinor,...cash,
-      expectedCashMinor:payments.cashMinor-cashReturns.value+cash.depositsMinor-cash.withdrawalsMinor}
+      expectedCashMinor:opening+payments.cashMinor-cashReturns.value+cash.depositsMinor-cash.withdrawalsMinor}
   }
 
   findSaleByClientRequestId(id:string):{saleId:string;receiptNumber:string;totalMinor:number}|null {
@@ -465,7 +470,6 @@ export class PosDatabase {
     this.db.prepare('INSERT INTO cash_counts (id,shift_id,count_type,lines_json,total_minor,expected_minor,difference_minor,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .run(count.id,shift.id,countType,JSON.stringify(normalized),totalMinor,expectedMinor,count.differenceMinor,count.createdAt)
     this.queue('cash.counted',{...count,shiftId:shift.id},count.createdAt)
-    if(countType==='opening'&&totalMinor>0)this.addCashOperation('deposit',totalMinor,'Остаток наличных при открытии смены')
     return count
   }
   getLastCashCount():CashCount|null {

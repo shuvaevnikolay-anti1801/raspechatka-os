@@ -56,7 +56,7 @@ export type DiscountBreakdown = {
 }
 export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
-export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string }
+export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string; shiftType?:'Утро'|'Вечер' }
 export type PointEmployee = { id:string; name:string }
 export type CashierAuthState = {
   status:'signed_out'|'authenticated'|'locked'

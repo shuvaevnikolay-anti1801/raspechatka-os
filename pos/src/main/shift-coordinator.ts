@@ -95,7 +95,7 @@ export class ShiftCoordinator {
 
     // Рабочая смена открывается явно сотрудником и не зависит от доступности
     // ККТ. Если ККТ недоступна, продажи будут заблокированы отдельной проверкой.
-    const shift:Shift={id:randomUUID(),openedAt:new Date().toISOString(),cashierId:cashierName?cashierId:'',cashierName:cashierName||cashierId}
+    const shift:Shift={id:randomUUID(),openedAt:new Date().toISOString(),cashierId:cashierName?cashierId:'',cashierName:cashierName||cashierId,shiftType:'Утро'}
     const saved=this.database.openShift(shift)
     this.saveTransition({action:'open',shiftId:shift.id,openedAt:shift.openedAt,cashierName:shift.cashierName,startedAt:new Date().toISOString()})
 
