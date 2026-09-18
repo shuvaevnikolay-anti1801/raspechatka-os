@@ -2,17 +2,24 @@ import { ipcMain } from 'electron'
 import type { InpasSettings } from '../shared/contracts'
 import type { PosDiagnostics } from './diagnostics'
 import type { AtolSettingsStore } from './providers/atol-web'
+import type { AtolWebManager } from './atol-web-manager'
+import type { FiscalProvider } from './providers/contracts'
 import type { InpasPaymentProvider, InpasSettingsStore } from './providers/inpas'
 
 export function registerHardwareSettingsIpc(
   atolSettingsStore:AtolSettingsStore,
+  atolManager:AtolWebManager|undefined,
+  fiscalProvider:FiscalProvider|undefined,
   inpasSettingsStore:InpasSettingsStore,
   paymentProvider:InpasPaymentProvider|undefined,
   diagnostics:PosDiagnostics
 ):void{
   ipcMain.handle('pos:get-atol-settings',()=>atolSettingsStore.load())
-  ipcMain.handle('pos:save-atol-settings',(_event,value:{enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string})=>
-    atolSettingsStore.save(value))
+  ipcMain.handle('pos:save-atol-settings',async(_event,value:{enabled:boolean;baseUrl:string;taxationType:string;taxType:string})=>{
+    const saved=atolSettingsStore.save({...value,baseUrl:'http://127.0.0.1:16732/api/v2'})
+    if(saved.enabled){await atolManager?.ensureReady();const health=await fiscalProvider?.healthCheck();if(health&&!health.ready)throw new Error(health.message)}
+    return saved
+  })
   ipcMain.handle('pos:get-inpas-settings',()=>inpasSettingsStore.load())
   ipcMain.handle('pos:save-inpas-settings',(_event,value:InpasSettings)=>{
     const saved=inpasSettingsStore.save(value)

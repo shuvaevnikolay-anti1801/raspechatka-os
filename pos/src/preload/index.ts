@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, InpasSettings, OutboxEvent, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
+import type { CashCount, CashCountLine, CashOperationType, CompleteSaleRequest, ConnectionConfig, CreateReturnRequest, CreateUnpaidOrderRequest, HeldReceipt, InpasSettings, PosApi, PrintKind, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
-type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
+type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string}
 type ShiftRecoveryStatus={pending:boolean;action?:'open'|'close';startedAt?:string;localOpen:boolean;fiscalOpen?:boolean;fiscalState?:'closed'|'opened'|'expired'|'unknown';safeToRecover:boolean;message:string}
 type ReceiptSearchFilters={
   period?:'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
@@ -22,10 +22,6 @@ type ExtendedPosApi=PosApi&{
   recoverShiftState:()=>Promise<{recovered:boolean;pending:boolean;message?:string}>
   recordShiftDiscrepancy:(differenceMinor:number,note:string)=>Promise<unknown>
   setReceiptSearchFilters:(filters:ReceiptSearchFilters)=>void
-  listOutboxEvents:()=>Promise<OutboxEvent[]>
-  getOutboxPaused:()=>Promise<boolean>
-  setOutboxPaused:(paused:boolean,adminCode:string)=>Promise<boolean>
-  discardOutboxEvents:(ids:string[],adminCode:string)=>Promise<{discarded:number;pending:number}>
 }
 
 let receiptSearchFilters:ReceiptSearchFilters={period:'current_shift'}
@@ -113,10 +109,6 @@ const api: ExtendedPosApi = {
   logoutCashier: () => ipcRenderer.invoke('pos:logout-cashier'),
   verifyAdminCode: (code:string) => ipcRenderer.invoke('pos:verify-admin-code',code),
   resetCashierPin: (cashierId:string,adminCode:string,pin:string,confirmation:string) => ipcRenderer.invoke('pos:reset-cashier-pin',cashierId,adminCode,pin,confirmation),
-  listOutboxEvents:()=>ipcRenderer.invoke('pos:list-outbox-events'),
-  getOutboxPaused:()=>ipcRenderer.invoke('pos:get-outbox-paused'),
-  setOutboxPaused:(paused:boolean,adminCode:string)=>ipcRenderer.invoke('pos:set-outbox-paused',paused,adminCode),
-  discardOutboxEvents:(ids:string[],adminCode:string)=>ipcRenderer.invoke('pos:discard-outbox-events',ids,adminCode),
   syncNow: () => ipcRenderer.invoke('pos:sync-now')
 }
 

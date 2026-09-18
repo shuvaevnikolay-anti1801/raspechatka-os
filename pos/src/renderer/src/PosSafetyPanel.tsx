@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { DeviceStatuses, InpasSettings, PrintJobSummary, PrinterInfo, UnresolvedOperation } from '../../shared/contracts'
 import './safety.css'
 
-type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string;operatorName?:string}
+type AtolSettings={enabled:boolean;baseUrl:string;taxationType:string;taxType:string}
 type ExtendedPosApi=typeof window.raspechatkaPos&{
   getAtolSettings:()=>Promise<AtolSettings>
   saveAtolSettings:(value:AtolSettings)=>Promise<AtolSettings>
@@ -10,7 +10,7 @@ type ExtendedPosApi=typeof window.raspechatkaPos&{
 const pos=()=>window.raspechatkaPos as ExtendedPosApi
 
 const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
-const defaultAtol:AtolSettings={enabled:false,baseUrl:'http://127.0.0.1:16732/api/v2',taxationType:'patent',taxType:'none',operatorName:''}
+const defaultAtol:AtolSettings={enabled:false,baseUrl:'http://127.0.0.1:16732/api/v2',taxationType:'patent',taxType:'none'}
 const defaultInpas:InpasSettings={enabled:false,executablePath:'',terminalId:'',currencyCode:'643',timeoutMs:3600000,qrMode:'terminal_choice'}
 
 const recoveryText=(operation:UnresolvedOperation):{title:string;detail:string;critical:boolean}=>{
@@ -138,7 +138,7 @@ export default function PosSafetyPanel(){
             <label><span>Адрес Web Server</span><input value={atol.baseUrl} onChange={(event)=>setAtol({...atol,baseUrl:event.target.value})}/></label>
             <label><span>Система налогообложения</span><select value={atol.taxationType} onChange={(event)=>setAtol({...atol,taxationType:event.target.value})}><option value="patent">Патент</option><option value="usnIncome">УСН доход</option><option value="usnIncomeOutcome">УСН доход − расход</option><option value="osn">ОСН</option></select></label>
             <label><span>НДС позиции</span><select value={atol.taxType} onChange={(event)=>setAtol({...atol,taxType:event.target.value})}><option value="none">Без НДС</option><option value="vat0">НДС 0%</option><option value="vat5">НДС 5%</option><option value="vat7">НДС 7%</option><option value="vat10">НДС 10%</option><option value="vat20">НДС 20%</option><option value="vat22">НДС 22%</option></select></label>
-            <label><span>Кассир для ККТ (если требуется)</span><input value={atol.operatorName||''} onChange={(event)=>setAtol({...atol,operatorName:event.target.value})} placeholder="Можно оставить пустым"/></label>
+            <label><span>Оператор ККТ</span><strong>Текущий кассир</strong></label>
           </div>
           <button className="save-hardware" onClick={saveAtol}>Сохранить и проверить АТОЛ</button>
         </section>

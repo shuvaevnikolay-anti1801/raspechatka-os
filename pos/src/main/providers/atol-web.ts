@@ -5,13 +5,13 @@ import type {
   DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest,
   FiscalShiftStatus
 } from './contracts'
+import type { AtolWebManager } from '../atol-web-manager'
 
 export type AtolSettings = {
   enabled:boolean
   baseUrl:string
   taxationType:string
   taxType:string
-  operatorName?:string
 }
 
 const DEFAULT_SETTINGS:AtolSettings={
@@ -64,7 +64,7 @@ type AtolTaskResult={
 type AtolTaskResponse={results?:AtolTaskResult[]}
 
 export class AtolWebFiscalProvider implements FiscalProvider {
-  constructor(private readonly settingsStore:AtolSettingsStore){}
+  constructor(private readonly settingsStore:AtolSettingsStore,private readonly manager?:AtolWebManager,private readonly currentOperator:()=>string|undefined=()=>undefined){}
 
   async healthCheck():Promise<DeviceHealth>{
     const settings=this.settingsStore.load()
@@ -95,16 +95,14 @@ export class AtolWebFiscalProvider implements FiscalProvider {
   }
 
   async openShift():Promise<void>{
-    const settings=this.requireSettings()
     const request:Record<string,unknown>={type:'openShift',electronically:false}
-    if(settings.operatorName)request.operator={name:settings.operatorName}
+    this.applyOperator(request)
     await this.execute(randomUUID(),request,20000)
   }
 
   async closeShift():Promise<{message:string;reportNumber?:string}>{
-    const settings=this.requireSettings()
     const request:Record<string,unknown>={type:'closeShift',electronically:false}
-    if(settings.operatorName)request.operator={name:settings.operatorName}
+    this.applyOperator(request)
     const task=await this.execute(randomUUID(),request,30000)
     const result=task.result??{}
     return {message:'Фискальная смена закрыта',reportNumber:this.pickString(result,['fiscalDocumentNumber','documentNumber','shiftNumber'])}
@@ -174,7 +172,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
         }
       })
     }
-    if(settings.operatorName)body.operator={name:settings.operatorName}
+    this.applyOperator(body)
     return body
   }
 
@@ -202,6 +200,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
   }
 
   private async execute(uuid:string,request:Record<string,unknown>,waitMs:number):Promise<AtolTaskResult>{
+    await this.manager?.ensureReady()
     const settings=this.requireSettings()
     await this.fetchJson(`${settings.baseUrl}/requests`,{
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uuid,request:[request]})
@@ -227,7 +226,10 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     const controller=new AbortController()
     const timer=setTimeout(()=>controller.abort(),timeoutMs)
     try{
-      const response=await fetch(url,{...init,signal:controller.signal})
+      const authorization=this.manager?.authorizationHeader()
+      const headers=new Headers(init.headers)
+      if(authorization)headers.set('Authorization',authorization)
+      const response=await fetch(url,{...init,headers,signal:controller.signal})
       const text=await response.text()
       if(!response.ok)throw new Error(`ATOL Web Server: HTTP ${response.status}${text?` · ${text.slice(0,250)}`:''}`)
       return text?JSON.parse(text):{}
@@ -238,6 +240,11 @@ export class AtolWebFiscalProvider implements FiscalProvider {
       }
       throw error
     }finally{clearTimeout(timer)}
+  }
+
+  private applyOperator(request:Record<string,unknown>):void{
+    const name=this.currentOperator()?.trim()
+    if(name)request.operator={name}
   }
 
   private pickString(source:Record<string,unknown>,keys:string[]):string|undefined{

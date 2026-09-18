@@ -1,12 +1,11 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { PosDatabase } from './database'
 import { PosDatabaseV2 } from './database-v2'
 import { ConnectionStore } from './connection'
 import { registerIpcHandlers } from './ipc'
 import { registerPosV2Ipc } from './pos-v2-ipc'
 import { registerHardwareSettingsIpc } from './hardware-ipc'
-import { registerOutboxAdminIpc } from './outbox-admin-ipc'
 import { MockFiscalProvider, MockPaymentProvider } from './providers/mock'
 import { WindowsPrintProvider } from './providers/print'
 import { AtolSettingsStore, AtolWebFiscalProvider } from './providers/atol-web'
@@ -21,6 +20,7 @@ import { buildBootState, startAutomaticSync } from './sync'
 import { PosDiagnostics } from './diagnostics'
 import { InpasPaymentProvider, InpasSettingsStore } from './providers/inpas'
 import { CashierAuthSession } from './cashier-auth'
+import { AtolCredentialStore, AtolWebManager } from './atol-web-manager'
 
 let stopAutomaticSync:(()=>void)|undefined
 let stopAutomaticPrintRetry:(()=>void)|undefined
@@ -81,10 +81,11 @@ if(!hasLock){
     const cashierAuth=new CashierAuthSession(database)
     const trainingMode=process.env.RASPECHATKA_TRAINING_MODE==='1'
     const atolSettingsStore=new AtolSettingsStore(join(userData,'atol-settings.json'))
+    const atolManager=new AtolWebManager(new AtolCredentialStore(join(userData,'atol-credentials.bin')))
     const inpasSettingsStore=new InpasSettingsStore(join(userData,'inpas-settings.json'))
     const inpasProvider=new InpasPaymentProvider(inpasSettingsStore,join(userData,'inpas-results'))
     const paymentProvider=trainingMode?new MockPaymentProvider():inpasProvider
-    const fiscalProvider=trainingMode?new MockFiscalProvider():new AtolWebFiscalProvider(atolSettingsStore)
+    const fiscalProvider=trainingMode?new MockFiscalProvider():new AtolWebFiscalProvider(atolSettingsStore,atolManager,()=>cashierAuth.state().employee?.name||database?.currentShift()?.cashierName)
     const printProvider=new WindowsPrintProvider(join(userData,'printer-settings.json'))
     const transactionEngine=new PosTransactionEngine(database,journal,paymentProvider,fiscalProvider)
     const shiftCoordinator=new ShiftCoordinator(database,fiscalProvider)
@@ -127,8 +128,8 @@ if(!hasLock){
     registerShiftRecoveryIpc({database,fiscalProvider,shiftCoordinator,diagnostics})
     registerPilotIpc(diagnostics)
     registerPairingIpc({diagnostics,cashierAuth})
-    registerHardwareSettingsIpc(atolSettingsStore,inpasSettingsStore,trainingMode?undefined:inpasProvider,diagnostics)
-    registerOutboxAdminIpc({database,diagnostics})
+    registerHardwareSettingsIpc(atolSettingsStore,trainingMode?undefined:atolManager,trainingMode?undefined:fiscalProvider,inpasSettingsStore,trainingMode?undefined:inpasProvider,diagnostics)
+    if(!trainingMode&&atolSettingsStore.load().enabled)void atolManager.ensureReady().catch((error)=>diagnostics?.record({source:'fiscal',level:'error',eventType:'atol.start_failed',message:error instanceof Error?error.message:String(error)}))
     stopAutomaticSync=startAutomaticSync(database,connectionStore,()=>cashierAuth.state().employee?.id)
     stopAutomaticPrintRetry=printQueue.startAutomaticRetry()
     createWindow()
@@ -136,10 +137,6 @@ if(!hasLock){
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
-  }).catch((error)=>{
-    const message=error instanceof Error?(error.stack||error.message):String(error)
-    dialog.showErrorBox('Не удалось запустить Кассу Распечатка',message)
-    app.quit()
   })
 }
 
