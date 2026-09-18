@@ -540,7 +540,7 @@ export default function SettingsHub() {
               <div className="section-heading">
                 <div>
                   <h2>Эквайринг INPAS / PAX</h2>
-                  <p>Интеграция через официальный DC Console.exe.</p>
+                  <p>DC Console автоматически подключается к локальной службе Dual Connector.</p>
                 </div>
                 <label className="toggle">
                   <input
@@ -554,15 +554,9 @@ export default function SettingsHub() {
                 </label>
               </div>
               <div className="settings-form-grid">
-                <label className="wide">
-                  <span>Путь к DC Console.exe</span>
-                  <input
-                    value={inpas.executablePath}
-                    onChange={(e) =>
-                      setInpas({ ...inpas, executablePath: e.target.value })
-                    }
-                    placeholder="Можно оставить пустым для автопоиска"
-                  />
+                <label>
+                  <span>Dual Connector</span>
+                  <strong>{devices?.payment.ready ? "🟢 Найден и подключён" : inpas.enabled ? "🟠 Нет связи" : "Выключен"}</strong>
                 </label>
                 <label>
                   <span>ID терминала</span>
@@ -575,13 +569,7 @@ export default function SettingsHub() {
                 </label>
                 <label>
                   <span>Код валюты</span>
-                  <input
-                    value={inpas.currencyCode}
-                    inputMode="numeric"
-                    onChange={(e) =>
-                      setInpas({ ...inpas, currencyCode: e.target.value })
-                    }
-                  />
+                  <input value={inpas.currencyCode} readOnly />
                 </label>
                 <label>
                   <span>Таймаут, сек.</span>
