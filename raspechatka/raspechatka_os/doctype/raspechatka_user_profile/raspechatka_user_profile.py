@@ -28,6 +28,7 @@ class RaspechatkaUserProfile(Document):
 		self.phone = normalize_phone(self.phone)
 		self._validate_scope()
 		self._validate_points()
+		self._validate_employee_link()
 		if self.linked_employee:
 			duplicate = frappe.db.get_value(
 				"Raspechatka User Profile",
@@ -36,6 +37,25 @@ class RaspechatkaUserProfile(Document):
 			)
 			if duplicate:
 				frappe.throw(_("Сотрудник уже связан с другим пользователем"))  # noqa: RUF001
+
+	def _validate_employee_link(self):
+		if self.access_profile == "Raspechatka Cashier" and not self.linked_employee:
+			frappe.throw(_("Для роли «Кассир» выберите связанного сотрудника"))
+		if not self.linked_employee:
+			return
+		employee = frappe.db.get_value(
+			"Employee", self.linked_employee, ["active", "business_entity"], as_dict=True
+		)
+		if not employee or not employee.active:
+			frappe.throw(_("Связанный сотрудник должен быть активным"))
+		if self.scope_type in {"Business Entity", "Points"} and employee.business_entity != self.business_entity:
+			frappe.throw(_("Связанный сотрудник должен относиться к выбранному юридическому лицу"))
+		if self.scope_type == "Partner":
+			employee_organization = frappe.db.get_value(
+				"Business Entity", employee.business_entity, "organization"
+			)
+			if employee_organization != self.organization:
+				frappe.throw(_("Связанный сотрудник должен относиться к выбранному партнёру"))
 
 	def _validate_open_cashier_shift(self):
 		previous = self.get_doc_before_save()
