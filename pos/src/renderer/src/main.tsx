@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './AppV2'
+import AtolSetupAssistant from './AtolSetupAssistant'
 import CashierHotkeys from './CashierHotkeys'
 import ReceiptFiltersBridge from './ReceiptFiltersBridge'
 import SaleSuccessOverlay from './SaleSuccessOverlay'
@@ -16,6 +17,7 @@ createRoot(document.getElementById('root')!).render(
     <ReceiptFiltersBridge />
     <CashierHotkeys />
     <SettingsHub />
+    <AtolSetupAssistant />
     <ShiftCloseGuard />
     <SaleSuccessOverlay />
   </StrictMode>

@@ -59,6 +59,82 @@ export class AtolWebManager {
       : undefined;
   }
 
+  async configureAtol1F(): Promise<void> {
+    await this.ensureReady();
+    const authorization = this.authorizationHeader();
+    if (!authorization)
+      throw new Error("Не найдена служебная учётная запись ATOL Web Requests");
+
+    const deviceId = "raspechatka-atol-1f";
+    const device = {
+      id: deviceId,
+      name: "АТОЛ 1Ф",
+      isActive: true,
+      isDefault: true,
+      connectionSettings: {
+        model: 93,
+        accessPassword: "",
+        userPassword: "",
+        port: "usb",
+        com: "",
+        baudRate: 1200,
+        usbDevice: "auto",
+        ipAddress: "",
+        ipPort: 0,
+        mac: "",
+        ofdChannel: "auto",
+      },
+      otherSettings: {
+        useGlobalScriptsSettings: true,
+        scriptsPath: "",
+        useGlobalInvertCashDrawerStatusFlag: true,
+        invertCashDrawerStatus: false,
+        useGlobalAdditionalHeaderLines: true,
+        additionalHeaderLines: "",
+        useGlobalAdditionalFooterLines: true,
+        additionalFooterLines: "",
+      },
+    };
+    const headers = {
+      Authorization: authorization,
+      "Content-Type": "application/json",
+    };
+    const create = await fetch("http://127.0.0.1:16732/api/v2/devices", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(device),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (create.status === 409) {
+      const update = await fetch(
+        `http://127.0.0.1:16732/api/v2/devices/${encodeURIComponent(deviceId)}`,
+        {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({
+            name: device.name,
+            connectionSettings: device.connectionSettings,
+            otherSettings: device.otherSettings,
+          }),
+          signal: AbortSignal.timeout(5000),
+        }
+      );
+      if (!update.ok) throw await this.responseError(update, "обновить АТОЛ 1Ф");
+    } else if (!create.ok) {
+      throw await this.responseError(create, "добавить АТОЛ 1Ф");
+    }
+
+    const activate = await fetch(
+      `http://127.0.0.1:16732/api/v2/activateDevice?deviceID=${encodeURIComponent(deviceId)}`,
+      {
+        method: "POST",
+        headers: { Authorization: authorization },
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+    if (!activate.ok) throw await this.responseError(activate, "активировать АТОЛ 1Ф");
+  }
+
   recoverAuthorization(): Promise<void> {
     if (!this.authorizationRecovery)
       this.authorizationRecovery = this.recoverAuthorizationOnce().finally(() => {
@@ -159,6 +235,13 @@ export class AtolWebManager {
         }`
       );
     this.credentials.save(value);
+  }
+
+  private async responseError(response: Response, action: string): Promise<Error> {
+    const text = await response.text();
+    return new Error(
+      `Не удалось ${action}: HTTP ${response.status}${text ? ` · ${text.slice(0, 250)}` : ""}`
+    );
   }
 
   private async reachable(): Promise<boolean> {
