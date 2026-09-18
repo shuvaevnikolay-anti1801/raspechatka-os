@@ -37,8 +37,7 @@ document endpoints authorize the persisted object before accepting client-contro
 | `api.clients.get_loyalty_settings`, `save_loyalty_settings`, `run_loyalty_discount_recalculation` | `page.clients.club` / read/write | Network-wide | Explicit Network-only guard; bulk recalculation updates derived loyalty fields only |
 | `api.clients.get_marketing_records`, `get_marketing_record`, `save_marketing_record` | matching `page.clients.{segments,campaigns,promo_codes,calendar}` / read/write | Network-wide | Explicit Network-only guard; segment member helper still intersects visible clients |
 | `api.clients.club_gateway`, public club/config/register/channel methods | session/link/webhook token | token client | Token resolves the client; secrets are not returned |
-| `api.club_shadow.status`, `configure` | `page.clients.club` / admin | Network | Network configuration guard |
-| `api.club_shadow.receive` | webhook secret | configured integration | Signature/secret and idempotency checks |
+| `api.club_shadow.receive` | retired webhook | none | Always returns HTTP 410 and never reads or mutates `Client` |
 | `api.frontend.*` catalog methods | `page.catalog` / read/create/write | Network-wide catalog | Existing catalog object checked for mutations |
 | `api.references.get_reference_list`, `get_reference_detail`, `save_reference`, archive/delete | page matching reference / read/create/write/delete | caller points/entities or Network reference | `_scope_filters` / `_ensure_scoped_name`; existing object checked before mutation |
 | `api.references` bank/supplier/storage child methods | matching entity/supplier/warehouse page / create/write | caller entities/points | Parent object checked before child payload |

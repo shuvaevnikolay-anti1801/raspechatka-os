@@ -42,16 +42,15 @@ Cross-origin доступ ограничен `https://rpechatka.ru`, `https://ww
 
 BotHelp отправляет событие в `POST /api/method/raspechatka.api.clients.bothelp_webhook` с `club_link_token`, каналом и ID подписчика. Если в `Loyalty Settings` задан секрет webhook, он обязателен в запросе.
 
-## Cutover Google → OS
+## Завершённый переход Google → OS
 
-До переключения shadow-перенос может продолжать сверку с Google. Перед направлением Tilda/BotHelp напрямую в OS администратор в панели shadow должен:
+Raspechatka OS является единственным рабочим источником клиентов клуба. Tilda и BotHelp
+обращаются непосредственно к OS. Legacy endpoint `club_shadow.receive` всегда отвечает HTTP 410
+`GOOGLE_TO_OS_RETIRED` и не читает и не изменяет `Client`.
 
-1. включить «Заморозить запись из Google»;
-2. включить «Прямой клуб OS»;
-3. убедиться, что диагностические счётчики клиентов и расхождений ожидаемы;
-4. переключить внешний Tilda/BotHelp код отдельно от этого релиза.
-
-При заморозке `club_shadow.receive` отклоняет новые записи. Кроме того, клиент с `direct_club_updated_at` не может быть перезаписан более поздней legacy-revision даже при ошибочной разморозке. Google Sheets/Apps Script остаются временным контуром МоегоСклада и не определяют рабочую скидку OS.
+Исторические shadow-настройки, receipts и legacy-поля клиентов сохраняются в базе как архивные
+данные, но не участвуют в рабочем UI и логике. Google Sheets/Apps Script остаются внешним
+legacy-контуром МоегоСклада и не определяют данные, каналы или скидку клиента OS.
 
 Будущий POS использует:
 

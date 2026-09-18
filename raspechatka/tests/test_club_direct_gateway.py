@@ -4,7 +4,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from raspechatka import club_cors
-from raspechatka.api import clients
+from raspechatka.api import clients, club_shadow
 
 
 class Row(dict):
@@ -248,8 +248,32 @@ class TestClubDirectContracts(TestCase):
 		self.assertIn('fields=["name", "client_name", "phone", "discount_percent"]', pos)
 		self.assertIn('["club_status", "discount_percent"]', pos_v2)
 
-	def test_shadow_has_freeze_and_canonical_newer_guards(self):
+	def test_google_shadow_receiver_is_retired_without_client_mutation(self):
 		root = Path(__file__).resolve().parents[2]
 		source = (root / "raspechatka/api/club_shadow.py").read_text(encoding="utf-8")
-		self.assertIn('"SHADOW_FROZEN"', source)
-		self.assertIn('"CANONICAL_STATE_NEWER"', source)
+		self.assertIn('"GOOGLE_TO_OS_RETIRED"', source)
+		self.assertIn("http_status_code = 410", source)
+		self.assertNotIn('get_doc("Client"', source)
+		self.assertNotIn('new_doc("Client"', source)
+		self.assertNotIn('set_value("Client"', source)
+		self.assertNotIn("Club Shadow Settings", source)
+		self.assertEqual(
+			club_shadow.receive._raspechatka_access_contract,
+			{"area": None, "action": None, "scope": "provider", "auth": "webhook"},
+		)
+
+		response = SimpleNamespace(http_status_code=200)
+		fake = SimpleNamespace(local=SimpleNamespace(response=response))
+		with patch.object(club_shadow, "frappe", fake):
+			result = club_shadow.receive("ignored", "ignored", "ignored")
+		self.assertEqual(response.http_status_code, 410)
+		self.assertEqual(result, {"ok": False, "error": "GOOGLE_TO_OS_RETIRED"})
+
+	def test_legacy_client_fields_no_longer_block_os_edits(self):
+		root = Path(__file__).resolve().parents[2]
+		client = (root / "raspechatka/raspechatka_os/doctype/client/client.py").read_text(encoding="utf-8")
+		page = (root / "frontend/src/pages/ClientsPage.vue").read_text(encoding="utf-8")
+		self.assertNotIn("club_shadow_import", client)
+		self.assertNotIn("Клиент синхронизируется из Google", client)
+		self.assertNotIn("!form.legacy_club_id", page)
+		self.assertNotIn("Параллельная копия Google", page)
