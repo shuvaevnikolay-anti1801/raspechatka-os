@@ -549,6 +549,7 @@ def _ingest_receipt(row, connection, result):
 		"promo_code",
 		"campaign",
 		"comment",
+		"source_payload_json",
 	):
 		if field in row:
 			doc.set(field, row.get(field))

@@ -70,34 +70,20 @@ def _point_employees(point_name):
 
 
 def _customers():
-	"""Return active clients without SQL-function strings blocked by Frappe v16."""
-	purchases = {}
-	for row in frappe.get_all(
-		"Client Purchase",
-		fields=["client", "net_amount", "returned_amount"],
-		limit_page_length=0,
-	):
-		if not row.client:
-			continue
-		bucket = purchases.setdefault(row.client, {"purchase_count": 0, "total_spent": 0.0})
-		bucket["purchase_count"] += 1
-		bucket["total_spent"] += flt(row.net_amount) - flt(row.returned_amount)
-
+	"""Return the lightweight, network-wide active club directory for POS."""
 	return [
 		{
 			"id": row.name,
 			"name": row.client_name,
 			"phone": row.phone,
 			"discountPercent": flt(row.discount_percent),
-			"purchaseCount": int((purchases.get(row.name) or {}).get("purchase_count") or 0),
-			"totalSpentMinor": round(flt((purchases.get(row.name) or {}).get("total_spent")) * 100),
 		}
 		for row in frappe.get_all(
 			"Client",
-			filters={"active": 1},
+			filters={"active": 1, "club_status": "Активен"},
 			fields=["name", "client_name", "phone", "discount_percent"],
 			order_by="client_name asc",
-			limit_page_length=10000,
+			limit_page_length=0,
 		)
 	]
 

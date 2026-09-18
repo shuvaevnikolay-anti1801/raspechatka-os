@@ -55,10 +55,10 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents()).toHaveLength(4)
   })
 
-  it('caches OS customer history and updates stock after sale and return',()=>{
+  it('caches the minimal OS customer directory and updates stock after sale and return',()=>{
     const database=createDatabase()
-    database.replaceCustomers([{id:'client-1',name:'Иван',phone:'+7 900 111-22-33',discountPercent:7,purchaseCount:3,totalSpentMinor:125000}])
-    expect(database.listCustomers('111')[0]).toMatchObject({id:'client-1',purchaseCount:3,totalSpentMinor:125000})
+    database.replaceCustomers([{id:'client-1',name:'Иван',phone:'+7 900 111-22-33',discountPercent:7}])
+    expect(database.listCustomers('2233')[0]).toEqual({id:'client-1',name:'Иван',phone:'+7 900 111-22-33',discountPercent:7})
     database.replaceProducts([{id:'paper',name:'Бумага',sku:'PAPER',category:'Товары',type:'product',uom:'шт',priceMinor:1000,stock:5,trackInventory:true}])
     const shift=database.openShift({id:'shift-stock',openedAt:'2026-09-06T11:00:00.000Z',cashierName:'Тест'})
     database.saveSale({
@@ -82,15 +82,17 @@ describe('PosDatabase',()=>{
       {id:'removed',name:'Удалённый',sku:'REMOVED',category:'Товары',type:'product',uom:'шт',priceMinor:2000}
     ])
     database.replaceCustomers([
-      {id:'active-client',name:'Активный клиент',discountPercent:5},
-      {id:'removed-client',name:'Удалённый клиент',discountPercent:0}
+      {id:'active-client',name:'Активный клиент',phone:'+79000000001',discountPercent:5},
+      {id:'removed-client',name:'Удалённый клиент',phone:'+79000000002',discountPercent:0}
     ])
     database.replaceProducts([
       {id:'active',name:'Активный',sku:'ACTIVE',category:'Товары',type:'product',uom:'шт',priceMinor:1000}
     ])
-    database.replaceCustomers([{id:'active-client',name:'Активный клиент',discountPercent:5}])
+    database.replaceCustomers([{id:'active-client',name:'Активный клиент',phone:'+79000000001',discountPercent:5}])
+    database.replaceCustomers([{id:'active-client',name:'Активный клиент',phone:'+79000000001',discountPercent:3}])
     expect(database.listProducts().map((x)=>x.id)).toEqual(['active'])
-    expect(database.listCustomers().map((x)=>x.id)).toEqual(['active-client'])
+    expect(database.getCustomer('active-client')?.discountPercent).toBe(3)
+    expect(database.getCustomer('removed-client')).toBeNull()
   })
 
   it('records the employee workplace actions offline',()=>{

@@ -10,6 +10,7 @@ from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
+from raspechatka.pos_settings import get_pos_sales_rules
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
 POS_MIRROR_RETENTION_DAYS = 60
@@ -63,49 +64,9 @@ def _products(point_name):
 	return [row for row in products if item_groups.get(row["id"]) in allowed_groups]
 
 
-def _customers(point_name):
-	rows = base_pos._customers()
-	if not rows:
-		return rows
-	registered = set(
-		frappe.get_all(
-			"Client",
-			filters={"registration_point": point_name, "active": 1},
-			pluck="name",
-			limit_page_length=10000,
-		)
-	)
-	point_purchases = frappe.get_all(
-		"Client Purchase",
-		filters={"business_point": point_name},
-		fields=["client", "net_amount", "returned_amount"],
-		limit_page_length=10000,
-	)
-	stats = {}
-	for purchase in point_purchases:
-		bucket = stats.setdefault(purchase.client, {"count": 0, "total": 0.0})
-		bucket["count"] += 1
-		bucket["total"] += flt(purchase.net_amount) - flt(purchase.returned_amount)
-	rows = [row for row in rows if row["id"] in registered | set(stats)]
-	for row in rows:
-		row["purchaseCount"] = stats.get(row["id"], {}).get("count", 0)
-		row["totalSpentMinor"] = round(flt(stats.get(row["id"], {}).get("total")) * 100)
-	club = {
-		row.name: row.club_status
-		for row in frappe.get_all(
-			"Client",
-			filters={"name": ["in", [row["id"] for row in rows]]},
-			fields=["name", "club_status"],
-			limit_page_length=10000,
-		)
-	}
-	for row in rows:
-		status = club.get(row["id"]) or ""
-		row["clubStatus"] = status
-		row["isClubMember"] = status == "Активен"
-		if not row["isClubMember"]:
-			row["discountPercent"] = 0
-	return rows
+def _customers():
+	"""The club is network-wide; POS Connection point must not narrow customers."""
+	return base_pos._customers()
 
 
 def _receipt_mirror(point_name):
@@ -193,12 +154,13 @@ def _receipt_mirror(point_name):
 
 
 def _rules(point):
-	rules = base_pos._rules(point)
+	rules = get_pos_sales_rules()
 	rules["reviewDiscountPerReviewMinor"] = max(0, round(flt(point.review_discount_per_review) * 100))
 	return rules
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def get_bootstrap(device_id, token, cashier_id=None):
 	"""Point-scoped POS bootstrap with point catalog groups and club metadata."""
 	connection = base_pos._authenticate(device_id, token)
@@ -220,7 +182,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			"employees": employees,
 			"rules": _rules(point),
 			"products": _products(point.name),
-			"customers": _customers(point.name),
+			"customers": _customers(),
 			"workplaceData": legacy_pos._get_workplace_data(workplace_data_employee, point, workplace),
 			"receiptMirror": _receipt_mirror(point.name),
 			"retentionDays": POS_MIRROR_RETENTION_DAYS,
@@ -259,15 +221,44 @@ def _allocate_final_amounts(lines, total_minor):
 
 def _review_breakdown(payload, connection, raw_total, paid_total):
 	receipt_discount = max(0, raw_total - paid_total)
-	if receipt_discount <= 0:
-		return 0, 0, 0
-	club_percent = 0.0
 	client = str(payload.get("customerId") or "").strip()
+	server_club_percent = 0.0
 	if client:
-		club = frappe.db.get_value("Client", client, ["club_status", "discount_percent"], as_dict=True)
-		if club and club.club_status == "Активен":
-			club_percent = flt(club.discount_percent)
-	club_discount = raw_total - round(raw_total * (1 - min(max(club_percent, 0), 100) / 100))
+		club = frappe.db.get_value(
+			"Client", client, ["active", "club_status", "discount_percent"], as_dict=True
+		)
+		if not club:
+			frappe.throw(_("Клиент не найден"))
+		rules = get_pos_sales_rules()
+		if cint(club.active) and club.club_status == "Активен" and rules["allowDiscounts"]:
+			server_club_percent = min(
+				max(flt(club.discount_percent), 0), flt(rules["maxDiscountPercent"]), 100
+			)
+	reported_club_percent = min(max(flt(payload.get("clubDiscountPercent")), 0), 100)
+	if "clubDiscountPercent" not in payload:
+		reported_club_percent = server_club_percent
+	if reported_club_percent and not client:
+		frappe.log_error(
+			message=f"POS reported club discount {reported_club_percent}% without customer",
+			title="POS club discount mismatch",
+		)
+		reported_club_percent = 0
+	elif client and abs(reported_club_percent - server_club_percent) > 0.001:
+		# The receipt may have been fiscalized offline against the last confirmed snapshot.
+		# Preserve that historical fact, but record its difference from current server policy.
+		frappe.log_error(
+			message=(
+				f"Client {client}: POS applied {reported_club_percent}%, "
+				f"current server discount is {server_club_percent}%"
+			),
+			title="POS club discount mismatch",
+		)
+	if receipt_discount <= 0:
+		return 0, 0, 0, 0
+	club_discount = min(
+		receipt_discount,
+		raw_total - round(raw_total * (1 - reported_club_percent / 100)),
+	)
 	remaining = max(0, receipt_discount - club_discount)
 	per_review = max(
 		0,
@@ -279,11 +270,11 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 		),
 	)
 	if not per_review or not remaining:
-		return 0, 0, receipt_discount
+		return 0, 0, remaining, reported_club_percent
 	review_count = max(0, round(remaining / per_review))
-	review_discount = min(receipt_discount, review_count * per_review)
-	other_discount = max(0, receipt_discount - review_discount)
-	return review_count, review_discount, other_discount
+	review_discount = min(remaining, review_count * per_review)
+	other_discount = max(0, remaining - review_discount)
+	return review_count, review_discount, other_discount, reported_club_percent
 
 
 def _sale_receipt(payload, cashier_id, connection):
@@ -291,7 +282,7 @@ def _sale_receipt(payload, cashier_id, connection):
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
 	gross, raw, allocated = _allocate_final_amounts(lines, paid_total)
-	review_count, review_discount, receipt_other_discount = _review_breakdown(
+	review_count, review_discount, receipt_other_discount, club_discount_percent = _review_breakdown(
 		payload, connection, sum(raw), paid_total
 	)
 	line_discount = sum(gross) - sum(raw)
@@ -332,6 +323,13 @@ def _sale_receipt(payload, cashier_id, connection):
 		"comment": f"Фискальный чек: {payload.get('fiscalNumber')}" if payload.get("fiscalNumber") else None,
 		"review_discount_amount": review_discount / 100,
 		"other_discount_amount": (receipt_other_discount + line_discount) / 100,
+		"source_payload_json": frappe.as_json(
+			{
+				"fiscalNumber": payload.get("fiscalNumber"),
+				"clubDiscountPercent": club_discount_percent,
+				"receiptDiscountPercent": flt(payload.get("receiptDiscountPercent")),
+			}
+		),
 		"items": items,
 		"payments": payments,
 	}, review_count

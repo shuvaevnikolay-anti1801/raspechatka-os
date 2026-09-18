@@ -49,6 +49,7 @@ const api: ExtendedPosApi = {
   getBootState: () => ipcRenderer.invoke('pos:get-boot-state'),
   listProducts: () => ipcRenderer.invoke('pos:list-products'),
   listCustomers: (query) => ipcRenderer.invoke('pos:list-customers',query),
+  getCustomer: (id) => ipcRenderer.invoke('pos:get-customer',id),
   listSales: () => ipcRenderer.invoke('pos:list-sales'),
   searchPointReceipts: (query) => ipcRenderer.invoke('pos:search-point-receipts',query,receiptSearchFilters),
   setReceiptSearchFilters: (filters) => { receiptSearchFilters={...filters} },

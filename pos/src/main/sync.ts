@@ -31,7 +31,6 @@ export async function performSync(database:PosDatabase,connectionStore:Connectio
   let bootstrapError=''
   let outboxError=''
   let successfulContact=false
-  let bootstrapSucceeded=false
 
   const applyBootstrap=async()=>{
     const remote=await loadBootstrap(config,cashierId)
@@ -48,7 +47,6 @@ export async function performSync(database:PosDatabase,connectionStore:Connectio
       source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
     }))
     successfulContact=true
-    bootstrapSucceeded=true
   }
 
   // Справочники и очередь денежных документов синхронизируются независимо.
@@ -76,19 +74,6 @@ export async function performSync(database:PosDatabase,connectionStore:Connectio
     }catch(error){
       outboxError=error instanceof Error?error.message:String(error)
       database.setState('outbox_error',outboxError)
-    }
-  }
-
-  // После отправки очереди ещё раз пробуем получить свежие справочники, но не
-  // превращаем их ошибку в блокировку outbox.
-  if(bootstrapSucceeded){
-    try{
-      await applyBootstrap()
-      bootstrapError=''
-      database.setState('master_data_error','')
-    }catch(error){
-      bootstrapError=error instanceof Error?error.message:String(error)
-      database.setState('master_data_error',bootstrapError)
     }
   }
 

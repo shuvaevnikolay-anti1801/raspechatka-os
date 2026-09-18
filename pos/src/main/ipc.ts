@@ -54,6 +54,7 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:get-boot-state',bootState)
   ipcMain.handle('pos:list-products',()=>database.listProducts())
   ipcMain.handle('pos:list-customers',(_event,query?:string)=>database.listCustomers(query))
+  ipcMain.handle('pos:get-customer',(_event,id:string)=>database.getCustomer(id))
   ipcMain.handle('pos:list-sales',()=>database.listSales())
   ipcMain.handle('pos:get-sale',(_event,id:string)=>database.getSale(id))
   ipcMain.handle('pos:list-returns',()=>database.listReturns())
