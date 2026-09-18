@@ -60,7 +60,9 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
     database.setState('master_data_error',bootstrapError)
   }
 
-  {
+  if(database.getState('outbox_paused')==='1'){
+    database.setState('outbox_error','')
+  }else{
     try{
       let guard=0
       while(database.pendingSyncCount()>0&&guard<100){
