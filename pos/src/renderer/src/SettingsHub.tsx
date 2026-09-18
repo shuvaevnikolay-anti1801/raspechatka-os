@@ -45,9 +45,7 @@ export default function SettingsHub() {
   const [gateError, setGateError] = useState("");
   const [boot, setBoot] = useState<BootState | null>(null);
   const [connection, setConnection] = useState<ConnectionStatus | null>(null);
-  const [devices, setDevices] = useState<DeviceStatuses>(
-    null as unknown as DeviceStatuses
-  );
+  const [devices, setDevices] = useState<DeviceStatuses | null>(null);
   const [atol, setAtol] = useState<AtolSettings>(defaultAtol);
   const [inpas, setInpas] = useState<InpasSettings>(defaultInpas);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
@@ -481,7 +479,7 @@ export default function SettingsHub() {
                 <label>
                   <span>Статус</span>
                   <strong>
-                    {devices.fiscal.ready
+                    {devices?.fiscal.ready
                       ? "🟢 Подключено"
                       : atol.enabled
                       ? "🟠 Требуется проверка"
@@ -693,7 +691,7 @@ export default function SettingsHub() {
                         <span>{x.message}</span>
                       </div>
                     </article>
-                  ))
+                  ))}
                 ) : (
                   <div className="settings-ok">
                     Диагностических событий пока нет.
