@@ -27,6 +27,7 @@ export function registerOutboxAdminIpc(dependencies:{database:PosDatabase;diagno
 
   ipcMain.handle('pos:discard-outbox-events',(_event,ids:string[],adminCode:string)=>{
     assertAdmin(adminCode)
+    if(database.getState('outbox_paused')!=='1')throw new Error('Сначала приостановите отправку очереди')
     if(database.currentShift())throw new Error('Нельзя удалять события из очереди во время открытой смены')
     const requested=new Set((ids||[]).map((id)=>String(id||'').trim()).filter(Boolean))
     if(!requested.size)return {discarded:0,pending:database.pendingSyncCount()}
