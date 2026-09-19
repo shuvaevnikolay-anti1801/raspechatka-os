@@ -8,7 +8,8 @@ import { registerPosV2Ipc } from "./pos-v2-ipc";
 import { registerHardwareSettingsIpc } from "./hardware-ipc";
 import { MockFiscalProvider, MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
-import { AtolSettingsStore, AtolWebFiscalProvider } from "./providers/atol-web";
+import { AtolSettingsStore } from "./providers/atol-web";
+import { createFiscalProvider } from "./providers/fiscal-provider-factory";
 import { ShiftCoordinator } from "./shift-coordinator";
 import { registerShiftRecoveryIpc } from "./shift-recovery-ipc";
 import { registerPilotIpc } from "./pilot-ipc";
@@ -110,15 +111,14 @@ if (!hasLock) {
     const paymentProvider = trainingMode
       ? new MockPaymentProvider()
       : inpasProvider;
-    const fiscalProvider = trainingMode
-      ? new MockFiscalProvider()
-      : new AtolWebFiscalProvider(
-          atolSettingsStore,
-          atolManager,
-          () =>
-            cashierAuth.state().employee?.name ||
-            database?.currentShift()?.cashierName
-        );
+    const fiscalProvider = createFiscalProvider({
+      trainingMode,
+      settingsStore: atolSettingsStore,
+      webManager: trainingMode ? undefined : atolManager,
+      currentOperator: () =>
+        cashierAuth.state().employee?.name ||
+        database?.currentShift()?.cashierName,
+    });
     const printProvider = new WindowsPrintProvider(
       join(userData, "printer-settings.json")
     );
@@ -210,7 +210,7 @@ if (!hasLock) {
       trainingMode ? undefined : inpasProvider,
       diagnostics
     );
-    if (!trainingMode && atolSettingsStore.load().enabled)
+    if (!trainingMode && atolSettingsStore.load().enabled && atolSettingsStore.load().adapter === "web")
       void atolManager
         .ensureReady()
         .catch((error) =>
