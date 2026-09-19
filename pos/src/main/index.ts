@@ -10,7 +10,11 @@ import { MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
 import { AtolSettingsStore } from "./providers/atol-web";
 import { createFiscalProvider } from "./providers/fiscal-provider-factory";
-import { NativeAtolDriverBridge } from "./providers/atol-driver-bridge";
+import {
+  isAtolBridgeExecutableAvailable,
+  NativeAtolDriverBridge,
+  resolveAtolBridgeExecutablePath,
+} from "./providers/atol-driver-bridge";
 import { ShiftCoordinator } from "./shift-coordinator";
 import { registerShiftRecoveryIpc } from "./shift-recovery-ipc";
 import { registerPilotIpc } from "./pilot-ipc";
@@ -113,10 +117,19 @@ if (!hasLock) {
     const paymentProvider = trainingMode
       ? new MockPaymentProvider()
       : inpasProvider;
+    const atolBridgePath = resolveAtolBridgeExecutablePath({ isPackaged: app.isPackaged });
     atolDriverBridge = trainingMode ? undefined : new NativeAtolDriverBridge({
-      executablePath:
-        process.env.RASPECHATKA_ATOL_BRIDGE_PATH ?? "Raspechatka.AtolBridge.exe",
+      executablePath: atolBridgePath,
     });
+    if (!trainingMode && !isAtolBridgeExecutableAvailable(atolBridgePath)) {
+      diagnostics.record({
+        source: "fiscal",
+        level: "warning",
+        eventType: "atol.driver.missing",
+        message: "ATOL bridge helper не найден: прямое подключение не настроено",
+        details: { errorCode: "not_configured" },
+      });
+    }
     const fiscalProvider = createFiscalProvider({
       trainingMode,
       settingsStore: atolSettingsStore,
@@ -125,6 +138,7 @@ if (!hasLock) {
       currentOperator: () =>
         cashierAuth.state().employee?.name ||
         database?.currentShift()?.cashierName,
+      diagnostics,
     });
     const printProvider = new WindowsPrintProvider(
       join(userData, "printer-settings.json")
