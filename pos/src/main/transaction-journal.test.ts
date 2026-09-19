@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { TransactionJournal } from './transaction-journal'
 
@@ -60,4 +61,31 @@ describe('TransactionJournal',()=>{
     expect(journal.listUnresolved()).toHaveLength(0)
     expect(journal.get('op-1')?.fiscalReceiptNumber).toBe('FD-1')
   })
+
+  it('idempotently upgrades an old fiscal_attempts table with recovery evidence',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-old-journal-'))
+    folders.push(folder)
+    const path=join(folder,'journal.sqlite')
+    const old=new DatabaseSync(path)
+    old.exec(`CREATE TABLE fiscal_attempts (
+      id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, action TEXT NOT NULL,
+      state TEXT NOT NULL, receipt_number TEXT, raw_result_json TEXT, error TEXT,
+      started_at TEXT NOT NULL, completed_at TEXT
+    )`)
+    old.close()
+
+    const journal=new TransactionJournal(path)
+    journals.push(journal)
+    journal.create({id:'op-old',clientRequestId:'request-old',kind:'sale',entityId:'sale-old',
+      shiftId:'shift-1',amountMinor:10000,request:{...saleRequest,clientRequestId:'request-old'}})
+    journal.startFiscalAttempt({id:'fiscal-old',operationId:'op-old',action:'sale',
+      requestHash:'hash',snapshot:{kktSerialNumber:'KKT-1',shiftNumber:'5',fiscalDocumentNumber:'10',
+        kktDateTime:'2026-09-19T10:00:00.000Z'}})
+
+    expect(journal.getLatestFiscalAttempt('op-old')).toMatchObject({
+      kktSerialNumber:'KKT-1',shiftNumberBefore:'5',
+      fiscalDocumentNumberBefore:'10',requestHash:'hash'
+    })
+  })
+
 })
