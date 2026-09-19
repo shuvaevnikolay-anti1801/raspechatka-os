@@ -3,7 +3,7 @@ import type { InpasSettings } from "../shared/contracts";
 import type { PosDiagnostics } from "./diagnostics";
 import type { AtolSettings, AtolSettingsStore } from "./providers/atol-settings";
 import { NativeAtolDriverBridge } from "./providers/atol-driver-bridge";
-import type { AtolDriverInfo } from "./providers/atol-driver";
+import type { AtolDriverBridge, AtolDriverInfo } from "./providers/atol-driver";
 import type { AtolWebManager } from "./atol-web-manager";
 import type { FiscalProvider } from "./providers/contracts";
 import type {
@@ -18,7 +18,7 @@ export function registerHardwareSettingsIpc(
   inpasSettingsStore: InpasSettingsStore,
   paymentProvider: InpasPaymentProvider | undefined,
   diagnostics: PosDiagnostics,
-  driverBridge = new NativeAtolDriverBridge({
+  driverBridge: AtolDriverBridge = new NativeAtolDriverBridge({
     executablePath:
       process.env.RASPECHATKA_ATOL_BRIDGE_PATH ?? "Raspechatka.AtolBridge.exe",
   })
