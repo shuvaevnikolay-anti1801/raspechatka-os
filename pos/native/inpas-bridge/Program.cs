@@ -254,6 +254,8 @@ internal sealed class InpasSession
         if (requireAmount)
         {
             amountMinor = Program.Long(args, "amountMinor");
+            if (amountMinor.Value <= 0)
+                throw new BridgeException("invalid_amount", "amountMinor must be a positive integer.");
             if (!TrySet(packet, amountMinor.Value, "Amount", "TransactionAmount", "AmountMinor") &&
                 !TrySet(packet, amountMinor.Value.ToString(CultureInfo.InvariantCulture),
                     "Amount", "TransactionAmount", "AmountMinor"))
@@ -262,6 +264,8 @@ internal sealed class InpasSession
         if (requireCurrency)
         {
             var currency = Program.Text(args, "currency");
+            if (currency != "643")
+                throw new BridgeException("invalid_currency", "INPAS monetary operations require currency 643.");
             if (!TrySet(packet, currency, "CurrencyCode", "Currency", "CurrencyID") &&
                 !TrySet(packet, 643, "CurrencyCode", "Currency", "CurrencyID"))
                 throw new BridgeException("unsupported_driver", "SAPacket does not expose currency.");
