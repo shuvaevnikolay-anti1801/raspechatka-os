@@ -90,6 +90,9 @@ const invokeShift = async <T>(
 
 const api: ExtendedPosApi = {
   getBootState: () => ipcRenderer.invoke("pos:get-boot-state"),
+  getPosLifecycle: () => ipcRenderer.invoke("pos:get-pos-lifecycle"),
+  beginInitialSetup: () => ipcRenderer.invoke("pos:begin-initial-setup"),
+  completeInitialSetup: () => ipcRenderer.invoke("pos:complete-initial-setup"),
   listProducts: () => ipcRenderer.invoke("pos:list-products"),
   listCustomers: (query) => ipcRenderer.invoke("pos:list-customers", query),
   getCustomer: (id) => ipcRenderer.invoke("pos:get-customer", id),
