@@ -16,6 +16,7 @@ import type {
 } from "../../shared/contracts";
 import "./settings-hub.css";
 
+type ExtendedPosApi = typeof window.raspechatkaPos;
 const pos = () => window.raspechatkaPos as ExtendedPosApi;
 const defaultAtol: AtolSettings = {
   version: 2,
