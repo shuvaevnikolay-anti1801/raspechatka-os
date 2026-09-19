@@ -100,13 +100,13 @@ describe("NativeInpasBridge refund protocol", () => {
       },
     });
 
-    await expect(bridge.refund({
+    expect(() => bridge.refund({
       terminalId: "40000037",
       amountMinor: 500,
       currency: "643",
       method: "card",
       referenceNumber: "",
-    })).rejects.toThrow(/ReferenceNumber/);
+    })).toThrow(/ReferenceNumber/);
     expect(spawnCalls).toBe(0);
   });
 });
