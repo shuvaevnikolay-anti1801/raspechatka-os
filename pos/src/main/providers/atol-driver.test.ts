@@ -81,3 +81,57 @@ describe("AtolDriverFiscalProvider", () => {
     })).rejects.toThrow("номер фискального документа ФН");
   });
 });
+
+
+describe("AtolDriverFiscalProvider recovery", () => {
+  const recover = async (probe: Record<string, unknown>) => {
+    const bridge = {
+      connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
+      getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123" })),
+      recoveryProbe: vi.fn(async () => probe),
+    } as unknown as AtolDriverBridge;
+    const provider = new AtolDriverFiscalProvider(
+      bridge,
+      { load: () => settings } as AtolSettingsStore
+    );
+    return provider.getOperationStatus({
+      operationId: "attempt-1",
+      entityId: "sale-1",
+      kind: "sale",
+      expectedAmountMinor: 10000,
+      recovery: {
+        requestHash: "hash",
+        snapshotBefore: {
+          kktSerialNumber: "123",
+          shiftNumber: "5",
+          fiscalDocumentNumber: "10",
+          kktDateTime: "2026-09-19T10:00:00.000Z",
+        },
+      },
+    });
+  };
+
+  it("recognizes an unambiguous matching new fiscal receipt", async () => {
+    await expect(recover({
+      kktSerialNumber: "123", shiftNumber: "5", fiscalDocumentNumber: "11",
+      fiscalSign: "777", kktDateTime: "2026-09-19T10:00:03.000Z",
+      documentClosed: true, receiptKind: "sale", amount: 100,
+    })).resolves.toMatchObject({ status: "fiscalized", receiptNumber: "11" });
+  });
+
+  it("proves not_found only when the FN document did not progress", async () => {
+    await expect(recover({
+      kktSerialNumber: "123", shiftNumber: "5", fiscalDocumentNumber: "10",
+      kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
+    })).resolves.toMatchObject({ status: "not_found" });
+  });
+
+  it("keeps a progressed but mismatched receipt unknown", async () => {
+    await expect(recover({
+      kktSerialNumber: "123", shiftNumber: "5", fiscalDocumentNumber: "11",
+      kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
+      receiptKind: "sale", amount: 99,
+    })).resolves.toMatchObject({ status: "unknown" });
+  });
+});
