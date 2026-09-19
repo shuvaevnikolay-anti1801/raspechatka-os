@@ -89,7 +89,7 @@ internal sealed class AtolSession {
             var fptr = EnsureDriver();
             return new {
                 installed = true,
-                version = TryProperty(fptr, "version")?.ToString(),
+                version = TryInvoke(fptr, "version")?.ToString(),
                 architecture = "x64",
             };
         } catch (COMException error) {
@@ -112,22 +112,32 @@ internal sealed class AtolSession {
     private object Discover() {
         var fptr = EnsureDriver();
         try {
-            fptr.setSingleSetting(Constant(fptr, "LIBFPTR_SETTING_MODEL"),
-                Constant(fptr, "LIBFPTR_MODEL_ATOL_AUTO"));
-            fptr.setSingleSetting(Constant(fptr, "LIBFPTR_SETTING_PORT"),
-                Constant(fptr, "LIBFPTR_PORT_USB"));
+            fptr.setSingleSetting(
+                Constant(fptr, "LIBFPTR_SETTING_MODEL"),
+                Constant(fptr, "LIBFPTR_MODEL_ATOL_AUTO").ToString());
+            fptr.setSingleSetting(
+                Constant(fptr, "LIBFPTR_SETTING_PORT"),
+                Constant(fptr, "LIBFPTR_PORT_USB").ToString());
+            Check(fptr.applySingleSettings(), fptr);
             Check(fptr.open(), fptr);
 
             QueryStatus(fptr);
-            var serialNumber = ReadParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER")?.ToString();
-            var modelName = ReadParam(fptr, "LIBFPTR_PARAM_MODEL_NAME")?.ToString();
-            var firmwareVersion = ReadParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION")?.ToString();
+            var serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER");
+            var modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME");
+            var firmwareVersion = ReadStringParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION");
             var settingsJson = fptr.getSettings()?.ToString();
+
+            if (string.IsNullOrWhiteSpace(serialNumber)) {
+                throw new DriverFailure(null, "Connected ATOL KKT did not return a serial number.");
+            }
+            if (string.IsNullOrWhiteSpace(settingsJson)) {
+                throw new DriverFailure(null, "ATOL Driver did not return connection settings.");
+            }
 
             return new[] {
                 new {
-                    id = $"atol:{serialNumber ?? modelName ?? "usb"}",
-                    model = modelName ?? "",
+                    id = $"atol:{serialNumber}",
+                    modelName = modelName ?? "",
                     serialNumber,
                     firmwareVersion,
                     connection = "usb",
@@ -152,7 +162,7 @@ internal sealed class AtolSession {
         QueryStatus(fptr);
 
         var expectedSerial = ArgumentString(args, "expectedSerialNumber");
-        var actualSerial = ReadParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER")?.ToString();
+        var actualSerial = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER");
         if (!string.IsNullOrWhiteSpace(expectedSerial) &&
             !string.Equals(expectedSerial, actualSerial, StringComparison.Ordinal)) {
             Close(fptr);
@@ -163,7 +173,7 @@ internal sealed class AtolSession {
         return new {
             connected = true,
             serialNumber = actualSerial,
-            modelName = ReadParam(fptr, "LIBFPTR_PARAM_MODEL_NAME")?.ToString(),
+            modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME"),
         };
     }
 
@@ -183,16 +193,17 @@ internal sealed class AtolSession {
         QueryStatus(fptr);
         return new {
             connected = true,
-            serialNumber = ReadParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER")?.ToString(),
-            modelName = ReadParam(fptr, "LIBFPTR_PARAM_MODEL_NAME")?.ToString(),
-            firmwareVersion = ReadParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION")?.ToString(),
-            shiftState = ReadParam(fptr, "LIBFPTR_PARAM_SHIFT_STATE"),
-            paperPresent = ReadBoolParam(fptr, "LIBFPTR_PARAM_PAPER_PRESENT"),
+            serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER"),
+            modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME"),
+            firmwareVersion = ReadStringParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION"),
+            shiftState = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_STATE"),
+            paperPresent = ReadBoolParam(fptr, "LIBFPTR_PARAM_RECEIPT_PAPER_PRESENT"),
             coverOpened = ReadBoolParam(fptr, "LIBFPTR_PARAM_COVER_OPENED"),
+            printerConnectionLost = ReadBoolParam(fptr, "LIBFPTR_PARAM_PRINTER_CONNECTION_LOST"),
             printerError = ReadBoolParam(fptr, "LIBFPTR_PARAM_PRINTER_ERROR"),
             fnPresent = ReadBoolParam(fptr, "LIBFPTR_PARAM_FN_PRESENT"),
-            fnError = ReadBoolParam(fptr, "LIBFPTR_PARAM_FN_ERROR"),
-            fnBlocked = ReadBoolParam(fptr, "LIBFPTR_PARAM_FN_BLOCKED"),
+            invalidFn = ReadBoolParam(fptr, "LIBFPTR_PARAM_INVALID_FN"),
+            deviceBlocked = ReadBoolParam(fptr, "LIBFPTR_PARAM_BLOCKED"),
         };
     }
 
@@ -219,23 +230,35 @@ internal sealed class AtolSession {
         return driver;
     }
 
-    private static void QueryStatus(dynamic fptr) =>
-        Check(fptr.queryData(Constant(fptr, "LIBFPTR_DT_STATUS")), fptr);
+    private static void QueryStatus(dynamic fptr) {
+        fptr.setParam(
+            Constant(fptr, "LIBFPTR_PARAM_DATA_TYPE"),
+            Constant(fptr, "LIBFPTR_DT_STATUS"));
+        Check(fptr.queryData(), fptr);
+    }
 
-    private static object? ReadParam(dynamic fptr, string constantName) {
+    private static string? ReadStringParam(dynamic fptr, string constantName) {
         try {
-            var key = Constant(fptr, constantName);
-            var value = fptr.getParam(key);
-            return value;
+            return fptr.getParamString(Constant(fptr, constantName))?.ToString();
+        } catch {
+            return null;
+        }
+    }
+
+    private static long? ReadIntParam(dynamic fptr, string constantName) {
+        try {
+            return Convert.ToInt64(fptr.getParamInt(Constant(fptr, constantName)));
         } catch {
             return null;
         }
     }
 
     private static bool? ReadBoolParam(dynamic fptr, string constantName) {
-        var value = ReadParam(fptr, constantName);
-        if (value is null) return null;
-        try { return Convert.ToBoolean(value); } catch { return null; }
+        try {
+            return Convert.ToBoolean(fptr.getParamBool(Constant(fptr, constantName)));
+        } catch {
+            return null;
+        }
     }
 
     private static object Constant(dynamic fptr, string name) {
@@ -248,9 +271,9 @@ internal sealed class AtolSession {
         }
     }
 
-    private static object? TryProperty(dynamic fptr, string name) {
+    private static object? TryInvoke(dynamic fptr, string name) {
         try {
-            return fptr.GetType().InvokeMember(name, BindingFlags.GetProperty,
+            return fptr.GetType().InvokeMember(name, BindingFlags.InvokeMethod,
                 binder: null, target: fptr, args: null);
         } catch {
             return null;
