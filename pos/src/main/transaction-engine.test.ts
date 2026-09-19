@@ -151,6 +151,29 @@ describe('PosTransactionEngine safety',()=>{
     expect(fiscal.saleCalls).toBe(1)
   })
 
+  it('keeps a local attempt id separate when the bank returns no reference',async()=>{
+    payment.nextCharge={
+      status:'approved',
+      bankingEvidence:{
+        provider:'inpas',adapter:'direct',terminalId:'40000037',
+        responseCode:'00',transactionStatus:'APPROVED',amountMinor:2000,
+        operationKind:'sale',startedAt:'2026-09-19T10:00:00.000Z',
+        completedAt:'2026-09-19T10:00:05.000Z'
+      }
+    }
+
+    const completed=await engine.completeSale(
+      request([{method:'card',amountMinor:2000}],'banking-no-reference'),shiftId
+    )
+    const paymentPart=database.getSale(completed.saleId).payments[0]
+
+    expect(paymentPart.transactionId).toBeUndefined()
+    expect(paymentPart.bankingEvidence).toMatchObject({
+      terminalId:'40000037',responseCode:'00',operationKind:'sale'
+    })
+    expect(fiscal.saleCalls).toBe(1)
+  })
+
   it('treats an explicitly declined card payment as terminal without blocking the next sale',async()=>{
     payment.nextCharge={status:'declined',message:'Недостаточно средств'}
     await expect(engine.completeSale(request([{method:'card',amountMinor:2000}],'declined-card'),shiftId)).rejects.toThrow(/Недостаточно средств/)
