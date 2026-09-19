@@ -18,6 +18,45 @@ import type { AtolWebManager } from "../atol-web-manager";
 export { AtolSettingsStore } from "./atol-settings";
 export type { AtolSettings } from "./atol-settings";
 import { AtolSettingsStore, type AtolSettings } from "./atol-settings";
+
+export function allocateFiscalAmounts(
+  lines: CartLine[],
+  totalMinor: number
+): number[] {
+  if (!lines.length) return [];
+  const raw = lines.map((line) =>
+    Math.max(
+      0,
+      Math.round(
+        line.quantity *
+          line.unitPriceMinor *
+          (1 - (line.discountPercent ?? 0) / 100)
+      )
+    )
+  );
+  const rawTotal = raw.reduce((sum, value) => sum + value, 0);
+  if (rawTotal <= 0)
+    throw new Error("Сумма фискальных позиций должна быть больше нуля");
+  const result: number[] = [];
+  let allocated = 0;
+  for (let index = 0; index < lines.length; index++) {
+    const amount =
+      index === lines.length - 1
+        ? totalMinor - allocated
+        : Math.round((totalMinor * raw[index]) / rawTotal);
+    result.push(amount);
+    allocated += amount;
+  }
+  if (
+    result.some((amount) => amount < 0) ||
+    result.reduce((sum, value) => sum + value, 0) !== totalMinor
+  ) {
+    throw new Error(
+      "Не удалось распределить итоговую сумму по позициям фискального чека"
+    );
+  }
+  return result;
+}
 type AtolTaskResult = {
   error?: { code?: number; description?: string } | null;
   result?: Record<string, unknown>;
