@@ -258,8 +258,7 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       recovery.state !== stored.status ||
       recovery.provider !== "inpas" ||
       recovery.adapter !== "direct" ||
-      recovery.kind !== (request.recovery?.kind ?? recovery.kind) ||
-      recovery.kind !== (request.originalPayment ? "refund" : recovery.kind) ||
+      (recovery.kind !== "sale" && recovery.kind !== "refund") ||
       recovery.method !== request.method ||
       recovery.amountMinor !== request.amountMinor ||
       !recovery.requestHash ||
