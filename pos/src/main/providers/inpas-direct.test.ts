@@ -219,4 +219,108 @@ describe("InpasDirectPaymentProvider", () => {
     expect(bridge.refundCalls).toHaveLength(0);
     expect(bridge.voidCalls).toHaveLength(0);
   });
+  it("recovers only an exact stored approved result without calling DualConnector", async () => {
+    const evidence = {
+      provider: "inpas" as const,
+      adapter: "direct" as const,
+      terminalId: "40000037",
+      referenceNumber: "RRN-RECOVERED",
+      terminalTransactionId: "TRX-RECOVERED",
+      authorizationCode: "AUTH-RECOVERED",
+      responseCode: "00",
+      transactionStatus: "APPROVED",
+      amountMinor: 500,
+      operationKind: "sale" as const,
+      startedAt: "2026-09-19T10:00:00.000Z",
+      completedAt: "2026-09-19T10:00:05.000Z",
+    };
+    const result = await provider.getOperationStatus({
+      operationId: "attempt-recovered",
+      saleId: "sale-recovered",
+      amountMinor: 500,
+      method: "card",
+      recovery: {
+        state: "approved",
+        kind: "sale",
+        method: "card",
+        amountMinor: 500,
+        transactionId: "TRX-RECOVERED",
+        provider: "inpas",
+        adapter: "direct",
+        terminalId: "40000037",
+        referenceNumber: "RRN-RECOVERED",
+        terminalTransactionId: "TRX-RECOVERED",
+        authorizationCode: "AUTH-RECOVERED",
+        responseCode: "00",
+        requestHash: "a".repeat(64),
+        startedAt: "2026-09-19T10:00:00.000Z",
+        safeResult: {
+          status: "approved",
+          transactionId: "TRX-RECOVERED",
+          bankingEvidence: evidence,
+          message: "APPROVED",
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "approved",
+      transactionId: "TRX-RECOVERED",
+      bankingEvidence: { referenceNumber: "RRN-RECOVERED" },
+    });
+    expect(bridge.saleCalls).toHaveLength(0);
+    expect(bridge.refundCalls).toHaveLength(0);
+  });
+
+  it("returns stored declined proof but keeps mismatched evidence unknown", async () => {
+    const evidence = {
+      provider: "inpas" as const,
+      adapter: "direct" as const,
+      terminalId: "40000037",
+      responseCode: "05",
+      transactionStatus: "DECLINED",
+      amountMinor: 500,
+      operationKind: "refund" as const,
+      startedAt: "2026-09-19T11:00:00.000Z",
+      completedAt: "2026-09-19T11:00:04.000Z",
+    };
+    const recovery = {
+      state: "declined" as const,
+      kind: "refund" as const,
+      method: "card" as const,
+      amountMinor: 500,
+      provider: "inpas",
+      adapter: "direct",
+      terminalId: "40000037",
+      responseCode: "05",
+      requestHash: "b".repeat(64),
+      startedAt: "2026-09-19T11:00:00.000Z",
+      safeResult: {
+        status: "declined" as const,
+        bankingEvidence: evidence,
+        message: "DECLINED",
+      },
+    };
+
+    expect((await provider.getOperationStatus({
+      operationId: "refund-declined",
+      saleId: "return-declined",
+      amountMinor: 500,
+      method: "card",
+      recovery,
+    })).status).toBe("declined");
+
+    const ambiguous = await provider.getOperationStatus({
+      operationId: "refund-ambiguous",
+      saleId: "return-ambiguous",
+      amountMinor: 600,
+      method: "card",
+      recovery,
+    });
+    expect(ambiguous.status).toBe("unknown");
+    expect(ambiguous.message).toMatch(/банковском журнале/);
+    expect(bridge.saleCalls).toHaveLength(0);
+    expect(bridge.refundCalls).toHaveLength(0);
+  });
+
 });
