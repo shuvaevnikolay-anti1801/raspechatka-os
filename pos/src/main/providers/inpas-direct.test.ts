@@ -12,6 +12,7 @@ import type {
   InpasSaleRequest,
   InpasVoidRequest,
 } from "./inpas-direct-bridge";
+import { PosDiagnostics } from "../diagnostics";
 import { InpasDirectPaymentProvider } from "./inpas-direct";
 import { InpasSettingsStore } from "./inpas-settings";
 
@@ -321,6 +322,39 @@ describe("InpasDirectPaymentProvider", () => {
     expect(ambiguous.message).toMatch(/банковском журнале/);
     expect(bridge.saleCalls).toHaveLength(0);
     expect(bridge.refundCalls).toHaveLength(0);
+  });
+
+  it("records whitelisted payment diagnostics without receipt data", async () => {
+    const diagnostics = new PosDiagnostics(join(directory, "diagnostics.sqlite"));
+    const settings = new InpasSettingsStore(join(directory, "settings.json"));
+    const instrumented = new InpasDirectPaymentProvider(settings, bridge, diagnostics);
+    bridge.saleResult = {
+      ...bridge.saleResult,
+      receipt: "PAN 4111111111111111",
+    };
+
+    await instrumented.charge({
+      operationId: "diagnostic-attempt",
+      saleId: "diagnostic-sale",
+      amountMinor: 12345,
+      method: "card",
+    });
+
+    const events = diagnostics.list();
+    diagnostics.close();
+    expect(events.map((event) => event.eventType)).toEqual([
+      "payment.approved",
+      "payment.started",
+    ]);
+    expect(events[0].details).toMatchObject({
+      terminalId: "40000037",
+      amountMinor: 12345,
+      kind: "sale",
+      referenceNumber: "RRN-123",
+      authorizationCode: "AUTH-7",
+      responseCode: "00",
+    });
+    expect(JSON.stringify(events[0].details)).not.toMatch(/receipt|411111/i);
   });
 
 });
