@@ -93,10 +93,13 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
     const beforeTime=before.kktDateTime?Date.parse(before.kktDateTime):Number.NaN;
     const afterTime=after.kktDateTime?Date.parse(after.kktDateTime):Number.NaN;
     const timeOrdered=Number.isFinite(beforeTime)&&Number.isFinite(afterTime)&&afterTime>=beforeTime;
+    const attemptTime=request.recovery?.attemptStartedAt?Date.parse(request.recovery.attemptStartedAt):Number.NaN;
+    const nearAttempt=!Number.isFinite(attemptTime)||!Number.isFinite(afterTime)||
+      Math.abs(afterTime-attemptTime)<=10*60*1000;
     const receiptMatches=after.receiptKind===request.kind&&
-      after.amountMinor===request.expectedAmountMinor&&sameShift&&timeOrdered;
+      after.amountMinor===request.expectedAmountMinor&&sameShift&&timeOrdered&&nearAttempt;
 
-    if(beforeNumber!==undefined&&afterNumber!==undefined&&afterNumber>beforeNumber&&receiptMatches)
+    if(beforeNumber!==undefined&&afterNumber!==undefined&&afterNumber===beforeNumber+1&&receiptMatches)
       return {status:"fiscalized",receiptNumber:String(after.fiscalDocumentNumber),
         raw:{before,after,requestHash:request.recovery.requestHash}};
 
