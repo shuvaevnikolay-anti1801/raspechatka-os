@@ -58,8 +58,6 @@ describe("AtolDriverFiscalProvider", () => {
       shiftNumber: "5",
     });
   });
-});
-
 
   it("does not accept a non-fiscal receipt counter as proof of fiscalization", async () => {
     const bridge = {
@@ -82,3 +80,4 @@ describe("AtolDriverFiscalProvider", () => {
       lines: [{ productId: "p", name: "Печать", quantity: 1, unitPriceMinor: 10000, discountPercent: 0 }],
     })).rejects.toThrow("номер фискального документа ФН");
   });
+});
