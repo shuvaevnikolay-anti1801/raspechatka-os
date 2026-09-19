@@ -236,7 +236,7 @@ export function registerHardwareSettingsIpc(
   });
 
   ipcMain.handle("pos:get-inpas-settings", () => inpasSettingsStore.load());
-  ipcMain.handle("pos:save-inpas-settings", (_event, value: InpasSettings) => {
+  ipcMain.handle("pos:save-inpas-settings", async (_event, value: InpasSettings) => {
     const current = inpasSettingsStore.load();
     const nextAdapter = value.adapter ?? current.adapter;
     const nextDevice = value.direct?.selectedDevice ?? current.direct?.selectedDevice;
@@ -244,6 +244,23 @@ export function registerHardwareSettingsIpc(
       JSON.stringify(nextDevice ?? null) !== JSON.stringify(current.direct?.selectedDevice ?? null);
     if (changed && hasBlockingPaymentOperation())
       throw new Error("Нельзя менять адаптер или терминал: есть незавершённая денежная операция");
+    if (changed && nextAdapter === "direct" && nextDevice) {
+      if (!isNumericTerminalId(nextDevice.terminalId))
+        throw new Error("Выберите терминал, подтверждённый проверкой связи INPAS");
+      const checked = await inpasBridge.testConnection(nextDevice.terminalId);
+      if (!checked.success || checked.terminalId !== nextDevice.terminalId)
+        throw new Error("Нельзя сохранить терминал: проверка связи не подтвердила его Terminal ID");
+      value = {
+        ...value,
+        direct: {
+          selectedDevice: {
+            terminalId: checked.terminalId,
+            model: checked.model ?? nextDevice.model,
+            serial: checked.serial ?? nextDevice.serial,
+          },
+        },
+      };
+    }
     const saved = inpasSettingsStore.save(value);
     paymentProvider?.settingsChanged();
     diagnostics.record({
@@ -307,7 +324,7 @@ export function registerHardwareSettingsIpc(
       driver,
     };
   });
-  ipcMain.handle("pos:select-inpas-device", (_event, device: InpasDirectDevice) => {
+  ipcMain.handle("pos:select-inpas-device", async (_event, device: InpasDirectDevice) => {
     if (!device || !isNumericTerminalId(device.terminalId))
       throw new Error("Выберите терминал, подтверждённый проверкой связи INPAS");
     const current = inpasSettingsStore.load();
@@ -315,12 +332,15 @@ export function registerHardwareSettingsIpc(
       current.direct?.selectedDevice?.terminalId !== device.terminalId;
     if (changed && hasBlockingPaymentOperation())
       throw new Error("Нельзя менять терминал: есть незавершённая денежная операция");
+    const checked = await inpasBridge.testConnection(device.terminalId);
+    if (!checked.success || checked.terminalId !== device.terminalId)
+      throw new Error("Нельзя сохранить терминал: проверка связи не подтвердила его Terminal ID");
     const saved = inpasSettingsStore.save({
       adapter: "direct",
       direct: { selectedDevice: {
-        terminalId: device.terminalId,
-        model: device.model,
-        serial: device.serial,
+        terminalId: checked.terminalId,
+        model: checked.model ?? device.model,
+        serial: checked.serial ?? device.serial,
       } },
     });
     diagnostics.record({
