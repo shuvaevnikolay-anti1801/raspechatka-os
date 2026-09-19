@@ -80,6 +80,7 @@ internal sealed class AtolSession {
         "connect" => Connect(request.Args),
         "disconnect" => Disconnect(),
         "status" => Status(),
+        "executeJson" => ExecuteJson(request.Args),
         "shutdown" => Shutdown(),
         _ => throw new ProtocolException("unknown_command", $"Unsupported command: {request.Command}"),
     };
@@ -206,6 +207,36 @@ internal sealed class AtolSession {
             invalidFn = ReadBoolParam(fptr, "LIBFPTR_PARAM_INVALID_FN"),
             deviceBlocked = ReadBoolParam(fptr, "LIBFPTR_PARAM_BLOCKED"),
         };
+    }
+
+    private object ExecuteJson(JsonElement? args) {
+        var json = ArgumentString(args, "json");
+        if (string.IsNullOrWhiteSpace(json)) {
+            throw new ProtocolException("invalid_request", "json is required.");
+        }
+        try {
+            using var _ = JsonDocument.Parse(json);
+        } catch (JsonException) {
+            throw new ProtocolException("invalid_request", "json must be a JSON object.");
+        }
+
+        var fptr = EnsureDriver();
+        if (!IsOpened(fptr)) {
+            throw new ProtocolException("not_connected", "Connect the selected KKT before executeJson.");
+        }
+        fptr.setParam(Constant(fptr, "LIBFPTR_PARAM_JSON_DATA"), json);
+        Check(fptr.processJson(), fptr);
+        var responseJson = fptr.getParamString(
+            Constant(fptr, "LIBFPTR_PARAM_JSON_DATA"))?.ToString();
+        if (string.IsNullOrWhiteSpace(responseJson)) {
+            throw new DriverFailure(null, "ATOL Driver returned an empty JSON response.");
+        }
+        try {
+            using var response = JsonDocument.Parse(responseJson);
+            return response.RootElement.Clone();
+        } catch (JsonException error) {
+            throw new DriverFailure(null, $"ATOL Driver returned invalid JSON: {error.Message}");
+        }
     }
 
     private object Shutdown() {
