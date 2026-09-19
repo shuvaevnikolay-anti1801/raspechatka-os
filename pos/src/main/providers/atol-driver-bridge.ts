@@ -92,6 +92,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       const status = await this.request<AtolDriverStatus>('status');
       const ready =
         status.connected &&
+        status.paperPresent !== false &&
         !status.coverOpened &&
         !status.printerConnectionLost &&
         !status.printerError &&
