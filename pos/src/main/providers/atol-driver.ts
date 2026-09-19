@@ -32,9 +32,9 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
   }
 
   async getShiftStatus():Promise<FiscalShiftStatus> {
-    const result=this.resultObject(await this.execute({type:"getShiftStatus"}));
-    const shift=this.object(result.shiftStatus)??result;
-    const state=String(shift.state??shift.shiftState??"unknown");
+    await this.ensureConnected();
+    const status=await this.bridge.getStatus();
+    const state=String(status.shiftState??"unknown");
     if(state==="opened") return {open:true,state:"opened",message:"АТОЛ готов · смена открыта"};
     if(state==="closed") return {open:false,state:"closed",message:"АТОЛ готов · смена закрыта"};
     if(state==="expired") return {open:true,state:"expired",message:"Фискальная смена истекла и требует закрытия"};
@@ -80,23 +80,43 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
     const settings=this.settingsStore.load();
     const selected=settings.direct?.selectedDevice;
     if(!settings.enabled||settings.adapter!=="driver"||!selected) throw new Error("Выберите и сохраните ККТ АТОЛ для прямого подключения");
-    if(this.connectedSerial===selected.serialNumber)return;
-    if(this.connectedSerial)await this.bridge.disconnect();
+    if(this.connectedSerial===selected.serialNumber){
+      try {
+        const status=await this.bridge.getStatus();
+        if(status.connected&&status.serialNumber===selected.serialNumber)return;
+      } catch {}
+      await this.bridge.disconnect().catch(()=>undefined);
+      this.connectedSerial=undefined;
+    } else if(this.connectedSerial) {
+      await this.bridge.disconnect().catch(()=>undefined);
+      this.connectedSerial=undefined;
+    }
     await this.bridge.connect({id:"atol:"+selected.serialNumber,modelName:selected.modelName,serialNumber:selected.serialNumber,connection:selected.connection,settingsJson:selected.settingsJson});
+    const status=await this.bridge.getStatus();
+    if(!status.connected||status.serialNumber!==selected.serialNumber){
+      await this.bridge.disconnect().catch(()=>undefined);
+      throw new Error(`Подключена другая ККТ АТОЛ: ожидалась №${selected.serialNumber}, обнаружена №${status.serialNumber??"неизвестно"}`);
+    }
     this.connectedSerial=selected.serialNumber;
   }
 
   private parseFiscalResult(result:Record<string,unknown>):FiscalResult {
-    const fiscal=this.object(result.fiscalParams)??result;
-    const fiscalDocumentNumber=this.pick(fiscal,["fiscalDocumentNumber"]);
-    const receiptNumber=fiscalDocumentNumber??this.pick(fiscal,["receiptNumber"])??this.pick(result,["receiptNumber"]);
-    if(!receiptNumber)throw new Error("АТОЛ завершил операцию, но не вернул номер фискального документа");
+    const fiscal=this.object(result.fiscalParams);
+    const fiscalDocumentNumber=
+      (fiscal?this.pick(fiscal,["fiscalDocumentNumber"]):undefined)??
+      this.pick(result,["fiscalDocumentNumber"]);
+    if(!fiscalDocumentNumber)
+      throw new Error("АТОЛ завершил операцию, но не вернул номер фискального документа ФН");
     return {
-      receiptNumber,
+      receiptNumber:fiscalDocumentNumber,
       documentNumber:this.pick(result,["documentNumber"]),
       fiscalDocumentNumber,
-      fiscalSign:this.pick(fiscal,["fiscalSign","fiscalSignShort"]),
-      shiftNumber:this.pick(fiscal,["shiftNumber"])??this.pick(result,["shiftNumber"]),
+      fiscalSign:
+        (fiscal?this.pick(fiscal,["fiscalSign","fiscalSignShort"]):undefined)??
+        this.pick(result,["fiscalSign","fiscalSignShort"]),
+      shiftNumber:
+        (fiscal?this.pick(fiscal,["shiftNumber"]):undefined)??
+        this.pick(result,["shiftNumber"]),
       raw:result
     };
   }
