@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { BankingEvidence, CompleteSaleRequest, CreateReturnRequest, PaymentPart } from '../shared/contracts'
-import type { FiscalRecoverySnapshot } from './providers/contracts'
+import type { FiscalRecoverySnapshot, PaymentResult } from './providers/contracts'
 
 export type TransactionKind = 'sale' | 'return'
 export type TransactionState =
@@ -228,6 +228,12 @@ export class TransactionJournal {
     }))
   }
 
+  hasPaymentAttempt(operationId:string):boolean {
+    return Boolean(this.db.prepare(
+      'SELECT 1 FROM payment_attempts WHERE operation_id=? LIMIT 1'
+    ).get(operationId))
+  }
+
   hasBlockingFiscalOperation(): boolean {
     return Boolean(this.db.prepare(`SELECT 1 FROM operations o
       WHERE o.state IN ('payment_in_progress','payment_confirmed','payment_unknown',
@@ -308,10 +314,11 @@ export class TransactionJournal {
   }
 
   getLatestPaymentAttempt(operationId: string): null | {
-    id:string; action:'charge'|'refund'; method:string; amountMinor:number; state:string; transactionId?:string
+    id:string; action:'charge'|'refund';kind:'sale'|'refund';method:string;amountMinor:number
+    state:'in_progress'|'approved'|'declined'|'unknown';transactionId?:string
     provider?:string;adapter?:string;terminalId?:string;referenceNumber?:string
     terminalTransactionId?:string;authorizationCode?:string;responseCode?:string;requestHash?:string
-    startedAt?:string;completedAt?:string;bankingEvidence?:BankingEvidence
+    startedAt?:string;completedAt?:string;bankingEvidence?:BankingEvidence;safeResult?:PaymentResult
   } {
     const row = this.db.prepare(`SELECT id,action,method,amount_minor amountMinor,state,transaction_id transactionId,
       provider,adapter,terminal_id terminalId,reference_number referenceNumber,
@@ -320,8 +327,16 @@ export class TransactionJournal {
       raw_result_json rawResultJson
       FROM payment_attempts WHERE operation_id=? ORDER BY started_at DESC LIMIT 1`).get(operationId) as any
     if(!row)return null
+    row.kind=row.action==='charge'?'sale':'refund'
     if(row.rawResultJson){
-      try{row.bankingEvidence=JSON.parse(row.rawResultJson)?.bankingEvidence}catch{}
+      try{
+        row.safeResult=JSON.parse(row.rawResultJson) as PaymentResult
+        row.bankingEvidence=row.safeResult?.bankingEvidence
+      }catch{}
+    }
+    for(const key of ['transactionId','provider','adapter','terminalId','referenceNumber',
+      'terminalTransactionId','authorizationCode','responseCode','requestHash','completedAt']){
+      if(row[key]===null)row[key]=undefined
     }
     delete row.rawResultJson
     return row
