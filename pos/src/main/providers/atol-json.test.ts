@@ -13,7 +13,7 @@ describe("ATOL JSON builder", () => {
       type: "sell",
       amountMinor: 10000,
       payments: [{ method: "cash", amountMinor: 10000 }],
-      lines: [{ productId: "a", name: "Услуга", quantity: 1, unitPriceMinor: 10000, discountPercent: 0, itemType: "service" }],
+      lines: [{ productId: "a", name: "Услуга", quantity: 1, unitPriceMinor: 10000, discountPercent: 0 }],
       taxationType: "patent",
       taxType: "none",
       operatorName: "Анна",
@@ -26,7 +26,7 @@ describe("ATOL JSON builder", () => {
       operator: { name: "Анна" },
     });
     expect(json.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ paymentObject: "service", paymentMethod: "fullPayment" }),
+      expect.objectContaining({ paymentObject: "commodity", paymentMethod: "fullPayment" }),
     ]));
   });
 });
