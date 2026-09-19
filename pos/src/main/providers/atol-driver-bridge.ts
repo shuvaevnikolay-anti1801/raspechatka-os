@@ -39,6 +39,13 @@ type BridgeResponse<T> = {
   };
 };
 
+export type AtolDriverInfo = {
+  installed: boolean;
+  version?: string;
+  architecture?: "x64" | "x86";
+  error?: string;
+};
+
 export type NativeAtolDriverBridgeOptions = {
   executablePath: string;
   args?: string[];
@@ -62,6 +69,14 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
 
   async getDriverInfo(): Promise<AtolDriverInfo> {
     return this.request<AtolDriverInfo>('driverInfo');
+  }
+
+  async driverInfo(): Promise<AtolDriverInfo> {
+    return this.request<AtolDriverInfo>("driverInfo");
+  }
+
+  async status(): Promise<AtolDriverStatus> {
+    return this.request<AtolDriverStatus>("status");
   }
 
   async findDevices(): Promise<AtolDriverDevice[]> {
