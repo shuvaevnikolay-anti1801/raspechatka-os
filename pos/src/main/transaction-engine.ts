@@ -4,7 +4,7 @@ import type {
   CartLine, CompleteSaleRequest, CompleteSaleResult, CreateReturnRequest, PaymentPart, ReturnResult, SaleDetails
 } from '../shared/contracts'
 import type {
-  FiscalProvider, FiscalResult, PaymentProvider, PaymentResult
+  FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest, PaymentProvider, PaymentResult
 } from './providers/contracts'
 import { PosDatabase } from './database'
 import { JournalOperation, TransactionJournal } from './transaction-journal'
