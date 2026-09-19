@@ -145,6 +145,8 @@ internal sealed class InpasSession
             case "status": return Status();
             case "testConnection": return TestConnection(args);
             case "sale": return Sale(args);
+            case "refund": return Refund(args);
+            case "void": return Void(args);
             case "reconcile": return Reconcile(args);
             case "shutdown": return Shutdown();
             default: throw new BridgeException("unknown_command", "Unsupported command: " + command);
@@ -213,6 +215,16 @@ internal sealed class InpasSession
         return ExecuteOperation(args, 1, "sale", true, true);
     }
 
+    private object Refund(IDictionary<string, object> args)
+    {
+        return ExecuteOperation(args, 29, "refund", true, true);
+    }
+
+    private object Void(IDictionary<string, object> args)
+    {
+        return ExecuteOperation(args, 4, "void", true, true);
+    }
+
     private object Reconcile(IDictionary<string, object> args)
     {
         return ExecuteOperation(args, 59, "reconcile", false, false);
@@ -258,6 +270,29 @@ internal sealed class InpasSession
         var method = Program.Text(args, "method");
         if (!String.IsNullOrWhiteSpace(method))
             TrySet(packet, method, "PaymentMethod", "Method", "PaymentType");
+
+        if (operationKind == "refund" || operationKind == "void")
+        {
+            var referenceNumber = Program.Text(args, "referenceNumber");
+            if (String.IsNullOrWhiteSpace(referenceNumber) || referenceNumber.Length > 200 ||
+                Regex.IsMatch(referenceNumber, "[\\r\\n\\0]"))
+                throw new BridgeException(
+                    "missing_original_reference",
+                    "ReferenceNumber/RRN from the original sale is required.");
+            if (!TrySet(packet, referenceNumber, "ReferenceNumber", "RRN"))
+                throw new BridgeException(
+                    "unsupported_driver",
+                    "SAPacket does not expose ReferenceNumber for the original operation.");
+
+            var originalTransactionId = Program.Text(args, "terminalTransactionId");
+            if (!String.IsNullOrWhiteSpace(originalTransactionId))
+                TrySet(packet, originalTransactionId,
+                    "TerminalTrxID", "TerminalTrxId", "TerminalTransactionID",
+                    "TerminalTransactionId", "TransactionID", "TransactionId");
+            var originalAuthorizationCode = Program.Text(args, "authorizationCode");
+            if (!String.IsNullOrWhiteSpace(originalAuthorizationCode))
+                TrySet(packet, originalAuthorizationCode, "AuthorizationCode", "AuthCode");
+        }
 
         object exchangeResult;
         try
