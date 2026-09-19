@@ -100,8 +100,8 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
       return {status:"fiscalized",receiptNumber:String(after.fiscalDocumentNumber),
         raw:{before,after,requestHash:request.recovery.requestHash}};
 
-    const noProgress=(beforeNumber===undefined&&afterNumber===undefined)||
-      (beforeNumber!==undefined&&afterNumber===beforeNumber);
+    const noProgress=beforeNumber!==undefined&&afterNumber!==undefined&&
+      afterNumber===beforeNumber;
     if(noProgress&&after.documentClosed===true&&sameShift&&timeOrdered)
       return {status:"not_found",message:"ФН подтверждает отсутствие нового фискального документа",
         raw:{before,after,requestHash:request.recovery.requestHash}};
