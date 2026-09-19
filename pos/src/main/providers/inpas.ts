@@ -235,15 +235,14 @@ export class InpasPaymentProvider implements PaymentProvider {
         ? parseInpasResult(decode(readFileSync(resultPath)))
         : {};
       const receipt = existsSync(receiptPath)
-        ? decode(readFileSync(receiptPath)).trim()
+        ? this.sanitizeText(decode(readFileSync(receiptPath)))
         : "";
-      const stdout = processResult.stdout.trim().slice(0, 1500);
-      const stderr = processResult.stderr.trim().slice(0, 1500);
+      const stdout = this.sanitizeText(processResult.stdout).slice(0, 1500);
+      const stderr = this.sanitizeText(processResult.stderr).slice(0, 1500);
       const raw = {
         kind,
         launcherType: launcher.type,
         launcher: basename(launcher.path),
-        launcherPath: launcher.path,
         exitCode: processResult.code,
         signal: processResult.signal,
         statusCode: fields["39"],
@@ -355,6 +354,18 @@ export class InpasPaymentProvider implements PaymentProvider {
             : value.slice(0, 500),
         ])
     );
+  }
+
+  private sanitizeText(value: string): string {
+    const safeLines = value.split(/\r?\n/).filter(
+      (line) => !/(PAN|TRACK|PIN|CARD|КАРТ|МАГНИТ)/i.test(line)
+    );
+    return safeLines
+      .join("\n")
+      .replace(/(?<!\d)\d{12,19}(?!\d)/g, "[REDACTED]")
+      .replace(/(?:\*|X){4,}\d{4}/gi, "[REDACTED]")
+      .trim()
+      .slice(0, 4000);
   }
 
   private resultFile(operationId: string): string {
