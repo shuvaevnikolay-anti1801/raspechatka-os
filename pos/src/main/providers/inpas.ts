@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type {
   InpasSettings,
   PaymentServiceResult,
@@ -19,6 +19,8 @@ import type {
   PaymentRequest,
   PaymentResult,
 } from "./contracts";
+import { InpasSettingsStore } from "./inpas-settings";
+export { InpasSettingsStore } from "./inpas-settings";
 
 type CommandResult = {
   code: number | null;
@@ -34,22 +36,6 @@ type CommandExecutor = (
   options: { cwd: string; timeoutMs: number }
 ) => Promise<CommandResult>;
 
-export type InpasLauncher = {
-  path: string;
-  type: "jar" | "bat" | "exe";
-  command: string;
-  prefixArgs: string[];
-};
-
-const DEFAULT_SETTINGS: InpasSettings = {
-  enabled: false,
-  executablePath: "",
-  terminalId: "",
-  currencyCode: "643",
-  timeoutMs: 3_600_000,
-  qrMode: "terminal_choice",
-};
-
 const decode = (buffer: Buffer) =>
   new TextDecoder("windows-1251").decode(buffer).replace(/^\uFEFF/, "");
 
@@ -60,149 +46,6 @@ export function parseInpasResult(text: string): Record<string, string> {
     if (match) fields[match[1].padStart(2, "0")] = match[2];
   }
   return fields;
-}
-
-function preferredConfiguredPaths(value: string): string[] {
-  if (!value.trim()) return [];
-  const configured = resolve(value.trim());
-  const extension = extname(configured).toLowerCase();
-  if (extension !== ".jar") return [configured];
-
-  // DualConnector 2.x ships an official BAT wrapper next to the JAR. The BAT
-  // establishes the expected working directory/classpath before starting Java.
-  // Older Raspechatka builds persisted DCConsole.jar in settings, so prefer the
-  // sibling BAT automatically without requiring the cashier to reconfigure POS.
-  const siblingBat = join(
-    dirname(configured),
-    `${basename(configured, extension)}.bat`
-  );
-  return [siblingBat, configured];
-}
-
-export class InpasSettingsStore {
-  constructor(private readonly filePath: string) {}
-
-  load(): InpasSettings {
-    if (!existsSync(this.filePath)) return { ...DEFAULT_SETTINGS };
-    try {
-      return this.normalize({
-        ...DEFAULT_SETTINGS,
-        ...(JSON.parse(
-          readFileSync(this.filePath, "utf-8")
-        ) as Partial<InpasSettings>),
-      });
-    } catch {
-      return { ...DEFAULT_SETTINGS };
-    }
-  }
-
-  save(value: Partial<InpasSettings>): InpasSettings {
-    const next = this.normalize({ ...this.load(), ...value });
-    if (next.enabled) {
-      if (!next.terminalId) throw new Error("Укажите ID терминала INPAS");
-      if (!/^[A-Za-z0-9_-]+$/.test(next.terminalId))
-        throw new Error("ID терминала содержит недопустимые символы");
-      if (!/^\d{3}$/.test(next.currencyCode))
-        throw new Error("Код валюты должен состоять из трёх цифр");
-      const launcher = this.resolveLauncher(next);
-      if (!launcher)
-        throw new Error(
-          "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0"
-        );
-      next.executablePath = launcher.path;
-    }
-    writeFileSync(this.filePath, JSON.stringify(next, null, 2), "utf-8");
-    return next;
-  }
-
-  resolveExecutable(settings = this.load()): string | undefined {
-    return this.resolveLauncher(settings)?.path;
-  }
-
-  resolveLauncher(settings = this.load()): InpasLauncher | undefined {
-    const configured = settings.executablePath.trim();
-    const override = process.env.RASPECHATKA_INPAS_CONSOLE || "";
-    const candidates = [
-      ...preferredConfiguredPaths(configured),
-      ...preferredConfiguredPaths(override),
-      ...[process.env["ProgramFiles(x86)"], process.env.ProgramFiles]
-        .filter(Boolean)
-        .flatMap((root) =>
-          [
-            "DCConsole.bat",
-            "DCCconsole.bat",
-            "DCConsole.jar",
-            "DCCconsole.jar",
-            "DC Console.exe",
-            "DCConsole.exe",
-          ].map((file) => join(root!, "INPAS", "DualConnector", file))
-        ),
-    ]
-      .filter(Boolean)
-      .map((item) => resolve(item));
-
-    for (const path of [...new Set(candidates)]) {
-      if (!existsSync(path)) continue;
-      const extension = extname(path).toLowerCase();
-
-      if (extension === ".bat") {
-        return {
-          path,
-          type: "bat",
-          command: process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe",
-          prefixArgs: ["/d", "/s", "/c"],
-        };
-      }
-
-      if (extension === ".jar") {
-        const bundled = [
-          process.env.JAVA_HOME
-            ? join(process.env.JAVA_HOME, "bin", "java.exe")
-            : "",
-          join(dirname(path), "jre", "bin", "java.exe"),
-          join(dirname(path), "runtime", "bin", "java.exe"),
-        ].find((item) => item && existsSync(item));
-        let java = bundled;
-        if (!java) {
-          try {
-            java = execFileSync(
-              process.platform === "win32" ? "where.exe" : "which",
-              [process.platform === "win32" ? "java.exe" : "java"],
-              { encoding: "utf8", windowsHide: true }
-            )
-              .split(/\r?\n/)
-              .find(Boolean)
-              ?.trim();
-          } catch {}
-        }
-        if (java)
-          return {
-            path,
-            type: "jar",
-            command: java,
-            prefixArgs: ["-jar", path],
-          };
-      }
-
-      if (extension === ".exe")
-        return { path, type: "exe", command: path, prefixArgs: [] };
-    }
-    return undefined;
-  }
-
-  private normalize(value: InpasSettings): InpasSettings {
-    return {
-      enabled: Boolean(value.enabled),
-      executablePath: String(value.executablePath || "").trim(),
-      terminalId: String(value.terminalId || "").trim(),
-      currencyCode: String(value.currencyCode || "643").trim(),
-      timeoutMs: Math.min(
-        Math.max(Number(value.timeoutMs) || 3_600_000, 30_000),
-        3_600_000
-      ),
-      qrMode: "terminal_choice",
-    };
-  }
 }
 
 export class InpasPaymentProvider implements PaymentProvider {
@@ -227,11 +70,13 @@ export class InpasPaymentProvider implements PaymentProvider {
 
   private async checkHealth(force: boolean): Promise<DeviceHealth> {
     const settings = this.settingsStore.load();
-    if (!settings.enabled)
+    if (!settings.enabled || settings.adapter !== "console")
       return {
         ready: false,
         status: "not_configured",
-        message: "INPAS / PAX не включён в настройках",
+        message: settings.adapter === "direct"
+          ? "Direct INPAS provider будет включён на следующем этапе"
+          : "INPAS / PAX не включён в настройках",
       };
     if (this.running)
       return {
@@ -250,7 +95,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         message:
           "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0",
       };
-    if (!settings.terminalId)
+    if (!settings.console.terminalId)
       return {
         ready: false,
         status: "not_configured",
@@ -271,7 +116,7 @@ export class InpasPaymentProvider implements PaymentProvider {
               status: "ready",
               message: "INPAS / PAX готов",
               details: {
-                terminalId: settings.terminalId,
+                terminalId: settings.console.terminalId,
                 launcher: launcher.path,
                 launcherType: launcher.type,
               },
@@ -280,7 +125,7 @@ export class InpasPaymentProvider implements PaymentProvider {
               ready: false,
               status: "offline",
               message: result.message || "Терминал не ответил",
-              details: { terminalId: settings.terminalId },
+              details: { terminalId: settings.console.terminalId },
             };
       this.healthCache = { at: Date.now(), value: health };
       return health;
@@ -340,15 +185,15 @@ export class InpasPaymentProvider implements PaymentProvider {
   ): Promise<PaymentResult> {
     if (this.running) throw new Error("Терминал уже выполняет другую операцию");
     const settings = provided ?? this.settingsStore.load();
-    if (!settings.enabled)
-      throw new Error("Эквайринг INPAS выключен в настройках");
+    if (!settings.enabled || settings.adapter !== "console")
+      throw new Error("Legacy INPAS console adapter не выбран в настройках");
 
     const launcher = this.settingsStore.resolveLauncher(settings);
     if (!launcher)
       throw new Error(
         "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0"
       );
-    if (!settings.terminalId) throw new Error("Не указан ID терминала INPAS");
+    if (!settings.console.terminalId) throw new Error("Не указан ID терминала INPAS");
 
     const operationCode = {
       charge: "1",
@@ -356,11 +201,11 @@ export class InpasPaymentProvider implements PaymentProvider {
       health: "26",
       reconcile: "59",
     }[kind];
-    const args = [`-o${operationCode}`, `-z${settings.terminalId}`];
+    const args = [`-o${operationCode}`, `-z${settings.console.terminalId}`];
     if (amountMinor !== undefined) args.push(`-a${amountMinor}`);
     if (kind === "charge" || kind === "refund" || kind === "health")
-      args.push(`-c${settings.currencyCode}`);
-    args.push(`-s${Math.ceil(settings.timeoutMs / 1000)}`);
+      args.push(`-c${settings.console.currencyCode}`);
+    args.push(`-s${Math.ceil(settings.console.timeoutMs / 1000)}`);
 
     const cwd = dirname(launcher.path);
     const resultPath = join(cwd, "result.txt");
@@ -380,7 +225,7 @@ export class InpasPaymentProvider implements PaymentProvider {
 
       const processResult = await this.executor(launcher.command, launchArgs, {
         cwd,
-        timeoutMs: settings.timeoutMs + 5000,
+        timeoutMs: settings.console.timeoutMs + 5000,
       });
       const resultFileFound = existsSync(resultPath);
       const fields = resultFileFound
