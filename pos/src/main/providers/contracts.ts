@@ -8,6 +8,11 @@ export type DeviceHealth = {
 }
 
 export type PaymentRecoveryEvidence = {
+  state?: 'in_progress'|'approved'|'declined'|'unknown'
+  kind?: 'sale'|'refund'
+  method?: PaymentMethod
+  amountMinor?: number
+  transactionId?: string
   provider?: string
   adapter?: string
   terminalId?: string
@@ -19,6 +24,7 @@ export type PaymentRecoveryEvidence = {
   startedAt?: string
   completedAt?: string
   bankingEvidence?: BankingEvidence
+  safeResult?: PaymentResult
 }
 
 export type PaymentAttemptContext = {
