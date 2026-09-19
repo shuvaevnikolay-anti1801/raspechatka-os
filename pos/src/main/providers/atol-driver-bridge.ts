@@ -4,6 +4,7 @@ import type { DeviceHealth } from './contracts';
 import type {
   AtolDriverBridge,
   AtolDriverDevice,
+  AtolDriverInfo,
   AtolDriverStatus,
 } from './atol-driver';
 
@@ -59,12 +60,16 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
 
   constructor(private readonly options: NativeAtolDriverBridgeOptions) {}
 
+  async getDriverInfo(): Promise<AtolDriverInfo> {
+    return this.request<AtolDriverInfo>('driverInfo');
+  }
+
   async findDevices(): Promise<AtolDriverDevice[]> {
     const devices = await this.request<AtolDriverDevice[]>('discover');
     return devices.map((device) => ({
       ...device,
-      id: device.id || `atol:${device.serialNumber ?? device.model}`,
-      model: device.model ?? '',
+      id: device.id || `atol:${device.serialNumber}`,
+      modelName: device.modelName ?? '',
       connection: device.connection ?? 'unknown',
     }));
   }
@@ -88,9 +93,11 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       const ready =
         status.connected &&
         !status.coverOpened &&
+        !status.printerConnectionLost &&
         !status.printerError &&
-        !status.fnError &&
-        !status.fnBlocked;
+        status.fnPresent !== false &&
+        !status.invalidFn &&
+        !status.deviceBlocked;
 
       return {
         ready,
