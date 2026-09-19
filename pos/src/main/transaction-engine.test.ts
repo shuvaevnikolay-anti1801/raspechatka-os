@@ -19,6 +19,7 @@ class TestPaymentProvider implements PaymentProvider {
   nextStatus:PaymentResult={status:'approved',transactionId:'bank-1'}
   throwOnCharge=false
 
+  getAttemptContext(){return {provider:'inpas' as const,adapter:'direct' as const,terminalId:'40000037'}}
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
   async charge(_request:PaymentRequest):Promise<PaymentResult>{
     this.chargeCalls++
@@ -117,6 +118,37 @@ describe('PosTransactionEngine safety',()=>{
     expect(payment.statusCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('persists direct banking evidence before allowing fiscalization',async()=>{
+    payment.nextCharge={
+      status:'approved',
+      transactionId:'TRX-1',
+      bankingEvidence:{
+        provider:'inpas',adapter:'direct',terminalId:'40000037',
+        referenceNumber:'RRN-1',terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',
+        responseCode:'00',transactionStatus:'APPROVED',amountMinor:2000,
+        operationKind:'sale',startedAt:'2026-09-19T10:00:00.000Z',
+        completedAt:'2026-09-19T10:00:05.000Z'
+      }
+    }
+
+    const completed=await engine.completeSale(
+      request([{method:'card',amountMinor:2000}],'banking-evidence'),shiftId
+    )
+    const sale=database.getSale(completed.saleId)
+    const operation=journal.getByClientRequestId('banking-evidence')!
+    const attempt=journal.getLatestPaymentAttempt(operation.id)
+
+    expect(sale.payments[0]).toMatchObject({
+      transactionId:'TRX-1',
+      bankingEvidence:{referenceNumber:'RRN-1',terminalId:'40000037'}
+    })
+    expect(attempt).toMatchObject({
+      provider:'inpas',adapter:'direct',terminalId:'40000037',
+      referenceNumber:'RRN-1',terminalTransactionId:'TRX-1',requestHash:expect.any(String)
+    })
+    expect(fiscal.saleCalls).toBe(1)
   })
 
   it('treats an explicitly declined card payment as terminal without blocking the next sale',async()=>{
