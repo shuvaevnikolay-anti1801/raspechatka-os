@@ -1,4 +1,3 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type {
   CartLine,
@@ -16,91 +15,9 @@ import type {
 } from "./contracts";
 import type { AtolWebManager } from "../atol-web-manager";
 
-export type AtolSettings = {
-  enabled: boolean;
-  baseUrl: string;
-  taxationType: string;
-  taxType: string;
-};
-
-const DEFAULT_SETTINGS: AtolSettings = {
-  enabled: false,
-  baseUrl: "http://127.0.0.1:16732/api/v2",
-  taxationType: "patent",
-  taxType: "none",
-};
-
-export function allocateFiscalAmounts(
-  lines: CartLine[],
-  totalMinor: number
-): number[] {
-  if (!lines.length) return [];
-  const raw = lines.map((line) =>
-    Math.max(
-      0,
-      Math.round(
-        line.quantity *
-          line.unitPriceMinor *
-          (1 - (line.discountPercent ?? 0) / 100)
-      )
-    )
-  );
-  const rawTotal = raw.reduce((sum, value) => sum + value, 0);
-  if (rawTotal <= 0)
-    throw new Error("Сумма фискальных позиций должна быть больше нуля");
-  const result: number[] = [];
-  let allocated = 0;
-  for (let index = 0; index < lines.length; index++) {
-    const amount =
-      index === lines.length - 1
-        ? totalMinor - allocated
-        : Math.round((totalMinor * raw[index]) / rawTotal);
-    result.push(amount);
-    allocated += amount;
-  }
-  if (
-    result.some((amount) => amount < 0) ||
-    result.reduce((sum, value) => sum + value, 0) !== totalMinor
-  ) {
-    throw new Error(
-      "Не удалось распределить итоговую сумму по позициям фискального чека"
-    );
-  }
-  return result;
-}
-
-export class AtolSettingsStore {
-  constructor(private readonly filePath: string) {}
-  load(): AtolSettings {
-    if (!existsSync(this.filePath)) return { ...DEFAULT_SETTINGS };
-    try {
-      return {
-        ...DEFAULT_SETTINGS,
-        ...(JSON.parse(
-          readFileSync(this.filePath, "utf-8")
-        ) as Partial<AtolSettings>),
-      };
-    } catch {
-      return { ...DEFAULT_SETTINGS };
-    }
-  }
-  save(value: Partial<AtolSettings>): AtolSettings {
-    const current = this.load();
-    const next: AtolSettings = {
-      ...current,
-      ...value,
-      baseUrl: (value.baseUrl ?? current.baseUrl).trim().replace(/\/$/, ""),
-    };
-    const url = new URL(next.baseUrl);
-    if (!["http:", "https:"].includes(url.protocol))
-      throw new Error(
-        "Адрес ATOL Web Server должен начинаться с http:// или https://"
-      );
-    writeFileSync(this.filePath, JSON.stringify(next, null, 2), "utf-8");
-    return next;
-  }
-}
-
+export { AtolSettingsStore } from "./atol-settings";
+export type { AtolSettings } from "./atol-settings";
+import { AtolSettingsStore, type AtolSettings } from "./atol-settings";
 type AtolTaskResult = {
   error?: { code?: number; description?: string } | null;
   result?: Record<string, unknown>;
@@ -131,21 +48,21 @@ export class AtolWebFiscalProvider implements FiscalProvider {
           status: "error",
           message:
             "Фискальная смена АТОЛ истекла. Сначала закройте её, затем откройте новую.",
-          details: { baseUrl: settings.baseUrl, shiftState: shift.state },
+          details: { baseUrl: settings.web.baseUrl, shiftState: shift.state },
         };
       }
       return {
         ready: true,
         status: "ready",
         message: shift.message,
-        details: { baseUrl: settings.baseUrl, shiftState: shift.state },
+        details: { baseUrl: settings.web.baseUrl, shiftState: shift.state },
       };
     } catch (error) {
       return {
         ready: false,
         status: "offline",
         message: error instanceof Error ? error.message : String(error),
-        details: { baseUrl: settings.baseUrl },
+        details: { baseUrl: settings.web.baseUrl },
       };
     }
   }
@@ -244,7 +161,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     const settings = this.requireSettings();
     try {
       const response = await this.fetchJson(
-        `${settings.baseUrl}/requests/${encodeURIComponent(
+        `${settings.web.baseUrl}/requests/${encodeURIComponent(
           request.operationId
         )}`,
         { method: "GET" },
@@ -408,7 +325,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     await this.manager?.ensureReady();
     const settings = this.requireSettings();
     await this.fetchJson(
-      `${settings.baseUrl}/requests`,
+      `${settings.web.baseUrl}/requests`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -420,7 +337,7 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline) {
       const response = (await this.fetchJson(
-        `${settings.baseUrl}/requests/${encodeURIComponent(uuid)}`,
+        `${settings.web.baseUrl}/requests/${encodeURIComponent(uuid)}`,
         { method: "GET" },
         5000
       )) as AtolTaskResponse;
@@ -437,9 +354,9 @@ export class AtolWebFiscalProvider implements FiscalProvider {
 
   private requireSettings(): AtolSettings {
     const settings = this.settingsStore.load();
-    if (!settings.enabled)
+    if (!settings.enabled || settings.adapter !== "web")
       throw new Error(
-        "АТОЛ 1Ф не настроен. Откройте «Настройки» → «ККТ АТОЛ» и включите ККТ."
+        "ATOL Web Requests не выбран. Для прямого подключения используйте Драйвер ККТ 10."
       );
     return settings;
   }
