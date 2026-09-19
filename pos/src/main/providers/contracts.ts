@@ -68,6 +68,7 @@ export type FiscalRecoveryEvidence = {
   fiscalDocumentNumberAfter?: string
   fiscalSign?: string
   shiftNumberAfter?: string
+  attemptStartedAt?: string
 }
 
 export type FiscalOperationStatus = {
@@ -99,7 +100,7 @@ export interface FiscalProvider {
   closeShift(operatorName?:string): Promise<{message:string;reportNumber?:string}>
   fiscalizeSale(request: FiscalRequest): Promise<FiscalResult>
   fiscalizeReturn(request: FiscalReturnRequest): Promise<FiscalResult>
-  captureRecoverySnapshot?():Promise<FiscalRecoverySnapshot>
+  captureRecoverySnapshot?():Promise<FiscalRecoverySnapshot|undefined>
   getOperationStatus(request:{operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:FiscalRecoveryEvidence}):Promise<FiscalOperationStatus>
   reprintReceipt(request: {saleId:string;receiptNumber:string}): Promise<PrintResult>
 }
