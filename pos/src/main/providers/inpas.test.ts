@@ -42,7 +42,7 @@ describe("InpasPaymentProvider", () => {
     ).toEqual({ "00": "1", "27": "40000037", "64": "ОДОБРЕНО" });
   });
 
-  it("runs a sale without a shell and stores the approved result for crash recovery", async () => {
+  it("stores approved console evidence without inventing a bank transaction id", async () => {
     const provider = new InpasPaymentProvider(
       settings,
       join(directory, "results"),
@@ -77,7 +77,15 @@ describe("InpasPaymentProvider", () => {
       "-s60",
     ]);
     expect(result.status).toBe("approved");
-    expect(result.transactionId).toBe("INPAS-RRN-123");
+    expect(result.transactionId).toBeUndefined();
+    expect(result.bankingEvidence).toMatchObject({
+      provider: "inpas",
+      adapter: "console",
+      terminalId: "40000037",
+      responseCode: "1",
+      amountMinor: 12345,
+      operationKind: "sale",
+    });
     expect(
       await provider.getOperationStatus({
         operationId: "attempt-1",
@@ -85,7 +93,10 @@ describe("InpasPaymentProvider", () => {
         amountMinor: 12345,
         method: "card",
       })
-    ).toMatchObject({ status: "approved", transactionId: "INPAS-RRN-123" });
+    ).toMatchObject({
+      status: "approved",
+      bankingEvidence: { terminalId: "40000037", operationKind: "sale" },
+    });
     expect(
       JSON.parse(
         readFileSync(join(directory, "results", "attempt-1.json"), "utf-8")
@@ -93,24 +104,13 @@ describe("InpasPaymentProvider", () => {
     ).toBe("approved");
   });
 
-  it("uses operation 4 for a refund and treats a normal non-zero exit as a decline", async () => {
+  it("refuses legacy refund without invoking operation 4", async () => {
     const provider = new InpasPaymentProvider(
       settings,
       join(directory, "results"),
       async (_file, args) => {
         calls.push({ args, cwd: directory });
-        writeFileSync(
-          join(directory, "result.txt"),
-          "[39] = '5'\r\n[19] = 'ОТКАЗ'",
-          "latin1"
-        );
-        return {
-          code: 0,
-          signal: null,
-          stdout: "",
-          stderr: "",
-          timedOut: false,
-        };
+        throw new Error("must not execute");
       }
     );
     const result = await provider.refund({
@@ -119,7 +119,7 @@ describe("InpasPaymentProvider", () => {
       amountMinor: 500,
       method: "card",
     });
-    expect(calls[0].args[0]).toBe("-o4");
+    expect(calls).toHaveLength(0);
     expect(result.status).toBe("declined");
   });
 
