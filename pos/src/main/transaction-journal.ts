@@ -200,8 +200,11 @@ export class TransactionJournal {
   }
 
   hasBlockingFiscalOperation(): boolean {
-    return Boolean(this.db.prepare(`SELECT 1 FROM operations
-      WHERE state IN ('fiscalization_in_progress','fiscal_status_unknown','fiscalized')
+    return Boolean(this.db.prepare(`SELECT 1 FROM operations operation
+      WHERE operation.state IN ('fiscalization_in_progress','fiscal_status_unknown','fiscalized')
+        OR (operation.state='requires_attention' AND EXISTS (
+          SELECT 1 FROM fiscal_attempts attempt WHERE attempt.operation_id=operation.id
+        ))
       LIMIT 1`).get())
   }
 
