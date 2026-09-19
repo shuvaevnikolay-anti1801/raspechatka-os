@@ -54,7 +54,29 @@ export type DiscountBreakdown = {
   totalDiscountMinor: number
   totalMinor: number
 }
-export type PaymentPart = { method: PaymentMethod; amountMinor: number; transactionId?: string }
+export type BankingEvidence = {
+  provider: 'inpas'
+  adapter: 'direct'|'console'
+  terminalId: string
+  referenceNumber?: string
+  terminalTransactionId?: string
+  authorizationCode?: string
+  responseCode?: string
+  transactionStatus?: string
+  amountMinor: number
+  operationKind: 'sale'|'refund'|'void'|'reconcile'
+  startedAt: string
+  completedAt?: string
+  model?: string
+  serial?: string
+  receipt?: string
+}
+export type PaymentPart = {
+  method: PaymentMethod
+  amountMinor: number
+  transactionId?: string
+  bankingEvidence?: BankingEvidence
+}
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
 export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string; shiftType?:'Утро'|'Вечер' }
 export type PointEmployee = { id:string; name:string }
