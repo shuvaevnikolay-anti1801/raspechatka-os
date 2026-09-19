@@ -32,6 +32,7 @@ export type PaymentRequest = {
   saleId: string
   amountMinor: number
   method: PaymentMethod
+  originalPayment?: PaymentPart
   recovery?: PaymentRecoveryEvidence
 }
 
