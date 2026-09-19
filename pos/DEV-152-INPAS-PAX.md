@@ -61,7 +61,7 @@ React
 Новый helper:
 - Windows x64;
 - имя Raspechatka.InpasBridge.exe;
-- .NET 8 Windows x64 self-contained;
+- .NET Framework 4.8 x64 (банковский DualConnector 1.x зарегистрирован через RegAsm/GAC и рассчитан на CLR v4/v2);
 - late-bound COM/OLE через Type.GetTypeFromProgID / Activator.CreateInstance / dynamic;
 - ProgID-кандидаты DualConnector.DCLink и DualConnector.SAPacket;
 - без compile-time ссылки на DualConnector.dll;
@@ -223,7 +223,7 @@ getLatestPaymentAttempt должен возвращать evidence для recove
 
 ## Packaging
 
-Raspechatka.InpasBridge.exe публикуется Windows x64 и кладётся в extraResources аналогично ATOL bridge.
+Raspechatka.InpasBridge.exe собирается как .NET Framework 4.8 x64 и кладётся в extraResources. ATOL bridge остаётся отдельным .NET 8 helper.
 
 Не bundle:
 - DualConnector.dll;
