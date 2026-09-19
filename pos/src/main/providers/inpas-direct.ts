@@ -94,7 +94,7 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       currency: "643",
       method: request.method,
     });
-    const evidence = this.evidence(result, request.amountMinor, startedAt);
+    const evidence = this.evidence(result, "sale", request.amountMinor, startedAt);
     if (result.terminalId !== selected.terminalId)
       return {
         status: "unknown",
@@ -127,10 +127,82 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
     };
   }
 
-  async refund(_request: PaymentRequest): Promise<PaymentResult> {
+  async refund(request: PaymentRequest): Promise<PaymentResult> {
+    if (request.method !== "card" && request.method !== "qr")
+      return {
+        status: "declined",
+        message: "Direct INPAS Refund поддерживает только card/qr",
+      };
+    const original = request.originalPayment?.bankingEvidence;
+    if (
+      !original ||
+      original.provider !== "inpas" ||
+      original.operationKind !== "sale" ||
+      !original.terminalId ||
+      !original.referenceNumber
+    )
+      return {
+        status: "declined",
+        message:
+          "Возврат INPAS не начат: у исходной продажи нет Terminal ID и ReferenceNumber/RRN",
+      };
+    if (request.amountMinor > request.originalPayment!.amountMinor)
+      return {
+        status: "declined",
+        message: "Сумма возврата превышает исходный банковский платёж",
+      };
+
+    const selected = this.selectedDevice();
+    if (selected.terminalId !== original.terminalId)
+      return {
+        status: "declined",
+        message: "Возврат INPAS разрешён только на исходном Terminal ID",
+      };
+
+    const startedAt = new Date().toISOString();
+    const result = await this.bridge.refund({
+      terminalId: original.terminalId,
+      amountMinor: request.amountMinor,
+      currency: "643",
+      method: request.method,
+      referenceNumber: original.referenceNumber,
+      terminalTransactionId: original.terminalTransactionId,
+      authorizationCode: original.authorizationCode,
+    });
+    const evidence = this.evidence(
+      result,
+      "refund",
+      request.amountMinor,
+      startedAt,
+      original
+    );
+    if (result.terminalId !== original.terminalId)
+      return {
+        status: "unknown",
+        bankingEvidence: evidence,
+        message: "Refund ответил для другого Terminal ID. Требуется ручная проверка",
+        raw: result,
+      };
+    if (result.outcome === "declined")
+      return {
+        status: "declined",
+        bankingEvidence: evidence,
+        message: result.responseDescription || "Банк отклонил возврат",
+        raw: result,
+      };
+    if (result.outcome !== "approved")
+      return {
+        status: "unknown",
+        bankingEvidence: evidence,
+        message: result.responseDescription || "Банк не вернул однозначный итог Refund 29",
+        raw: result,
+      };
     return {
-      status: "declined",
-      message: "Прямой банковский возврат будет доступен после привязки evidence исходной продажи",
+      status: "approved",
+      transactionId: result.terminalTransactionId || result.referenceNumber,
+      bankingEvidence: evidence,
+      message: result.responseDescription || "Банковский возврат подтверждён",
+      raw: result,
     };
   }
 
@@ -182,8 +254,10 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
 
   private evidence(
     result: InpasOperationResult,
+    operationKind: "sale" | "refund",
     amountMinor: number,
-    startedAt: string
+    startedAt: string,
+    original?: BankingEvidence
   ): BankingEvidence {
     return {
       provider: "inpas",
@@ -195,7 +269,9 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       responseCode: result.responseCode,
       transactionStatus: result.transactionStatus,
       amountMinor,
-      operationKind: "sale",
+      operationKind,
+      originalReferenceNumber: original?.referenceNumber,
+      originalTerminalTransactionId: original?.terminalTransactionId,
       startedAt,
       completedAt: new Date().toISOString(),
       model: result.model,
