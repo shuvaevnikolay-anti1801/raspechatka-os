@@ -47,6 +47,29 @@ export type FiscalResult = {
   raw?: unknown
 }
 
+export type FiscalRecoverySnapshot = {
+  kktSerialNumber: string
+  shiftNumber?: string
+  fiscalDocumentNumber?: string
+  fiscalSign?: string
+  kktDateTime?: string
+  documentClosed?: boolean
+  receiptKind?: 'sale'|'return'
+  amountMinor?: number
+}
+
+export type FiscalRecoveryEvidence = {
+  snapshotBefore?: FiscalRecoverySnapshot
+  kktSerialNumber?: string
+  shiftNumberBefore?: string
+  fiscalDocumentNumberBefore?: string
+  kktDateTimeBefore?: string
+  requestHash?: string
+  fiscalDocumentNumberAfter?: string
+  fiscalSign?: string
+  shiftNumberAfter?: string
+}
+
 export type FiscalOperationStatus = {
   status: 'fiscalized' | 'not_found' | 'unknown'
   receiptNumber?: string
@@ -76,7 +99,8 @@ export interface FiscalProvider {
   closeShift(operatorName?:string): Promise<{message:string;reportNumber?:string}>
   fiscalizeSale(request: FiscalRequest): Promise<FiscalResult>
   fiscalizeReturn(request: FiscalReturnRequest): Promise<FiscalResult>
-  getOperationStatus(request:{operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number}):Promise<FiscalOperationStatus>
+  captureRecoverySnapshot?():Promise<FiscalRecoverySnapshot>
+  getOperationStatus(request:{operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:FiscalRecoveryEvidence}):Promise<FiscalOperationStatus>
   reprintReceipt(request: {saleId:string;receiptNumber:string}): Promise<PrintResult>
 }
 
