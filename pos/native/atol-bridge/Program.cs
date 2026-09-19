@@ -228,16 +228,36 @@ internal sealed class AtolSession {
             Console.Error.WriteLine($"ATOL checkDocumentClosed unavailable: {error.Message}");
         }
 
-        var dataType = TryConstant(fptr, "LIBFPTR_FNDT_LAST_RECEIPT")
-            ?? TryConstant(fptr, "LIBFPTR_FNDT_LAST_DOCUMENT");
-        if (dataType is null) {
+        var lastReceiptType = TryConstant(fptr, "LIBFPTR_FNDT_LAST_RECEIPT");
+        var lastDocumentType = TryConstant(fptr, "LIBFPTR_FNDT_LAST_DOCUMENT");
+        if (lastReceiptType is null && lastDocumentType is null) {
             throw new DriverFailure(null,
                 "ATOL Driver exposes neither LIBFPTR_FNDT_LAST_RECEIPT nor LIBFPTR_FNDT_LAST_DOCUMENT.");
         }
-        fptr.setParam(Constant(fptr, "LIBFPTR_PARAM_DATA_TYPE"), dataType);
-        Check(fptr.fnQueryData(), fptr);
 
-        var receiptType = ReadIntParam(fptr, "LIBFPTR_PARAM_RECEIPT_TYPE");
+        var usedLastReceipt = false;
+        DriverFailure? lastQueryError = null;
+        if (lastReceiptType is not null) {
+            try {
+                QueryFnData(fptr, lastReceiptType);
+                usedLastReceipt = true;
+            } catch (DriverFailure error) {
+                lastQueryError = error;
+                Console.Error.WriteLine($"ATOL LAST_RECEIPT unavailable, trying LAST_DOCUMENT: {error.Message}");
+            }
+        }
+        if (!usedLastReceipt) {
+            if (lastDocumentType is null) throw lastQueryError ?? new DriverFailure(null, "ATOL FN recovery query is unavailable.");
+            QueryFnData(fptr, lastDocumentType);
+        }
+
+        var receiptType = usedLastReceipt
+            ? ReadIntParam(fptr, "LIBFPTR_PARAM_RECEIPT_TYPE")
+            : null;
+        var receiptSum = usedLastReceipt
+            ? ReadPositiveDoubleParam(fptr, "LIBFPTR_PARAM_RECEIPT_SUM")
+                ?? ReadPositiveDoubleParam(fptr, "LIBFPTR_PARAM_SUM")
+            : null;
         return new {
             kktSerialNumber = serialNumber,
             shiftNumber = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_NUMBER") ?? statusShiftNumber,
@@ -247,7 +267,7 @@ internal sealed class AtolSession {
             kktDateTime = ReadDateTimeParam(fptr, "LIBFPTR_PARAM_DATE_TIME"),
             documentClosed,
             receiptKind = ReceiptKind(fptr, receiptType),
-            amount = ReadDoubleParam(fptr, "LIBFPTR_PARAM_SUM"),
+            amount = receiptSum,
         };
     }
 
@@ -312,6 +332,16 @@ internal sealed class AtolSession {
             Constant(fptr, "LIBFPTR_PARAM_DATA_TYPE"),
             Constant(fptr, "LIBFPTR_DT_STATUS"));
         Check(fptr.queryData(), fptr);
+    }
+
+    private static void QueryFnData(dynamic fptr, object fnDataType) {
+        fptr.setParam(Constant(fptr, "LIBFPTR_PARAM_FN_DATA_TYPE"), fnDataType);
+        Check(fptr.fnQueryData(), fptr);
+    }
+
+    private static double? ReadPositiveDoubleParam(dynamic fptr, string constantName) {
+        var value = ReadDoubleParam(fptr, constantName);
+        return value is > 0 ? value : null;
     }
 
     private static string? ReadStringParam(dynamic fptr, string constantName) {
