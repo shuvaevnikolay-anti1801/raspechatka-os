@@ -49,6 +49,7 @@ export interface AtolDriverBridge {
   findDevices(): Promise<AtolDriverDevice[]>;
   connect(device: AtolDriverDevice): Promise<void>;
   disconnect(): Promise<void>;
+  getStatus(): Promise<AtolDriverStatus>;
   health(): Promise<DeviceHealth>;
 }
 
