@@ -36,9 +36,13 @@ export class AtolBridgeNotConfiguredError extends AtolBridgeError {
 }
 
 export function resolveAtolBridgeExecutablePath(options: { isPackaged?: boolean } = {}): string {
-  const isPackaged = options.isPackaged ?? Boolean(process.resourcesPath && !process.defaultApp);
+  const electronProcess = process as NodeJS.Process & {
+    resourcesPath?: string; defaultApp?: boolean;
+  };
+  const isPackaged = options.isPackaged ??
+    Boolean(electronProcess.resourcesPath && !electronProcess.defaultApp);
   if (isPackaged) {
-    return join(process.resourcesPath, 'native', 'atol', ATOL_BRIDGE_EXECUTABLE);
+    return join(electronProcess.resourcesPath ?? '', 'native', 'atol', ATOL_BRIDGE_EXECUTABLE);
   }
   return process.env.RASPECHATKA_ATOL_BRIDGE_PATH ??
     join(process.cwd(), 'native', 'atol-bridge', 'publish', ATOL_BRIDGE_EXECUTABLE);
