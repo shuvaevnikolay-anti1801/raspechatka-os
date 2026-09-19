@@ -31,7 +31,7 @@ export function registerHardwareSettingsIpc(
       const { configureDevice, ...settings } = value;
       const currentSerial = atolSettingsStore.load().direct?.selectedDevice?.serialNumber;
       const nextSerial = settings.direct?.selectedDevice?.serialNumber;
-      if (currentSerial && nextSerial && currentSerial !== nextSerial && hasBlockingFiscalOperation()) {
+      if (nextSerial && currentSerial !== nextSerial && hasBlockingFiscalOperation()) {
         throw new Error("Нельзя выбрать другую ККТ: есть незавершённая фискальная операция");
       }
       const saved = atolSettingsStore.save(settings);
@@ -88,7 +88,7 @@ export function registerHardwareSettingsIpc(
       throw new Error("Выберите ККТ, найденную Драйвером ККТ 10");
     }
     const currentSerial = atolSettingsStore.load().direct?.selectedDevice?.serialNumber;
-    if (currentSerial && currentSerial !== selectedDevice.serialNumber && hasBlockingFiscalOperation()) {
+    if (currentSerial !== selectedDevice.serialNumber && hasBlockingFiscalOperation()) {
       throw new Error("Нельзя выбрать другую ККТ: есть незавершённая фискальная операция");
     }
     return atolSettingsStore.save({
