@@ -25,7 +25,9 @@ export class PosTransactionEngine {
   listUnresolved(){return this.journal.listUnresolvedSummaries()}
 
   hasBlockingOperation():boolean{
-    return this.journal.listUnresolved().some((operation)=>DANGEROUS_STATES.has(operation.state))
+    return this.journal.listUnresolved().some((operation)=>
+      DANGEROUS_STATES.has(operation.state)||this.journal.hasPaymentAttempt(operation.id)
+    )
   }
 
   async recoverSafeOperations():Promise<number>{
