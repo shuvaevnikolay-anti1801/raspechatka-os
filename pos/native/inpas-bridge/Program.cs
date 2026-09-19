@@ -121,8 +121,8 @@ internal sealed class InpasSession
 {
     private const string LinkProgId = "DualConnector.DCLink";
     private const string PacketProgId = "DualConnector.SAPacket";
-    private object link;
-    private object packet;
+    private dynamic link;
+    private dynamic packet;
 
     public object Execute(string command, IDictionary<string, object> args)
     {
@@ -339,9 +339,11 @@ internal sealed class InpasSession
         var safeLines = new List<string>();
         foreach (var line in receipt.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
         {
-            if (Regex.IsMatch(line, "(PAN|TRACK|PIN|CARDHOLDER|НОМЕР\\s+КАРТ|МАГНИТ)", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(line, "(PAN|TRACK|PIN|CARD|КАРТ|МАГНИТ)", RegexOptions.IgnoreCase))
                 continue;
-            safeLines.Add(Regex.Replace(line, "(?<!\\d)\\d{12,19}(?!\\d)", "[REDACTED]"));
+            var safeLine = Regex.Replace(line, "(?<!\\d)\\d{12,19}(?!\\d)", "[REDACTED]");
+            safeLine = Regex.Replace(safeLine, "(?:\\*|X){4,}\\d{4}", "[REDACTED]", RegexOptions.IgnoreCase);
+            safeLines.Add(safeLine);
         }
         var safe = String.Join(Environment.NewLine, safeLines).Trim();
         return safe.Length > 4000 ? safe.Substring(0, 4000) : safe;
