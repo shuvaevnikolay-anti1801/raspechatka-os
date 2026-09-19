@@ -287,8 +287,13 @@ export class PosTransactionEngine {
     try{
       const result=await this.fiscalProvider.fiscalizeSale(fiscalRequest)
       if(!result.receiptNumber)throw new Error('ККТ не вернула номер фискального документа')
-      const snapshotAfter=await this.fiscalProvider.captureRecoverySnapshot?.()
-      this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result,snapshotAfter})
+      let snapshotAfter
+      try { snapshotAfter=await this.fiscalProvider.captureRecoverySnapshot?.() } catch {}
+      this.journal.finishFiscalAttempt({
+        id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result,snapshotAfter,
+        fiscalDocumentNumberAfter:result.fiscalDocumentNumber??result.receiptNumber,
+        fiscalSign:result.fiscalSign,shiftNumberAfter:result.shiftNumber
+      })
       return result
     }catch(error){
       const message=error instanceof Error?error.message:String(error)
@@ -316,8 +321,13 @@ export class PosTransactionEngine {
     try{
       const result=await this.fiscalProvider.fiscalizeReturn(fiscalRequest)
       if(!result.receiptNumber)throw new Error('ККТ не вернула номер фискального документа возврата')
-      const snapshotAfter=await this.fiscalProvider.captureRecoverySnapshot?.()
-      this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result,snapshotAfter})
+      let snapshotAfter
+      try { snapshotAfter=await this.fiscalProvider.captureRecoverySnapshot?.() } catch {}
+      this.journal.finishFiscalAttempt({
+        id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result,snapshotAfter,
+        fiscalDocumentNumberAfter:result.fiscalDocumentNumber??result.receiptNumber,
+        fiscalSign:result.fiscalSign,shiftNumberAfter:result.shiftNumber
+      })
       return result
     }catch(error){
       const message=error instanceof Error?error.message:String(error)
