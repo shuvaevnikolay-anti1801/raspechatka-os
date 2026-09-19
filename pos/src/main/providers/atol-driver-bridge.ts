@@ -17,6 +17,7 @@ type BridgeCommand =
   | 'connect'
   | 'disconnect'
   | 'status'
+  | 'executeJson'
   | 'shutdown';
 
 type BridgeRequest = {
@@ -66,6 +67,12 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
 
   async getStatus(): Promise<AtolDriverStatus> {
     return this.request<AtolDriverStatus>('status');
+  }
+
+  async executeJson(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('executeJson', {
+      json: JSON.stringify(request),
+    });
   }
 
   async findDevices(): Promise<AtolDriverDevice[]> {
