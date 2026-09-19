@@ -62,6 +62,15 @@ describe('TransactionJournal',()=>{
     expect(journal.get('op-1')?.fiscalReceiptNumber).toBe('FD-1')
   })
 
+  it('blocks KKT rebind after payment confirmation',()=>{
+    const {journal}=createJournal()
+    journal.create({id:'op-block',clientRequestId:'request-block',kind:'sale',entityId:'sale-block',
+      shiftId:'shift-1',amountMinor:10000,request:{...saleRequest,clientRequestId:'request-block'}})
+    journal.setConfirmedPayments('op-block',[{method:'card',amountMinor:10000,transactionId:'bank-1'}])
+    journal.setState('op-block','payment_confirmed')
+    expect(journal.hasBlockingFiscalOperation()).toBe(true)
+  })
+
   it('idempotently upgrades an old fiscal_attempts table with recovery evidence',()=>{
     const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-old-journal-'))
     folders.push(folder)
