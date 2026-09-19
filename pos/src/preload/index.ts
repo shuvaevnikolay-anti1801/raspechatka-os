@@ -8,6 +8,7 @@ import type {
   CreateReturnRequest,
   CreateUnpaidOrderRequest,
   HeldReceipt,
+  InpasDirectDevice,
   InpasSettings,
   PosApi,
   PrintKind,
@@ -140,6 +141,11 @@ const api: ExtendedPosApi = {
   getInpasSettings: () => ipcRenderer.invoke("pos:get-inpas-settings"),
   saveInpasSettings: (value: InpasSettings) =>
     ipcRenderer.invoke("pos:save-inpas-settings", value),
+  getInpasDriverInfo: () => ipcRenderer.invoke("pos:get-inpas-driver-info"),
+  discoverInpasDevices: () => ipcRenderer.invoke("pos:discover-inpas-devices"),
+  selectInpasDevice: (device: InpasDirectDevice) =>
+    ipcRenderer.invoke("pos:select-inpas-device", device),
+  testInpasDirectDevice: () => ipcRenderer.invoke("pos:test-inpas-direct-device"),
   testPaymentTerminal: () => ipcRenderer.invoke("pos:test-payment-terminal"),
   reconcilePaymentTerminal: () =>
     ipcRenderer.invoke("pos:reconcile-payment-terminal"),
