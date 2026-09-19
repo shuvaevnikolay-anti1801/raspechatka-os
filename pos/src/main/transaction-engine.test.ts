@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { CompleteSaleRequest } from '../shared/contracts'
+import type { BankingEvidence, CompleteSaleRequest, CreateReturnRequest } from '../shared/contracts'
 import type {
   DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult,
   FiscalReturnRequest, PaymentProvider, PaymentRequest, PaymentResult
@@ -14,8 +14,10 @@ import { PosTransactionEngine } from './transaction-engine'
 class TestPaymentProvider implements PaymentProvider {
   chargeCalls=0
   refundCalls=0
+  refundRequests:PaymentRequest[]=[]
   statusCalls=0
   nextCharge:PaymentResult={status:'approved',transactionId:'bank-1'}
+  nextRefund:PaymentResult={status:'approved',transactionId:'refund-1'}
   nextStatus:PaymentResult={status:'approved',transactionId:'bank-1'}
   throwOnCharge=false
 
@@ -26,7 +28,9 @@ class TestPaymentProvider implements PaymentProvider {
     if(this.throwOnCharge)throw new Error('connection lost')
     return this.nextCharge
   }
-  async refund(_request:PaymentRequest):Promise<PaymentResult>{this.refundCalls++;return this.nextCharge}
+  async refund(request:PaymentRequest):Promise<PaymentResult>{
+    this.refundCalls++;this.refundRequests.push(request);return this.nextRefund
+  }
   async getOperationStatus(_request:PaymentRequest):Promise<PaymentResult>{this.statusCalls++;return this.nextStatus}
   async testConnection(){return {message:'test'}}
   async reconcile(){return {message:'test'}}
@@ -229,6 +233,140 @@ describe('PosTransactionEngine safety',()=>{
     expect(sale.payments[0].method).toBe('remote_payment')
     expect(sale.remotePaymentConfirmation?.confirmedBy).toBe('Кассир')
     expect(database.getShiftSummary().remotePaymentMinor).toBe(2000)
+  })
+
+  const evidence=(referenceNumber:string,amountMinor:number):BankingEvidence=>({
+    provider:'inpas',adapter:'direct',terminalId:'40000037',referenceNumber,
+    terminalTransactionId:`TRX-${referenceNumber}`,authorizationCode:'AUTH-1',
+    responseCode:'00',transactionStatus:'APPROVED',amountMinor,operationKind:'sale',
+    startedAt:'2026-09-19T10:00:00.000Z',completedAt:'2026-09-19T10:00:05.000Z'
+  })
+
+  const returnRequest=(saleId:string,lineId:number,payments:CreateReturnRequest['payments'],quantity=1):CreateReturnRequest=>({
+    clientRequestId:`return-${saleId}-${quantity}-${payments.map((x)=>x.method).join('-')}`,
+    saleId,
+    lines:[{saleItemId:lineId,quantity}],
+    payments
+  })
+
+  it('passes original sale evidence to Refund before fiscal return',async()=>{
+    payment.nextCharge={
+      status:'approved',transactionId:'TRX-RRN-SALE',
+      bankingEvidence:evidence('RRN-SALE',2000)
+    }
+    const completed=await engine.completeSale(
+      request([{method:'card',amountMinor:2000}],'sale-for-refund'),shiftId
+    )
+    const sale=database.getSale(completed.saleId)
+    payment.nextRefund={
+      status:'approved',transactionId:'TRX-REFUND',
+      bankingEvidence:{
+        ...evidence('RRN-REFUND',1000),operationKind:'refund',amountMinor:1000,
+        originalReferenceNumber:'RRN-SALE',originalTerminalTransactionId:'TRX-RRN-SALE'
+      }
+    }
+
+    await engine.createReturn(
+      returnRequest(sale.id,sale.lines[0].id,[{method:'card',amountMinor:1000}],0.5),
+      shiftId,1000,sale
+    )
+
+    expect(payment.refundCalls).toBe(1)
+    expect(payment.refundRequests[0].originalPayment).toMatchObject({
+      amountMinor:2000,
+      bankingEvidence:{terminalId:'40000037',referenceNumber:'RRN-SALE'}
+    })
+    expect(fiscal.returnCalls).toBe(1)
+  })
+
+  it('blocks missing or ambiguous original evidence before bank and KKT',async()=>{
+    database.saveSale({
+      id:'sale-ambiguous',clientRequestId:'sale-ambiguous-request',shiftId,totalMinor:2000,
+      paymentMethod:'card',fiscalNumber:'FD-AMB',createdAt:'2026-09-19T11:00:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[
+        {method:'card',amountMinor:1000,bankingEvidence:evidence('RRN-A',1000)},
+        {method:'card',amountMinor:1000,bankingEvidence:evidence('RRN-B',1000)}
+      ]
+    })
+    const ambiguous=database.getSale('sale-ambiguous')
+    await expect(engine.createReturn(
+      returnRequest(ambiguous.id,ambiguous.lines[0].id,[{method:'card',amountMinor:1000}],0.5),
+      shiftId,1000,ambiguous
+    )).rejects.toThrow(/однозначно/)
+    expect(payment.refundCalls).toBe(0)
+    expect(fiscal.returnCalls).toBe(0)
+
+    database.saveSale({
+      id:'sale-no-evidence',clientRequestId:'sale-no-evidence-request',shiftId,totalMinor:2000,
+      paymentMethod:'card',fiscalNumber:'FD-OLD',createdAt:'2026-09-19T11:10:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'card',amountMinor:2000,transactionId:'legacy-id'}]
+    })
+    const oldSale=database.getSale('sale-no-evidence')
+    await expect(engine.createReturn(
+      returnRequest(oldSale.id,oldSale.lines[0].id,[{method:'card',amountMinor:2000}]),
+      shiftId,2000,oldSale
+    )).rejects.toThrow(/ReferenceNumber\/RRN/)
+    expect(payment.refundCalls).toBe(0)
+    expect(fiscal.returnCalls).toBe(0)
+  })
+
+  it('supports mixed partial return and enforces remaining bank amount',async()=>{
+    database.saveSale({
+      id:'sale-mixed',clientRequestId:'sale-mixed-request',shiftId,totalMinor:2000,
+      paymentMethod:'mixed',fiscalNumber:'FD-MIX',createdAt:'2026-09-19T12:00:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[
+        {method:'cash',amountMinor:1000,transactionId:'cash-1'},
+        {method:'card',amountMinor:1000,bankingEvidence:evidence('RRN-MIX',1000)}
+      ]
+    })
+    let sale=database.getSale('sale-mixed')
+    payment.nextRefund={
+      status:'approved',transactionId:'TRX-REF-MIX',
+      bankingEvidence:{
+        ...evidence('RRN-REF-MIX',500),operationKind:'refund',amountMinor:500,
+        originalReferenceNumber:'RRN-MIX'
+      }
+    }
+    await engine.createReturn(
+      returnRequest(sale.id,sale.lines[0].id,[
+        {method:'cash',amountMinor:500},{method:'card',amountMinor:500}
+      ],0.5),
+      shiftId,1000,sale
+    )
+    expect(payment.refundCalls).toBe(1)
+    expect(fiscal.returnCalls).toBe(1)
+
+    sale=database.getSale('sale-mixed')
+    await expect(engine.createReturn({
+      clientRequestId:'return-over-bank-balance',saleId:sale.id,
+      lines:[{saleItemId:sale.lines[0].id,quantity:0.25}],
+      payments:[{method:'card',amountMinor:600}]
+    },shiftId,600,sale)).rejects.toThrow(/доступный остаток/)
+    expect(payment.refundCalls).toBe(1)
+    expect(fiscal.returnCalls).toBe(1)
+  })
+
+  it('never fiscalizes a return after declined or unknown bank result',async()=>{
+    database.saveSale({
+      id:'sale-declined-return',clientRequestId:'sale-declined-return-request',shiftId,totalMinor:2000,
+      paymentMethod:'card',fiscalNumber:'FD-DECL',createdAt:'2026-09-19T13:00:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'card',amountMinor:2000,bankingEvidence:evidence('RRN-DECL',2000)}]
+    })
+    const sale=database.getSale('sale-declined-return')
+    payment.nextRefund={status:'declined',message:'REFUND DECLINED'}
+    await expect(engine.createReturn(
+      returnRequest(sale.id,sale.lines[0].id,[{method:'card',amountMinor:2000}]),
+      shiftId,2000,sale
+    )).rejects.toThrow(/DECLINED/)
+    expect(fiscal.returnCalls).toBe(0)
   })
 
   it('auto-finishes a fiscalized operation locally without touching money or KKT again',async()=>{
