@@ -198,7 +198,7 @@ internal sealed class AtolSession {
             serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER"),
             modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME"),
             firmwareVersion = ReadStringParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION"),
-            shiftState = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_STATE"),
+            shiftState = ReadShiftState(fptr),
             paperPresent = ReadBoolParam(fptr, "LIBFPTR_PARAM_RECEIPT_PAPER_PRESENT"),
             coverOpened = ReadBoolParam(fptr, "LIBFPTR_PARAM_COVER_OPENED"),
             printerConnectionLost = ReadBoolParam(fptr, "LIBFPTR_PARAM_PRINTER_CONNECTION_LOST"),
@@ -215,7 +215,10 @@ internal sealed class AtolSession {
             throw new ProtocolException("invalid_request", "json is required.");
         }
         try {
-            using var _ = JsonDocument.Parse(json);
+            using var parsed = JsonDocument.Parse(json);
+            if (parsed.RootElement.ValueKind != JsonValueKind.Object) {
+                throw new ProtocolException("invalid_request", "json must be a JSON object.");
+            }
         } catch (JsonException) {
             throw new ProtocolException("invalid_request", "json must be a JSON object.");
         }
@@ -283,6 +286,17 @@ internal sealed class AtolSession {
         } catch {
             return null;
         }
+    }
+
+    private static string? ReadShiftState(dynamic fptr) {
+        var state = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_STATE");
+        if (state is null) return null;
+        try {
+            if (state == Convert.ToInt64(Constant(fptr, "LIBFPTR_SS_CLOSED"))) return "closed";
+            if (state == Convert.ToInt64(Constant(fptr, "LIBFPTR_SS_OPENED"))) return "opened";
+            if (state == Convert.ToInt64(Constant(fptr, "LIBFPTR_SS_EXPIRED"))) return "expired";
+        } catch { }
+        return state.Value.ToString();
     }
 
     private static bool? ReadBoolParam(dynamic fptr, string constantName) {
