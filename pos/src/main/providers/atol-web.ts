@@ -156,6 +156,10 @@ export class AtolWebFiscalProvider implements FiscalProvider {
 
   async getOperationStatus(request: {
     operationId: string;
+    entityId: string;
+    kind: "sale" | "return";
+    expectedAmountMinor: number;
+    recovery?: unknown;
   }): Promise<FiscalOperationStatus> {
     const settings = this.requireSettings();
     try {
