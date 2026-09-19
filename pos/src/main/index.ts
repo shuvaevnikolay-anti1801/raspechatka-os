@@ -6,7 +6,6 @@ import { ConnectionStore } from "./connection";
 import { registerIpcHandlers } from "./ipc";
 import { registerPosV2Ipc } from "./pos-v2-ipc";
 import { registerHardwareSettingsIpc } from "./hardware-ipc";
-import { MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
 import { AtolSettingsStore } from "./providers/atol-web";
 import { createFiscalProvider } from "./providers/fiscal-provider-factory";
@@ -27,6 +26,7 @@ import { PosDiagnostics } from "./diagnostics";
 import { InpasPaymentProvider } from "./providers/inpas";
 import { InpasSettingsStore } from "./providers/inpas-settings";
 import { NativeInpasBridge } from "./providers/inpas-direct-bridge";
+import { createPaymentProvider } from "./providers/payment-provider-factory";
 import { CashierAuthSession } from "./cashier-auth";
 import { AtolCredentialStore, AtolWebManager } from "./atol-web-manager";
 
@@ -118,13 +118,17 @@ if (!hasLock) {
       inpasSettingsStore,
       inpasResultDirectory
     );
-    inpasDirectBridge = new NativeInpasBridge({
+    const sharedInpasBridge = new NativeInpasBridge({
       executablePath:
         process.env.RASPECHATKA_INPAS_BRIDGE_PATH ?? "Raspechatka.InpasBridge.exe",
     });
-    const paymentProvider = trainingMode
-      ? new MockPaymentProvider()
-      : inpasProvider;
+    inpasDirectBridge = sharedInpasBridge;
+    const paymentProvider = createPaymentProvider({
+      trainingMode,
+      settingsStore: inpasSettingsStore,
+      legacyProvider: inpasProvider,
+      directBridge: sharedInpasBridge,
+    });
     const atolBridgePath = resolveAtolBridgeExecutablePath({ isPackaged: app.isPackaged });
     atolDriverBridge = trainingMode ? undefined : new NativeAtolDriverBridge({
       executablePath: atolBridgePath,
