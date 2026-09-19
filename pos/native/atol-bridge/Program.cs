@@ -193,6 +193,7 @@ internal sealed class AtolSession {
         QueryStatus(fptr);
         return new {
             connected = true,
+            driverVersion = TryInvoke(fptr, "version")?.ToString(),
             serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER"),
             modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME"),
             firmwareVersion = ReadStringParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION"),
