@@ -57,7 +57,22 @@ export function registerHardwareSettingsIpc(
   ipcMain.handle("pos:get-atol-driver-info", async (): Promise<AtolDriverInfo> =>
     driverBridge.driverInfo()
   );
-  ipcMain.handle("pos:discover-atol-devices", () => driverBridge.findDevices());
+  ipcMain.handle("pos:discover-atol-devices", async () =>
+    (await driverBridge.findDevices()).flatMap((device) =>
+      device.serialNumber && device.settingsJson
+        ? [{
+            id: device.id,
+            serialNumber: device.serialNumber,
+            modelName: device.model,
+            firmwareVersion: device.firmwareVersion,
+            connection: device.connection === "usb" || device.connection === "com" || device.connection === "tcp"
+              ? device.connection
+              : "usb",
+            settingsJson: device.settingsJson,
+          }]
+        : []
+    )
+  );
   ipcMain.handle("pos:select-atol-device", (_event, selectedDevice) => {
     if (
       !selectedDevice ||
