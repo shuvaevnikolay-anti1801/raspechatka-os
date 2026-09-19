@@ -34,7 +34,7 @@ describe("AtolDriverFiscalProvider", () => {
       findDevices: vi.fn(),
       connect: vi.fn(async () => undefined),
       disconnect: vi.fn(async () => undefined),
-      getStatus: vi.fn(),
+      getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123", shiftState: "opened" })),
       health: vi.fn(),
       executeJson,
     } as unknown as AtolDriverBridge;
@@ -59,3 +59,26 @@ describe("AtolDriverFiscalProvider", () => {
     });
   });
 });
+
+
+  it("does not accept a non-fiscal receipt counter as proof of fiscalization", async () => {
+    const bridge = {
+      getDriverInfo: vi.fn(),
+      findDevices: vi.fn(),
+      connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
+      getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123", shiftState: "opened" })),
+      health: vi.fn(),
+      executeJson: vi.fn(async () => ({ receiptNumber: "42", documentNumber: "99" })),
+    } as unknown as AtolDriverBridge;
+    const store = { load: () => settings } as AtolSettingsStore;
+    const provider = new AtolDriverFiscalProvider(bridge, store, () => "Анна");
+
+    await expect(provider.fiscalizeSale({
+      operationId: "operation-2",
+      saleId: "sale-2",
+      amountMinor: 10000,
+      payments: [{ method: "cash", amountMinor: 10000 }],
+      lines: [{ productId: "p", name: "Печать", quantity: 1, unitPriceMinor: 10000, discountPercent: 0 }],
+    })).rejects.toThrow("номер фискального документа ФН");
+  });
