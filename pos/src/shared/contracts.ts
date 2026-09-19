@@ -97,6 +97,12 @@ export type BootState = {
 
 export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
 export type ConnectionStatus = { configured: boolean; serverUrl: string; deviceId?: string; workplaceCode?:string; lastSyncAt?: string; lastError?: string }
+export type PosLifecycleState = 'NEW' | 'CONFIGURING' | 'READY'
+export type PosLifecycleStatus = {
+  state: PosLifecycleState
+  updatedAt: string
+  legacyInstallation?: boolean
+}
 
 export type CompleteSaleRequest = {
   clientRequestId: string
@@ -245,6 +251,9 @@ export type AtolDriverStatus = { connected:boolean; driverVersion?:string; seria
 
 export type PosApi = {
   getBootState: () => Promise<BootState>
+  getPosLifecycle: () => Promise<PosLifecycleStatus>
+  beginInitialSetup: () => Promise<PosLifecycleStatus>
+  completeInitialSetup: () => Promise<PosLifecycleStatus>
   listProducts: () => Promise<Product[]>
   listCustomers: (query?: string) => Promise<Customer[]>
   getCustomer: (id: string) => Promise<Customer|null>
