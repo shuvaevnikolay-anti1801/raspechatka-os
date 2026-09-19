@@ -1,7 +1,11 @@
 import { ipcMain } from "electron";
 import type { InpasSettings } from "../shared/contracts";
 import type { PosDiagnostics } from "./diagnostics";
-import type { AtolSettingsStore } from "./providers/atol-web";
+import type { AtolSettings, AtolSettingsStore } from "./providers/atol-settings";
+import {
+  NativeAtolDriverBridge,
+  type AtolDriverInfo,
+} from "./providers/atol-driver-bridge";
 import type { AtolWebManager } from "./atol-web-manager";
 import type { FiscalProvider } from "./providers/contracts";
 import type {
@@ -15,26 +19,22 @@ export function registerHardwareSettingsIpc(
   fiscalProvider: FiscalProvider | undefined,
   inpasSettingsStore: InpasSettingsStore,
   paymentProvider: InpasPaymentProvider | undefined,
-  diagnostics: PosDiagnostics
+  diagnostics: PosDiagnostics,
+  driverBridge = new NativeAtolDriverBridge({
+    executablePath:
+      process.env.RASPECHATKA_ATOL_BRIDGE_PATH ?? "Raspechatka.AtolBridge.exe",
+  })
 ): void {
   ipcMain.handle("pos:get-atol-settings", () => atolSettingsStore.load());
   ipcMain.handle(
     "pos:save-atol-settings",
-    async (
-      _event,
-      value: {
-        enabled: boolean;
-        baseUrl: string;
-        taxationType: string;
-        taxType: string;
-        configureDevice?: boolean;
-      }
-    ) => {
+    async (_event, value: Partial<AtolSettings> & { configureDevice?: boolean }) => {
       const { configureDevice, ...settings } = value;
-      const saved = atolSettingsStore.save({
-        ...settings,
-        baseUrl: "http://127.0.0.1:16732/api/v2",
-      });
+      const saved = atolSettingsStore.save(settings);
+      if (saved.adapter === "driver") {
+        return saved;
+      }
+
       if (saved.enabled) {
         await atolManager?.ensureReady();
         if (configureDevice) {
@@ -53,6 +53,58 @@ export function registerHardwareSettingsIpc(
       return saved;
     }
   );
+
+  ipcMain.handle("pos:get-atol-driver-info", async (): Promise<AtolDriverInfo> =>
+    driverBridge.driverInfo()
+  );
+  ipcMain.handle("pos:discover-atol-devices", () => driverBridge.findDevices());
+  ipcMain.handle("pos:select-atol-device", (_event, selectedDevice) => {
+    if (
+      !selectedDevice ||
+      typeof selectedDevice.serialNumber !== "string" ||
+      typeof selectedDevice.modelName !== "string" ||
+      typeof selectedDevice.settingsJson !== "string" ||
+      !["usb", "com", "tcp"].includes(selectedDevice.connection)
+    ) {
+      throw new Error("Выберите ККТ, найденную Драйвером ККТ 10");
+    }
+    return atolSettingsStore.save({
+      adapter: "driver",
+      direct: {
+        selectedDevice: {
+          serialNumber: selectedDevice.serialNumber,
+          modelName: selectedDevice.modelName,
+          connection: selectedDevice.connection,
+          settingsJson: selectedDevice.settingsJson,
+        },
+      },
+    });
+  });
+  ipcMain.handle("pos:test-atol-driver-device", async () => {
+    const selectedDevice = atolSettingsStore.load().direct?.selectedDevice;
+    if (!selectedDevice)
+      throw new Error("Сначала выберите ККТ АТОЛ по серийному номеру");
+
+    try {
+      await driverBridge.connect({
+        id: `atol:${selectedDevice.serialNumber}`,
+        model: selectedDevice.modelName,
+        serialNumber: selectedDevice.serialNumber,
+        connection: selectedDevice.connection,
+        settingsJson: selectedDevice.settingsJson,
+      });
+      const status = await driverBridge.status();
+      diagnostics.record({
+        source: "fiscal",
+        eventType: "atol.driver.connection_checked",
+        message: `Проверена ККТ АТОЛ ${status.serialNumber ?? selectedDevice.serialNumber}`,
+      });
+      return status;
+    } finally {
+      await driverBridge.disconnect().catch(() => undefined);
+    }
+  });
+
   ipcMain.handle("pos:get-inpas-settings", () => inpasSettingsStore.load());
   ipcMain.handle("pos:save-inpas-settings", (_event, value: InpasSettings) => {
     const saved = inpasSettingsStore.save(value);
