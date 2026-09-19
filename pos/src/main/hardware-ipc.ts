@@ -29,10 +29,13 @@ export function registerHardwareSettingsIpc(
     "pos:save-atol-settings",
     async (_event, value: Partial<AtolSettings> & { configureDevice?: boolean }) => {
       const { configureDevice, ...settings } = value;
-      const currentSerial = atolSettingsStore.load().direct?.selectedDevice?.serialNumber;
-      const nextSerial = settings.direct?.selectedDevice?.serialNumber;
-      if (nextSerial && currentSerial !== nextSerial && hasBlockingFiscalOperation()) {
-        throw new Error("Нельзя выбрать другую ККТ: есть незавершённая фискальная операция");
+      const current = atolSettingsStore.load();
+      const currentDevice = current.direct?.selectedDevice;
+      const nextAdapter = settings.adapter ?? current.adapter;
+      const nextDevice = settings.direct?.selectedDevice ?? currentDevice;
+      const deviceChanged = JSON.stringify(nextDevice ?? null) !== JSON.stringify(currentDevice ?? null);
+      if (hasBlockingFiscalOperation() && (nextAdapter !== current.adapter || deviceChanged)) {
+        throw new Error("Нельзя менять адаптер или настройки ККТ: есть незавершённая фискальная операция");
       }
       const saved = atolSettingsStore.save(settings);
       if (saved.adapter === "driver") {
@@ -87,9 +90,15 @@ export function registerHardwareSettingsIpc(
     ) {
       throw new Error("Выберите ККТ, найденную Драйвером ККТ 10");
     }
-    const currentSerial = atolSettingsStore.load().direct?.selectedDevice?.serialNumber;
-    if (currentSerial !== selectedDevice.serialNumber && hasBlockingFiscalOperation()) {
-      throw new Error("Нельзя выбрать другую ККТ: есть незавершённая фискальная операция");
+    const currentDevice = atolSettingsStore.load().direct?.selectedDevice;
+    const selectedChanged = JSON.stringify(currentDevice ?? null) !== JSON.stringify({
+      serialNumber: selectedDevice.serialNumber,
+      modelName: selectedDevice.modelName,
+      connection: selectedDevice.connection,
+      settingsJson: selectedDevice.settingsJson,
+    });
+    if (selectedChanged && hasBlockingFiscalOperation()) {
+      throw new Error("Нельзя менять ККТ: есть незавершённая фискальная операция");
     }
     return atolSettingsStore.save({
       adapter: "driver",
