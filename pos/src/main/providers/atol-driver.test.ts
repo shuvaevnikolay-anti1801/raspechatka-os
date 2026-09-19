@@ -114,22 +114,22 @@ describe("AtolDriverFiscalProvider recovery", () => {
 
   it("recognizes an unambiguous matching new fiscal receipt", async () => {
     await expect(recover({
-      kktSerialNumber: "123", shiftNumber: "5", fiscalDocumentNumber: "11",
-      fiscalSign: "777", kktDateTime: "2026-09-19T10:00:03.000Z",
+      kktSerialNumber: "123", shiftNumber: 5, fiscalDocumentNumber: 11,
+      fiscalSign: 777, kktDateTime: "2026-09-19T10:00:03.000Z",
       documentClosed: true, receiptKind: "sale", amount: 100,
     })).resolves.toMatchObject({ status: "fiscalized", receiptNumber: "11" });
   });
 
   it("proves not_found only when the FN document did not progress", async () => {
     await expect(recover({
-      kktSerialNumber: "123", shiftNumber: "5", fiscalDocumentNumber: "10",
+      kktSerialNumber: "123", shiftNumber: 5, fiscalDocumentNumber: 10,
       kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
     })).resolves.toMatchObject({ status: "not_found" });
   });
 
   it("keeps a progressed but mismatched receipt unknown", async () => {
     await expect(recover({
-      kktSerialNumber: "123", shiftNumber: "5", fiscalDocumentNumber: "11",
+      kktSerialNumber: "123", shiftNumber: 5, fiscalDocumentNumber: 11,
       kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
       receiptKind: "sale", amount: 99,
     })).resolves.toMatchObject({ status: "unknown" });
