@@ -28,6 +28,7 @@ export type AtolDriverDevice = {
 
 export type AtolDriverStatus = {
   connected: boolean;
+  driverVersion?: string;
   serialNumber?: string;
   modelName?: string;
   firmwareVersion?: string;
