@@ -240,8 +240,10 @@ export function registerHardwareSettingsIpc(
     const current = inpasSettingsStore.load();
     const nextAdapter = value.adapter ?? current.adapter;
     const nextDevice = value.direct?.selectedDevice ?? current.direct?.selectedDevice;
+    const nextConsoleTerminalId = value.console?.terminalId ?? current.console.terminalId;
     const changed = nextAdapter !== current.adapter ||
-      JSON.stringify(nextDevice ?? null) !== JSON.stringify(current.direct?.selectedDevice ?? null);
+      JSON.stringify(nextDevice ?? null) !== JSON.stringify(current.direct?.selectedDevice ?? null) ||
+      nextConsoleTerminalId !== current.console.terminalId;
     if (changed && hasBlockingPaymentOperation())
       throw new Error("Нельзя менять адаптер или терминал: есть незавершённая денежная операция");
     if (changed && nextAdapter === "direct" && nextDevice) {
