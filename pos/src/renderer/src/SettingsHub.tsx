@@ -5,6 +5,9 @@ import type {
   ConnectionStatus,
   DeviceStatuses,
   DiagnosticEvent,
+  InpasConnectionResult,
+  InpasDirectDevice,
+  InpasDriverInfo,
   InpasSettings,
   PrintJobSummary,
   PrinterInfo,
@@ -28,12 +31,17 @@ const defaultAtol: AtolSettings = {
   web: { baseUrl: "http://127.0.0.1:16732/api/v2" },
 };
 const defaultInpas: InpasSettings = {
+  version: 2,
   enabled: false,
-  executablePath: "",
-  terminalId: "",
-  currencyCode: "643",
-  timeoutMs: 3600000,
-  qrMode: "terminal_choice",
+  adapter: "direct",
+  direct: {},
+  console: {
+    executablePath: "",
+    terminalId: "",
+    currencyCode: "643",
+    timeoutMs: 3600000,
+    qrMode: "terminal_choice",
+  },
 };
 
 export default function SettingsHub() {
@@ -49,6 +57,9 @@ export default function SettingsHub() {
   const [atolDevices, setAtolDevices] = useState<AtolDriverDevice[]>([]);
   const [atolStatus, setAtolStatus] = useState<AtolDriverStatus | null>(null);
   const [inpas, setInpas] = useState<InpasSettings>(defaultInpas);
+  const [inpasDriver, setInpasDriver] = useState<InpasDriverInfo | null>(null);
+  const [inpasDevices, setInpasDevices] = useState<InpasDirectDevice[]>([]);
+  const [inpasStatus, setInpasStatus] = useState<InpasConnectionResult | null>(null);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printer, setPrinter] = useState("");
   const [operations, setOperations] = useState<UnresolvedOperation[]>([]);
@@ -100,6 +111,7 @@ export default function SettingsHub() {
       nextPrintJobs,
       nextDiagnostics,
       nextAtolDriver,
+      nextInpasDriver,
     ] = await Promise.all([
       pos().getBootState(),
       pos().getConnectionStatus(),
@@ -115,6 +127,10 @@ export default function SettingsHub() {
         installed: false,
         error: error instanceof Error ? error.message : String(error),
       })),
+      pos().getInpasDriverInfo().catch((error) => ({
+        installed: false,
+        error: error instanceof Error ? error.message : String(error),
+      })),
     ]);
     setBoot(nextBoot);
     setConnection(nextConnection);
@@ -127,6 +143,7 @@ export default function SettingsHub() {
     setPrintJobs(nextPrintJobs);
     setDiagnostics(nextDiagnostics);
     setAtolDriver(nextAtolDriver);
+    setInpasDriver(nextInpasDriver);
     setPairing((current) => ({
       ...current,
       serverUrl: nextConnection.serverUrl || current.serverUrl,
@@ -222,13 +239,35 @@ export default function SettingsHub() {
       setMessage(error instanceof Error ? error.message : String(error));
     }
   };
+  const refreshInpasDevices = async () => {
+    try {
+      const found = await pos().discoverInpasDevices();
+      setInpasDriver(found.driver);
+      setInpasDevices(found.devices);
+      setMessage(found.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
   const saveInpas = async () => {
     try {
-      setInpas(await pos().saveInpasSettings(inpas));
-      setMessage("Настройки INPAS сохранены");
+      const selected = inpas.direct?.selectedDevice;
+      if (!selected) throw new Error("Выберите найденный терминал INPAS");
+      await pos().selectInpasDevice(selected);
+      setInpas(await pos().saveInpasSettings({ ...inpas, adapter: "direct" }));
+      setMessage("Терминал Точка / INPAS сохранён");
       await refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const testInpas = async () => {
+    try {
+      const result = await pos().testInpasDirectDevice();
+      setInpasStatus(result);
+      setMessage(result.success ? "Связь с терминалом INPAS проверена" : result.responseDescription || "Терминал не подключён");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
     }
   };
   const selectPrinter = async (name: string) => {
@@ -529,64 +568,52 @@ export default function SettingsHub() {
             <section className="settings-section">
               <div className="section-heading">
                 <div>
-                  <h2>Эквайринг INPAS / PAX</h2>
-                  <p>DC Console автоматически подключается к локальной службе Dual Connector.</p>
+                  <h2>Эквайринг Точка / INPAS</h2>
+                  <p>Прямое подключение к установленному банком DualConnector и PAX.</p>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={inpas.enabled}
-                    onChange={(e) =>
-                      setInpas({ ...inpas, enabled: e.target.checked })
-                    }
-                  />{" "}
-                  Использовать INPAS
+                  <input type="checkbox" checked={inpas.enabled}
+                    onChange={(e) => setInpas({ ...inpas, enabled: e.target.checked })} />
+                  {" "}Использовать эквайринг
                 </label>
               </div>
               <div className="settings-form-grid">
                 <label>
-                  <span>Dual Connector</span>
-                  <strong>{devices?.payment.ready ? "🟢 Найден и подключён" : inpas.enabled ? "🟠 Нет связи" : "Выключен"}</strong>
+                  <span>INPAS DualConnector</span>
+                  <strong>{inpasDriver?.installed
+                    ? `🟢 Найден${inpasDriver.version ? ` · ${inpasDriver.version}` : ""}`
+                    : `🟠 ${inpasDriver?.error || "Установите Интегратор Точки"}`}</strong>
                 </label>
                 <label>
-                  <span>ID терминала</span>
-                  <input
-                    value={inpas.terminalId}
-                    onChange={(e) =>
-                      setInpas({ ...inpas, terminalId: e.target.value })
-                    }
-                  />
+                  <span>Терминал PAX</span>
+                  <select value={inpas.direct?.selectedDevice?.terminalId || ""}
+                    onChange={(e) => {
+                      const device = inpasDevices.find((item) => item.terminalId === e.target.value);
+                      if (device) setInpas({ ...inpas, adapter: "direct", direct: { selectedDevice: device } });
+                    }}>
+                    <option value="">Выберите найденный терминал</option>
+                    {inpas.direct?.selectedDevice &&
+                      !inpasDevices.some((item) => item.terminalId === inpas.direct?.selectedDevice?.terminalId) &&
+                      <option value={inpas.direct.selectedDevice.terminalId}>
+                        {inpas.direct.selectedDevice.model || "PAX"} · {inpas.direct.selectedDevice.serial || "серийный № неизвестен"} · {inpas.direct.selectedDevice.terminalId}
+                      </option>}
+                    {inpasDevices.map((device) => <option key={device.terminalId} value={device.terminalId}>
+                      {device.model || "PAX"} · {device.serial || "серийный № неизвестен"} · {device.terminalId}
+                    </option>)}
+                  </select>
                 </label>
-                <label>
-                  <span>Код валюты</span>
-                  <input value={inpas.currencyCode} readOnly />
-                </label>
-                <label>
-                  <span>Таймаут, сек.</span>
-                  <input
-                    type="number"
-                    min="30"
-                    max="3600"
-                    value={Math.round(inpas.timeoutMs / 1000)}
-                    onChange={(e) =>
-                      setInpas({
-                        ...inpas,
-                        timeoutMs: Number(e.target.value) * 1000,
-                      })
-                    }
-                  />
-                </label>
+                {inpasStatus && <label>
+                  <span>Статус терминала</span>
+                  <strong>{inpasStatus.success
+                    ? `Подключён · ${inpasStatus.model || "PAX"} · ${inpasStatus.serial || inpasStatus.terminalId}`
+                    : inpasStatus.responseDescription || "Терминал не подключён"}</strong>
+                </label>}
               </div>
               <div className="settings-actions">
-                <button className="primary" onClick={() => void saveInpas()}>
-                  Сохранить INPAS
-                </button>
-                <button onClick={() => void terminal("test")}>
-                  Проверить связь
-                </button>
-                <button onClick={() => void terminal("reconcile")}>
-                  Сверка итогов
-                </button>
+                <button onClick={() => void refreshInpasDevices()}>Обновить</button>
+                <button className="primary" onClick={() => void saveInpas()}>Подключить / сохранить</button>
+                <button onClick={() => void testInpas()}>Проверить связь</button>
+                <button onClick={() => void terminal("reconcile")}>Сверка итогов</button>
               </div>
             </section>
 
