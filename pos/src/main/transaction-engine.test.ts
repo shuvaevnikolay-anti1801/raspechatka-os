@@ -47,7 +47,9 @@ class TestFiscalProvider implements FiscalProvider {
   async closeShift(){return {message:'closed'}}
   async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
   async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
-  async getOperationStatus(_request:{operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number}):Promise<FiscalOperationStatus>{
+  async getOperationStatus(_request:{
+    operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:unknown
+  }):Promise<FiscalOperationStatus>{
     this.statusCalls++;return this.nextStatus
   }
   async reprintReceipt(){return {kind:'fiscal-copy' as const,status:'printed' as const,message:'ok'}}
