@@ -218,4 +218,5 @@ describe("InpasDirectPaymentProvider", () => {
     expect(bridge.reconcileCalls).toEqual(["40000037"]);
     expect(bridge.refundCalls).toHaveLength(0);
     expect(bridge.voidCalls).toHaveLength(0);
-  });});
+  });
+});
