@@ -102,6 +102,7 @@ describe("AtolDriverFiscalProvider recovery", () => {
       expectedAmountMinor: 10000,
       recovery: {
         requestHash: "hash",
+        attemptStartedAt: "2026-09-19T10:00:01.000Z",
         snapshotBefore: {
           kktSerialNumber: "123",
           shiftNumber: "5",
@@ -132,6 +133,45 @@ describe("AtolDriverFiscalProvider recovery", () => {
       kktSerialNumber: "123", shiftNumber: 5, fiscalDocumentNumber: 11,
       kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
       receiptKind: "sale", amount: 99,
+    })).resolves.toMatchObject({ status: "unknown" });
+  });
+
+  it("keeps a multi-document jump unknown even if the last receipt matches", async () => {
+    await expect(recover({
+      kktSerialNumber: "123", shiftNumber: 5, fiscalDocumentNumber: 12,
+      kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
+      receiptKind: "sale", amount: 100,
+    })).resolves.toMatchObject({ status: "unknown" });
+  });
+
+  it("requires attempt timing before automatically confirming a receipt", async () => {
+    const bridge = {
+      connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
+      getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123" })),
+      recoveryProbe: vi.fn(async () => ({
+        kktSerialNumber: "123", shiftNumber: 5, fiscalDocumentNumber: 11,
+        kktDateTime: "2026-09-19T10:00:03.000Z", documentClosed: true,
+        receiptKind: "sale", amount: 100,
+      })),
+    } as unknown as AtolDriverBridge;
+    const provider = new AtolDriverFiscalProvider(
+      bridge,
+      { load: () => settings } as AtolSettingsStore
+    );
+    await expect(provider.getOperationStatus({
+      operationId: "attempt-legacy",
+      entityId: "sale-1",
+      kind: "sale",
+      expectedAmountMinor: 10000,
+      recovery: {
+        requestHash: "hash",
+        snapshotBefore: {
+          kktSerialNumber: "123", shiftNumber: "5",
+          fiscalDocumentNumber: "10",
+          kktDateTime: "2026-09-19T10:00:00.000Z",
+        },
+      },
     })).resolves.toMatchObject({ status: "unknown" });
   });
 });
