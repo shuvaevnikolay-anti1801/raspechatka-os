@@ -10,10 +10,8 @@ import type {
 import type { PrintResult } from '../../shared/contracts';
 
 /**
- * Direct ATOL Driver integration placeholder.
- *
- * This provider intentionally does not use ATOL Web Server.
- * Hardware calls will be implemented through the native ATOL Driver bridge.
+ * Direct ATOL Driver 10 integration.
+ * Hardware access is isolated behind the COM bridge.
  */
 export type AtolDriverDevice = {
   id: string;
@@ -31,6 +29,14 @@ export interface AtolDriverBridge {
 
 export class AtolDriverFiscalProvider implements FiscalProvider {
   constructor(private readonly bridge: AtolDriverBridge) {}
+
+  async listDevices(): Promise<AtolDriverDevice[]> {
+    return this.bridge.findDevices();
+  }
+
+  async connectDevice(device: AtolDriverDevice): Promise<void> {
+    await this.bridge.connect(device);
+  }
 
   async healthCheck(): Promise<DeviceHealth> {
     return this.bridge.health();
