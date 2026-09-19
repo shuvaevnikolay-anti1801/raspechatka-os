@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
+  AtolSettings,
   BootState,
   ConnectionStatus,
   DeviceStatuses,
 } from "../../shared/contracts";
 import "./pilot-ux.css";
 
-type AtolSettings = {
-  enabled: boolean;
-  baseUrl: string;
-  taxationType: string;
-  taxType: string;
-};
-type ExtendedPosApi = typeof window.raspechatkaPos & {
-  getAtolSettings: () => Promise<AtolSettings>;
-};
-const pos = () => window.raspechatkaPos as ExtendedPosApi;
+const pos = () => window.raspechatkaPos;
 
 type Snapshot = {
   boot: BootState;
