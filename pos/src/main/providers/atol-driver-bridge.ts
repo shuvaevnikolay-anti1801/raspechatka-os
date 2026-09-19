@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { DeviceHealth } from './contracts';
 import type {
@@ -12,6 +14,39 @@ import type {
 const PROTOCOL_VERSION = 1;
 const READ_ONLY_TIMEOUT_MS = 10_000;
 const FISCAL_OPERATION_TIMEOUT_MS = 60_000;
+export const ATOL_BRIDGE_EXECUTABLE = 'Raspechatka.AtolBridge.exe';
+
+export class AtolBridgeError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly driverErrorCode?: number,
+    readonly driverErrorDescription?: string
+  ) {
+    super(message);
+    this.name = 'AtolBridgeError';
+  }
+}
+
+export class AtolBridgeNotConfiguredError extends AtolBridgeError {
+  constructor(executablePath: string) {
+    super(`ATOL bridge helper is not installed: ${executablePath}`, 'not_configured');
+    this.name = 'AtolBridgeNotConfiguredError';
+  }
+}
+
+export function resolveAtolBridgeExecutablePath(options: { isPackaged?: boolean } = {}): string {
+  const isPackaged = options.isPackaged ?? Boolean(process.resourcesPath && !process.defaultApp);
+  if (isPackaged) {
+    return join(process.resourcesPath, 'native', 'atol', ATOL_BRIDGE_EXECUTABLE);
+  }
+  return process.env.RASPECHATKA_ATOL_BRIDGE_PATH ??
+    join(process.cwd(), 'native', 'atol-bridge', 'publish', ATOL_BRIDGE_EXECUTABLE);
+}
+
+export function isAtolBridgeExecutableAvailable(executablePath: string): boolean {
+  return existsSync(executablePath);
+}
 
 type BridgeCommand =
   | 'driverInfo'
@@ -195,8 +230,9 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
             : undefined;
       if (timeoutMs !== undefined) {
         entry.timeout = setTimeout(() => {
-          const error = new Error(
-            `ATOL bridge timed out while running ${command}; operation result is unknown`
+          const error = new AtolBridgeError(
+            `ATOL bridge timed out while running ${command}; operation result is unknown`,
+            'timeout'
           );
           this.pending.delete(id);
           reject(error);
@@ -220,6 +256,10 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     }
     if (this.stopped) {
       throw new Error('ATOL bridge has been stopped');
+    }
+
+    if (!isAtolBridgeExecutableAvailable(this.options.executablePath)) {
+      throw new AtolBridgeNotConfiguredError(this.options.executablePath);
     }
 
     const child = spawn(this.options.executablePath, this.options.args ?? [], {
@@ -284,10 +324,13 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
 
     const detail = response.error?.driverErrorDescription;
     pending.reject(
-      new Error(
+      new AtolBridgeError(
         [response.error?.message ?? 'ATOL bridge request failed', detail]
           .filter(Boolean)
-          .join(': ')
+          .join(': '),
+        response.error?.code,
+        response.error?.driverErrorCode,
+        detail
       )
     );
   }
