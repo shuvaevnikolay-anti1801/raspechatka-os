@@ -5,6 +5,7 @@ import type {
   AtolDriverBridge,
   AtolDriverDevice,
   AtolDriverInfo,
+  AtolRecoveryProbe,
   AtolDriverStatus,
 } from './atol-driver';
 
@@ -18,6 +19,7 @@ type BridgeCommand =
   | 'connect'
   | 'disconnect'
   | 'status'
+  | 'recoveryProbe'
   | 'executeJson'
   | 'shutdown';
 
@@ -69,6 +71,10 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
 
   async getStatus(): Promise<AtolDriverStatus> {
     return this.request<AtolDriverStatus>('status');
+  }
+
+  async recoveryProbe(): Promise<AtolRecoveryProbe> {
+    return this.request<AtolRecoveryProbe>('recoveryProbe');
   }
 
   async executeJson(request: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -182,7 +188,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       const timeoutMs =
         command === 'executeJson'
           ? this.options.fiscalOperationTimeoutMs ?? FISCAL_OPERATION_TIMEOUT_MS
-          : command === 'driverInfo' || command === 'discover' || command === 'status'
+          : command === 'driverInfo' || command === 'discover' || command === 'status' || command === 'recoveryProbe'
             ? this.options.readOnlyTimeoutMs ?? READ_ONLY_TIMEOUT_MS
             : undefined;
       if (timeoutMs !== undefined) {
