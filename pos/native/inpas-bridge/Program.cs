@@ -31,17 +31,16 @@ internal static class Program
                 {
                     var request = serializer.Deserialize<Dictionary<string, object>>(line);
                     if (request == null) throw new BridgeException("invalid_request", "Request is empty.");
-                    var id = Text(request, "id");
-                    requestId = id;
+                    requestId = Text(request, "id");
                     if (Number(request, "protocolVersion") != ProtocolVersion)
-                        throw new BridgeException("unsupported_protocol", "Expected protocolVersion 1.", id);
-                    if (String.IsNullOrWhiteSpace(id))
+                        throw new BridgeException("unsupported_protocol", "Expected protocolVersion 1.", requestId);
+                    if (String.IsNullOrWhiteSpace(requestId))
                         throw new BridgeException("invalid_request", "Request id is required.");
                     var command = Text(request, "command");
                     var args = ObjectMap(request, "args");
                     var result = dispatcher.InvokeAsync(() => session.Execute(command, args))
                         .GetAwaiter().GetResult();
-                    response = Success(id, result);
+                    response = Success(requestId, result);
                     Console.Out.WriteLine(serializer.Serialize(response));
                     Console.Out.Flush();
                     if (command == "shutdown") break;
@@ -101,6 +100,17 @@ internal static class Program
             : null;
     }
 
+    internal static long Long(IDictionary<string, object> source, string key)
+    {
+        object value;
+        long result;
+        if (source == null || !source.TryGetValue(key, out value) || value == null ||
+            !Int64.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture),
+                NumberStyles.Integer, CultureInfo.InvariantCulture, out result))
+            throw new BridgeException("invalid_request", key + " must be an integer.");
+        return result;
+    }
+
     private static int Number(IDictionary<string, object> source, string key)
     {
         object value;
@@ -134,6 +144,8 @@ internal sealed class InpasSession
             case "driverInfo": return DriverInfo();
             case "status": return Status();
             case "testConnection": return TestConnection(args);
+            case "sale": return Sale(args);
+            case "reconcile": return Reconcile(args);
             case "shutdown": return Shutdown();
             default: throw new BridgeException("unknown_command", "Unsupported command: " + command);
         }
@@ -178,17 +190,74 @@ internal sealed class InpasSession
 
     private object TestConnection(IDictionary<string, object> args)
     {
+        var result = ExecuteOperation(args, 26, "test", false, false);
+        var map = (Dictionary<string, object>)result;
+        if ((string)map["outcome"] == "unknown" &&
+            map["exchangeAccepted"] is bool && (bool)map["exchangeAccepted"])
+        {
+            map["outcome"] = "approved";
+            map["success"] = true;
+            map["status"] = "connected";
+        }
+        return map;
+    }
+
+    private object Sale(IDictionary<string, object> args)
+    {
+        var amountMinor = Program.Long(args, "amountMinor");
+        if (amountMinor <= 0)
+            throw new BridgeException("invalid_amount", "amountMinor must be a positive integer.");
+        var currency = Program.Text(args, "currency");
+        if (currency != "643")
+            throw new BridgeException("invalid_currency", "Direct INPAS sale requires currency 643.");
+        return ExecuteOperation(args, 1, "sale", true, true);
+    }
+
+    private object Reconcile(IDictionary<string, object> args)
+    {
+        return ExecuteOperation(args, 59, "reconcile", false, false);
+    }
+
+    private object ExecuteOperation(
+        IDictionary<string, object> args,
+        int operationCode,
+        string operationKind,
+        bool requireAmount,
+        bool requireCurrency)
+    {
         var terminalId = Program.Text(args, "terminalId");
         if (String.IsNullOrWhiteSpace(terminalId) || !Regex.IsMatch(terminalId, "^\\d{1,32}$"))
             throw new BridgeException("invalid_terminal_id", "A numeric terminalId is required.");
 
         EnsureComObjects();
         ClearPacket();
-        if (!TrySet(packet, 26, "OperationCode", "Operation", "OperationID", "OperationType") &&
-            !TrySet(packet, "26", "OperationCode", "Operation", "OperationID", "OperationType"))
+        if (!TrySet(packet, operationCode, "OperationCode", "Operation", "OperationID", "OperationType") &&
+            !TrySet(packet, operationCode.ToString(CultureInfo.InvariantCulture),
+                "OperationCode", "Operation", "OperationID", "OperationType"))
             throw new BridgeException("unsupported_driver", "SAPacket does not expose an operation field.");
         if (!TrySet(packet, terminalId, "TerminalID", "TerminalId"))
             throw new BridgeException("unsupported_driver", "SAPacket does not expose TerminalID.");
+
+        long? amountMinor = null;
+        if (requireAmount)
+        {
+            amountMinor = Program.Long(args, "amountMinor");
+            if (!TrySet(packet, amountMinor.Value, "Amount", "TransactionAmount", "AmountMinor") &&
+                !TrySet(packet, amountMinor.Value.ToString(CultureInfo.InvariantCulture),
+                    "Amount", "TransactionAmount", "AmountMinor"))
+                throw new BridgeException("unsupported_driver", "SAPacket does not expose transaction amount.");
+        }
+        if (requireCurrency)
+        {
+            var currency = Program.Text(args, "currency");
+            if (!TrySet(packet, currency, "CurrencyCode", "Currency", "CurrencyID") &&
+                !TrySet(packet, 643, "CurrencyCode", "Currency", "CurrencyID"))
+                throw new BridgeException("unsupported_driver", "SAPacket does not expose currency.");
+        }
+
+        var method = Program.Text(args, "method");
+        if (!String.IsNullOrWhiteSpace(method))
+            TrySet(packet, method, "PaymentMethod", "Method", "PaymentType");
 
         object exchangeResult;
         try
@@ -210,25 +279,29 @@ internal sealed class InpasSession
             "ResponseCodeHost", "ResponseCode", "HostResponseCode", "ResponseStatus", "ResultCode");
         var transactionStatus = SafeText(response,
             "TransactionStatus", "Status", "ResultStatus");
-        var success = IsSuccess(exchangeResult, responseCode, transactionStatus);
+        var outcome = ClassifyOutcome(responseCode, transactionStatus);
         var description = SafeText(response,
             "ResponseDescription", "ErrorDescription", "ResultDescription", "Message");
-        var receipt = SanitizeReceipt(SafeText(response, "ReceiptData", "Receipt"));
 
         return new Dictionary<string, object>
         {
-            ["success"] = success,
-            ["status"] = success ? "connected" : "error",
+            ["success"] = outcome == "approved",
+            ["outcome"] = outcome,
+            ["status"] = operationKind == "test" && outcome == "approved" ? "connected" : outcome,
+            ["operationKind"] = operationKind,
             ["terminalId"] = SafeText(response, "TerminalID", "TerminalId") ?? terminalId,
             ["referenceNumber"] = SafeText(response, "ReferenceNumber", "RRN"),
             ["terminalTransactionId"] = SafeText(response,
                 "TerminalTransactionID", "TerminalTransactionId", "TransactionID", "TransactionId"),
+            ["authorizationCode"] = SafeText(response, "AuthorizationCode", "AuthCode"),
             ["model"] = SafeText(response, "ModelNo", "Model", "DeviceModel"),
             ["serial"] = SafeText(response, "DeviceSerNumber", "SerialNumber", "DeviceSerialNumber"),
             ["responseCode"] = responseCode,
             ["responseDescription"] = description,
             ["transactionStatus"] = transactionStatus,
-            ["receipt"] = receipt
+            ["amountMinor"] = amountMinor,
+            ["receipt"] = SanitizeReceipt(SafeText(response, "ReceiptData", "Receipt")),
+            ["exchangeAccepted"] = exchangeResult is bool ? (object)(bool)exchangeResult : null
         };
     }
 
@@ -287,21 +360,23 @@ internal sealed class InpasSession
             !(value.GetType().IsPrimitive);
     }
 
-    private static bool IsSuccess(object exchangeResult, string responseCode, string status)
+    private static string ClassifyOutcome(string responseCode, string status)
     {
-        var code = (responseCode ?? "").Trim();
-        if (code.Length > 0)
-            return code == "0" || code == "00";
-
+        var code = (responseCode ?? "").Trim().ToUpperInvariant();
         var normalized = (status ?? "").Trim().ToUpperInvariant();
-        if (normalized.Length > 0)
-            return normalized == "1" || normalized == "OK" ||
-                normalized.Contains("APPROVED") || normalized.Contains("SUCCESS");
-
-        // Only use the Exchange return value when the packet exposes no explicit
-        // response/status at all. A technical successful call must never override
-        // an explicit negative terminal/bank result.
-        return exchangeResult is bool && (bool)exchangeResult;
+        var codeApproved = code == "0" || code == "00";
+        var statusApproved = normalized == "1" || normalized == "OK" ||
+            normalized.Contains("APPROVED") || normalized.Contains("SUCCESS") ||
+            normalized.Contains("ОДОБР");
+        var codeDeclined = code.Length > 0 && !codeApproved;
+        var statusDeclined = normalized.Length > 0 && !statusApproved &&
+            (normalized.Contains("DECLIN") || normalized.Contains("REJECT") ||
+             normalized.Contains("DENIED") || normalized.Contains("ОТКАЗ"));
+        var approved = codeApproved || statusApproved;
+        var declined = codeDeclined || statusDeclined;
+        if (approved && !declined) return "approved";
+        if (declined && !approved) return "declined";
+        return "unknown";
     }
 
     private static object Invoke(object target, string name, params object[] args)
@@ -339,7 +414,12 @@ internal sealed class InpasSession
                     BindingFlags.GetProperty | BindingFlags.GetField |
                     BindingFlags.Public | BindingFlags.Instance,
                     null, target, null, CultureInfo.InvariantCulture);
-                if (value != null) return Convert.ToString(value, CultureInfo.InvariantCulture);
+                if (value != null)
+                {
+                    var text = Convert.ToString(value, CultureInfo.InvariantCulture);
+                    if (!String.IsNullOrWhiteSpace(text))
+                        return text.Trim().Length > 500 ? text.Trim().Substring(0, 500) : text.Trim();
+                }
             }
             catch { }
         }
