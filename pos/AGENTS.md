@@ -45,7 +45,9 @@ Key invariants:
 
 ## Payment terminal
 
-INPAS/PAX has the same unknown-outcome rule: exit/process failure is not proof that a bank operation did not occur. Preserve reconciliation before retry.
+For DEV-152 direct INPAS/PAX work, **read pos/DEV-152-INPAS-PAX.md before planning or editing**.
+
+INPAS/PAX has the same unknown-outcome rule: exit/process failure is not proof that a bank operation did not occur. Preserve reconciliation before retry. Do not treat operation 4 as a generic refund; DEV-152 separates Refund 29 from Void 4. Do not bundle bank-owned DualConnector binaries into POS.
 
 ## Tests and commands
 
