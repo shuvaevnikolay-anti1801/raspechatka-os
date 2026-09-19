@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 type AtolSettings = {
+  version: 2;
   enabled: boolean;
-  baseUrl: string;
+  adapter: "driver" | "web";
   taxationType: string;
   taxType: string;
+  web: { baseUrl: string };
 };
 
 type ExtendedPosApi = typeof window.raspechatkaPos & {
@@ -27,6 +29,7 @@ const cleanRemoteMessage = (error: unknown) => {
 
 export default function AtolSetupAssistant() {
   const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [legacyWebMode, setLegacyWebMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
@@ -38,6 +41,9 @@ export default function AtolSetupAssistant() {
       ).find((node) => node.textContent?.trim() === "ККТ АТОЛ");
       setTarget(heading?.closest<HTMLElement>(".settings-section") ?? null);
     };
+    void pos().getAtolSettings().then((settings) => {
+      setLegacyWebMode(settings.adapter === "web");
+    }).catch(() => setLegacyWebMode(false));
     locate();
     const observer = new MutationObserver(locate);
     observer.observe(document.body, { childList: true, subtree: true });
@@ -52,6 +58,7 @@ export default function AtolSetupAssistant() {
       const settings = await pos().getAtolSettings();
       await pos().saveAtolSettings({
         ...settings,
+        adapter: "web",
         enabled: true,
         configureDevice: true,
       });
@@ -66,7 +73,7 @@ export default function AtolSetupAssistant() {
     }
   };
 
-  if (!target) return null;
+  if (!target || !legacyWebMode) return null;
 
   return createPortal(
     <div
