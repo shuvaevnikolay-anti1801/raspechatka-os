@@ -1,6 +1,5 @@
 import type {
   BankingEvidence,
-  PaymentMethod,
   PaymentServiceResult,
 } from "../../shared/contracts";
 import type {
@@ -95,7 +94,7 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       currency: "643",
       method: request.method,
     });
-    const evidence = this.evidence(result, request.method, request.amountMinor, startedAt);
+    const evidence = this.evidence(result, request.amountMinor, startedAt);
     if (result.terminalId !== selected.terminalId)
       return {
         status: "unknown",
@@ -119,13 +118,6 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       };
 
     const transactionId = result.terminalTransactionId || result.referenceNumber;
-    if (!transactionId)
-      return {
-        status: "unknown",
-        bankingEvidence: evidence,
-        message: "Банк подтвердил оплату без ReferenceNumber/RRN или TerminalTrxID",
-        raw: result,
-      };
     return {
       status: "approved",
       transactionId,
@@ -190,7 +182,6 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
 
   private evidence(
     result: InpasOperationResult,
-    method: PaymentMethod,
     amountMinor: number,
     startedAt: string
   ): BankingEvidence {
