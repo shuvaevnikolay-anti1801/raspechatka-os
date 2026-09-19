@@ -9,17 +9,29 @@ import type {
 } from './contracts';
 import type { PrintResult } from '../../shared/contracts';
 
-/**
- * Direct ATOL Driver integration placeholder.
- *
- * This provider intentionally does not use ATOL Web Server.
- * Hardware calls will be implemented through the native ATOL Driver bridge.
- */
 export type AtolDriverDevice = {
   id: string;
   model: string;
   serialNumber?: string;
-  connection: 'usb' | 'com' | 'unknown';
+  firmwareVersion?: string;
+  connection: 'usb' | 'com' | 'tcp' | 'unknown';
+  settingsJson?: string;
+};
+
+export type AtolDriverStatus = {
+  connected: boolean;
+  serialNumber?: string;
+  modelName?: string;
+  firmwareVersion?: string;
+  shiftState?: string | number;
+  paperPresent?: boolean;
+  coverOpened?: boolean;
+  printerError?: boolean;
+  fnPresent?: boolean;
+  fnError?: boolean;
+  fnBlocked?: boolean;
+  errorCode?: number;
+  errorDescription?: string;
 };
 
 export interface AtolDriverBridge {
@@ -29,6 +41,10 @@ export interface AtolDriverBridge {
   health(): Promise<DeviceHealth>;
 }
 
+/**
+ * Direct ATOL Driver provider boundary. Fiscal operations intentionally remain
+ * unavailable until their unknown-outcome/recovery contract is implemented.
+ */
 export class AtolDriverFiscalProvider implements FiscalProvider {
   constructor(private readonly bridge: AtolDriverBridge) {}
 
