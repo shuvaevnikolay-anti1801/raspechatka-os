@@ -2,7 +2,7 @@ import { ipcMain } from "electron";
 import type { InpasSettings } from "../shared/contracts";
 import type { PosDiagnostics } from "./diagnostics";
 import type { AtolSettings, AtolSettingsStore } from "./providers/atol-settings";
-import { NativeAtolDriverBridge } from "./providers/atol-driver-bridge";
+import { NativeAtolDriverBridge, resolveAtolBridgeExecutablePath } from "./providers/atol-driver-bridge";
 import type { AtolDriverBridge, AtolDriverInfo } from "./providers/atol-driver";
 import type { AtolWebManager } from "./atol-web-manager";
 import type { FiscalProvider } from "./providers/contracts";
@@ -10,6 +10,17 @@ import type {
   InpasPaymentProvider,
   InpasSettingsStore,
 } from "./providers/inpas";
+
+function atolErrorDetails(error: unknown): Record<string, unknown> {
+  const value = error as {
+    code?: unknown; driverErrorCode?: unknown; driverErrorDescription?: unknown;
+  };
+  return {
+    errorCode: value?.driverErrorCode ?? value?.code,
+    errorDescription: value?.driverErrorDescription ??
+      (error instanceof Error ? error.message : String(error)),
+  };
+}
 
 export function registerHardwareSettingsIpc(
   atolSettingsStore: AtolSettingsStore,
@@ -20,7 +31,7 @@ export function registerHardwareSettingsIpc(
   diagnostics: PosDiagnostics,
   driverBridge: AtolDriverBridge = new NativeAtolDriverBridge({
     executablePath:
-      process.env.RASPECHATKA_ATOL_BRIDGE_PATH ?? "Raspechatka.AtolBridge.exe",
+      resolveAtolBridgeExecutablePath(),
   }),
   hasBlockingFiscalOperation: () => boolean = () => false
 ): void {
@@ -61,25 +72,74 @@ export function registerHardwareSettingsIpc(
     }
   );
 
-  ipcMain.handle("pos:get-atol-driver-info", async (): Promise<AtolDriverInfo> =>
-    driverBridge.getDriverInfo()
-  );
-  ipcMain.handle("pos:discover-atol-devices", async () =>
-    (await driverBridge.findDevices()).flatMap((device) =>
-      device.serialNumber && device.settingsJson
-        ? [{
-            id: device.id,
-            serialNumber: device.serialNumber,
-            modelName: device.modelName,
-            firmwareVersion: device.firmwareVersion,
-            connection: device.connection === "usb" || device.connection === "com" || device.connection === "tcp"
-              ? device.connection
-              : "usb",
-            settingsJson: device.settingsJson,
-          }]
-        : []
-    )
-  );
+  ipcMain.handle("pos:get-atol-driver-info", async (): Promise<AtolDriverInfo> => {
+    try {
+      const info = await driverBridge.getDriverInfo();
+      diagnostics.record({
+        source: "fiscal",
+        level: info.installed ? "info" : "warning",
+        eventType: info.installed ? "atol.driver.detected" : "atol.driver.missing",
+        message: info.installed ? "Обнаружен Драйвер ККТ 10" : "Драйвер ККТ 10 недоступен",
+        details: {
+          driverVersion: info.version,
+          architecture: info.architecture,
+          errorCode: info.code,
+          errorDescription: info.error,
+        },
+      });
+      return info;
+    } catch (error) {
+      diagnostics.record({
+        source: "fiscal",
+        level: "warning",
+        eventType: "atol.driver.missing",
+        message: "ATOL bridge или Драйвер ККТ 10 недоступен",
+        details: atolErrorDetails(error),
+      });
+      throw error;
+    }
+  });
+  ipcMain.handle("pos:discover-atol-devices", async () => {
+    try {
+      const devices = (await driverBridge.findDevices()).flatMap((device) =>
+        device.serialNumber && device.settingsJson
+          ? [{
+              id: device.id,
+              serialNumber: device.serialNumber,
+              modelName: device.modelName,
+              firmwareVersion: device.firmwareVersion,
+              connection: device.connection === "usb" || device.connection === "com" || device.connection === "tcp"
+                ? device.connection
+                : "usb",
+              settingsJson: device.settingsJson,
+            }]
+          : []
+      );
+      diagnostics.record({
+        source: "fiscal",
+        eventType: "atol.device.discovered",
+        message: `Драйвер ККТ 10 обнаружил ККТ: ${devices.length}`,
+        details: {
+          devices: devices.map((device) => ({
+            serial: device.serialNumber,
+            model: device.modelName,
+            firmware: device.firmwareVersion,
+            connection: device.connection,
+          })),
+        },
+      });
+      return devices;
+    } catch (error) {
+      diagnostics.record({
+        source: "fiscal",
+        level: "warning",
+        eventType: "atol.device.connection_lost",
+        message: "Не удалось обнаружить ККТ АТОЛ",
+        details: atolErrorDetails(error),
+      });
+      throw error;
+    }
+  });
   ipcMain.handle("pos:select-atol-device", (_event, selectedDevice) => {
     if (
       !selectedDevice ||
@@ -100,7 +160,7 @@ export function registerHardwareSettingsIpc(
     if (selectedChanged && hasBlockingFiscalOperation()) {
       throw new Error("Нельзя менять ККТ: есть незавершённая фискальная операция");
     }
-    return atolSettingsStore.save({
+    const saved = atolSettingsStore.save({
       adapter: "driver",
       direct: {
         selectedDevice: {
@@ -111,6 +171,17 @@ export function registerHardwareSettingsIpc(
         },
       },
     });
+    diagnostics.record({
+      source: "fiscal",
+      eventType: "atol.device.selected",
+      message: "Выбрана ККТ АТОЛ для прямого подключения",
+      details: {
+        serial: selectedDevice.serialNumber,
+        model: selectedDevice.modelName,
+        connection: selectedDevice.connection,
+      },
+    });
+    return saved;
   });
   ipcMain.handle("pos:test-atol-driver-device", async () => {
     const selectedDevice = atolSettingsStore.load().direct?.selectedDevice;
@@ -128,10 +199,26 @@ export function registerHardwareSettingsIpc(
       const status = await driverBridge.getStatus();
       diagnostics.record({
         source: "fiscal",
-        eventType: "atol.driver.connection_checked",
-        message: `Проверена ККТ АТОЛ ${status.serialNumber ?? selectedDevice.serialNumber}`,
+        eventType: "atol.device.connected",
+        message: `Подключена ККТ АТОЛ ${status.serialNumber ?? selectedDevice.serialNumber}`,
+        details: {
+          serial: status.serialNumber ?? selectedDevice.serialNumber,
+          model: status.modelName ?? selectedDevice.modelName,
+          firmware: status.firmwareVersion,
+          shift: status.shiftState,
+          driverVersion: status.driverVersion,
+        },
       });
       return status;
+    } catch (error) {
+      diagnostics.record({
+        source: "fiscal",
+        level: "warning",
+        eventType: "atol.device.connection_lost",
+        message: "Связь с выбранной ККТ АТОЛ не подтверждена",
+        details: { serial: selectedDevice.serialNumber, ...atolErrorDetails(error) },
+      });
+      throw error;
     } finally {
       await driverBridge.disconnect().catch(() => undefined);
     }
