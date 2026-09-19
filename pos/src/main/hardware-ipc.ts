@@ -21,13 +21,19 @@ export function registerHardwareSettingsIpc(
   driverBridge: AtolDriverBridge = new NativeAtolDriverBridge({
     executablePath:
       process.env.RASPECHATKA_ATOL_BRIDGE_PATH ?? "Raspechatka.AtolBridge.exe",
-  })
+  }),
+  hasBlockingFiscalOperation: () => boolean = () => false
 ): void {
   ipcMain.handle("pos:get-atol-settings", () => atolSettingsStore.load());
   ipcMain.handle(
     "pos:save-atol-settings",
     async (_event, value: Partial<AtolSettings> & { configureDevice?: boolean }) => {
       const { configureDevice, ...settings } = value;
+      const currentSerial = atolSettingsStore.load().direct?.selectedDevice?.serialNumber;
+      const nextSerial = settings.direct?.selectedDevice?.serialNumber;
+      if (currentSerial && nextSerial && currentSerial !== nextSerial && hasBlockingFiscalOperation()) {
+        throw new Error("Нельзя выбрать другую ККТ: есть незавершённая фискальная операция");
+      }
       const saved = atolSettingsStore.save(settings);
       if (saved.adapter === "driver") {
         return saved;
@@ -80,6 +86,10 @@ export function registerHardwareSettingsIpc(
       !["usb", "com", "tcp"].includes(selectedDevice.connection)
     ) {
       throw new Error("Выберите ККТ, найденную Драйвером ККТ 10");
+    }
+    const currentSerial = atolSettingsStore.load().direct?.selectedDevice?.serialNumber;
+    if (currentSerial && currentSerial !== selectedDevice.serialNumber && hasBlockingFiscalOperation()) {
+      throw new Error("Нельзя выбрать другую ККТ: есть незавершённая фискальная операция");
     }
     return atolSettingsStore.save({
       adapter: "driver",
