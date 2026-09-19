@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import type { CompleteSaleRequest, CreateReturnRequest, PaymentPart } from '../shared/contracts'
+import type { BankingEvidence, CompleteSaleRequest, CreateReturnRequest, PaymentPart } from '../shared/contracts'
 import type { FiscalRecoverySnapshot } from './providers/contracts'
 
 export type TransactionKind = 'sale' | 'return'
@@ -88,6 +88,14 @@ export class TransactionJournal {
         action TEXT NOT NULL CHECK(action IN ('charge','refund')),
         method TEXT NOT NULL,
         amount_minor INTEGER NOT NULL,
+        provider TEXT,
+        adapter TEXT,
+        terminal_id TEXT,
+        reference_number TEXT,
+        terminal_transaction_id TEXT,
+        authorization_code TEXT,
+        response_code TEXT,
+        request_hash TEXT,
         state TEXT NOT NULL,
         transaction_id TEXT,
         raw_result_json TEXT,
@@ -113,7 +121,28 @@ export class TransactionJournal {
       CREATE INDEX IF NOT EXISTS idx_fiscal_attempts_operation
         ON fiscal_attempts(operation_id, started_at);
     `)
+    this.ensurePaymentAttemptColumns()
     this.ensureFiscalAttemptColumns()
+  }
+
+  private ensurePaymentAttemptColumns(): void {
+    const existing = new Set(
+      (this.db.prepare('PRAGMA table_info(payment_attempts)').all() as Array<{name:string}>)
+        .map((column) => column.name)
+    )
+    const columns: Array<[string,string]> = [
+      ['provider','TEXT'],
+      ['adapter','TEXT'],
+      ['terminal_id','TEXT'],
+      ['reference_number','TEXT'],
+      ['terminal_transaction_id','TEXT'],
+      ['authorization_code','TEXT'],
+      ['response_code','TEXT'],
+      ['request_hash','TEXT']
+    ]
+    for (const [name,type] of columns) {
+      if (!existing.has(name)) this.db.exec(`ALTER TABLE payment_attempts ADD COLUMN ${name} ${type}`)
+    }
   }
 
   private ensureFiscalAttemptColumns(): void {
@@ -224,15 +253,31 @@ export class TransactionJournal {
       .run(receiptNumber,new Date().toISOString(),id)
   }
 
-  startPaymentAttempt(input: {id:string;operationId:string;action:'charge'|'refund';method:string;amountMinor:number;startedAt?:string}): void {
+  startPaymentAttempt(input: {
+    id:string;operationId:string;action:'charge'|'refund';method:string;amountMinor:number;startedAt?:string
+    provider?:string;adapter?:string;terminalId?:string;requestHash?:string
+  }): void {
     this.db.prepare(`INSERT OR IGNORE INTO payment_attempts
-      (id,operation_id,action,method,amount_minor,state,started_at) VALUES (?,?,?,?,?,?,?)`)
-      .run(input.id,input.operationId,input.action,input.method,input.amountMinor,'in_progress',input.startedAt??new Date().toISOString())
+      (id,operation_id,action,method,amount_minor,state,started_at,provider,adapter,terminal_id,request_hash)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(input.id,input.operationId,input.action,input.method,input.amountMinor,'in_progress',
+        input.startedAt??new Date().toISOString(),input.provider??null,input.adapter??null,
+        input.terminalId??null,input.requestHash??null)
   }
 
-  finishPaymentAttempt(input: {id:string;state:'approved'|'declined'|'unknown';transactionId?:string;rawResult?:unknown;error?:string}): void {
-    this.db.prepare(`UPDATE payment_attempts SET state=?,transaction_id=?,raw_result_json=?,error=?,completed_at=? WHERE id=?`)
-      .run(input.state,input.transactionId??null,input.rawResult===undefined?null:JSON.stringify(input.rawResult),input.error??null,new Date().toISOString(),input.id)
+  finishPaymentAttempt(input: {
+    id:string;state:'approved'|'declined'|'unknown';transactionId?:string
+    bankingEvidence?:BankingEvidence;rawResult?:unknown;error?:string
+  }): void {
+    const evidence=input.bankingEvidence
+    this.db.prepare(`UPDATE payment_attempts SET state=?,transaction_id=?,raw_result_json=?,error=?,completed_at=?,
+      provider=COALESCE(?,provider),adapter=COALESCE(?,adapter),terminal_id=COALESCE(?,terminal_id),
+      reference_number=?,terminal_transaction_id=?,authorization_code=?,response_code=?
+      WHERE id=?`)
+      .run(input.state,input.transactionId??null,input.rawResult===undefined?null:JSON.stringify(input.rawResult),
+        input.error??null,new Date().toISOString(),evidence?.provider??null,evidence?.adapter??null,
+        evidence?.terminalId??null,evidence?.referenceNumber??null,evidence?.terminalTransactionId??null,
+        evidence?.authorizationCode??null,evidence?.responseCode??null,input.id)
   }
 
   startFiscalAttempt(input: {
@@ -264,10 +309,22 @@ export class TransactionJournal {
 
   getLatestPaymentAttempt(operationId: string): null | {
     id:string; action:'charge'|'refund'; method:string; amountMinor:number; state:string; transactionId?:string
+    provider?:string;adapter?:string;terminalId?:string;referenceNumber?:string
+    terminalTransactionId?:string;authorizationCode?:string;responseCode?:string;requestHash?:string
+    startedAt?:string;completedAt?:string;bankingEvidence?:BankingEvidence
   } {
-    const row = this.db.prepare(`SELECT id,action,method,amount_minor amountMinor,state,transaction_id transactionId
+    const row = this.db.prepare(`SELECT id,action,method,amount_minor amountMinor,state,transaction_id transactionId,
+      provider,adapter,terminal_id terminalId,reference_number referenceNumber,
+      terminal_transaction_id terminalTransactionId,authorization_code authorizationCode,
+      response_code responseCode,request_hash requestHash,started_at startedAt,completed_at completedAt,
+      raw_result_json rawResultJson
       FROM payment_attempts WHERE operation_id=? ORDER BY started_at DESC LIMIT 1`).get(operationId) as any
-    return row ?? null
+    if(!row)return null
+    if(row.rawResultJson){
+      try{row.bankingEvidence=JSON.parse(row.rawResultJson)?.bankingEvidence}catch{}
+    }
+    delete row.rawResultJson
+    return row
   }
 
   getLatestFiscalAttempt(operationId: string): null | {
