@@ -230,9 +230,15 @@ export class PosTransactionEngine {
     for(let index=confirmed.length;index<requested.length;index++){
       const part=requested[index]
       const attemptId=randomUUID()
-      this.journal.startPaymentAttempt({id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor})
+      const local=isLocalPayment(part.method)
+      const context=local?undefined:this.paymentProvider.getAttemptContext?.()
+      const requestHash=this.paymentRequestHash(action,operation.entityId,part)
+      this.journal.startPaymentAttempt({
+        id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor,
+        provider:context?.provider,adapter:context?.adapter,terminalId:context?.terminalId,requestHash
+      })
 
-      if(isLocalPayment(part.method)){
+      if(local){
         const transactionId=part.method==='cash'?`CASH-${operation.entityId}-${index}`:`REMOTE-MANUAL-${operation.entityId}-${index}`
         this.journal.finishPaymentAttempt({id:attemptId,state:'approved',transactionId})
         confirmed.push({...part,transactionId})
@@ -253,22 +259,27 @@ export class PosTransactionEngine {
         throw new Error('Связь с терминалом потеряна. Результат оплаты неизвестен — НЕ повторяйте оплату. Откройте «Восстановление».')
       }
       if(result.status==='unknown'){
-        this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',transactionId:result.transactionId,rawResult:result})
+        this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',transactionId:result.transactionId,bankingEvidence:result.bankingEvidence,rawResult:result})
         this.journal.setState(operation.id,'payment_unknown',result.message)
         throw new Error('Терминал не подтвердил итог операции. НЕ повторяйте оплату — проверьте её в «Восстановлении».')
       }
       if(result.status==='declined'){
-        this.journal.finishPaymentAttempt({id:attemptId,state:'declined',transactionId:result.transactionId,rawResult:result,error:result.message})
+        this.journal.finishPaymentAttempt({id:attemptId,state:'declined',transactionId:result.transactionId,bankingEvidence:result.bankingEvidence,rawResult:result,error:result.message})
         this.journal.setState(operation.id,'cancelled',result.message||'Оплата отклонена')
         throw new Error(result.message||'Оплата отклонена')
       }
-      if(!result.transactionId){
-        this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',rawResult:result,error:'Терминал подтвердил оплату без transactionId'})
-        this.journal.setState(operation.id,'payment_unknown','Терминал подтвердил оплату без идентификатора операции')
-        throw new Error('Оплата подтверждена без идентификатора банка. НЕ повторяйте её — откройте «Восстановление».')
+      if(!result.transactionId&&!result.bankingEvidence){
+        this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',rawResult:result,error:'Терминал подтвердил оплату без evidence'})
+        this.journal.setState(operation.id,'payment_unknown','Терминал подтвердил оплату без банковского evidence')
+        throw new Error('Оплата подтверждена без доказательного ответа банка. НЕ повторяйте её — откройте «Восстановление».')
       }
-      this.journal.finishPaymentAttempt({id:attemptId,state:'approved',transactionId:result.transactionId,rawResult:result})
-      confirmed.push({...part,transactionId:result.transactionId})
+      this.journal.finishPaymentAttempt({
+        id:attemptId,state:'approved',transactionId:result.transactionId,
+        bankingEvidence:result.bankingEvidence,rawResult:result
+      })
+      confirmed.push({
+        ...part,transactionId:result.transactionId,bankingEvidence:result.bankingEvidence
+      })
       this.journal.setConfirmedPayments(operation.id,confirmed)
     }
     return confirmed
@@ -342,22 +353,31 @@ export class PosTransactionEngine {
       const attempt=this.journal.getLatestPaymentAttempt(operation.id)
       if(!attempt)throw new Error('Не найдена попытка оплаты для восстановления')
       const result=await this.paymentProvider.getOperationStatus({operationId:attempt.id,saleId:operation.entityId,
-        amountMinor:attempt.amountMinor,method:attempt.method as PaymentPart['method']})
+        amountMinor:attempt.amountMinor,method:attempt.method as PaymentPart['method'],recovery:attempt})
       if(result.status==='approved'){
-        if(!result.transactionId){
-          this.journal.setState(operation.id,'payment_unknown','Банк подтвердил операцию без transactionId')
-          throw new Error('Банк подтвердил операцию без идентификатора. Требуется ручная проверка.')
+        if(!result.transactionId&&!result.bankingEvidence){
+          this.journal.setState(operation.id,'payment_unknown','Банк подтвердил операцию без evidence')
+          throw new Error('Банк подтвердил операцию без доказательного evidence. Требуется ручная проверка.')
         }
         const payments=[...operation.confirmedPayments]
-        if(!payments.some((x)=>x.transactionId===result.transactionId)){
-          payments.push({method:attempt.method as PaymentPart['method'],amountMinor:attempt.amountMinor,transactionId:result.transactionId})
+        const alreadyIncluded=result.transactionId
+          ?payments.some((x)=>x.transactionId===result.transactionId)
+          :payments.length>=(operation.request as CompleteSaleRequest|CreateReturnRequest).payments.length
+        if(!alreadyIncluded){
+          payments.push({
+            method:attempt.method as PaymentPart['method'],amountMinor:attempt.amountMinor,
+            transactionId:result.transactionId,bankingEvidence:result.bankingEvidence
+          })
         }
-        this.journal.finishPaymentAttempt({id:attempt.id,state:'approved',transactionId:result.transactionId,rawResult:result})
+        this.journal.finishPaymentAttempt({
+          id:attempt.id,state:'approved',transactionId:result.transactionId,
+          bankingEvidence:result.bankingEvidence,rawResult:result
+        })
         this.journal.setConfirmedPayments(operation.id,payments)
         const requested=(operation.request as CompleteSaleRequest|CreateReturnRequest).payments
         this.journal.setState(operation.id,payments.length>=requested.length?'payment_confirmed':'created')
       }else if(result.status==='declined'){
-        this.journal.finishPaymentAttempt({id:attempt.id,state:'declined',transactionId:result.transactionId,rawResult:result,error:result.message})
+        this.journal.finishPaymentAttempt({id:attempt.id,state:'declined',transactionId:result.transactionId,bankingEvidence:result.bankingEvidence,rawResult:result,error:result.message})
         this.journal.setState(operation.id,'cancelled',result.message||'Операция терминала не была выполнена')
       }else{
         this.journal.setState(operation.id,'payment_unknown',result.message||'Терминал всё ещё не даёт однозначный статус')
@@ -382,6 +402,12 @@ export class PosTransactionEngine {
         throw new Error(result.message||'Статус фискального документа всё ещё неизвестен')
       }
     }
+  }
+
+  private paymentRequestHash(action:'charge'|'refund',entityId:string,payment:PaymentPart):string{
+    return createHash('sha256').update(JSON.stringify({
+      action,entityId,method:payment.method,amountMinor:payment.amountMinor
+    })).digest('hex')
   }
 
   private fiscalRequestHash(kind:'sale'|'return',request:FiscalRequest|FiscalReturnRequest):string{
