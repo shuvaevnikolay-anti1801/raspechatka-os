@@ -383,6 +383,13 @@ describe('PosTransactionEngine safety',()=>{
     )).rejects.toThrow(/НЕ повторяйте/)
     expect(fiscal.returnCalls).toBe(0)
     expect(payment.refundCalls).toBe(2)
+
+    const unresolved=engine.listUnresolved().find((operation)=>operation.entityId!==sale.id)!
+    payment.nextStatus={status:'unknown',message:'REFUND STILL UNKNOWN'}
+    expect((await engine.recover(unresolved.id)).status).toBe('attention')
+    expect(payment.refundCalls).toBe(2)
+    expect(payment.statusCalls).toBe(1)
+    expect(fiscal.returnCalls).toBe(0)
   })
 
   it('auto-finishes a fiscalized operation locally without touching money or KKT again',async()=>{
