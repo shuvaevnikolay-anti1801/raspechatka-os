@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   existsSync,
@@ -10,6 +9,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type {
+  BankingEvidence,
   InpasSettings,
   PaymentServiceResult,
 } from "../../shared/contracts";
@@ -144,8 +144,11 @@ export class InpasPaymentProvider implements PaymentProvider {
     return this.run("charge", request.operationId, request.amountMinor);
   }
 
-  refund(request: PaymentRequest): Promise<PaymentResult> {
-    return this.run("refund", request.operationId, request.amountMinor);
+  async refund(_request: PaymentRequest): Promise<PaymentResult> {
+    return {
+      status: "declined",
+      message: "Legacy INPAS refund отключён: operation 4 является void, а не возвратом",
+    };
   }
 
   async getOperationStatus(request: PaymentRequest): Promise<PaymentResult> {
@@ -178,7 +181,7 @@ export class InpasPaymentProvider implements PaymentProvider {
   }
 
   private async run(
-    kind: "charge" | "refund" | "health" | "reconcile",
+    kind: "charge" | "health" | "reconcile",
     operationId: string,
     amountMinor?: number,
     provided?: InpasSettings
@@ -197,13 +200,12 @@ export class InpasPaymentProvider implements PaymentProvider {
 
     const operationCode = {
       charge: "1",
-      refund: "4",
       health: "26",
       reconcile: "59",
     }[kind];
     const args = [`-o${operationCode}`, `-z${settings.console.terminalId}`];
     if (amountMinor !== undefined) args.push(`-a${amountMinor}`);
-    if (kind === "charge" || kind === "refund" || kind === "health")
+    if (kind === "charge" || kind === "health")
       args.push(`-c${settings.console.currencyCode}`);
     args.push(`-s${Math.ceil(settings.console.timeoutMs / 1000)}`);
 
@@ -218,6 +220,7 @@ export class InpasPaymentProvider implements PaymentProvider {
           ]
         : [...launcher.prefixArgs, ...args];
 
+    const startedAt = new Date().toISOString();
     this.running = true;
     try {
       rmSync(resultPath, { force: true });
@@ -251,23 +254,39 @@ export class InpasPaymentProvider implements PaymentProvider {
         stderr: stderr || undefined,
       };
 
+      const bankingEvidence: BankingEvidence | undefined = kind === "charge"
+        ? {
+            provider: "inpas",
+            adapter: "console",
+            terminalId: fields["27"] || settings.console.terminalId,
+            responseCode: fields["39"],
+            transactionStatus: fields["39"],
+            amountMinor: amountMinor!,
+            operationKind: "sale",
+            startedAt,
+            completedAt: new Date().toISOString(),
+            receipt: receipt || undefined,
+          }
+        : undefined;
       let paymentResult: PaymentResult;
       if (processResult.timedOut || processResult.signal) {
         paymentResult = {
           status: "unknown",
+          bankingEvidence,
           message: "Операция INPAS прервана или превысила время ожидания",
           raw,
         };
       } else if (fields["39"] === "1") {
         paymentResult = {
           status: "approved",
-          transactionId: this.transactionId(operationId, fields, receipt),
+          bankingEvidence,
           message: this.resultMessage(fields) || "Операция подтверждена",
           raw,
         };
       } else if (fields["39"] && fields["39"] !== "1") {
         paymentResult = {
           status: "declined",
+          bankingEvidence,
           message:
             this.resultMessage(fields) ||
             stderr ||
@@ -279,6 +298,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         const detail = stderr || stdout;
         paymentResult = {
           status: "unknown",
+          bankingEvidence,
           message: detail
             ? `DC Console не создал result.txt: ${detail}`
             : `DC Console не создал result.txt (launcher ${basename(
@@ -289,6 +309,7 @@ export class InpasPaymentProvider implements PaymentProvider {
       } else {
         paymentResult = {
           status: "unknown",
+          bankingEvidence,
           message:
             this.resultMessage(fields) ||
             "DC Console вернул result.txt без подтверждённого банковского результата [39]",
@@ -296,7 +317,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         };
       }
 
-      if (kind === "charge" || kind === "refund")
+      if (kind === "charge")
         this.storeResult(operationId, paymentResult);
       return paymentResult;
     } finally {
@@ -314,11 +335,7 @@ export class InpasPaymentProvider implements PaymentProvider {
     const allowed = new Set([
       "00",
       "01",
-      "12",
-      "13",
-      "14",
       "19",
-      "25",
       "26",
       "27",
       "31",
@@ -338,23 +355,6 @@ export class InpasPaymentProvider implements PaymentProvider {
             : value.slice(0, 500),
         ])
     );
-  }
-
-  private transactionId(
-    operationId: string,
-    fields: Record<string, string>,
-    receipt: string
-  ): string {
-    const bankReference = ["12", "13", "14", "25"]
-      .map((key) => fields[key])
-      .find(Boolean);
-    if (bankReference) return `INPAS-${bankReference}`;
-    return `INPAS-${createHash("sha256")
-      .update(
-        `${operationId}\n${JSON.stringify(this.safeFields(fields))}\n${receipt}`
-      )
-      .digest("hex")
-      .slice(0, 24)}`;
   }
 
   private resultFile(operationId: string): string {
