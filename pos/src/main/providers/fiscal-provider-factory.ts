@@ -1,7 +1,7 @@
 import type { AtolWebManager } from "../atol-web-manager";
 import { AtolDriverFiscalProvider, type AtolDriverBridge } from "./atol-driver";
 import { NativeAtolDriverBridge } from "./atol-driver-bridge";
-import type { FiscalProvider } from "./contracts";
+import type { FiscalProvider, FiscalRecoverySnapshot } from "./contracts";
 import { MockFiscalProvider } from "./mock";
 import type { AtolSettingsStore } from "./atol-settings";
 import { AtolWebFiscalProvider } from "./atol-web";
@@ -19,16 +19,12 @@ export function createFiscalProvider(
 ): FiscalProvider {
   if (options.trainingMode) return new MockFiscalProvider();
 
-  const settings = options.settingsStore.load();
-  if (settings.adapter === "web") {
-    return new AtolWebFiscalProvider(
-      options.settingsStore,
-      options.webManager,
-      options.currentOperator
-    );
-  }
-
-  return new AtolDriverFiscalProvider(
+  const web = new AtolWebFiscalProvider(
+    options.settingsStore,
+    options.webManager,
+    options.currentOperator
+  );
+  const driver = new AtolDriverFiscalProvider(
     options.driverBridge ??
       new NativeAtolDriverBridge({
         executablePath:
@@ -38,4 +34,19 @@ export function createFiscalProvider(
     options.settingsStore,
     options.currentOperator
   );
+  const current = (): FiscalProvider =>
+    options.settingsStore.load().adapter === "web" ? web : driver;
+
+  return {
+    healthCheck: () => current().healthCheck(),
+    getShiftStatus: () => current().getShiftStatus(),
+    openShift: (operatorName) => current().openShift(operatorName),
+    closeShift: (operatorName) => current().closeShift(operatorName),
+    fiscalizeSale: (request) => current().fiscalizeSale(request),
+    fiscalizeReturn: (request) => current().fiscalizeReturn(request),
+    captureRecoverySnapshot: async (): Promise<FiscalRecoverySnapshot|undefined> =>
+      current().captureRecoverySnapshot?.(),
+    getOperationStatus: (request) => current().getOperationStatus(request),
+    reprintReceipt: (request) => current().reprintReceipt(request),
+  };
 }
