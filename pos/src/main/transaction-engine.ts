@@ -199,7 +199,8 @@ export class PosTransactionEngine {
     })
     let current=operation
     if(current.state==='created'||current.state==='requires_attention'){
-      const payments=await this.processPayments(current,request.payments,'refund')
+      const originalPayments=this.resolveOriginalRefundPayments(sale,request.payments)
+      const payments=await this.processPayments(current,request.payments,'refund',originalPayments)
       this.assertConfirmedPayments(request.payments,payments,operation.amountMinor)
       this.journal.setConfirmedPayments(current.id,payments)
       this.journal.setState(current.id,'payment_confirmed')
@@ -225,14 +226,20 @@ export class PosTransactionEngine {
     return {...saved,queuedForSync:true}
   }
 
-  private async processPayments(operation:JournalOperation,requested:PaymentPart[],action:'charge'|'refund'):Promise<PaymentPart[]>{
+  private async processPayments(
+    operation:JournalOperation,
+    requested:PaymentPart[],
+    action:'charge'|'refund',
+    originalPayments:ReadonlyArray<PaymentPart|undefined>=[]
+  ):Promise<PaymentPart[]>{
     const confirmed:PaymentPart[]=[...operation.confirmedPayments]
     for(let index=confirmed.length;index<requested.length;index++){
       const part=requested[index]
       const attemptId=randomUUID()
       const local=isLocalPayment(part.method)
       const context=local?undefined:this.paymentProvider.getAttemptContext?.()
-      const requestHash=this.paymentRequestHash(action,operation.entityId,part)
+      const originalPayment=originalPayments[index]
+      const requestHash=this.paymentRequestHash(action,operation.entityId,part,originalPayment)
       this.journal.startPaymentAttempt({
         id:attemptId,operationId:operation.id,action,method:part.method,amountMinor:part.amountMinor,
         provider:context?.provider,adapter:context?.adapter,terminalId:context?.terminalId,requestHash
@@ -251,7 +258,10 @@ export class PosTransactionEngine {
       try{
         result=action==='charge'
           ?await this.paymentProvider.charge({operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,method:part.method})
-          :await this.paymentProvider.refund({operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,method:part.method})
+          :await this.paymentProvider.refund({
+              operationId:attemptId,saleId:operation.entityId,amountMinor:part.amountMinor,
+              method:part.method,originalPayment
+            })
       }catch(error){
         const message=error instanceof Error?error.message:String(error)
         this.journal.finishPaymentAttempt({id:attemptId,state:'unknown',error:message})
@@ -404,9 +414,55 @@ export class PosTransactionEngine {
     }
   }
 
-  private paymentRequestHash(action:'charge'|'refund',entityId:string,payment:PaymentPart):string{
+  private resolveOriginalRefundPayments(
+    sale:SaleDetails,
+    requested:PaymentPart[]
+  ):Array<PaymentPart|undefined>{
+    const usedMethods=new Set<PaymentPart['method']>()
+    return requested.map((part)=>{
+      if(isLocalPayment(part.method))return undefined
+      if(part.method!=='card'&&part.method!=='qr'){
+        throw new Error(`Банковский возврат для способа ${part.method} не поддерживается`)
+      }
+      if(usedMethods.has(part.method)){
+        throw new Error('Нельзя однозначно сопоставить несколько частей возврата с одним банковским платежом')
+      }
+      usedMethods.add(part.method)
+      const sameMethod=sale.payments.filter((payment)=>payment.method===part.method)
+      const candidates=sameMethod.filter((payment)=>{
+        const evidence=payment.bankingEvidence
+        return evidence?.provider==='inpas'&&evidence.operationKind==='sale'&&
+          Boolean(evidence.terminalId&&evidence.referenceNumber)
+      })
+      if(sameMethod.length!==1||candidates.length!==1){
+        const reason=sameMethod.length===1
+          ?'у исходной продажи нет Terminal ID и ReferenceNumber/RRN'
+          :'исходный банковский платёж нельзя выбрать однозначно'
+        throw new Error(`Возврат INPAS не начат: ${reason}`)
+      }
+      const original=candidates[0]
+      const alreadyReturned=this.database.getReturnedPaymentMinor(sale.id,part.method)
+      const available=Math.max(0,original.amountMinor-alreadyReturned)
+      if(part.amountMinor>available){
+        throw new Error(
+          `Сумма банковского возврата превышает доступный остаток исходного платежа: ${available}`
+        )
+      }
+      return original
+    })
+  }
+
+  private paymentRequestHash(
+    action:'charge'|'refund',
+    entityId:string,
+    payment:PaymentPart,
+    originalPayment?:PaymentPart
+  ):string{
     return createHash('sha256').update(JSON.stringify({
-      action,entityId,method:payment.method,amountMinor:payment.amountMinor
+      action,entityId,method:payment.method,amountMinor:payment.amountMinor,
+      originalTerminalId:originalPayment?.bankingEvidence?.terminalId,
+      originalReferenceNumber:originalPayment?.bankingEvidence?.referenceNumber,
+      originalTerminalTransactionId:originalPayment?.bankingEvidence?.terminalTransactionId
     })).digest('hex')
   }
 
