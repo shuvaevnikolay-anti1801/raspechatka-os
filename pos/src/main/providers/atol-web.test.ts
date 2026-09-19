@@ -3,10 +3,13 @@ import type { AtolWebManager } from '../atol-web-manager'
 import { AtolSettingsStore, AtolWebFiscalProvider, allocateFiscalAmounts } from './atol-web'
 
 const enabledSettings = {
+  version: 2 as const,
   enabled: true,
-  baseUrl: 'http://127.0.0.1:16732/api/v2',
+  adapter: 'web' as const,
   taxationType: 'patent',
-  taxType: 'none'
+  taxType: 'none',
+  direct: {},
+  web: { baseUrl: 'http://127.0.0.1:16732/api/v2' }
 }
 
 function settingsStore(): AtolSettingsStore {
