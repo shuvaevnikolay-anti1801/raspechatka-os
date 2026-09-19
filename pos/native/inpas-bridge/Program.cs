@@ -23,11 +23,13 @@ internal static class Program
             while ((line = Console.ReadLine()) != null)
             {
                 IDictionary<string, object> response;
+                string requestId = null;
                 try
                 {
                     var request = serializer.Deserialize<Dictionary<string, object>>(line);
                     if (request == null) throw new BridgeException("invalid_request", "Request is empty.");
                     var id = Text(request, "id");
+                    requestId = id;
                     if (Number(request, "protocolVersion") != ProtocolVersion)
                         throw new BridgeException("unsupported_protocol", "Expected protocolVersion 1.", id);
                     if (String.IsNullOrWhiteSpace(id))
@@ -44,12 +46,12 @@ internal static class Program
                 }
                 catch (BridgeException error)
                 {
-                    response = Failure(error.RequestId, error.Code, error.Message, error.HResult);
+                    response = Failure(error.RequestId ?? requestId, error.Code, error.Message, error.HResult);
                 }
                 catch (Exception error)
                 {
                     Console.Error.WriteLine(error);
-                    response = Failure(null, "bridge_error", error.Message, error.HResult);
+                    response = Failure(requestId, "bridge_error", error.Message, error.HResult);
                 }
                 Console.Out.WriteLine(serializer.Serialize(response));
                 Console.Out.Flush();
