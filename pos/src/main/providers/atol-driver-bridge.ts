@@ -140,6 +140,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
   async stop(): Promise<void> {
     const child = this.child;
     if (!child) {
+      this.stopped = true;
       return;
     }
 
@@ -163,6 +164,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
         resolve();
       });
     });
+    this.stopped = true;
   }
 
   private async request<T = void>(
@@ -228,10 +230,12 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     createInterface({ input: child.stderr }).on('line', (line) => {
       console.error(`[atol-bridge] ${line}`);
     });
-    child.on('error', (error) => this.failAll(error));
+    child.on('error', (error) => {
+      if (this.child === child) this.child = undefined;
+      this.failAll(error);
+    });
     child.on('exit', (code, signal) => {
-      this.child = undefined;
-      this.stopped = true;
+      if (this.child === child) this.child = undefined;
       this.failAll(
         new Error(
           `ATOL bridge exited${code === null ? '' : ` with code ${code}`}${
