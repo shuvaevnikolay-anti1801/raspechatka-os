@@ -8,13 +8,17 @@ import type {
   InpasDriverInfo,
   InpasDirectStatus,
   InpasOperationResult,
+  InpasRefundRequest,
   InpasSaleRequest,
+  InpasVoidRequest,
 } from "./inpas-direct-bridge";
 import { InpasDirectPaymentProvider } from "./inpas-direct";
 import { InpasSettingsStore } from "./inpas-settings";
 
 class FakeBridge implements InpasDirectBridge {
   saleCalls: InpasSaleRequest[] = [];
+  refundCalls: InpasRefundRequest[] = [];
+  voidCalls: InpasVoidRequest[] = [];
   reconcileCalls: string[] = [];
   saleResult: InpasOperationResult = {
     success: true,
@@ -45,6 +49,14 @@ class FakeBridge implements InpasDirectBridge {
   async sale(request: InpasSaleRequest): Promise<InpasOperationResult> {
     this.saleCalls.push(request);
     return this.saleResult;
+  }
+  async refund(request: InpasRefundRequest): Promise<InpasOperationResult> {
+    this.refundCalls.push(request);
+    return { ...this.saleResult, operationKind: "refund", amountMinor: request.amountMinor };
+  }
+  async voidPayment(request: InpasVoidRequest): Promise<InpasOperationResult> {
+    this.voidCalls.push(request);
+    return { ...this.saleResult, operationKind: "void", amountMinor: request.amountMinor };
   }
   async reconcile(terminalId: string): Promise<InpasOperationResult> {
     this.reconcileCalls.push(terminalId);
@@ -145,16 +157,65 @@ describe("InpasDirectPaymentProvider", () => {
     })).status).toBe("unknown");
   });
 
-  it("does not call the bank for direct refund and maps reconcile to operation 59", async () => {
-    expect((await provider.refund({
+  it("runs Refund 29 only with original sale evidence", async () => {
+    const result = await provider.refund({
       operationId: "refund-1",
       saleId: "return-1",
       amountMinor: 500,
       method: "card",
-    })).status).toBe("declined");
-    expect(bridge.saleCalls).toHaveLength(0);
+      originalPayment: {
+        method: "card",
+        amountMinor: 12345,
+        transactionId: "TRX-456",
+        bankingEvidence: {
+          provider: "inpas",
+          adapter: "direct",
+          terminalId: "40000037",
+          referenceNumber: "RRN-123",
+          terminalTransactionId: "TRX-456",
+          authorizationCode: "AUTH-7",
+          responseCode: "00",
+          amountMinor: 12345,
+          operationKind: "sale",
+          startedAt: "2026-09-19T10:00:00.000Z",
+        },
+      },
+    });
 
+    expect(result.status).toBe("approved");
+    expect(bridge.refundCalls).toEqual([{
+      terminalId: "40000037",
+      amountMinor: 500,
+      currency: "643",
+      method: "card",
+      referenceNumber: "RRN-123",
+      terminalTransactionId: "TRX-456",
+      authorizationCode: "AUTH-7",
+    }]);
+    expect(result.bankingEvidence).toMatchObject({
+      operationKind: "refund",
+      originalReferenceNumber: "RRN-123",
+      originalTerminalTransactionId: "TRX-456",
+    });
+    expect(bridge.voidCalls).toHaveLength(0);
+  });
+
+  it("blocks refund without evidence before calling the bridge", async () => {
+    const result = await provider.refund({
+      operationId: "refund-missing",
+      saleId: "return-1",
+      amountMinor: 500,
+      method: "card",
+    });
+    expect(result.status).toBe("declined");
+    expect(result.message).toMatch(/ReferenceNumber\/RRN/);
+    expect(bridge.refundCalls).toHaveLength(0);
+    expect(bridge.voidCalls).toHaveLength(0);
+  });
+
+  it("maps reconciliation independently from refund and void", async () => {
     await provider.reconcile();
     expect(bridge.reconcileCalls).toEqual(["40000037"]);
-  });
-});
+    expect(bridge.refundCalls).toHaveLength(0);
+    expect(bridge.voidCalls).toHaveLength(0);
+  });});
