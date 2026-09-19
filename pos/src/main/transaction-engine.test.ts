@@ -20,6 +20,7 @@ class TestPaymentProvider implements PaymentProvider {
   nextRefund:PaymentResult={status:'approved',transactionId:'refund-1'}
   nextStatus:PaymentResult={status:'approved',transactionId:'bank-1'}
   throwOnCharge=false
+  throwOnRefund=false
 
   getAttemptContext(){return {provider:'inpas' as const,adapter:'direct' as const,terminalId:'40000037'}}
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
@@ -29,7 +30,9 @@ class TestPaymentProvider implements PaymentProvider {
     return this.nextCharge
   }
   async refund(request:PaymentRequest):Promise<PaymentResult>{
-    this.refundCalls++;this.refundRequests.push(request);return this.nextRefund
+    this.refundCalls++;this.refundRequests.push(request)
+    if(this.throwOnRefund)throw new Error('connection lost during refund')
+    return this.nextRefund
   }
   async getOperationStatus(_request:PaymentRequest):Promise<PaymentResult>{this.statusCalls++;return this.nextStatus}
   async testConnection(){return {message:'test'}}
@@ -390,6 +393,60 @@ describe('PosTransactionEngine safety',()=>{
     expect(payment.refundCalls).toBe(2)
     expect(payment.statusCalls).toBe(1)
     expect(fiscal.returnCalls).toBe(0)
+  })
+
+  it('keeps a timed-out Refund unknown and never calls refund again during recovery',async()=>{
+    database.saveSale({
+      id:'sale-refund-timeout',clientRequestId:'sale-refund-timeout-request',shiftId,totalMinor:2000,
+      paymentMethod:'card',fiscalNumber:'FD-REFUND-TIMEOUT',createdAt:'2026-09-19T14:00:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'card',amountMinor:2000,bankingEvidence:evidence('RRN-TIMEOUT',2000)}]
+    })
+    const sale=database.getSale('sale-refund-timeout')
+    payment.throwOnRefund=true
+
+    await expect(engine.createReturn(
+      returnRequest(sale.id,sale.lines[0].id,[{method:'card',amountMinor:2000}]),
+      shiftId,2000,sale
+    )).rejects.toThrow(/НЕ повторяйте/)
+    const unresolved=engine.listUnresolved()[0]
+    expect(unresolved.state).toBe('payment_unknown')
+    expect(payment.refundCalls).toBe(1)
+    expect(fiscal.returnCalls).toBe(0)
+
+    payment.throwOnRefund=false
+    payment.nextStatus={status:'unknown',message:'Проверьте Refund в банковском журнале'}
+    expect((await engine.recover(unresolved.id)).status).toBe('attention')
+    expect(payment.statusCalls).toBe(1)
+    expect(payment.refundCalls).toBe(1)
+    expect(fiscal.returnCalls).toBe(0)
+  })
+
+  it('preserves payment_unknown across POS restart without a second sale',async()=>{
+    payment.throwOnCharge=true
+    await expect(engine.completeSale(
+      request([{method:'card',amountMinor:2000}],'restart-payment-unknown'),shiftId
+    )).rejects.toThrow(/НЕ повторяйте оплату/)
+    const operationId=engine.listUnresolved()[0].id
+    expect(payment.chargeCalls).toBe(1)
+
+    journal.close()
+    database.close()
+    database=new PosDatabase(join(dir,'pos.sqlite'))
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    const restartedPayment=new TestPaymentProvider()
+    restartedPayment.nextStatus={status:'unknown',message:'Нет точного банковского evidence'}
+    payment=restartedPayment
+    fiscal=new TestFiscalProvider()
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+
+    expect(engine.listUnresolved()[0].state).toBe('payment_unknown')
+    expect((await engine.recover(operationId)).status).toBe('attention')
+    expect(payment.statusCalls).toBe(1)
+    expect(payment.chargeCalls).toBe(0)
+    expect(payment.refundCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
   })
 
   it('auto-finishes a fiscalized operation locally without touching money or KKT again',async()=>{
