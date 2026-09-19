@@ -45,6 +45,12 @@ jobs:
           dotnet restore native/atol-bridge/Raspechatka.AtolBridge.csproj
           dotnet publish native/atol-bridge/Raspechatka.AtolBridge.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output native/atol-bridge/publish
 
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build INPAS bridge
+        run: msbuild native/inpas-bridge/Raspechatka.InpasBridge.csproj -restore -target:Build -property:Configuration=Release -property:Platform=x64 -property:OutputPath=publish\ -property:DebugType=None -property:DebugSymbols=false
+
       - name: Install dependencies
         run: npm ci
 
