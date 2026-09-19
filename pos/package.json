@@ -8,19 +8,20 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "electron-vite preview",
     "test": "vitest run",
     "package:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "winax": "^3.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "@types/winax": "^0.0.0",
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
