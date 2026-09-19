@@ -239,9 +239,9 @@ export type DiagnosticEvent = {
 
 export type AtolDirectDevice = { serialNumber:string; modelName:string; connection:'usb'|'com'|'tcp'; settingsJson:string }
 export type AtolSettings = { version:2; enabled:boolean; adapter:'driver'|'web'; taxationType:string; taxType:string; direct?:{selectedDevice?:AtolDirectDevice}; web:{baseUrl:string} }
-export type AtolDriverInfo = { installed:boolean; version?:string; architecture?:'x64'|'x86'; error?:string }
+export type AtolDriverInfo = { installed:boolean; version?:string; architecture?:'x64'|'x86'; error?:string; code?:string }
 export type AtolDriverDevice = AtolDirectDevice & { id:string; firmwareVersion?:string }
-export type AtolDriverStatus = { connected:boolean; serialNumber?:string; modelName?:string; firmwareVersion?:string; shiftState?:string|number; paperPresent?:boolean; coverOpened?:boolean; printerError?:boolean; fnPresent?:boolean; fnError?:boolean; fnBlocked?:boolean; errorCode?:number; errorDescription?:string }
+export type AtolDriverStatus = { connected:boolean; driverVersion?:string; serialNumber?:string; modelName?:string; firmwareVersion?:string; shiftState?:string|number; paperPresent?:boolean; coverOpened?:boolean; printerConnectionLost?:boolean; printerError?:boolean; fnPresent?:boolean; invalidFn?:boolean; deviceBlocked?:boolean; errorCode?:number; errorDescription?:string }
 
 export type PosApi = {
   getBootState: () => Promise<BootState>
