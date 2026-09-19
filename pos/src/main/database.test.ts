@@ -55,6 +55,48 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents()).toHaveLength(4)
   })
 
+  it('persists banking evidence across restart and counts saved partial refunds',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-evidence-'))
+    folders.push(folder)
+    const path=join(folder,'evidence.sqlite')
+    const first=new PosDatabase(path)
+    const shift=first.openShift({id:'shift-evidence',openedAt:'2026-09-19T10:00:00.000Z',cashierName:'Тест'})
+    first.saveSale({
+      id:'sale-evidence',clientRequestId:'sale-evidence-request',shiftId:shift.id,totalMinor:2000,
+      paymentMethod:'card',fiscalNumber:'FD-EVIDENCE',createdAt:'2026-09-19T10:01:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'card',amountMinor:2000,transactionId:'TRX-SALE',
+        bankingEvidence:{provider:'inpas',adapter:'direct',terminalId:'40000037',
+          referenceNumber:'RRN-SALE',terminalTransactionId:'TRX-SALE',responseCode:'00',
+          amountMinor:2000,operationKind:'sale',startedAt:'2026-09-19T10:00:00.000Z'}}]
+    })
+    const sale=first.getSale('sale-evidence')
+    first.saveReturn({
+      id:'return-evidence',clientRequestId:'return-evidence-request',saleId:sale.id,shiftId:shift.id,
+      totalMinor:500,fiscalNumber:'FD-RETURN',createdAt:'2026-09-19T10:02:00.000Z',
+      lines:[{saleItemId:sale.lines[0].id,quantity:0.25,lineTotalMinor:500}],
+      payments:[{method:'card',amountMinor:500,transactionId:'TRX-REFUND',
+        bankingEvidence:{provider:'inpas',adapter:'direct',terminalId:'40000037',
+          referenceNumber:'RRN-REFUND',originalReferenceNumber:'RRN-SALE',
+          responseCode:'00',amountMinor:500,operationKind:'refund',
+          startedAt:'2026-09-19T10:02:00.000Z'}}]
+    })
+    first.close()
+
+    const second=new PosDatabase(path)
+    databases.push(second)
+    expect(second.getSale('sale-evidence').payments[0]).toMatchObject({
+      transactionId:'TRX-SALE',
+      bankingEvidence:{terminalId:'40000037',referenceNumber:'RRN-SALE',operationKind:'sale'}
+    })
+    expect(second.getReturnedPaymentMinor('sale-evidence','card')).toBe(500)
+    const queued=second.pendingEvents().find((event)=>event.eventType==='sale.completed')
+    expect(queued?.payload).toMatchObject({
+      payments:[{bankingEvidence:{referenceNumber:'RRN-SALE'}}]
+    })
+  })
+
   it('caches the minimal OS customer directory and updates stock after sale and return',()=>{
     const database=createDatabase()
     database.replaceCustomers([{id:'client-1',name:'Иван',phone:'+7 900 111-22-33',discountPercent:7}])
