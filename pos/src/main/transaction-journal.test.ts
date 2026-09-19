@@ -117,16 +117,23 @@ describe('TransactionJournal',()=>{
     journal.startPaymentAttempt({id:'payment-bank',operationId:'op-bank',action:'charge',
       method:'card',amountMinor:10000,provider:'inpas',adapter:'direct',
       terminalId:'40000037',requestHash:'request-hash'})
+    const evidence={provider:'inpas' as const,adapter:'direct' as const,terminalId:'40000037',
+      referenceNumber:'RRN-1',terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',
+      responseCode:'00',amountMinor:10000,operationKind:'sale' as const,
+      startedAt:'2026-09-19T10:00:00.000Z',completedAt:'2026-09-19T10:00:10.000Z'}
     journal.finishPaymentAttempt({id:'payment-bank',state:'approved',transactionId:'TRX-1',
-      bankingEvidence:{provider:'inpas',adapter:'direct',terminalId:'40000037',
-        referenceNumber:'RRN-1',terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',
-        responseCode:'00',amountMinor:10000,operationKind:'sale',
-        startedAt:'2026-09-19T10:00:00.000Z',completedAt:'2026-09-19T10:00:10.000Z'}})
+      bankingEvidence:evidence,rawResult:{
+        status:'approved',transactionId:'TRX-1',bankingEvidence:evidence,message:'APPROVED'
+      }})
 
     expect(journal.getLatestPaymentAttempt('op-bank')).toMatchObject({
-      provider:'inpas',adapter:'direct',terminalId:'40000037',referenceNumber:'RRN-1',
-      terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',responseCode:'00',
-      requestHash:'request-hash',bankingEvidence:{operationKind:'sale',amountMinor:10000}
+      action:'charge',kind:'sale',method:'card',amountMinor:10000,state:'approved',
+      transactionId:'TRX-1',provider:'inpas',adapter:'direct',terminalId:'40000037',
+      referenceNumber:'RRN-1',terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',
+      responseCode:'00',requestHash:'request-hash',startedAt:expect.any(String),
+      bankingEvidence:{operationKind:'sale',amountMinor:10000},
+      safeResult:{status:'approved',transactionId:'TRX-1',
+        bankingEvidence:{referenceNumber:'RRN-1'}}
     })
   })
 
