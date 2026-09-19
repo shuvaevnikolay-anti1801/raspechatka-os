@@ -10,6 +10,7 @@ import { MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
 import { AtolSettingsStore } from "./providers/atol-web";
 import { createFiscalProvider } from "./providers/fiscal-provider-factory";
+import { NativeAtolDriverBridge } from "./providers/atol-driver-bridge";
 import { ShiftCoordinator } from "./shift-coordinator";
 import { registerShiftRecoveryIpc } from "./shift-recovery-ipc";
 import { registerPilotIpc } from "./pilot-ipc";
@@ -29,6 +30,7 @@ let database: PosDatabase | undefined;
 let journal: TransactionJournal | undefined;
 let printQueue: CommodityPrintQueue | undefined;
 let diagnostics: PosDiagnostics | undefined;
+let atolDriverBridge: NativeAtolDriverBridge | undefined;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -111,10 +113,15 @@ if (!hasLock) {
     const paymentProvider = trainingMode
       ? new MockPaymentProvider()
       : inpasProvider;
+    atolDriverBridge = trainingMode ? undefined : new NativeAtolDriverBridge({
+      executablePath:
+        process.env.RASPECHATKA_ATOL_BRIDGE_PATH ?? "Raspechatka.AtolBridge.exe",
+    });
     const fiscalProvider = createFiscalProvider({
       trainingMode,
       settingsStore: atolSettingsStore,
       webManager: trainingMode ? undefined : atolManager,
+      driverBridge: atolDriverBridge,
       currentOperator: () =>
         cashierAuth.state().employee?.name ||
         database?.currentShift()?.cashierName,
@@ -209,7 +216,7 @@ if (!hasLock) {
       inpasSettingsStore,
       trainingMode ? undefined : inpasProvider,
       diagnostics,
-      undefined,
+      atolDriverBridge,
       () => journal!.hasBlockingFiscalOperation()
     );
     if (!trainingMode && atolSettingsStore.load().enabled && atolSettingsStore.load().adapter === "web")
@@ -248,6 +255,7 @@ app.on("before-quit", () => {
   stopAutomaticSync?.();
   stopAutomaticPrintRetry?.();
   printQueue?.close();
+  void atolDriverBridge?.stop();
   journal?.close();
   database?.close();
   diagnostics?.close();
