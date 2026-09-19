@@ -117,7 +117,7 @@ export default function App(){
     <header className="topbar">
       <div className="brand"><div className="brand-mark">Р</div><strong>Распечатка <b>OS</b></strong><span>Касса</span></div>
       <div className="point"><small>{boot.pointName}</small><b>{boot.workstationName}</b></div>
-      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={()=>setScreen('settings')}>Кассир: {cashierAuth.employee?.name}</button><button onClick={async()=>{try{await window.raspechatkaPos.lockCashier();await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}>Заблокировать</button><button onClick={async()=>{try{await window.raspechatkaPos.logoutCashier();await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}>Сменить</button></div>
+      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={()=>setScreen('settings')}>Кассир: {cashierAuth.employee?.name}</button><button onClick={async()=>{try{await window.raspechatkaPos.lockCashier();await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}>Заблокировать</button><button onClick={async()=>{try{await window.raspechatkaPos.logoutCashier();await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}>Сменить</button></div>
     </header>
     <nav className="main-nav">
       <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
