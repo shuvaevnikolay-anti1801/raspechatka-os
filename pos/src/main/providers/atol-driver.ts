@@ -62,10 +62,10 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
     if(!expected||probe.kktSerialNumber!==expected)
       throw new Error("Recovery snapshot получен не от выбранной ККТ АТОЛ");
     return {
-      kktSerialNumber:probe.kktSerialNumber,
-      shiftNumber:probe.shiftNumber,
-      fiscalDocumentNumber:probe.fiscalDocumentNumber,
-      fiscalSign:probe.fiscalSign,
+      kktSerialNumber:String(probe.kktSerialNumber),
+      shiftNumber:probe.shiftNumber===undefined?undefined:String(probe.shiftNumber),
+      fiscalDocumentNumber:probe.fiscalDocumentNumber===undefined?undefined:String(probe.fiscalDocumentNumber),
+      fiscalSign:probe.fiscalSign===undefined?undefined:String(probe.fiscalSign),
       kktDateTime:probe.kktDateTime,
       documentClosed:probe.documentClosed,
       receiptKind:probe.receiptKind,
