@@ -24,7 +24,9 @@ import { PosTransactionEngine } from "./transaction-engine";
 import { CommodityPrintQueue } from "./print-jobs";
 import { buildBootState, startAutomaticSync } from "./sync";
 import { PosDiagnostics } from "./diagnostics";
-import { InpasPaymentProvider, InpasSettingsStore } from "./providers/inpas";
+import { InpasPaymentProvider } from "./providers/inpas";
+import { InpasSettingsStore } from "./providers/inpas-settings";
+import { NativeInpasBridge } from "./providers/inpas-direct-bridge";
 import { CashierAuthSession } from "./cashier-auth";
 import { AtolCredentialStore, AtolWebManager } from "./atol-web-manager";
 
@@ -35,6 +37,7 @@ let journal: TransactionJournal | undefined;
 let printQueue: CommodityPrintQueue | undefined;
 let diagnostics: PosDiagnostics | undefined;
 let atolDriverBridge: NativeAtolDriverBridge | undefined;
+let inpasDirectBridge: NativeInpasBridge | undefined;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -110,10 +113,15 @@ if (!hasLock) {
     const inpasSettingsStore = new InpasSettingsStore(
       join(userData, "inpas-settings.json")
     );
+    const inpasResultDirectory = join(userData, "inpas-results");
     const inpasProvider = new InpasPaymentProvider(
       inpasSettingsStore,
-      join(userData, "inpas-results")
+      inpasResultDirectory
     );
+    inpasDirectBridge = new NativeInpasBridge({
+      executablePath:
+        process.env.RASPECHATKA_INPAS_BRIDGE_PATH ?? "Raspechatka.InpasBridge.exe",
+    });
     const paymentProvider = trainingMode
       ? new MockPaymentProvider()
       : inpasProvider;
@@ -231,7 +239,10 @@ if (!hasLock) {
       trainingMode ? undefined : inpasProvider,
       diagnostics,
       atolDriverBridge,
-      () => journal!.hasBlockingFiscalOperation()
+      () => journal!.hasBlockingFiscalOperation(),
+      inpasDirectBridge,
+      () => transactionEngine.hasBlockingOperation(),
+      inpasResultDirectory
     );
     if (!trainingMode && atolSettingsStore.load().enabled && atolSettingsStore.load().adapter === "web")
       void atolManager
@@ -270,6 +281,7 @@ app.on("before-quit", () => {
   stopAutomaticPrintRetry?.();
   printQueue?.close();
   void atolDriverBridge?.stop();
+  void inpasDirectBridge?.stop();
   journal?.close();
   database?.close();
   diagnostics?.close();
