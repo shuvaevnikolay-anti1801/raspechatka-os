@@ -6,6 +6,7 @@ import type {
   DeviceHealth,
   PaymentAttemptContext,
   PaymentProvider,
+  PaymentRecoveryEvidence,
   PaymentRequest,
   PaymentResult,
 } from "./contracts";
@@ -206,11 +207,13 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
     };
   }
 
-  async getOperationStatus(_request: PaymentRequest): Promise<PaymentResult> {
+  async getOperationStatus(request: PaymentRequest): Promise<PaymentResult> {
+    const proven = this.provenStoredResult(request, request.recovery);
+    if (proven) return proven;
     return {
       status: "unknown",
       message:
-        "Сверка итогов (операция 59) не доказывает результат отдельной оплаты. Проверьте терминал и банковский журнал.",
+        "Точный результат INPAS не доказан. Проверьте операцию в терминале или банковском журнале; повторять её автоматически нельзя.",
     };
   }
 
@@ -241,6 +244,83 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       message: result.responseDescription || "Сверка итогов INPAS выполнена",
       receipt: result.receipt,
       raw: result,
+    };
+  }
+
+  private provenStoredResult(
+    request: PaymentRequest,
+    recovery: PaymentRecoveryEvidence | undefined
+  ): PaymentResult | undefined {
+    const stored = recovery?.safeResult;
+    if (
+      !stored ||
+      (stored.status !== "approved" && stored.status !== "declined") ||
+      recovery.state !== stored.status ||
+      recovery.provider !== "inpas" ||
+      recovery.adapter !== "direct" ||
+      recovery.kind !== (request.recovery?.kind ?? recovery.kind) ||
+      recovery.kind !== (request.originalPayment ? "refund" : recovery.kind) ||
+      recovery.method !== request.method ||
+      recovery.amountMinor !== request.amountMinor ||
+      !recovery.requestHash ||
+      !/^[a-f0-9]{64}$/i.test(recovery.requestHash)
+    )
+      return undefined;
+
+    const expectedKind = recovery.kind;
+    if (expectedKind !== "sale" && expectedKind !== "refund") return undefined;
+    const evidence = stored.bankingEvidence;
+    const settings = this.settingsStore.load();
+    const selected = settings.adapter === "direct"
+      ? settings.direct?.selectedDevice
+      : undefined;
+    if (
+      !selected ||
+      !evidence ||
+      evidence.provider !== "inpas" ||
+      evidence.adapter !== "direct" ||
+      evidence.operationKind !== expectedKind ||
+      evidence.terminalId !== recovery.terminalId ||
+      evidence.terminalId !== selected.terminalId ||
+      evidence.amountMinor !== request.amountMinor
+    )
+      return undefined;
+
+    if (
+      (recovery.referenceNumber && evidence.referenceNumber !== recovery.referenceNumber) ||
+      (recovery.terminalTransactionId &&
+        evidence.terminalTransactionId !== recovery.terminalTransactionId) ||
+      (recovery.authorizationCode &&
+        evidence.authorizationCode !== recovery.authorizationCode) ||
+      (recovery.responseCode && evidence.responseCode !== recovery.responseCode)
+    )
+      return undefined;
+
+    const attemptStartedAt = Date.parse(recovery.startedAt || "");
+    const resultStartedAt = Date.parse(evidence.startedAt || "");
+    const resultCompletedAt = Date.parse(evidence.completedAt || "");
+    if (
+      !Number.isFinite(attemptStartedAt) ||
+      !Number.isFinite(resultStartedAt) ||
+      !Number.isFinite(resultCompletedAt) ||
+      resultStartedAt < attemptStartedAt - 5_000 ||
+      resultCompletedAt < resultStartedAt
+    )
+      return undefined;
+
+    if (stored.status === "approved") {
+      const bankId = evidence.terminalTransactionId || evidence.referenceNumber;
+      if (!bankId || stored.transactionId !== bankId) return undefined;
+    } else if (!evidence.responseCode && !evidence.transactionStatus) {
+      return undefined;
+    }
+
+    return {
+      status: stored.status,
+      transactionId: stored.transactionId,
+      bankingEvidence: evidence,
+      message: stored.message,
+      raw: stored.raw,
     };
   }
 
