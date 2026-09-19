@@ -345,6 +345,12 @@ Scope:
 - diagnostics/documentation;
 - real KKT smoke/acceptance.
 
+Packaging contract:
+- publish `Raspechatka.AtolBridge.csproj` as self-contained single-file `win-x64` to `pos/native/atol-bridge/publish/Raspechatka.AtolBridge.exe` before Electron packaging;
+- package only that executable as `resources/native/atol/Raspechatka.AtolBridge.exe`;
+- never package Driver 10, ATOL COM/DLL files, or Web Server;
+- runtime uses the packaged resource, or in development `RASPECHATKA_ATOL_BRIDGE_PATH` / the local publish path.
+
 Hardware acceptance must include sale/return/shifts plus USB loss/restart during a dangerous fiscal boundary and prove no duplicate fiscal receipt.
 
 ## Required source files before implementation
