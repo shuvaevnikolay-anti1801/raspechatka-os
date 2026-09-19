@@ -58,6 +58,28 @@ function fakeProcess(requests: Array<Record<string, unknown>>): ChildProcessWith
   return child;
 }
 
+function crashingProcess(requests: Array<Record<string, unknown>>): ChildProcessWithoutNullStreams {
+  const child = new EventEmitter() as ChildProcessWithoutNullStreams;
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  Object.assign(child, {
+    stdin,
+    stdout,
+    stderr,
+    exitCode: null,
+    signalCode: null,
+    killed: false,
+    kill: () => true,
+  });
+  stdin.on("data", (chunk) => {
+    requests.push(JSON.parse(String(chunk).trim()) as Record<string, unknown>);
+    Object.assign(child, { exitCode: 1 });
+    child.emit("exit", 1, null);
+  });
+  return child;
+}
+
 describe("NativeInpasBridge refund protocol", () => {
   it("sends refund and void as separate commands with original evidence", async () => {
     const requests: Array<Record<string, unknown>> = [];
@@ -109,4 +131,31 @@ describe("NativeInpasBridge refund protocol", () => {
     })).toThrow(/ReferenceNumber/);
     expect(spawnCalls).toBe(0);
   });
+  it("restarts only the helper after a dangerous command crashes", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    let spawnCalls = 0;
+    const bridge = new NativeInpasBridge({
+      executablePath: "Raspechatka.InpasBridge.exe",
+      spawnProcess: () => {
+        spawnCalls += 1;
+        return spawnCalls === 1
+          ? crashingProcess(requests)
+          : fakeProcess(requests);
+      },
+    });
+
+    await expect(bridge.sale({
+      terminalId: "40000037",
+      amountMinor: 500,
+      currency: "643",
+      method: "card",
+    })).rejects.toThrow(/exited/);
+
+    const status = await bridge.getStatus();
+    expect(status.status).toBe("approved");
+    expect(spawnCalls).toBe(2);
+    expect(requests.map((request) => request.command)).toEqual(["sale", "status"]);
+    expect(requests.filter((request) => request.command === "sale")).toHaveLength(1);
+  });
+
 });
