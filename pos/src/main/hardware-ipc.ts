@@ -13,6 +13,7 @@ import {
 } from "./providers/inpas-settings";
 import {
   NativeInpasBridge,
+  resolveInpasBridgeExecutablePath,
   type InpasDirectBridge,
   type InpasDriverInfo,
 } from "./providers/inpas-direct-bridge";
@@ -49,7 +50,7 @@ export function registerHardwareSettingsIpc(
   }),
   hasBlockingFiscalOperation: () => boolean = () => false,
   inpasBridge: InpasDirectBridge = new NativeInpasBridge({
-    executablePath: process.env.RASPECHATKA_INPAS_BRIDGE_PATH ?? "Raspechatka.InpasBridge.exe",
+    executablePath: resolveInpasBridgeExecutablePath(),
   }),
   hasBlockingPaymentOperation: () => boolean = () => false,
   inpasResultDirectory?: string
