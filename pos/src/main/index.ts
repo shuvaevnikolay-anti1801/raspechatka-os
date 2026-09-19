@@ -6,7 +6,7 @@ import { ConnectionStore } from "./connection";
 import { registerIpcHandlers } from "./ipc";
 import { registerPosV2Ipc } from "./pos-v2-ipc";
 import { registerHardwareSettingsIpc } from "./hardware-ipc";
-import { MockFiscalProvider, MockPaymentProvider } from "./providers/mock";
+import { MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
 import { AtolSettingsStore } from "./providers/atol-web";
 import { createFiscalProvider } from "./providers/fiscal-provider-factory";
