@@ -48,7 +48,7 @@ export type InpasOperationResult = {
   success: boolean;
   outcome: InpasOperationOutcome;
   status: string;
-  operationKind: "sale" | "reconcile";
+  operationKind: "sale" | "refund" | "void" | "reconcile";
   terminalId: string;
   referenceNumber?: string;
   terminalTransactionId?: string;
@@ -69,11 +69,22 @@ export type InpasSaleRequest = {
   method: "card" | "qr";
 };
 
+export type InpasOriginalOperationRequest = InpasSaleRequest & {
+  referenceNumber: string;
+  terminalTransactionId?: string;
+  authorizationCode?: string;
+};
+
+export type InpasRefundRequest = InpasOriginalOperationRequest;
+export type InpasVoidRequest = InpasOriginalOperationRequest;
+
 export interface InpasDirectBridge {
   getDriverInfo(): Promise<InpasDriverInfo>;
   getStatus(): Promise<InpasDirectStatus>;
   testConnection(terminalId: string): Promise<InpasConnectionResult>;
   sale(request: InpasSaleRequest): Promise<InpasOperationResult>;
+  refund(request: InpasRefundRequest): Promise<InpasOperationResult>;
+  voidPayment(request: InpasVoidRequest): Promise<InpasOperationResult>;
   reconcile(terminalId: string): Promise<InpasOperationResult>;
   stop(): Promise<void>;
 }
@@ -83,6 +94,8 @@ type BridgeCommand =
   | "status"
   | "testConnection"
   | "sale"
+  | "refund"
+  | "void"
   | "reconcile"
   | "shutdown";
 type BridgeResponse<T> = {
@@ -156,7 +169,17 @@ export class NativeInpasBridge implements InpasDirectBridge {
       return Promise.reject(new InpasBridgeError(
         "Direct INPAS поддерживает оплату картой или QR", "invalid_method"
       ));
-    return this.request("sale", request);
+    return this.request("sale", { ...request });
+  }
+
+  refund(request: InpasRefundRequest): Promise<InpasOperationResult> {
+    this.assertOriginalOperation(request);
+    return this.request("refund", { ...request });
+  }
+
+  voidPayment(request: InpasVoidRequest): Promise<InpasOperationResult> {
+    this.assertOriginalOperation(request);
+    return this.request("void", { ...request });
   }
 
   reconcile(terminalId: string): Promise<InpasOperationResult> {
@@ -183,6 +206,24 @@ export class NativeInpasBridge implements InpasDirectBridge {
     });
   }
 
+  private assertOriginalOperation(request: InpasOriginalOperationRequest): void {
+    this.assertTerminalId(request.terminalId);
+    if (!Number.isSafeInteger(request.amountMinor) || request.amountMinor <= 0)
+      throw new InpasBridgeError(
+        "Сумма возврата INPAS должна быть положительным целым числом копеек",
+        "invalid_amount"
+      );
+    if (request.currency !== "643")
+      throw new InpasBridgeError("Direct INPAS поддерживает валюту 643", "invalid_currency");
+    if (request.method !== "card" && request.method !== "qr")
+      throw new InpasBridgeError("Операция INPAS требует card/qr method", "invalid_method");
+    if (!request.referenceNumber.trim() || request.referenceNumber.length > 200)
+      throw new InpasBridgeError(
+        "Для операции нужен ReferenceNumber/RRN исходной продажи",
+        "missing_original_reference"
+      );
+  }
+
   private assertTerminalId(terminalId: string): void {
     if (!/^\d{1,32}$/.test(terminalId))
       throw new InpasBridgeError(
@@ -197,7 +238,7 @@ export class NativeInpasBridge implements InpasDirectBridge {
     const child = this.ensureStarted();
     const id = String(this.nextId++);
     const timeoutMs =
-      command === "sale"
+      command === "sale" || command === "refund" || command === "void"
         ? this.options.bankOperationTimeoutMs ?? BANK_OPERATION_TIMEOUT_MS
         : command === "reconcile"
           ? this.options.reconcileTimeoutMs ?? RECONCILE_TIMEOUT_MS
