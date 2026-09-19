@@ -1,5 +1,5 @@
 import type { AtolWebManager } from "../atol-web-manager";
-import { AtolDriverFiscalProvider } from "./atol-driver";
+import { AtolDriverFiscalProvider, type AtolDriverBridge } from "./atol-driver";
 import { NativeAtolDriverBridge } from "./atol-driver-bridge";
 import type { FiscalProvider } from "./contracts";
 import { MockFiscalProvider } from "./mock";
@@ -11,7 +11,7 @@ export type FiscalProviderFactoryOptions = {
   settingsStore: AtolSettingsStore;
   webManager?: AtolWebManager;
   currentOperator: () => string | undefined;
-  driverBridge?: NativeAtolDriverBridge;
+  driverBridge?: AtolDriverBridge;
 };
 
 export function createFiscalProvider(
