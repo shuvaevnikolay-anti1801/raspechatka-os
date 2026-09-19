@@ -276,7 +276,14 @@ export class NativeInpasBridge implements InpasDirectBridge {
     command: BridgeCommand,
     args?: Record<string, unknown>
   ): Promise<T> {
-    const child = this.ensureStarted();
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = this.ensureStarted();
+    } catch (error) {
+      return Promise.reject(
+        error instanceof Error ? error : new InpasBridgeError(String(error), "spawn_failed")
+      );
+    }
     const id = String(this.nextId++);
     const timeoutMs =
       command === "sale" || command === "refund" || command === "void"
