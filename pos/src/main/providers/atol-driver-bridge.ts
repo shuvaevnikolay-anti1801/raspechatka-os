@@ -10,6 +10,7 @@ import type {
 
 const PROTOCOL_VERSION = 1;
 const READ_ONLY_TIMEOUT_MS = 10_000;
+const FISCAL_OPERATION_TIMEOUT_MS = 60_000;
 
 type BridgeCommand =
   | 'driverInfo'
@@ -44,6 +45,7 @@ export type NativeAtolDriverBridgeOptions = {
   executablePath: string;
   args?: string[];
   readOnlyTimeoutMs?: number;
+  fiscalOperationTimeoutMs?: number;
 };
 
 export class NativeAtolDriverBridge implements AtolDriverBridge {
@@ -103,6 +105,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       const status = await this.request<AtolDriverStatus>('status');
       const ready =
         status.connected &&
+        status.shiftState !== 'expired' &&
         status.paperPresent !== false &&
         !status.coverOpened &&
         !status.printerConnectionLost &&
@@ -176,11 +179,17 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
         timeout?: NodeJS.Timeout;
       } = { resolve, reject };
 
-      if (command === 'driverInfo' || command === 'discover' || command === 'status') {
+      const timeoutMs =
+        command === 'executeJson'
+          ? this.options.fiscalOperationTimeoutMs ?? FISCAL_OPERATION_TIMEOUT_MS
+          : command === 'driverInfo' || command === 'discover' || command === 'status'
+            ? this.options.readOnlyTimeoutMs ?? READ_ONLY_TIMEOUT_MS
+            : undefined;
+      if (timeoutMs !== undefined) {
         entry.timeout = setTimeout(() => {
           this.pending.delete(id);
-          reject(new Error(`ATOL bridge timed out while running ${command}`));
-        }, this.options.readOnlyTimeoutMs ?? READ_ONLY_TIMEOUT_MS);
+          reject(new Error(`ATOL bridge timed out while running ${command}; operation result is unknown`));
+        }, timeoutMs);
       }
 
       this.pending.set(id, entry);
