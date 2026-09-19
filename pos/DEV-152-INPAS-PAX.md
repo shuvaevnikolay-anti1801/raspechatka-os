@@ -73,15 +73,15 @@ React
 
 Bridge-команды:
 - driverInfo;
-- discover;
 - status;
 - testConnection;
 - sale;
 - refund;
 - void;
 - reconcile;
-- recoveryProbe — только если можно доказательно реализовать;
 - shutdown.
+
+Отдельной COM-команды discover нет: Electron собирает только безопасные кандидаты TID и подтверждает каждый операцией 26. recoveryProbe не реализован, потому что исследованный API DualConnector не дал доказательного read-only lookup по исходной попытке.
 
 ## Обнаружение и Terminal ID
 
@@ -223,7 +223,7 @@ getLatestPaymentAttempt должен возвращать evidence для recove
 
 ## Packaging
 
-Raspechatka.InpasBridge.exe собирается как .NET Framework 4.8 x64 и кладётся в extraResources. ATOL bridge остаётся отдельным .NET 8 helper.
+Raspechatka.InpasBridge.exe собирается MSBuild как .NET Framework 4.8 x64 в native/inpas-bridge/publish и кладётся в extraResources как resources/native/inpas/Raspechatka.InpasBridge.exe. ATOL bridge остаётся отдельным .NET 8 helper.
 
 Не bundle:
 - DualConnector.dll;
