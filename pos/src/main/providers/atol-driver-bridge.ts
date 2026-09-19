@@ -185,7 +185,6 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     const child = spawn(this.options.executablePath, this.options.args ?? [], {
       shell: false,
       windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.child = child;
 
