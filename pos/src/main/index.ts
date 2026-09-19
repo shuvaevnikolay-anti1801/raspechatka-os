@@ -208,7 +208,9 @@ if (!hasLock) {
       trainingMode ? undefined : fiscalProvider,
       inpasSettingsStore,
       trainingMode ? undefined : inpasProvider,
-      diagnostics
+      diagnostics,
+      undefined,
+      () => journal!.hasBlockingFiscalOperation()
     );
     if (!trainingMode && atolSettingsStore.load().enabled && atolSettingsStore.load().adapter === "web")
       void atolManager
