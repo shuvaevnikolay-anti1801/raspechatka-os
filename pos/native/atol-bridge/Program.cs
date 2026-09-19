@@ -80,6 +80,7 @@ internal sealed class AtolSession {
         "connect" => Connect(request.Args),
         "disconnect" => Disconnect(),
         "status" => Status(),
+        "recoveryProbe" => RecoveryProbe(),
         "executeJson" => ExecuteJson(request.Args),
         "shutdown" => Shutdown(),
         _ => throw new ProtocolException("unknown_command", $"Unsupported command: {request.Command}"),
@@ -209,6 +210,46 @@ internal sealed class AtolSession {
         };
     }
 
+    private object RecoveryProbe() {
+        var fptr = EnsureDriver();
+        if (!IsOpened(fptr)) {
+            throw new ProtocolException("not_connected", "Connect the selected KKT before recoveryProbe.");
+        }
+        QueryStatus(fptr);
+        var serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER");
+        var statusShiftNumber = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_NUMBER");
+        bool? documentClosed = null;
+        try {
+            var result = fptr.checkDocumentClosed();
+            if (Convert.ToInt32(result) == 0) {
+                documentClosed = ReadBoolParam(fptr, "LIBFPTR_PARAM_DOCUMENT_CLOSED");
+            }
+        } catch (Exception error) {
+            Console.Error.WriteLine($"ATOL checkDocumentClosed unavailable: {error.Message}");
+        }
+
+        var dataType = TryConstant(fptr, "LIBFPTR_FNDT_LAST_RECEIPT")
+            ?? TryConstant(fptr, "LIBFPTR_FNDT_LAST_DOCUMENT");
+        if (dataType is null) {
+            throw new DriverFailure(null,
+                "ATOL Driver exposes neither LIBFPTR_FNDT_LAST_RECEIPT nor LIBFPTR_FNDT_LAST_DOCUMENT.");
+        }
+        fptr.setParam(Constant(fptr, "LIBFPTR_PARAM_DATA_TYPE"), dataType);
+        Check(fptr.fnQueryData(), fptr);
+
+        var receiptType = ReadIntParam(fptr, "LIBFPTR_PARAM_RECEIPT_TYPE");
+        return new {
+            kktSerialNumber = serialNumber,
+            shiftNumber = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_NUMBER") ?? statusShiftNumber,
+            fiscalDocumentNumber = ReadIntParam(fptr, "LIBFPTR_PARAM_DOCUMENT_NUMBER"),
+            fiscalSign = ReadStringParam(fptr, "LIBFPTR_PARAM_FISCAL_SIGN"),
+            kktDateTime = ReadDateTimeParam(fptr, "LIBFPTR_PARAM_DATE_TIME"),
+            documentClosed,
+            receiptKind = ReceiptKind(fptr, receiptType),
+            amount = ReadDoubleParam(fptr, "LIBFPTR_PARAM_SUM"),
+        };
+    }
+
     private object ExecuteJson(JsonElement? args) {
         var json = ArgumentString(args, "json");
         if (string.IsNullOrWhiteSpace(json)) {
@@ -299,9 +340,46 @@ internal sealed class AtolSession {
         return state.Value.ToString();
     }
 
+    private static double? ReadDoubleParam(dynamic fptr, string constantName) {
+        try {
+            return Convert.ToDouble(fptr.getParamDouble(Constant(fptr, constantName)));
+        } catch {
+            return null;
+        }
+    }
+
+    private static string? ReadDateTimeParam(dynamic fptr, string constantName) {
+        try {
+            var value = fptr.getParamDateTime(Constant(fptr, constantName));
+            return value is DateTime dateTime
+                ? dateTime.ToString("O")
+                : value?.ToString();
+        } catch {
+            return null;
+        }
+    }
+
     private static bool? ReadBoolParam(dynamic fptr, string constantName) {
         try {
             return Convert.ToBoolean(fptr.getParamBool(Constant(fptr, constantName)));
+        } catch {
+            return null;
+        }
+    }
+
+    private static string? ReceiptKind(dynamic fptr, long? receiptType) {
+        if (receiptType is null) return null;
+        var sell = TryConstant(fptr, "LIBFPTR_RT_SELL");
+        if (sell is not null && receiptType == Convert.ToInt64(sell)) return "sale";
+        var sellReturn = TryConstant(fptr, "LIBFPTR_RT_SELL_RETURN");
+        if (sellReturn is not null && receiptType == Convert.ToInt64(sellReturn)) return "return";
+        return null;
+    }
+
+    private static object? TryConstant(dynamic fptr, string name) {
+        try {
+            return fptr.GetType().InvokeMember(name, BindingFlags.GetProperty,
+                binder: null, target: fptr, args: null);
         } catch {
             return null;
         }
