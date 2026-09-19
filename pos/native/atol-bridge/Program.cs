@@ -242,7 +242,8 @@ internal sealed class AtolSession {
             kktSerialNumber = serialNumber,
             shiftNumber = ReadIntParam(fptr, "LIBFPTR_PARAM_SHIFT_NUMBER") ?? statusShiftNumber,
             fiscalDocumentNumber = ReadIntParam(fptr, "LIBFPTR_PARAM_DOCUMENT_NUMBER"),
-            fiscalSign = ReadStringParam(fptr, "LIBFPTR_PARAM_FISCAL_SIGN"),
+            fiscalSign = ReadStringParam(fptr, "LIBFPTR_PARAM_FISCAL_SIGN")
+                ?? ReadIntParam(fptr, "LIBFPTR_PARAM_FISCAL_SIGN")?.ToString(),
             kktDateTime = ReadDateTimeParam(fptr, "LIBFPTR_PARAM_DATE_TIME"),
             documentClosed,
             receiptKind = ReceiptKind(fptr, receiptType),
