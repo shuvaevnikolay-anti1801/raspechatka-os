@@ -93,7 +93,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         ready: false,
         status: "not_configured",
         message:
-          "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0",
+          "INPAS DualConnector / DC Console не найден. Проверьте установку Интегратора Точки",
       };
     if (!settings.console.terminalId)
       return {
@@ -191,7 +191,7 @@ export class InpasPaymentProvider implements PaymentProvider {
     const launcher = this.settingsStore.resolveLauncher(settings);
     if (!launcher)
       throw new Error(
-        "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0"
+        "INPAS DualConnector / DC Console не найден. Проверьте установку Интегратора Точки"
       );
     if (!settings.console.terminalId) throw new Error("Не указан ID терминала INPAS");
 
