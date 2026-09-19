@@ -49,7 +49,26 @@ USB / later COM or TCP
 ATOL KKT
 ```
 
-Use a small separate Windows helper rather than making Electron depend directly on a third-party Node COM/FFI addon. The helper may use the official Driver 10 .NET wrapper or COM/OLE internally; Electron must not care.
+Use a small separate Windows helper rather than making Electron depend directly on a third-party Node COM/FFI addon.
+
+### Fixed implementation decision for DEV-151
+
+Use **C#/.NET x64 helper + late-bound official Driver 10 COM/OLE object** as the first production implementation:
+- create the COM object by ProgID `AddIn.Fptr10` from C# (late binding / `dynamic`);
+- do not add a compile-time dependency on `Atol.Drivers10.Fptr.dll`;
+- do not bundle ATOL DLLs with Raspechatka;
+- rely on the official Driver 10 Windows installer to register the x64 COM component;
+- if the ProgID is not registered, return a clear `driver_missing`/architecture diagnostic;
+- use the COM object's own constants/properties rather than copying numeric constant values into our code.
+
+This keeps CI/build independent of an installed ATOL SDK while runtime still uses the official installed Driver 10. Electron does not know that COM is used internally.
+
+For the first USB discovery path use Driver settings equivalent to:
+- `LIBFPTR_SETTING_MODEL = LIBFPTR_MODEL_ATOL_AUTO`;
+- `LIBFPTR_SETTING_PORT = LIBFPTR_PORT_USB`;
+then `open()`, `queryData(LIBFPTR_DT_STATUS)`, read `LIBFPTR_PARAM_SERIAL_NUMBER`, `LIBFPTR_PARAM_MODEL_NAME`, `LIBFPTR_PARAM_UNIT_VERSION`, and persist `getSettings()`.
+
+Driver errors must include `errorCode()` + `errorDescription()` where available. Connection state must be proven by an actual Driver operation/query, not only by `isOpened()`.
 
 Do not start a new localhost HTTP service.
 
