@@ -367,6 +367,22 @@ describe('PosTransactionEngine safety',()=>{
       shiftId,2000,sale
     )).rejects.toThrow(/DECLINED/)
     expect(fiscal.returnCalls).toBe(0)
+
+    database.saveSale({
+      id:'sale-unknown-return',clientRequestId:'sale-unknown-return-request',shiftId,totalMinor:2000,
+      paymentMethod:'card',fiscalNumber:'FD-UNKNOWN',createdAt:'2026-09-19T13:10:00.000Z',
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'card',amountMinor:2000,bankingEvidence:evidence('RRN-UNKNOWN',2000)}]
+    })
+    const unknownSale=database.getSale('sale-unknown-return')
+    payment.nextRefund={status:'unknown',message:'REFUND STATUS UNKNOWN'}
+    await expect(engine.createReturn(
+      returnRequest(unknownSale.id,unknownSale.lines[0].id,[{method:'card',amountMinor:2000}]),
+      shiftId,2000,unknownSale
+    )).rejects.toThrow(/НЕ повторяйте/)
+    expect(fiscal.returnCalls).toBe(0)
+    expect(payment.refundCalls).toBe(2)
   })
 
   it('auto-finishes a fiscalized operation locally without touching money or KKT again',async()=>{
