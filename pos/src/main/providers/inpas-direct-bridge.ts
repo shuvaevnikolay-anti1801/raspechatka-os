@@ -8,6 +8,8 @@ import { createInterface } from "node:readline";
 const PROTOCOL_VERSION = 1;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const TEST_CONNECTION_TIMEOUT_MS = 120_000;
+const BANK_OPERATION_TIMEOUT_MS = 3_600_000;
+const RECONCILE_TIMEOUT_MS = 300_000;
 
 export type InpasDriverInfo = {
   installed: boolean;
@@ -23,12 +25,17 @@ export type InpasDirectStatus = {
   version?: string;
 };
 
+export type InpasOperationOutcome = "approved" | "declined" | "unknown";
+
 export type InpasConnectionResult = {
   success: boolean;
+  outcome?: InpasOperationOutcome;
   status: string;
+  operationKind?: "test";
   terminalId: string;
   referenceNumber?: string;
   terminalTransactionId?: string;
+  authorizationCode?: string;
   model?: string;
   serial?: string;
   responseCode?: string;
@@ -37,14 +44,47 @@ export type InpasConnectionResult = {
   receipt?: string;
 };
 
+export type InpasOperationResult = {
+  success: boolean;
+  outcome: InpasOperationOutcome;
+  status: string;
+  operationKind: "sale" | "reconcile";
+  terminalId: string;
+  referenceNumber?: string;
+  terminalTransactionId?: string;
+  authorizationCode?: string;
+  model?: string;
+  serial?: string;
+  responseCode?: string;
+  responseDescription?: string;
+  transactionStatus?: string;
+  amountMinor?: number;
+  receipt?: string;
+};
+
+export type InpasSaleRequest = {
+  terminalId: string;
+  amountMinor: number;
+  currency: "643";
+  method: "card" | "qr";
+};
+
 export interface InpasDirectBridge {
   getDriverInfo(): Promise<InpasDriverInfo>;
   getStatus(): Promise<InpasDirectStatus>;
   testConnection(terminalId: string): Promise<InpasConnectionResult>;
+  sale(request: InpasSaleRequest): Promise<InpasOperationResult>;
+  reconcile(terminalId: string): Promise<InpasOperationResult>;
   stop(): Promise<void>;
 }
 
-type BridgeCommand = "driverInfo" | "status" | "testConnection" | "shutdown";
+type BridgeCommand =
+  | "driverInfo"
+  | "status"
+  | "testConnection"
+  | "sale"
+  | "reconcile"
+  | "shutdown";
 type BridgeResponse<T> = {
   protocolVersion: number;
   id: string;
@@ -57,6 +97,8 @@ export type NativeInpasBridgeOptions = {
   executablePath: string;
   timeoutMs?: number;
   testConnectionTimeoutMs?: number;
+  bankOperationTimeoutMs?: number;
+  reconcileTimeoutMs?: number;
   spawnProcess?: (
     command: string,
     args: readonly string[],
@@ -96,11 +138,30 @@ export class NativeInpasBridge implements InpasDirectBridge {
   }
 
   testConnection(terminalId: string): Promise<InpasConnectionResult> {
-    if (!/^\d{1,32}$/.test(terminalId))
-      return Promise.reject(new InpasBridgeError(
-        "Для проверки связи требуется числовой Terminal ID", "invalid_terminal_id"
-      ));
+    this.assertTerminalId(terminalId);
     return this.request("testConnection", { terminalId });
+  }
+
+  sale(request: InpasSaleRequest): Promise<InpasOperationResult> {
+    this.assertTerminalId(request.terminalId);
+    if (!Number.isSafeInteger(request.amountMinor) || request.amountMinor <= 0)
+      return Promise.reject(new InpasBridgeError(
+        "Сумма INPAS должна быть положительным целым числом копеек", "invalid_amount"
+      ));
+    if (request.currency !== "643")
+      return Promise.reject(new InpasBridgeError(
+        "Direct INPAS поддерживает валюту 643", "invalid_currency"
+      ));
+    if (request.method !== "card" && request.method !== "qr")
+      return Promise.reject(new InpasBridgeError(
+        "Direct INPAS поддерживает оплату картой или QR", "invalid_method"
+      ));
+    return this.request("sale", request);
+  }
+
+  reconcile(terminalId: string): Promise<InpasOperationResult> {
+    this.assertTerminalId(terminalId);
+    return this.request("reconcile", { terminalId });
   }
 
   async stop(): Promise<void> {
@@ -122,15 +183,27 @@ export class NativeInpasBridge implements InpasDirectBridge {
     });
   }
 
+  private assertTerminalId(terminalId: string): void {
+    if (!/^\d{1,32}$/.test(terminalId))
+      throw new InpasBridgeError(
+        "Для операции требуется числовой Terminal ID", "invalid_terminal_id"
+      );
+  }
+
   private request<T>(
     command: BridgeCommand,
     args?: Record<string, unknown>
   ): Promise<T> {
     const child = this.ensureStarted();
     const id = String(this.nextId++);
-    const timeoutMs = command === "testConnection"
-      ? this.options.testConnectionTimeoutMs ?? TEST_CONNECTION_TIMEOUT_MS
-      : this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const timeoutMs =
+      command === "sale"
+        ? this.options.bankOperationTimeoutMs ?? BANK_OPERATION_TIMEOUT_MS
+        : command === "reconcile"
+          ? this.options.reconcileTimeoutMs ?? RECONCILE_TIMEOUT_MS
+          : command === "testConnection"
+            ? this.options.testConnectionTimeoutMs ?? TEST_CONNECTION_TIMEOUT_MS
+            : this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
