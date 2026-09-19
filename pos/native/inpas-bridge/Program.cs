@@ -207,7 +207,7 @@ internal sealed class InpasSession
 
         var response = IsPacketLike(exchangeResult) ? exchangeResult : packet;
         var responseCode = SafeText(response,
-            "ResponseCode", "HostResponseCode", "ResponseStatus", "ResultCode");
+            "ResponseCodeHost", "ResponseCode", "HostResponseCode", "ResponseStatus", "ResultCode");
         var transactionStatus = SafeText(response,
             "TransactionStatus", "Status", "ResultStatus");
         var success = IsSuccess(exchangeResult, responseCode, transactionStatus);
@@ -289,12 +289,19 @@ internal sealed class InpasSession
 
     private static bool IsSuccess(object exchangeResult, string responseCode, string status)
     {
-        if (exchangeResult is bool && (bool)exchangeResult) return true;
         var code = (responseCode ?? "").Trim();
-        if (code == "0" || code == "00" || code == "1") return true;
+        if (code.Length > 0)
+            return code == "0" || code == "00";
+
         var normalized = (status ?? "").Trim().ToUpperInvariant();
-        return normalized == "1" || normalized == "OK" ||
-            normalized.Contains("APPROVED") || normalized.Contains("SUCCESS");
+        if (normalized.Length > 0)
+            return normalized == "1" || normalized == "OK" ||
+                normalized.Contains("APPROVED") || normalized.Contains("SUCCESS");
+
+        // Only use the Exchange return value when the packet exposes no explicit
+        // response/status at all. A technical successful call must never override
+        // an explicit negative terminal/bank result.
+        return exchangeResult is bool && (bool)exchangeResult;
     }
 
     private static object Invoke(object target, string name, params object[] args)
