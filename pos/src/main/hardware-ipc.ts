@@ -5,8 +5,7 @@ import type { AtolSettings, AtolSettingsStore } from "./providers/atol-settings"
 import { NativeAtolDriverBridge, resolveAtolBridgeExecutablePath } from "./providers/atol-driver-bridge";
 import type { AtolDriverBridge, AtolDriverInfo } from "./providers/atol-driver";
 import type { AtolWebManager } from "./atol-web-manager";
-import type { FiscalProvider } from "./providers/contracts";
-import type { InpasPaymentProvider } from "./providers/inpas";
+import type { FiscalProvider, PaymentProvider } from "./providers/contracts";
 import {
   collectInpasTerminalCandidates,
   InpasSettingsStore,
@@ -15,7 +14,16 @@ import {
 import {
   NativeInpasBridge,
   type InpasDirectBridge,
+  type InpasDriverInfo,
 } from "./providers/inpas-direct-bridge";
+
+function inpasErrorDetails(error: unknown): Record<string, unknown> {
+  const value = error as { code?: unknown; nativeErrorCode?: unknown };
+  return {
+    errorCode: value?.code ?? value?.nativeErrorCode,
+    errorDescription: error instanceof Error ? error.message : String(error),
+  };
+}
 
 function atolErrorDetails(error: unknown): Record<string, unknown> {
   const value = error as {
@@ -33,7 +41,7 @@ export function registerHardwareSettingsIpc(
   atolManager: AtolWebManager | undefined,
   fiscalProvider: FiscalProvider | undefined,
   inpasSettingsStore: InpasSettingsStore,
-  paymentProvider: InpasPaymentProvider | undefined,
+  paymentProvider: (PaymentProvider & { settingsChanged(): void }) | undefined,
   diagnostics: PosDiagnostics,
   driverBridge: AtolDriverBridge = new NativeAtolDriverBridge({
     executablePath:
@@ -269,17 +277,55 @@ export function registerHardwareSettingsIpc(
       source: "payment",
       eventType: "payment.settings_saved",
       message: saved.enabled ? "Настройки INPAS сохранены" : "Эквайринг INPAS выключен",
-      details: { adapter: saved.adapter, terminalId: saved.direct?.selectedDevice?.terminalId },
+      details: { terminalId: saved.direct?.selectedDevice?.terminalId },
     });
     return saved;
   });
-  ipcMain.handle("pos:get-inpas-driver-info", () => inpasBridge.getDriverInfo());
+  const getInpasDriverInfo = async (): Promise<InpasDriverInfo> => {
+    try {
+      const driver = await inpasBridge.getDriverInfo();
+      diagnostics.record({
+        source: "payment",
+        level: driver.installed ? "info" : "warning",
+        eventType: driver.installed
+          ? "inpas.driver.detected"
+          : "inpas.driver.missing",
+        message: driver.installed
+          ? "INPAS DualConnector обнаружен"
+          : "INPAS DualConnector не зарегистрирован",
+        details: {
+          driverVersion: driver.version,
+          errorCode: driver.code,
+          errorDescription: driver.error,
+        },
+      });
+      return driver;
+    } catch (error) {
+      const details = inpasErrorDetails(error);
+      diagnostics.record({
+        source: "payment",
+        level: "warning",
+        eventType: "inpas.driver.missing",
+        message: "INPAS bridge helper недоступен",
+        details,
+      });
+      return {
+        installed: false,
+        code: String(details.errorCode ?? "not_configured"),
+        error: String(details.errorDescription),
+      };
+    }
+  };
+
+  ipcMain.handle("pos:get-inpas-driver-info", getInpasDriverInfo);
   ipcMain.handle("pos:discover-inpas-devices", async () => {
-    const driver = await inpasBridge.getDriverInfo();
+    const driver = await getInpasDriverInfo();
     if (!driver.installed) {
       return {
         state: "driver_missing",
-        message: "Установите или восстановите Интегратор Точки",
+        message: driver.code === "not_configured"
+          ? "Компонент прямого подключения INPAS не установлен"
+          : "Установите или восстановите Интегратор Точки",
         devices: [],
         driver,
       };
@@ -311,12 +357,28 @@ export function registerHardwareSettingsIpc(
         // An unconfirmed candidate is never offered for selection.
       }
     }
-    diagnostics.record({
-      source: "payment",
-      eventType: "inpas.device.discovered",
-      message: `Найдено подтверждённых терминалов INPAS: ${devices.length}`,
-      details: { terminals: devices },
-    });
+    if (devices.length) {
+      for (const device of devices) {
+        diagnostics.record({
+          source: "payment",
+          eventType: "inpas.device.discovered",
+          message: "Обнаружен подтверждённый терминал INPAS",
+          details: {
+            terminalId: device.terminalId,
+            model: device.model,
+            serial: device.serial,
+          },
+        });
+      }
+    } else {
+      diagnostics.record({
+        source: "payment",
+        level: "warning",
+        eventType: "inpas.device.discovered",
+        message: "Подтверждённый терминал INPAS не найден",
+        details: { errorDescription: "Terminal ID не подтверждён операцией 26" },
+      });
+    }
     return {
       state: devices.length ? "ready" : "not_initialized",
       message: devices.length
@@ -356,10 +418,35 @@ export function registerHardwareSettingsIpc(
   ipcMain.handle("pos:test-inpas-direct-device", async () => {
     const selected = inpasSettingsStore.load().direct?.selectedDevice;
     if (!selected) throw new Error("Сначала выберите найденный терминал INPAS");
-    const result = await inpasBridge.testConnection(selected.terminalId);
-    if (!result.success || result.terminalId !== selected.terminalId)
-      throw new Error("Проверка связи вернула другой или неподтверждённый Terminal ID");
-    return result;
+    try {
+      const result = await inpasBridge.testConnection(selected.terminalId);
+      if (!result.success || result.terminalId !== selected.terminalId)
+        throw new Error("Проверка связи вернула другой или неподтверждённый Terminal ID");
+      diagnostics.record({
+        source: "payment",
+        eventType: "inpas.device.connected",
+        message: "Связь с терминалом INPAS подтверждена",
+        details: {
+          terminalId: result.terminalId,
+          model: result.model,
+          serial: result.serial,
+          responseCode: result.responseCode,
+        },
+      });
+      return result;
+    } catch (error) {
+      diagnostics.record({
+        source: "payment",
+        level: "warning",
+        eventType: "inpas.device.disconnected",
+        message: "Связь с терминалом INPAS потеряна",
+        details: {
+          terminalId: selected.terminalId,
+          ...inpasErrorDetails(error),
+        },
+      });
+      throw error;
+    }
   });
   ipcMain.handle("pos:test-payment-terminal", async () => {
     if (!paymentProvider)
@@ -389,20 +476,18 @@ export function registerHardwareSettingsIpc(
     }
   });
   ipcMain.handle("pos:reconcile-payment-terminal", async () => {
-    if (inpasSettingsStore.load().adapter === "direct")
-      throw new Error("Сверка итогов direct INPAS будет подключена вместе с платёжным provider; используйте DC Control");
     if (!paymentProvider)
       throw new Error("Сверка реального терминала недоступна в учебном режиме");
     diagnostics.record({
       source: "payment",
-      eventType: "payment.reconcile_started",
+      eventType: "inpas.reconcile.started",
       message: "Запущена сверка итогов INPAS",
     });
     try {
       const result = await paymentProvider.reconcile();
       diagnostics.record({
         source: "payment",
-        eventType: "payment.reconcile_completed",
+        eventType: "inpas.reconcile.completed",
         message: result.message,
       });
       return result;
@@ -411,7 +496,7 @@ export function registerHardwareSettingsIpc(
       diagnostics.record({
         source: "payment",
         level: "error",
-        eventType: "payment.reconcile_failed",
+        eventType: "inpas.reconcile.failed",
         message,
       });
       throw error;
