@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   spawn,
   type ChildProcessWithoutNullStreams,
@@ -6,6 +8,7 @@ import {
 import { createInterface } from "node:readline";
 
 const PROTOCOL_VERSION = 1;
+const INPAS_BRIDGE_EXECUTABLE = "Raspechatka.InpasBridge.exe";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const TEST_CONNECTION_TIMEOUT_MS = 120_000;
 const BANK_OPERATION_TIMEOUT_MS = 3_600_000;
@@ -128,6 +131,44 @@ export class InpasBridgeError extends Error {
     super(message);
     this.name = "InpasBridgeError";
   }
+}
+
+export class InpasBridgeNotConfiguredError extends InpasBridgeError {
+  constructor(executablePath: string) {
+    super(`INPAS bridge helper is not installed: ${executablePath}`, "not_configured");
+    this.name = "InpasBridgeNotConfiguredError";
+  }
+}
+
+export function resolveInpasBridgeExecutablePath(
+  options: { isPackaged?: boolean } = {}
+): string {
+  const electronProcess = process as NodeJS.Process & {
+    resourcesPath?: string;
+    defaultApp?: boolean;
+  };
+  const isPackaged = options.isPackaged ??
+    Boolean(electronProcess.resourcesPath && !electronProcess.defaultApp);
+  if (isPackaged) {
+    return join(
+      electronProcess.resourcesPath ?? "",
+      "native",
+      "inpas",
+      INPAS_BRIDGE_EXECUTABLE
+    );
+  }
+  return process.env.RASPECHATKA_INPAS_BRIDGE_PATH ??
+    join(
+      process.cwd(),
+      "native",
+      "inpas-bridge",
+      "publish",
+      INPAS_BRIDGE_EXECUTABLE
+    );
+}
+
+export function isInpasBridgeExecutableAvailable(executablePath: string): boolean {
+  return existsSync(executablePath);
 }
 
 export class NativeInpasBridge implements InpasDirectBridge {
@@ -270,6 +311,9 @@ export class NativeInpasBridge implements InpasDirectBridge {
   private ensureStarted(): ChildProcessWithoutNullStreams {
     if (this.child) return this.child;
     if (this.stopped) throw new InpasBridgeError("INPAS bridge has been stopped", "stopped");
+    if (!this.options.spawnProcess &&
+        !isInpasBridgeExecutableAvailable(this.options.executablePath))
+      throw new InpasBridgeNotConfiguredError(this.options.executablePath);
     const spawnProcess = this.options.spawnProcess ?? spawn;
     const child = spawnProcess(this.options.executablePath, [], {
       shell: false,
