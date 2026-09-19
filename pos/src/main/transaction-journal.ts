@@ -199,6 +199,12 @@ export class TransactionJournal {
     }))
   }
 
+  hasBlockingFiscalOperation(): boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM operations
+      WHERE state IN ('fiscalization_in_progress','fiscal_status_unknown','fiscalized')
+      LIMIT 1`).get())
+  }
+
   setState(id: string, state: TransactionState, error?: string): void {
     this.db.prepare('UPDATE operations SET state=?,last_error=?,updated_at=? WHERE id=?')
       .run(state,error??null,new Date().toISOString(),id)
