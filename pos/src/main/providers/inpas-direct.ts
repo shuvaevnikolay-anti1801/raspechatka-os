@@ -1,3 +1,4 @@
+import type { PosDiagnostics } from "../diagnostics";
 import type {
   BankingEvidence,
   PaymentServiceResult,
@@ -19,7 +20,8 @@ import { InpasSettingsStore } from "./inpas-settings";
 export class InpasDirectPaymentProvider implements PaymentProvider {
   constructor(
     private readonly settingsStore: InpasSettingsStore,
-    private readonly bridge: InpasDirectBridge
+    private readonly bridge: InpasDirectBridge,
+    private readonly diagnostics?: PosDiagnostics
   ) {}
 
   settingsChanged(): void {}
@@ -89,43 +91,61 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       };
     const selected = this.selectedDevice();
     const startedAt = new Date().toISOString();
-    const result = await this.bridge.sale({
+    this.record("payment.started", "Начата банковская оплата", "info", {
       terminalId: selected.terminalId,
       amountMinor: request.amountMinor,
-      currency: "643",
-      method: request.method,
+      kind: "sale",
     });
+    let result: InpasOperationResult;
+    try {
+      result = await this.bridge.sale({
+        terminalId: selected.terminalId,
+        amountMinor: request.amountMinor,
+        currency: "643",
+        method: request.method,
+      });
+    } catch (error) {
+      this.recordFailure("payment.unknown", "Результат банковской оплаты неизвестен", {
+        terminalId: selected.terminalId,
+        amountMinor: request.amountMinor,
+        kind: "sale",
+      }, error);
+      throw error;
+    }
     const evidence = this.evidence(result, "sale", request.amountMinor, startedAt);
-    if (result.terminalId !== selected.terminalId)
-      return {
+    let paymentResult: PaymentResult;
+    if (result.terminalId !== selected.terminalId) {
+      paymentResult = {
         status: "unknown",
         bankingEvidence: evidence,
         message: "Банк ответил для другого Terminal ID. Результат операции требует ручной проверки",
         raw: result,
       };
-    if (result.outcome === "declined")
-      return {
+    } else if (result.outcome === "declined") {
+      paymentResult = {
         status: "declined",
         bankingEvidence: evidence,
         message: result.responseDescription || "Банк отклонил оплату",
         raw: result,
       };
-    if (result.outcome !== "approved")
-      return {
+    } else if (result.outcome !== "approved") {
+      paymentResult = {
         status: "unknown",
         bankingEvidence: evidence,
         message: result.responseDescription || "Банк не вернул однозначный результат оплаты",
         raw: result,
       };
-
-    const transactionId = result.terminalTransactionId || result.referenceNumber;
-    return {
-      status: "approved",
-      transactionId,
-      bankingEvidence: evidence,
-      message: result.responseDescription || "Оплата подтверждена",
-      raw: result,
-    };
+    } else {
+      paymentResult = {
+        status: "approved",
+        transactionId: result.terminalTransactionId || result.referenceNumber,
+        bankingEvidence: evidence,
+        message: result.responseDescription || "Оплата подтверждена",
+        raw: result,
+      };
+    }
+    this.recordBankResult("payment", paymentResult, evidence);
+    return paymentResult;
   }
 
   async refund(request: PaymentRequest): Promise<PaymentResult> {
@@ -161,15 +181,34 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       };
 
     const startedAt = new Date().toISOString();
-    const result = await this.bridge.refund({
+    this.record("refund.started", "Начат банковский возврат", "info", {
       terminalId: original.terminalId,
       amountMinor: request.amountMinor,
-      currency: "643",
-      method: request.method,
+      kind: "refund",
       referenceNumber: original.referenceNumber,
-      terminalTransactionId: original.terminalTransactionId,
       authorizationCode: original.authorizationCode,
     });
+    let result: InpasOperationResult;
+    try {
+      result = await this.bridge.refund({
+        terminalId: original.terminalId,
+        amountMinor: request.amountMinor,
+        currency: "643",
+        method: request.method,
+        referenceNumber: original.referenceNumber,
+        terminalTransactionId: original.terminalTransactionId,
+        authorizationCode: original.authorizationCode,
+      });
+    } catch (error) {
+      this.recordFailure("refund.unknown", "Результат банковского возврата неизвестен", {
+        terminalId: original.terminalId,
+        amountMinor: request.amountMinor,
+        kind: "refund",
+        referenceNumber: original.referenceNumber,
+        authorizationCode: original.authorizationCode,
+      }, error);
+      throw error;
+    }
     const evidence = this.evidence(
       result,
       "refund",
@@ -177,39 +216,73 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
       startedAt,
       original
     );
-    if (result.terminalId !== original.terminalId)
-      return {
+    let paymentResult: PaymentResult;
+    if (result.terminalId !== original.terminalId) {
+      paymentResult = {
         status: "unknown",
         bankingEvidence: evidence,
         message: "Refund ответил для другого Terminal ID. Требуется ручная проверка",
         raw: result,
       };
-    if (result.outcome === "declined")
-      return {
+    } else if (result.outcome === "declined") {
+      paymentResult = {
         status: "declined",
         bankingEvidence: evidence,
         message: result.responseDescription || "Банк отклонил возврат",
         raw: result,
       };
-    if (result.outcome !== "approved")
-      return {
+    } else if (result.outcome !== "approved") {
+      paymentResult = {
         status: "unknown",
         bankingEvidence: evidence,
         message: result.responseDescription || "Банк не вернул однозначный итог Refund 29",
         raw: result,
       };
-    return {
-      status: "approved",
-      transactionId: result.terminalTransactionId || result.referenceNumber,
-      bankingEvidence: evidence,
-      message: result.responseDescription || "Банковский возврат подтверждён",
-      raw: result,
-    };
+    } else {
+      paymentResult = {
+        status: "approved",
+        transactionId: result.terminalTransactionId || result.referenceNumber,
+        bankingEvidence: evidence,
+        message: result.responseDescription || "Банковский возврат подтверждён",
+        raw: result,
+      };
+    }
+    this.recordBankResult("refund", paymentResult, evidence);
+    return paymentResult;
   }
 
   async getOperationStatus(request: PaymentRequest): Promise<PaymentResult> {
-    const proven = this.provenStoredResult(request, request.recovery);
-    if (proven) return proven;
+    const recovery = request.recovery;
+    const details = {
+      terminalId: recovery?.terminalId,
+      amountMinor: request.amountMinor,
+      kind: recovery?.kind,
+      referenceNumber: recovery?.referenceNumber,
+      authorizationCode: recovery?.authorizationCode,
+      responseCode: recovery?.responseCode,
+    };
+    this.record(
+      "payment.recovery.started",
+      "Начата проверка сохранённого банковского результата",
+      "info",
+      details
+    );
+    const proven = this.provenStoredResult(request, recovery);
+    if (proven) {
+      this.record(
+        "payment.recovery.resolved",
+        "Банковский результат подтверждён сохранённым evidence",
+        "info",
+        details
+      );
+      return proven;
+    }
+    this.record(
+      "payment.recovery.unresolved",
+      "Банковский результат не удалось доказать автоматически",
+      "warning",
+      details
+    );
     return {
       status: "unknown",
       message:
@@ -235,16 +308,85 @@ export class InpasDirectPaymentProvider implements PaymentProvider {
 
   async reconcile(): Promise<PaymentServiceResult> {
     const selected = this.selectedDevice();
-    const result = await this.bridge.reconcile(selected.terminalId);
-    if (result.terminalId !== selected.terminalId)
-      throw new Error("Сверка итогов вернула другой Terminal ID");
-    if (result.outcome !== "approved")
-      throw new Error(result.responseDescription || "Сверка итогов INPAS не подтверждена");
-    return {
-      message: result.responseDescription || "Сверка итогов INPAS выполнена",
-      receipt: result.receipt,
-      raw: result,
-    };
+    try {
+      const result = await this.bridge.reconcile(selected.terminalId);
+      if (result.terminalId !== selected.terminalId)
+        throw new Error("Сверка итогов вернула другой Terminal ID");
+      if (result.outcome !== "approved")
+        throw new Error(result.responseDescription || "Сверка итогов INPAS не подтверждена");
+      this.record("inpas.reconcile.completed", "Сверка итогов INPAS выполнена", "info", {
+        terminalId: result.terminalId,
+        model: result.model,
+        serial: result.serial,
+        responseCode: result.responseCode,
+      });
+      return {
+        message: result.responseDescription || "Сверка итогов INPAS выполнена",
+        receipt: result.receipt,
+        raw: result,
+      };
+    } catch (error) {
+      this.recordFailure("inpas.reconcile.failed", "Сверка итогов INPAS не выполнена", {
+        terminalId: selected.terminalId,
+      }, error);
+      throw error;
+    }
+  }
+
+  private recordBankResult(
+    prefix: "payment" | "refund",
+    result: PaymentResult,
+    evidence: BankingEvidence
+  ): void {
+    this.record(
+      `${prefix}.${result.status}`,
+      result.status === "approved"
+        ? "Банковская операция подтверждена"
+        : result.status === "declined"
+          ? "Банковская операция отклонена"
+          : "Результат банковской операции неизвестен",
+      result.status === "approved" ? "info" : "warning",
+      {
+        terminalId: evidence.terminalId,
+        model: evidence.model,
+        serial: evidence.serial,
+        amountMinor: evidence.amountMinor,
+        kind: evidence.operationKind,
+        referenceNumber: evidence.referenceNumber,
+        authorizationCode: evidence.authorizationCode,
+        responseCode: evidence.responseCode,
+        errorDescription: result.status === "approved" ? undefined : result.message,
+      }
+    );
+  }
+
+  private recordFailure(
+    eventType: string,
+    message: string,
+    details: Record<string, unknown>,
+    error: unknown
+  ): void {
+    const value = error as { code?: unknown; nativeErrorCode?: unknown };
+    this.record(eventType, message, "warning", {
+      ...details,
+      errorCode: value?.code ?? value?.nativeErrorCode,
+      errorDescription: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  private record(
+    eventType: string,
+    message: string,
+    level: "info" | "warning" | "error",
+    details: Record<string, unknown>
+  ): void {
+    this.diagnostics?.record({
+      source: "payment",
+      level,
+      eventType,
+      message,
+      details,
+    });
   }
 
   private provenStoredResult(
