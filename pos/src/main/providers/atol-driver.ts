@@ -9,13 +9,21 @@ import type {
 } from './contracts';
 import type { PrintResult } from '../../shared/contracts';
 
+export type AtolDriverInfo = {
+  installed: boolean;
+  version?: string;
+  architecture?: 'x64' | 'x86';
+  error?: string;
+  code?: string;
+};
+
 export type AtolDriverDevice = {
   id: string;
-  model: string;
-  serialNumber?: string;
+  modelName: string;
+  serialNumber: string;
   firmwareVersion?: string;
   connection: 'usb' | 'com' | 'tcp' | 'unknown';
-  settingsJson?: string;
+  settingsJson: string;
 };
 
 export type AtolDriverStatus = {
@@ -26,15 +34,17 @@ export type AtolDriverStatus = {
   shiftState?: string | number;
   paperPresent?: boolean;
   coverOpened?: boolean;
+  printerConnectionLost?: boolean;
   printerError?: boolean;
   fnPresent?: boolean;
-  fnError?: boolean;
-  fnBlocked?: boolean;
+  invalidFn?: boolean;
+  deviceBlocked?: boolean;
   errorCode?: number;
   errorDescription?: string;
 };
 
 export interface AtolDriverBridge {
+  getDriverInfo(): Promise<AtolDriverInfo>;
   findDevices(): Promise<AtolDriverDevice[]>;
   connect(device: AtolDriverDevice): Promise<void>;
   disconnect(): Promise<void>;
