@@ -32,6 +32,8 @@ const DEFAULT_SETTINGS: AtolSettings = {
 };
 
 type LegacyAtolSettings = {
+  version?: number;
+  adapter?: "driver" | "web";
   enabled?: boolean;
   baseUrl?: string;
   taxationType?: string;
@@ -47,7 +49,9 @@ export class AtolSettingsStore {
       const raw = JSON.parse(readFileSync(this.filePath, "utf-8")) as
         | AtolSettings
         | LegacyAtolSettings;
-      if (raw.version === 2 && raw.adapter) return this.normalize(raw);
+      if (raw.version === 2 && (raw.adapter === "driver" || raw.adapter === "web")) {
+        return this.normalize(raw as AtolSettings);
+      }
       return this.migrateLegacy(raw);
     } catch {
       return structuredClone(DEFAULT_SETTINGS);
