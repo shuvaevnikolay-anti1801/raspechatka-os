@@ -195,8 +195,12 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
             : undefined;
       if (timeoutMs !== undefined) {
         entry.timeout = setTimeout(() => {
+          const error = new Error(
+            `ATOL bridge timed out while running ${command}; operation result is unknown`
+          );
           this.pending.delete(id);
-          reject(new Error(`ATOL bridge timed out while running ${command}; operation result is unknown`));
+          reject(error);
+          this.resetTimedOutChild(child, error);
         }, timeoutMs);
       }
 
@@ -231,11 +235,13 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       console.error(`[atol-bridge] ${line}`);
     });
     child.on('error', (error) => {
-      if (this.child === child) this.child = undefined;
+      if (this.child !== child) return;
+      this.child = undefined;
       this.failAll(error);
     });
     child.on('exit', (code, signal) => {
-      if (this.child === child) this.child = undefined;
+      if (this.child !== child) return;
+      this.child = undefined;
       this.failAll(
         new Error(
           `ATOL bridge exited${code === null ? '' : ` with code ${code}`}${
@@ -284,6 +290,20 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
           .join(': ')
       )
     );
+  }
+
+  private resetTimedOutChild(
+    child: ChildProcessWithoutNullStreams,
+    error: Error
+  ): void {
+    if (this.child !== child) return;
+    this.child = undefined;
+    this.failAll(error);
+    try {
+      child.kill();
+    } catch {
+      // A later request can still start a fresh helper; recovery remains authoritative.
+    }
   }
 
   private rejectPending(id: string, error: Error): void {
