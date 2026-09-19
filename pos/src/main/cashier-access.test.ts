@@ -25,7 +25,7 @@ describe('cashier operation context',()=>{
 
     database.addCashOperation('deposit',10_000,'Размен')
 
-    const event=database.pendingEvents().find((item)=>item.eventType==='cash.operation')
+    const event=database.pendingEvents().find((item)=>item.eventType==='cash.deposited')
     expect(event?.payload).toMatchObject({cashierId:'employee-a'})
   })
 })
