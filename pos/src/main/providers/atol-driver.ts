@@ -1,10 +1,11 @@
 import type { PrintResult } from "../../shared/contracts";
-import type { DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest, FiscalShiftStatus } from "./contracts";
+import type { DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRecoveryEvidence, FiscalRecoverySnapshot, FiscalRequest, FiscalResult, FiscalReturnRequest, FiscalShiftStatus } from "./contracts";
 import { buildAtolReceiptJson, buildAtolShiftJson, pickAtolString } from "./atol-json";
 import type { AtolSettingsStore } from "./atol-settings";
 
 export type AtolDriverInfo = { installed:boolean; version?:string; architecture?:"x64"|"x86"; error?:string; code?:string };
 export type AtolDriverDevice = { id:string; modelName:string; serialNumber:string; firmwareVersion?:string; connection:"usb"|"com"|"tcp"|"unknown"; settingsJson:string };
+export type AtolRecoveryProbe = FiscalRecoverySnapshot & { amount?:number };
 export type AtolDriverStatus = { connected:boolean; driverVersion?:string; serialNumber?:string; modelName?:string; firmwareVersion?:string; shiftState?:string|number; paperPresent?:boolean; coverOpened?:boolean; printerConnectionLost?:boolean; printerError?:boolean; fnPresent?:boolean; invalidFn?:boolean; deviceBlocked?:boolean; errorCode?:number; errorDescription?:string };
 export interface AtolDriverBridge {
   getDriverInfo():Promise<AtolDriverInfo>;
@@ -12,6 +13,7 @@ export interface AtolDriverBridge {
   connect(device:AtolDriverDevice):Promise<void>;
   disconnect():Promise<void>;
   getStatus():Promise<AtolDriverStatus>;
+  recoveryProbe():Promise<AtolRecoveryProbe>;
   executeJson(request:Record<string,unknown>):Promise<Record<string,unknown>>;
   health():Promise<DeviceHealth>;
 }
@@ -53,8 +55,58 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
   async fiscalizeSale(request:FiscalRequest):Promise<FiscalResult> { return this.fiscalize("sell",request); }
   async fiscalizeReturn(request:FiscalReturnRequest):Promise<FiscalResult> { return this.fiscalize("sellReturn",request); }
 
-  async getOperationStatus():Promise<FiscalOperationStatus> {
-    return {status:"unknown",message:"Прямой Драйвер ККТ не подтверждает исход прошлой операции без recovery-проверки."};
+  async captureRecoverySnapshot():Promise<FiscalRecoverySnapshot> {
+    await this.ensureConnected();
+    const probe=await this.bridge.recoveryProbe();
+    const expected=this.settingsStore.load().direct?.selectedDevice?.serialNumber;
+    if(!expected||probe.kktSerialNumber!==expected)
+      throw new Error("Recovery snapshot получен не от выбранной ККТ АТОЛ");
+    return {
+      kktSerialNumber:probe.kktSerialNumber,
+      shiftNumber:probe.shiftNumber,
+      fiscalDocumentNumber:probe.fiscalDocumentNumber,
+      fiscalSign:probe.fiscalSign,
+      kktDateTime:probe.kktDateTime,
+      documentClosed:probe.documentClosed,
+      receiptKind:probe.receiptKind,
+      amountMinor:probe.amount===undefined?undefined:Math.round(probe.amount*100)
+    };
+  }
+
+  async getOperationStatus(request:{
+    operationId:string;entityId:string;kind:"sale"|"return";expectedAmountMinor:number;recovery?:FiscalRecoveryEvidence
+  }):Promise<FiscalOperationStatus> {
+    const before=request.recovery?.snapshotBefore;
+    const selected=this.settingsStore.load().direct?.selectedDevice;
+    if(!before?.kktSerialNumber||!request.recovery?.requestHash)
+      return {status:"unknown",message:"Недостаточно сохранённых evidence для безопасной проверки ККТ"};
+    if(!selected||selected.serialNumber!==before.kktSerialNumber)
+      return {status:"unknown",message:"Выбранная ККТ не совпадает с ККТ исходной попытки"};
+
+    const after=await this.captureRecoverySnapshot();
+    if(after.kktSerialNumber!==before.kktSerialNumber)
+      return {status:"unknown",message:"Recovery probe выполнен на другой ККТ",raw:{before,after}};
+
+    const beforeNumber=this.number(before.fiscalDocumentNumber);
+    const afterNumber=this.number(after.fiscalDocumentNumber);
+    const sameShift=!before.shiftNumber||!after.shiftNumber||before.shiftNumber===after.shiftNumber;
+    const timeOrdered=!before.kktDateTime||!after.kktDateTime||
+      Date.parse(after.kktDateTime)>=Date.parse(before.kktDateTime);
+    const receiptMatches=after.receiptKind===request.kind&&
+      after.amountMinor===request.expectedAmountMinor&&sameShift&&timeOrdered;
+
+    if(beforeNumber!==undefined&&afterNumber!==undefined&&afterNumber>beforeNumber&&receiptMatches)
+      return {status:"fiscalized",receiptNumber:String(after.fiscalDocumentNumber),
+        raw:{before,after,requestHash:request.recovery.requestHash}};
+
+    const noProgress=(beforeNumber===undefined&&afterNumber===undefined)||
+      (beforeNumber!==undefined&&afterNumber===beforeNumber);
+    if(noProgress&&after.documentClosed===true&&sameShift)
+      return {status:"not_found",message:"ФН подтверждает отсутствие нового фискального документа",
+        raw:{before,after,requestHash:request.recovery.requestHash}};
+
+    return {status:"unknown",message:"Состояние ФН не доказывает ни выполнение, ни отсутствие чека",
+      raw:{before,after,requestHash:request.recovery.requestHash}};
   }
 
   async reprintReceipt(request:{saleId:string;receiptNumber:string}):Promise<PrintResult> {
@@ -119,6 +171,12 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
         this.pick(result,["shiftNumber"]),
       raw:result
     };
+  }
+
+  private number(value:string|undefined):number|undefined {
+    if(value===undefined)return undefined;
+    const parsed=Number(value);
+    return Number.isSafeInteger(parsed)?parsed:undefined;
   }
 
   private resultObject(value:Record<string,unknown>):Record<string,unknown>{ return this.object(value.result)??value; }
