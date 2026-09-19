@@ -65,6 +65,8 @@ export type BankingEvidence = {
   transactionStatus?: string
   amountMinor: number
   operationKind: 'sale'|'refund'|'void'|'reconcile'
+  originalReferenceNumber?: string
+  originalTerminalTransactionId?: string
   startedAt: string
   completedAt?: string
   model?: string
