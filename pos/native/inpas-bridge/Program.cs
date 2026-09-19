@@ -181,7 +181,8 @@ internal sealed class InpasSession
 
         EnsureComObjects();
         ClearPacket();
-        if (!TrySet(packet, "26", "OperationCode", "Operation", "OperationID", "OperationType"))
+        if (!TrySet(packet, 26, "OperationCode", "Operation", "OperationID", "OperationType") &&
+            !TrySet(packet, "26", "OperationCode", "Operation", "OperationID", "OperationType"))
             throw new BridgeException("unsupported_driver", "SAPacket does not expose an operation field.");
         if (!TrySet(packet, terminalId, "TerminalID", "TerminalId"))
             throw new BridgeException("unsupported_driver", "SAPacket does not expose TerminalID.");
@@ -307,7 +308,8 @@ internal sealed class InpasSession
             try
             {
                 target.GetType().InvokeMember(name,
-                    BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance,
+                    BindingFlags.SetProperty | BindingFlags.SetField |
+                    BindingFlags.Public | BindingFlags.Instance,
                     null, target, new[] { value }, CultureInfo.InvariantCulture);
                 return true;
             }
@@ -324,7 +326,8 @@ internal sealed class InpasSession
             try
             {
                 var value = target.GetType().InvokeMember(name,
-                    BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance,
+                    BindingFlags.GetProperty | BindingFlags.GetField |
+                    BindingFlags.Public | BindingFlags.Instance,
                     null, target, null, CultureInfo.InvariantCulture);
                 if (value != null) return Convert.ToString(value, CultureInfo.InvariantCulture);
             }
