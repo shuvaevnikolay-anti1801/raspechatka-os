@@ -256,7 +256,6 @@ internal sealed class AtolSession {
             : null;
         var receiptSum = usedLastReceipt
             ? ReadPositiveDoubleParam(fptr, "LIBFPTR_PARAM_RECEIPT_SUM")
-                ?? ReadPositiveDoubleParam(fptr, "LIBFPTR_PARAM_SUM")
             : null;
         return new {
             kktSerialNumber = serialNumber,
