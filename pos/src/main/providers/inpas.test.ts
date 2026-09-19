@@ -20,12 +20,17 @@ describe("InpasPaymentProvider", () => {
     writeFileSync(executable, "test");
     settings = new InpasSettingsStore(join(directory, "settings.json"));
     settings.save({
+      version: 2,
       enabled: true,
-      executablePath: executable,
-      terminalId: "40000037",
-      currencyCode: "643",
-      timeoutMs: 60000,
-      qrMode: "terminal_choice",
+      adapter: "console",
+      direct: {},
+      console: {
+        executablePath: executable,
+        terminalId: "40000037",
+        currencyCode: "643",
+        timeoutMs: 60000,
+        qrMode: "terminal_choice",
+      },
     });
     calls.length = 0;
   });
