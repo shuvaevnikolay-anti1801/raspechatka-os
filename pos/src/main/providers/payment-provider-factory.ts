@@ -1,3 +1,4 @@
+import type { PosDiagnostics } from "../diagnostics";
 import type { PaymentProvider, PaymentRequest } from "./contracts";
 import { InpasDirectPaymentProvider } from "./inpas-direct";
 import type { InpasDirectBridge } from "./inpas-direct-bridge";
@@ -14,6 +15,7 @@ export function createPaymentProvider(options: {
   settingsStore: InpasSettingsStore;
   legacyProvider: InpasPaymentProvider;
   directBridge: InpasDirectBridge;
+  diagnostics?: PosDiagnostics;
 }): RoutedPaymentProvider {
   if (options.trainingMode) {
     const mock = new MockPaymentProvider() as RoutedPaymentProvider;
@@ -23,7 +25,8 @@ export function createPaymentProvider(options: {
 
   const direct = new InpasDirectPaymentProvider(
     options.settingsStore,
-    options.directBridge
+    options.directBridge,
+    options.diagnostics
   );
   const selected = (): PaymentProvider =>
     options.settingsStore.load().adapter === "console"
