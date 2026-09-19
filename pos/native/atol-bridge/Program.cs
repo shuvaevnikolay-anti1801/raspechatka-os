@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-const int ProtocolVersion = 1;
 var jsonOptions = new JsonSerializerOptions {
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -44,9 +44,9 @@ internal sealed class BridgeHost(StaDispatcher dispatcher, AtolSession session) 
     public bool StopRequested { get; private set; }
 
     public async Task<BridgeResponse> HandleAsync(BridgeRequest request) {
-        if (request.ProtocolVersion != ProtocolVersion) {
+        if (request.BridgeProtocol.Version != BridgeProtocol.Version) {
             return BridgeResponse.Failure(request.Id, "unsupported_protocol",
-                $"Expected protocolVersion {ProtocolVersion}.");
+                $"Expected protocolVersion {BridgeProtocol.Version}.");
         }
         if (string.IsNullOrWhiteSpace(request.Id)) {
             return BridgeResponse.Failure(null, "invalid_request", "Request id is required.");
@@ -337,21 +337,21 @@ internal sealed class StaDispatcher : IDisposable {
     private sealed record WorkItem(Func<object> Action, TaskCompletionSource<object> Completion);
 }
 
-internal sealed record BridgeRequest(int ProtocolVersion, string? Id, string Command, JsonElement? Args);
+internal sealed record BridgeRequest(int BridgeProtocol.Version, string? Id, string Command, JsonElement? Args);
 
 internal sealed record BridgeResponse(
-    int ProtocolVersion,
+    int BridgeProtocol.Version,
     string? Id,
     bool Ok,
     object? Result,
     BridgeError? Error
 ) {
     public static BridgeResponse Success(string? id, object result) =>
-        new(ProtocolVersion, id, true, result, null);
+        new(BridgeProtocol.Version, id, true, result, null);
 
     public static BridgeResponse Failure(string? id, string code, string message,
         int? driverErrorCode = null, string? driverErrorDescription = null) =>
-        new(ProtocolVersion, id, false, null,
+        new(BridgeProtocol.Version, id, false, null,
             new BridgeError(code, message, driverErrorCode, driverErrorDescription));
 }
 
@@ -369,4 +369,8 @@ internal sealed class ProtocolException(string code, string message) : Exception
 internal sealed class DriverFailure(int? code, string description) : Exception(description) {
     public int? Code { get; } = code;
     public string Description { get; } = description;
+}
+
+internal static class BridgeProtocol {
+    public const int Version = 1;
 }
