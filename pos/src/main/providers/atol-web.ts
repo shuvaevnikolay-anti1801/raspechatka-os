@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type {
-  CartLine,
-  PaymentPart,
-  PrintResult,
-} from "../../shared/contracts";
+import type { PrintResult } from "../../shared/contracts";
+import { buildAtolReceiptJson } from "./atol-json";
+export { allocateFiscalAmounts } from "./atol-json";
 import type {
   DeviceHealth,
   FiscalOperationStatus,
@@ -19,44 +17,6 @@ export { AtolSettingsStore } from "./atol-settings";
 export type { AtolSettings } from "./atol-settings";
 import { AtolSettingsStore, type AtolSettings } from "./atol-settings";
 
-export function allocateFiscalAmounts(
-  lines: CartLine[],
-  totalMinor: number
-): number[] {
-  if (!lines.length) return [];
-  const raw = lines.map((line) =>
-    Math.max(
-      0,
-      Math.round(
-        line.quantity *
-          line.unitPriceMinor *
-          (1 - (line.discountPercent ?? 0) / 100)
-      )
-    )
-  );
-  const rawTotal = raw.reduce((sum, value) => sum + value, 0);
-  if (rawTotal <= 0)
-    throw new Error("Сумма фискальных позиций должна быть больше нуля");
-  const result: number[] = [];
-  let allocated = 0;
-  for (let index = 0; index < lines.length; index++) {
-    const amount =
-      index === lines.length - 1
-        ? totalMinor - allocated
-        : Math.round((totalMinor * raw[index]) / rawTotal);
-    result.push(amount);
-    allocated += amount;
-  }
-  if (
-    result.some((amount) => amount < 0) ||
-    result.reduce((sum, value) => sum + value, 0) !== totalMinor
-  ) {
-    throw new Error(
-      "Не удалось распределить итоговую сумму по позициям фискального чека"
-    );
-  }
-  return result;
-}
 type AtolTaskResult = {
   error?: { code?: number; description?: string } | null;
   result?: Record<string, unknown>;
@@ -254,56 +214,19 @@ export class AtolWebFiscalProvider implements FiscalProvider {
   private buildReceipt(
     type: "sell" | "sellReturn",
     amountMinor: number,
-    payments: PaymentPart[],
+    payments: FiscalRequest["payments"],
     lines: FiscalRequest["lines"]
   ): Record<string, unknown> {
     const settings = this.requireSettings();
-    const paymentTotal = payments.reduce(
-      (sum, payment) => sum + payment.amountMinor,
-      0
-    );
-    if (paymentTotal !== amountMinor)
-      throw new Error("Сумма оплат не совпадает с итогом фискального чека");
-
-    const aggregated = new Map<"cash" | "electronically", number>();
-    for (const payment of payments) {
-      const key = payment.method === "cash" ? "cash" : "electronically";
-      aggregated.set(key, (aggregated.get(key) ?? 0) + payment.amountMinor);
-    }
-    const body: Record<string, unknown> = {
+    return buildAtolReceiptJson({
       type,
+      amountMinor,
+      payments,
+      lines,
       taxationType: settings.taxationType,
-      electronically: false,
-      ignoreNonFiscalPrintErrors: false,
-      payments: [...aggregated.entries()].map(([paymentType, sum]) => ({
-        type: paymentType,
-        sum: sum / 100,
-      })),
-      total: amountMinor / 100,
-    };
-    if (lines.length) {
-      const allocated = allocateFiscalAmounts(lines, amountMinor);
-      body.items = lines.map((line, index) => {
-        const amountMinor = allocated[index];
-        const effectivePriceMinor =
-          line.quantity > 0 ? amountMinor / line.quantity : 0;
-        return {
-          type: "position",
-          name: line.name,
-          price: effectivePriceMinor / 100,
-          quantity: line.quantity,
-          amount: amountMinor / 100,
-          paymentObject:
-            (line as typeof line & { itemType?: string }).itemType === "service"
-              ? "service"
-              : "commodity",
-          paymentMethod: "fullPayment",
-          tax: { type: settings.taxType },
-        };
-      });
-    }
-    this.applyOperator(body);
-    return body;
+      taxType: settings.taxType,
+      operatorName: this.currentOperator(),
+    });
   }
 
   private parseFiscalResult(
