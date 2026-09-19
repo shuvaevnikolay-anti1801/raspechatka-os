@@ -224,7 +224,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
         resolve: (value: unknown) => void;
         reject: (reason: Error) => void;
         timeout?: NodeJS.Timeout;
-      } = { resolve, reject };
+      } = { resolve: (value) => resolve(value as T), reject };
 
       const timeoutMs =
         command === 'executeJson'
