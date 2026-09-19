@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +16,8 @@ internal static class Program
 
     public static int Main()
     {
+        Console.InputEncoding = new UTF8Encoding(false);
+        Console.OutputEncoding = new UTF8Encoding(false);
         var serializer = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
         using (var dispatcher = new StaDispatcher())
         {
