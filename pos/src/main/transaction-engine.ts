@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { calculateDiscountBreakdown, calculateTotalMinor } from '../shared/cart'
 import type {
   CartLine, CompleteSaleRequest, CompleteSaleResult, CreateReturnRequest, PaymentPart, ReturnResult, SaleDetails
 } from '../shared/contracts'
 import type {
-  FiscalProvider, FiscalResult, PaymentProvider, PaymentResult
+  FiscalProvider, FiscalRequest, FiscalResult, FiscalReturnRequest, PaymentProvider, PaymentResult
 } from './providers/contracts'
 import { PosDatabase } from './database'
 import { JournalOperation, TransactionJournal } from './transaction-journal'
@@ -276,15 +276,24 @@ export class PosTransactionEngine {
 
   private async fiscalizeSale(operation:JournalOperation,request:CompleteSaleRequest):Promise<FiscalResult>{
     const attemptId=randomUUID()
-    this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'sale'})
+    const catalog=new Map(this.database.listProducts().map((item)=>[item.id,item]))
+    const lines=request.lines.map((line)=>({...line,itemType:catalog.get(line.productId)?.type})) as CartLine[]
+    const fiscalRequest={operationId:attemptId,saleId:operation.entityId,
+      amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines}
+    const snapshot=await this.fiscalProvider.captureRecoverySnapshot?.()
+    const requestHash=this.fiscalRequestHash('sale',fiscalRequest)
+    this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'sale',snapshot,requestHash})
     this.journal.setState(operation.id,'fiscalization_in_progress')
     try{
-      const catalog=new Map(this.database.listProducts().map((item)=>[item.id,item]))
-      const lines=request.lines.map((line)=>({...line,itemType:catalog.get(line.productId)?.type})) as CartLine[]
-      const result=await this.fiscalProvider.fiscalizeSale({operationId:attemptId,saleId:operation.entityId,
-        amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines})
+      const result=await this.fiscalProvider.fiscalizeSale(fiscalRequest)
       if(!result.receiptNumber)throw new Error('ККТ не вернула номер фискального документа')
-      this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
+      let snapshotAfter
+      try { snapshotAfter=await this.fiscalProvider.captureRecoverySnapshot?.() } catch {}
+      this.journal.finishFiscalAttempt({
+        id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result,snapshotAfter,
+        fiscalDocumentNumberAfter:result.fiscalDocumentNumber??result.receiptNumber,
+        fiscalSign:result.fiscalSign,shiftNumberAfter:result.shiftNumber
+      })
       return result
     }catch(error){
       const message=error instanceof Error?error.message:String(error)
@@ -296,20 +305,29 @@ export class PosTransactionEngine {
 
   private async fiscalizeReturn(operation:JournalOperation,sale:SaleDetails,returnLines:Array<{saleItemId:number;quantity:number;lineTotalMinor:number}>):Promise<FiscalResult>{
     const attemptId=randomUUID()
-    this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'return'})
+    const catalog=new Map(this.database.listProducts().map((item)=>[item.id,item]))
+    const lines:CartLine[]=returnLines.map((returned)=>{
+      const original=sale.lines.find((line)=>line.id===returned.saleItemId)!
+      return {productId:original.productId,name:original.name,quantity:returned.quantity,
+        unitPriceMinor:Math.round(returned.lineTotalMinor/returned.quantity),discountPercent:0,
+        ...({itemType:catalog.get(original.productId)?.type} as object)} as CartLine
+    })
+    const fiscalRequest={operationId:attemptId,returnId:operation.entityId,saleId:sale.id,
+      amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines}
+    const snapshot=await this.fiscalProvider.captureRecoverySnapshot?.()
+    const requestHash=this.fiscalRequestHash('return',fiscalRequest)
+    this.journal.startFiscalAttempt({id:attemptId,operationId:operation.id,action:'return',snapshot,requestHash})
     this.journal.setState(operation.id,'fiscalization_in_progress')
     try{
-      const catalog=new Map(this.database.listProducts().map((item)=>[item.id,item]))
-      const lines:CartLine[]=returnLines.map((returned)=>{
-        const original=sale.lines.find((line)=>line.id===returned.saleItemId)!
-        return {productId:original.productId,name:original.name,quantity:returned.quantity,
-          unitPriceMinor:Math.round(returned.lineTotalMinor/returned.quantity),discountPercent:0,
-          ...({itemType:catalog.get(original.productId)?.type} as object)} as CartLine
-      })
-      const result=await this.fiscalProvider.fiscalizeReturn({operationId:attemptId,returnId:operation.entityId,saleId:sale.id,
-        amountMinor:operation.amountMinor,payments:operation.confirmedPayments,lines})
+      const result=await this.fiscalProvider.fiscalizeReturn(fiscalRequest)
       if(!result.receiptNumber)throw new Error('ККТ не вернула номер фискального документа возврата')
-      this.journal.finishFiscalAttempt({id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
+      let snapshotAfter
+      try { snapshotAfter=await this.fiscalProvider.captureRecoverySnapshot?.() } catch {}
+      this.journal.finishFiscalAttempt({
+        id:attemptId,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result,snapshotAfter,
+        fiscalDocumentNumberAfter:result.fiscalDocumentNumber??result.receiptNumber,
+        fiscalSign:result.fiscalSign,shiftNumberAfter:result.shiftNumber
+      })
       return result
     }catch(error){
       const message=error instanceof Error?error.message:String(error)
@@ -351,7 +369,7 @@ export class PosTransactionEngine {
       const attempt=this.journal.getLatestFiscalAttempt(operation.id)
       if(!attempt)throw new Error('Не найдена попытка ККТ для восстановления')
       const result=await this.fiscalProvider.getOperationStatus({operationId:attempt.id,entityId:operation.entityId,
-        kind:operation.kind,expectedAmountMinor:operation.amountMinor})
+        kind:operation.kind,expectedAmountMinor:operation.amountMinor,recovery:attempt})
       if(result.status==='fiscalized'&&result.receiptNumber){
         this.journal.finishFiscalAttempt({id:attempt.id,state:'fiscalized',receiptNumber:result.receiptNumber,rawResult:result})
         this.journal.setFiscalReceipt(operation.id,result.receiptNumber)
@@ -364,6 +382,19 @@ export class PosTransactionEngine {
         throw new Error(result.message||'Статус фискального документа всё ещё неизвестен')
       }
     }
+  }
+
+  private fiscalRequestHash(kind:'sale'|'return',request:FiscalRequest|FiscalReturnRequest):string{
+    return createHash('sha256').update(JSON.stringify({
+      kind,
+      amountMinor:request.amountMinor,
+      payments:request.payments.map(({method,amountMinor})=>({method,amountMinor})),
+      lines:request.lines.map((line)=>({
+        productId:line.productId,name:line.name,quantity:line.quantity,
+        unitPriceMinor:line.unitPriceMinor,discountPercent:line.discountPercent??0,
+        itemType:(line as CartLine&{itemType?:string}).itemType
+      }))
+    })).digest('hex')
   }
 
   private validatePayments(payments:PaymentPart[],expectedTotal:number,label:string):void{

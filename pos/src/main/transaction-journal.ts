@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import type { CompleteSaleRequest, CreateReturnRequest, PaymentPart } from '../shared/contracts'
+import type { FiscalRecoverySnapshot } from './providers/contracts'
 
 export type TransactionKind = 'sale' | 'return'
 export type TransactionState =
@@ -112,6 +113,27 @@ export class TransactionJournal {
       CREATE INDEX IF NOT EXISTS idx_fiscal_attempts_operation
         ON fiscal_attempts(operation_id, started_at);
     `)
+    this.ensureFiscalAttemptColumns()
+  }
+
+  private ensureFiscalAttemptColumns(): void {
+    const existing = new Set(
+      (this.db.prepare('PRAGMA table_info(fiscal_attempts)').all() as Array<{name:string}>)
+        .map((column) => column.name)
+    )
+    const columns: Array<[string,string]> = [
+      ['kkt_serial_number','TEXT'],
+      ['shift_number_before','TEXT'],
+      ['fiscal_document_number_before','TEXT'],
+      ['kkt_datetime_before','TEXT'],
+      ['request_hash','TEXT'],
+      ['fiscal_document_number_after','TEXT'],
+      ['fiscal_sign','TEXT'],
+      ['shift_number_after','TEXT']
+    ]
+    for (const [name,type] of columns) {
+      if (!existing.has(name)) this.db.exec(`ALTER TABLE fiscal_attempts ADD COLUMN ${name} ${type}`)
+    }
   }
 
   create(input: {
@@ -177,6 +199,16 @@ export class TransactionJournal {
     }))
   }
 
+  hasBlockingFiscalOperation(): boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM operations o
+      WHERE o.state IN ('payment_in_progress','payment_confirmed','payment_unknown',
+        'fiscalization_in_progress','fiscal_status_unknown','fiscalized')
+        OR (o.state='requires_attention' AND EXISTS (
+          SELECT 1 FROM fiscal_attempts attempt WHERE attempt.operation_id=o.id
+        ))
+      LIMIT 1`).get())
+  }
+
   setState(id: string, state: TransactionState, error?: string): void {
     this.db.prepare('UPDATE operations SET state=?,last_error=?,updated_at=? WHERE id=?')
       .run(state,error??null,new Date().toISOString(),id)
@@ -203,15 +235,31 @@ export class TransactionJournal {
       .run(input.state,input.transactionId??null,input.rawResult===undefined?null:JSON.stringify(input.rawResult),input.error??null,new Date().toISOString(),input.id)
   }
 
-  startFiscalAttempt(input: {id:string;operationId:string;action:'sale'|'return';startedAt?:string}): void {
+  startFiscalAttempt(input: {
+    id:string;operationId:string;action:'sale'|'return';startedAt?:string
+    snapshot?:FiscalRecoverySnapshot;requestHash?:string
+  }): void {
     this.db.prepare(`INSERT OR IGNORE INTO fiscal_attempts
-      (id,operation_id,action,state,started_at) VALUES (?,?,?,?,?)`)
-      .run(input.id,input.operationId,input.action,'in_progress',input.startedAt??new Date().toISOString())
+      (id,operation_id,action,state,started_at,kkt_serial_number,shift_number_before,
+       fiscal_document_number_before,kkt_datetime_before,request_hash)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(input.id,input.operationId,input.action,'in_progress',input.startedAt??new Date().toISOString(),
+        input.snapshot?.kktSerialNumber??null,input.snapshot?.shiftNumber??null,
+        input.snapshot?.fiscalDocumentNumber??null,input.snapshot?.kktDateTime??null,input.requestHash??null)
   }
 
-  finishFiscalAttempt(input: {id:string;state:'fiscalized'|'failed'|'unknown';receiptNumber?:string;rawResult?:unknown;error?:string}): void {
-    this.db.prepare(`UPDATE fiscal_attempts SET state=?,receipt_number=?,raw_result_json=?,error=?,completed_at=? WHERE id=?`)
-      .run(input.state,input.receiptNumber??null,input.rawResult===undefined?null:JSON.stringify(input.rawResult),input.error??null,new Date().toISOString(),input.id)
+  finishFiscalAttempt(input: {
+    id:string;state:'fiscalized'|'failed'|'unknown';receiptNumber?:string;rawResult?:unknown;error?:string
+    snapshotAfter?:FiscalRecoverySnapshot
+    fiscalDocumentNumberAfter?:string;fiscalSign?:string;shiftNumberAfter?:string
+  }): void {
+    this.db.prepare(`UPDATE fiscal_attempts SET state=?,receipt_number=?,raw_result_json=?,error=?,completed_at=?,
+      fiscal_document_number_after=?,fiscal_sign=?,shift_number_after=? WHERE id=?`)
+      .run(input.state,input.receiptNumber??null,input.rawResult===undefined?null:JSON.stringify(input.rawResult),
+        input.error??null,new Date().toISOString(),
+        input.snapshotAfter?.fiscalDocumentNumber??input.fiscalDocumentNumberAfter??null,
+        input.snapshotAfter?.fiscalSign??input.fiscalSign??null,
+        input.snapshotAfter?.shiftNumber??input.shiftNumberAfter??null,input.id)
   }
 
   getLatestPaymentAttempt(operationId: string): null | {
@@ -224,10 +272,24 @@ export class TransactionJournal {
 
   getLatestFiscalAttempt(operationId: string): null | {
     id:string; action:'sale'|'return'; state:string; receiptNumber?:string
+    kktSerialNumber?:string;shiftNumberBefore?:string;fiscalDocumentNumberBefore?:string
+    kktDateTimeBefore?:string;requestHash?:string;fiscalDocumentNumberAfter?:string
+    fiscalSign?:string;shiftNumberAfter?:string;snapshotBefore?:FiscalRecoverySnapshot;attemptStartedAt?:string
   } {
-    const row = this.db.prepare(`SELECT id,action,state,receipt_number receiptNumber
+    const row = this.db.prepare(`SELECT id,action,state,receipt_number receiptNumber,
+      kkt_serial_number kktSerialNumber,shift_number_before shiftNumberBefore,
+      fiscal_document_number_before fiscalDocumentNumberBefore,kkt_datetime_before kktDateTimeBefore,
+      request_hash requestHash,fiscal_document_number_after fiscalDocumentNumberAfter,
+      fiscal_sign fiscalSign,shift_number_after shiftNumberAfter,started_at attemptStartedAt
       FROM fiscal_attempts WHERE operation_id=? ORDER BY started_at DESC LIMIT 1`).get(operationId) as any
-    return row ?? null
+    if(!row)return null
+    row.snapshotBefore=row.kktSerialNumber?{
+      kktSerialNumber:row.kktSerialNumber,
+      shiftNumber:row.shiftNumberBefore||undefined,
+      fiscalDocumentNumber:row.fiscalDocumentNumberBefore||undefined,
+      kktDateTime:row.kktDateTimeBefore||undefined
+    }:undefined
+    return row
   }
 
   private rowToOperation(row: any): JournalOperation | null {

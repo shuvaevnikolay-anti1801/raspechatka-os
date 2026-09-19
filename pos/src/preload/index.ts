@@ -14,14 +14,9 @@ import type {
   StockWriteOffRequest,
   SupplyRequestInput,
   UpdateOrderRequest,
+  AtolSettings,
 } from "../shared/contracts";
 
-type AtolSettings = {
-  enabled: boolean;
-  baseUrl: string;
-  taxationType: string;
-  taxType: string;
-};
 type ShiftRecoveryStatus = {
   pending: boolean;
   action?: "open" | "close";
@@ -86,7 +81,7 @@ const invokeShift = async <T>(
     const message = cleanRemoteMessage(error);
     if (/fetch failed/i.test(message)) {
       throw new Error(
-        "Нет связи с АТОЛ. Проверьте в «Настройках», что Драйвер ККТ и локальный Web Server запущены, затем повторите операцию со сменой."
+        "Нет связи с ККТ АТОЛ. Откройте «Настройки → ККТ АТОЛ» и проверьте подключение выбранной ККТ, затем повторите операцию со сменой."
       );
     }
     throw new Error(message || "Не удалось выполнить операцию со сменой");
@@ -130,6 +125,10 @@ const api: ExtendedPosApi = {
   getAtolSettings: () => ipcRenderer.invoke("pos:get-atol-settings"),
   saveAtolSettings: (value: AtolSettings) =>
     ipcRenderer.invoke("pos:save-atol-settings", value),
+  getAtolDriverInfo: () => ipcRenderer.invoke("pos:get-atol-driver-info"),
+  discoverAtolDevices: () => ipcRenderer.invoke("pos:discover-atol-devices"),
+  selectAtolDevice: (device) => ipcRenderer.invoke("pos:select-atol-device", device),
+  testAtolDriverDevice: () => ipcRenderer.invoke("pos:test-atol-driver-device"),
   getShiftRecoveryStatus: () =>
     ipcRenderer.invoke("pos:get-shift-recovery-status"),
   recoverShiftState: () => ipcRenderer.invoke("pos:recover-shift-state"),

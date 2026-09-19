@@ -9,25 +9,23 @@ import type {
   PrintJobSummary,
   PrinterInfo,
   UnresolvedOperation,
+  AtolDriverDevice,
+  AtolDriverInfo,
+  AtolDriverStatus,
+  AtolSettings,
 } from "../../shared/contracts";
 import "./settings-hub.css";
 
-type AtolSettings = {
-  enabled: boolean;
-  baseUrl: string;
-  taxationType: string;
-  taxType: string;
-};
-type ExtendedPosApi = typeof window.raspechatkaPos & {
-  getAtolSettings: () => Promise<AtolSettings>;
-  saveAtolSettings: (value: AtolSettings) => Promise<AtolSettings>;
-};
+type ExtendedPosApi = typeof window.raspechatkaPos;
 const pos = () => window.raspechatkaPos as ExtendedPosApi;
 const defaultAtol: AtolSettings = {
+  version: 2,
   enabled: false,
-  baseUrl: "http://127.0.0.1:16732/api/v2",
+  adapter: "driver",
   taxationType: "patent",
   taxType: "none",
+  direct: {},
+  web: { baseUrl: "http://127.0.0.1:16732/api/v2" },
 };
 const defaultInpas: InpasSettings = {
   enabled: false,
@@ -47,6 +45,9 @@ export default function SettingsHub() {
   const [connection, setConnection] = useState<ConnectionStatus | null>(null);
   const [devices, setDevices] = useState<DeviceStatuses | null>(null);
   const [atol, setAtol] = useState<AtolSettings>(defaultAtol);
+  const [atolDriver, setAtolDriver] = useState<AtolDriverInfo | null>(null);
+  const [atolDevices, setAtolDevices] = useState<AtolDriverDevice[]>([]);
+  const [atolStatus, setAtolStatus] = useState<AtolDriverStatus | null>(null);
   const [inpas, setInpas] = useState<InpasSettings>(defaultInpas);
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printer, setPrinter] = useState("");
@@ -98,6 +99,7 @@ export default function SettingsHub() {
       nextOperations,
       nextPrintJobs,
       nextDiagnostics,
+      nextAtolDriver,
     ] = await Promise.all([
       pos().getBootState(),
       pos().getConnectionStatus(),
@@ -109,6 +111,10 @@ export default function SettingsHub() {
       pos().listUnresolvedOperations(),
       pos().listPrintJobs(),
       pos().listDiagnosticEvents(80),
+      pos().getAtolDriverInfo().catch((error) => ({
+        installed: false,
+        error: error instanceof Error ? error.message : String(error),
+      })),
     ]);
     setBoot(nextBoot);
     setConnection(nextConnection);
@@ -120,6 +126,7 @@ export default function SettingsHub() {
     setOperations(nextOperations);
     setPrintJobs(nextPrintJobs);
     setDiagnostics(nextDiagnostics);
+    setAtolDriver(nextAtolDriver);
     setPairing((current) => ({
       ...current,
       serverUrl: nextConnection.serverUrl || current.serverUrl,
@@ -187,13 +194,32 @@ export default function SettingsHub() {
       setBusy(false);
     }
   };
+  const refreshAtolDevices = async () => {
+    try {
+      const found = await pos().discoverAtolDevices();
+      setAtolDevices(found);
+      setMessage(found.length ? "ККТ АТОЛ найдены" : "ККТ АТОЛ не найдены");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
   const saveAtol = async () => {
     try {
-      setAtol(await pos().saveAtolSettings(atol));
-      setMessage("Настройки АТОЛ сохранены");
-      await refresh();
+      const selected = atol.direct?.selectedDevice;
+      if (!selected) throw new Error("Выберите найденную ККТ АТОЛ");
+      await pos().selectAtolDevice(selected);
+      setAtol(await pos().saveAtolSettings({ ...atol, adapter: "driver" }));
+      setMessage("ККТ АТОЛ сохранена по серийному номеру");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const testAtol = async () => {
+    try {
+      setAtolStatus(await pos().testAtolDriverDevice());
+      setMessage("Связь с выбранной ККТ проверена");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
     }
   };
   const saveInpas = async () => {
@@ -462,78 +488,44 @@ export default function SettingsHub() {
               <div className="section-heading">
                 <div>
                   <h2>ККТ АТОЛ</h2>
-                  <p>АТОЛ 1Ф через локальный Web Server Драйвера ККТ 10.</p>
+                  <p>Прямое подключение через Драйвер ККТ 10.</p>
                 </div>
                 <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={atol.enabled}
-                    onChange={(e) =>
-                      setAtol({ ...atol, enabled: e.target.checked })
-                    }
-                  />{" "}
-                  Использовать АТОЛ
+                  <input type="checkbox" checked={atol.enabled}
+                    onChange={(e) => setAtol({ ...atol, enabled: e.target.checked })} /> Использовать АТОЛ
                 </label>
               </div>
               <div className="settings-form-grid">
-                <label>
-                  <span>Статус</span>
-                  <strong>
-                    {devices?.fiscal.ready
-                      ? "🟢 Подключено"
-                      : atol.enabled
-                      ? "🟠 Требуется проверка"
-                      : "Выключено"}
-                  </strong>
-                </label>
-                <label>
-                  <span>ККТ</span>
-                  <strong>АТОЛ 1Ф</strong>
-                </label>
-                <label>
-                  <span>Оператор</span>
-                  <strong>Текущий кассир</strong>
-                </label>
-                <label>
-                  <span>СНО</span>
-                  <select
-                    value={atol.taxationType}
-                    onChange={(e) =>
-                      setAtol({ ...atol, taxationType: e.target.value })
-                    }
-                  >
-                    <option value="patent">Патент</option>
-                    <option value="usnIncome">УСН доход</option>
-                    <option value="usnIncomeOutcome">УСН доход − расход</option>
-                    <option value="osn">ОСН</option>
+                <label><span>Драйвер ККТ 10</span><strong>{atolDriver?.installed ? `🟢 Найден${atolDriver.version ? ` · ${atolDriver.version}` : ""}` : `🟠 ${atolDriver?.error || "Не найден"}`}</strong></label>
+                <label><span>ККТ</span>
+                  <select value={atol.direct?.selectedDevice?.serialNumber || ""}
+                    onChange={(e) => {
+                      const device = atolDevices.find((x) => x.serialNumber === e.target.value);
+                      if (device) setAtol({ ...atol, adapter: "driver", direct: { selectedDevice: {
+                        serialNumber: device.serialNumber, modelName: device.modelName,
+                        connection: device.connection, settingsJson: device.settingsJson,
+                      } } });
+                    }}>
+                    <option value="">Выберите найденную ККТ</option>
+                    {atolDevices.map((device) => <option key={device.serialNumber} value={device.serialNumber}>
+                      {device.modelName} · {device.serialNumber} · {device.connection.toUpperCase()}
+                    </option>)}
                   </select>
                 </label>
-                <label>
-                  <span>НДС</span>
-                  <select
-                    value={atol.taxType}
-                    onChange={(e) =>
-                      setAtol({ ...atol, taxType: e.target.value })
-                    }
-                  >
-                    <option value="none">Без НДС</option>
-                    <option value="vat0">0%</option>
-                    <option value="vat5">5%</option>
-                    <option value="vat7">7%</option>
-                    <option value="vat10">10%</option>
-                    <option value="vat20">20%</option>
-                    <option value="vat22">22%</option>
-                  </select>
-                </label>
+                <label><span>СНО</span><select value={atol.taxationType} onChange={(e) => setAtol({ ...atol, taxationType: e.target.value })}>
+                  <option value="patent">Патент</option><option value="usnIncome">УСН доход</option><option value="usnIncomeOutcome">УСН доход − расход</option><option value="osn">ОСН</option>
+                </select></label>
+                <label><span>НДС</span><select value={atol.taxType} onChange={(e) => setAtol({ ...atol, taxType: e.target.value })}>
+                  <option value="none">Без НДС</option><option value="vat0">0%</option><option value="vat5">5%</option><option value="vat7">7%</option><option value="vat10">10%</option><option value="vat20">20%</option><option value="vat22">22%</option>
+                </select></label>
+                {atolStatus && <label><span>Статус ККТ</span><strong>{atolStatus.connected ? `Подключена · смена: ${atolStatus.shiftState ?? "неизвестно"}` : atolStatus.errorDescription || "Нет связи"}</strong></label>}
               </div>
-              <button
-                className="primary section-action"
-                onClick={() => void saveAtol()}
-              >
-                Сохранить и проверить АТОЛ
-              </button>
+              <div className="settings-actions">
+                <button onClick={() => void refreshAtolDevices()}>Обновить</button>
+                <button className="primary" onClick={() => void saveAtol()}>Подключить / сохранить</button>
+                <button onClick={() => void testAtol()}>Проверить связь</button>
+              </div>
             </section>
-
             <section className="settings-section">
               <div className="section-heading">
                 <div>

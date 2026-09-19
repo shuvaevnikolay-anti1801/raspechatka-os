@@ -6,9 +6,15 @@ import { ConnectionStore } from "./connection";
 import { registerIpcHandlers } from "./ipc";
 import { registerPosV2Ipc } from "./pos-v2-ipc";
 import { registerHardwareSettingsIpc } from "./hardware-ipc";
-import { MockFiscalProvider, MockPaymentProvider } from "./providers/mock";
+import { MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
-import { AtolSettingsStore, AtolWebFiscalProvider } from "./providers/atol-web";
+import { AtolSettingsStore } from "./providers/atol-web";
+import { createFiscalProvider } from "./providers/fiscal-provider-factory";
+import {
+  isAtolBridgeExecutableAvailable,
+  NativeAtolDriverBridge,
+  resolveAtolBridgeExecutablePath,
+} from "./providers/atol-driver-bridge";
 import { ShiftCoordinator } from "./shift-coordinator";
 import { registerShiftRecoveryIpc } from "./shift-recovery-ipc";
 import { registerPilotIpc } from "./pilot-ipc";
@@ -28,6 +34,7 @@ let database: PosDatabase | undefined;
 let journal: TransactionJournal | undefined;
 let printQueue: CommodityPrintQueue | undefined;
 let diagnostics: PosDiagnostics | undefined;
+let atolDriverBridge: NativeAtolDriverBridge | undefined;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -110,15 +117,29 @@ if (!hasLock) {
     const paymentProvider = trainingMode
       ? new MockPaymentProvider()
       : inpasProvider;
-    const fiscalProvider = trainingMode
-      ? new MockFiscalProvider()
-      : new AtolWebFiscalProvider(
-          atolSettingsStore,
-          atolManager,
-          () =>
-            cashierAuth.state().employee?.name ||
-            database?.currentShift()?.cashierName
-        );
+    const atolBridgePath = resolveAtolBridgeExecutablePath({ isPackaged: app.isPackaged });
+    atolDriverBridge = trainingMode ? undefined : new NativeAtolDriverBridge({
+      executablePath: atolBridgePath,
+    });
+    if (!trainingMode && !isAtolBridgeExecutableAvailable(atolBridgePath)) {
+      diagnostics.record({
+        source: "fiscal",
+        level: "warning",
+        eventType: "atol.driver.missing",
+        message: "ATOL bridge helper не найден: прямое подключение не настроено",
+        details: { errorCode: "not_configured" },
+      });
+    }
+    const fiscalProvider = createFiscalProvider({
+      trainingMode,
+      settingsStore: atolSettingsStore,
+      webManager: trainingMode ? undefined : atolManager,
+      driverBridge: atolDriverBridge,
+      currentOperator: () =>
+        cashierAuth.state().employee?.name ||
+        database?.currentShift()?.cashierName,
+      diagnostics,
+    });
     const printProvider = new WindowsPrintProvider(
       join(userData, "printer-settings.json")
     );
@@ -208,9 +229,11 @@ if (!hasLock) {
       trainingMode ? undefined : fiscalProvider,
       inpasSettingsStore,
       trainingMode ? undefined : inpasProvider,
-      diagnostics
+      diagnostics,
+      atolDriverBridge,
+      () => journal!.hasBlockingFiscalOperation()
     );
-    if (!trainingMode && atolSettingsStore.load().enabled)
+    if (!trainingMode && atolSettingsStore.load().enabled && atolSettingsStore.load().adapter === "web")
       void atolManager
         .ensureReady()
         .catch((error) =>
@@ -246,6 +269,7 @@ app.on("before-quit", () => {
   stopAutomaticSync?.();
   stopAutomaticPrintRetry?.();
   printQueue?.close();
+  void atolDriverBridge?.stop();
   journal?.close();
   database?.close();
   diagnostics?.close();

@@ -35,14 +35,22 @@ class TestFiscalProvider implements FiscalProvider {
   saleCalls=0
   returnCalls=0
   statusCalls=0
+  snapshotCalls=0
+  throwOnSnapshot=false
+  throwOnSnapshotAfter=false
+  throwOnSale=false
+  nextStatus:FiscalOperationStatus={status:'fiscalized',receiptNumber:'FD-recovered'}
+  async captureRecoverySnapshot(){this.snapshotCalls++;if(this.throwOnSnapshot||(this.throwOnSnapshotAfter&&this.snapshotCalls>1))throw new Error('snapshot unavailable');return {kktSerialNumber:'KKT-1',shiftNumber:'5',fiscalDocumentNumber:'10',kktDateTime:'2026-09-19T10:00:00.000Z',documentClosed:true}}
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
   async getShiftStatus(){return {open:true,state:'opened' as const,message:'open'}}
   async openShift(){return}
   async closeShift(){return {message:'closed'}}
-  async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.saleCalls++;return {receiptNumber:`FD-${this.saleCalls}`}}
+  async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
   async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
-  async getOperationStatus(_request:{operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number}):Promise<FiscalOperationStatus>{
-    this.statusCalls++;return {status:'fiscalized',receiptNumber:'FD-recovered'}
+  async getOperationStatus(_request:{
+    operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:unknown
+  }):Promise<FiscalOperationStatus>{
+    this.statusCalls++;return this.nextStatus
   }
   async reprintReceipt(){return {kind:'fiscal-copy' as const,status:'printed' as const,message:'ok'}}
 }
@@ -193,4 +201,41 @@ describe('PosTransactionEngine safety',()=>{
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()).toHaveLength(0)
   })
+
+  it('does not start fiscalization when the pre-call snapshot is unavailable',async()=>{
+    fiscal.throwOnSnapshot=true
+    await expect(engine.completeSale(request([{method:'cash',amountMinor:2000}],'snapshot-failed'),shiftId))
+      .rejects.toThrow('snapshot unavailable')
+    expect(fiscal.saleCalls).toBe(0)
+    const unresolved=engine.listUnresolved()[0]
+    expect(unresolved.state).toBe('payment_confirmed')
+    expect(journal.getLatestFiscalAttempt(unresolved.id)).toBeNull()
+  })
+
+  it('keeps a proven fiscal result when the post-call snapshot fails',async()=>{
+    fiscal.throwOnSnapshotAfter=true
+    const completed=await engine.completeSale(request([{method:'cash',amountMinor:2000}],'post-snapshot-failed'),shiftId)
+    expect(completed.saleId).toBeTruthy()
+    expect(fiscal.saleCalls).toBe(1)
+    expect(fiscal.snapshotCalls).toBe(2)
+    expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('keeps a timed-out fiscal attempt unknown and never fiscalizes it again without proof',async()=>{
+    fiscal.throwOnSale=true
+    await expect(engine.completeSale(request([{method:'cash',amountMinor:2000}],'fiscal-timeout'),shiftId))
+      .rejects.toThrow(/НЕ пробивайте чек повторно/)
+    expect(fiscal.saleCalls).toBe(1)
+    expect(engine.listUnresolved()[0].state).toBe('fiscal_status_unknown')
+    expect(journal.getLatestFiscalAttempt(engine.listUnresolved()[0].id)?.requestHash).toBeTruthy()
+
+    fiscal.throwOnSale=false
+    fiscal.nextStatus={status:'unknown',message:'ФН не даёт однозначного доказательства'}
+    const recovery=await engine.recover(engine.listUnresolved()[0].id)
+    expect(recovery.status).toBe('attention')
+    expect(fiscal.statusCalls).toBe(1)
+    expect(fiscal.saleCalls).toBe(1)
+    expect(engine.listUnresolved()[0].state).toBe('fiscal_status_unknown')
+  })
+
 })

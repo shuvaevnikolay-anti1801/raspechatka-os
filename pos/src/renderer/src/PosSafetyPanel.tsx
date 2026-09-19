@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
+  AtolSettings,
   DeviceStatuses,
   InpasSettings,
   PrintJobSummary,
@@ -8,17 +9,7 @@ import type {
 } from "../../shared/contracts";
 import "./safety.css";
 
-type AtolSettings = {
-  enabled: boolean;
-  baseUrl: string;
-  taxationType: string;
-  taxType: string;
-};
-type ExtendedPosApi = typeof window.raspechatkaPos & {
-  getAtolSettings: () => Promise<AtolSettings>;
-  saveAtolSettings: (value: AtolSettings) => Promise<AtolSettings>;
-};
-const pos = () => window.raspechatkaPos as ExtendedPosApi;
+const pos = () => window.raspechatkaPos;
 
 const money = (minor: number) =>
   new Intl.NumberFormat("ru-RU", {
@@ -27,10 +18,13 @@ const money = (minor: number) =>
     maximumFractionDigits: 2,
   }).format(minor / 100);
 const defaultAtol: AtolSettings = {
+  version: 2,
   enabled: false,
-  baseUrl: "http://127.0.0.1:16732/api/v2",
+  adapter: "driver",
   taxationType: "patent",
   taxType: "none",
+  direct: {},
+  web: { baseUrl: "http://127.0.0.1:16732/api/v2" },
 };
 const defaultInpas: InpasSettings = {
   enabled: false,
@@ -308,11 +302,11 @@ export default function PosSafetyPanel() {
             <section className="hardware-settings atol-settings">
               <div className="settings-title">
                 <div>
-                  <h3>АТОЛ 1Ф · USB</h3>
+                  <h3>ККТ АТОЛ · Драйвер ККТ 10</h3>
                   <p>
-                    Приложение работает через локальный Web Server Драйвера ККТ
-                    10. Включите его после того, как АТОЛ виден в утилите
-                    драйвера.
+                    {atol.adapter === "driver"
+                      ? "Прямое подключение к выбранной ККТ через установленный Драйвер ККТ 10."
+                      : "Сохранён legacy-режим Web Requests для совместимости. Основная настройка ККТ выполняется в разделе «Настройки кассы»."}
                   </p>
                 </div>
                 <label className="toggle">
@@ -328,13 +322,14 @@ export default function PosSafetyPanel() {
               </div>
               <div className="settings-grid">
                 <label>
-                  <span>Адрес Web Server</span>
-                  <input
-                    value={atol.baseUrl}
-                    onChange={(event) =>
-                      setAtol({ ...atol, baseUrl: event.target.value })
-                    }
-                  />
+                  <span>Выбранная ККТ</span>
+                  <strong>
+                    {atol.adapter === "driver"
+                      ? atol.direct?.selectedDevice
+                        ? `${atol.direct.selectedDevice.modelName} · ${atol.direct.selectedDevice.serialNumber}`
+                        : "Не выбрана"
+                      : "Legacy Web Requests"}
+                  </strong>
                 </label>
                 <label>
                   <span>Система налогообложения</span>

@@ -56,7 +56,9 @@ export class MockFiscalProvider implements FiscalProvider {
     return result
   }
 
-  async getOperationStatus(request:{operationId:string}):Promise<FiscalOperationStatus>{
+  async getOperationStatus(request:{
+    operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:unknown
+  }):Promise<FiscalOperationStatus>{
     const result=this.receipts.get(request.operationId)
     return result?{status:'fiscalized',receiptNumber:result.receiptNumber}:{status:'not_found',message:'Тестовый фискальный документ не найден'}
   }
