@@ -25,7 +25,11 @@ import { buildBootState, startAutomaticSync } from "./sync";
 import { PosDiagnostics } from "./diagnostics";
 import { InpasPaymentProvider } from "./providers/inpas";
 import { InpasSettingsStore } from "./providers/inpas-settings";
-import { NativeInpasBridge } from "./providers/inpas-direct-bridge";
+import {
+  isInpasBridgeExecutableAvailable,
+  NativeInpasBridge,
+  resolveInpasBridgeExecutablePath,
+} from "./providers/inpas-direct-bridge";
 import { createPaymentProvider } from "./providers/payment-provider-factory";
 import { CashierAuthSession } from "./cashier-auth";
 import { AtolCredentialStore, AtolWebManager } from "./atol-web-manager";
@@ -118,16 +122,31 @@ if (!hasLock) {
       inpasSettingsStore,
       inpasResultDirectory
     );
+    const inpasBridgePath = resolveInpasBridgeExecutablePath({
+      isPackaged: app.isPackaged,
+    });
     const sharedInpasBridge = new NativeInpasBridge({
-      executablePath:
-        process.env.RASPECHATKA_INPAS_BRIDGE_PATH ?? "Raspechatka.InpasBridge.exe",
+      executablePath: inpasBridgePath,
     });
     inpasDirectBridge = sharedInpasBridge;
+    if (!trainingMode && !isInpasBridgeExecutableAvailable(inpasBridgePath)) {
+      diagnostics.record({
+        source: "payment",
+        level: "warning",
+        eventType: "inpas.driver.missing",
+        message: "INPAS bridge helper не найден",
+        details: {
+          errorCode: "not_configured",
+          errorDescription: "Прямое подключение INPAS не установлено",
+        },
+      });
+    }
     const paymentProvider = createPaymentProvider({
       trainingMode,
       settingsStore: inpasSettingsStore,
       legacyProvider: inpasProvider,
       directBridge: sharedInpasBridge,
+      diagnostics,
     });
     const atolBridgePath = resolveAtolBridgeExecutablePath({ isPackaged: app.isPackaged });
     atolDriverBridge = trainingMode ? undefined : new NativeAtolDriverBridge({
@@ -240,7 +259,7 @@ if (!hasLock) {
       trainingMode ? undefined : atolManager,
       trainingMode ? undefined : fiscalProvider,
       inpasSettingsStore,
-      trainingMode ? undefined : inpasProvider,
+      trainingMode ? undefined : paymentProvider,
       diagnostics,
       atolDriverBridge,
       () => journal!.hasBlockingFiscalOperation(),
