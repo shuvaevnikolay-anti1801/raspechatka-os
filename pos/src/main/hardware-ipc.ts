@@ -336,6 +336,16 @@ export function registerHardwareSettingsIpc(
       inpasResultDirectory
     );
     if (!candidates.length) {
+      diagnostics.record({
+        source: "payment",
+        level: "warning",
+        eventType: "inpas.device.discovered",
+        message: "Терминал INPAS ещё не инициализирован",
+        details: {
+          driverVersion: driver.version,
+          errorDescription: "Terminal ID отсутствует в разрешённых источниках",
+        },
+      });
       return {
         state: "not_initialized",
         message: "INPAS установлен, терминал ещё не инициализирован. Выполните проверку связи в DC Control, затем нажмите Обновить",
