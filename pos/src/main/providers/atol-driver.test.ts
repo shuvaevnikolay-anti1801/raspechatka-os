@@ -59,6 +59,25 @@ describe("AtolDriverFiscalProvider", () => {
     });
   });
 
+  it("reprints only the last receipt and never starts a new fiscal sale", async () => {
+    const executeJson = vi.fn(async () => ({}));
+    const bridge = {
+      connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
+      getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123" })),
+      executeJson,
+    } as unknown as AtolDriverBridge;
+    const provider = new AtolDriverFiscalProvider(
+      bridge,
+      { load: () => settings } as AtolSettingsStore
+    );
+
+    await provider.reprintReceipt({ saleId: "sale-1", receiptNumber: "777" });
+
+    expect(executeJson).toHaveBeenCalledTimes(1);
+    expect(executeJson).toHaveBeenCalledWith({ type: "printLastReceiptCopy" });
+  });
+
   it("does not accept a non-fiscal receipt counter as proof of fiscalization", async () => {
     const bridge = {
       getDriverInfo: vi.fn(),
