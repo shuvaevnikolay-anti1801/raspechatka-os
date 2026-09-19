@@ -89,9 +89,10 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
 
     const beforeNumber=this.number(before.fiscalDocumentNumber);
     const afterNumber=this.number(after.fiscalDocumentNumber);
-    const sameShift=!before.shiftNumber||!after.shiftNumber||before.shiftNumber===after.shiftNumber;
-    const timeOrdered=!before.kktDateTime||!after.kktDateTime||
-      Date.parse(after.kktDateTime)>=Date.parse(before.kktDateTime);
+    const sameShift=before.shiftNumber!==undefined&&after.shiftNumber===before.shiftNumber;
+    const beforeTime=before.kktDateTime?Date.parse(before.kktDateTime):Number.NaN;
+    const afterTime=after.kktDateTime?Date.parse(after.kktDateTime):Number.NaN;
+    const timeOrdered=Number.isFinite(beforeTime)&&Number.isFinite(afterTime)&&afterTime>=beforeTime;
     const receiptMatches=after.receiptKind===request.kind&&
       after.amountMinor===request.expectedAmountMinor&&sameShift&&timeOrdered;
 
@@ -101,7 +102,7 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
 
     const noProgress=(beforeNumber===undefined&&afterNumber===undefined)||
       (beforeNumber!==undefined&&afterNumber===beforeNumber);
-    if(noProgress&&after.documentClosed===true&&sameShift)
+    if(noProgress&&after.documentClosed===true&&sameShift&&timeOrdered)
       return {status:"not_found",message:"ФН подтверждает отсутствие нового фискального документа",
         raw:{before,after,requestHash:request.recovery.requestHash}};
 
