@@ -20,7 +20,7 @@ import type {
   PaymentResult,
 } from "./contracts";
 import { InpasSettingsStore } from "./inpas-settings";
-export { InpasSettingsStore } from "./inpas-settings";
+export { InpasSettingsStore, type InpasLauncher } from "./inpas-settings";
 
 type CommandResult = {
   code: number | null;
