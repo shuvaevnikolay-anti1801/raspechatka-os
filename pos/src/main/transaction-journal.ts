@@ -250,12 +250,15 @@ export class TransactionJournal {
   finishFiscalAttempt(input: {
     id:string;state:'fiscalized'|'failed'|'unknown';receiptNumber?:string;rawResult?:unknown;error?:string
     snapshotAfter?:FiscalRecoverySnapshot
+    fiscalDocumentNumberAfter?:string;fiscalSign?:string;shiftNumberAfter?:string
   }): void {
     this.db.prepare(`UPDATE fiscal_attempts SET state=?,receipt_number=?,raw_result_json=?,error=?,completed_at=?,
       fiscal_document_number_after=?,fiscal_sign=?,shift_number_after=? WHERE id=?`)
       .run(input.state,input.receiptNumber??null,input.rawResult===undefined?null:JSON.stringify(input.rawResult),
-        input.error??null,new Date().toISOString(),input.snapshotAfter?.fiscalDocumentNumber??null,
-        input.snapshotAfter?.fiscalSign??null,input.snapshotAfter?.shiftNumber??null,input.id)
+        input.error??null,new Date().toISOString(),
+        input.snapshotAfter?.fiscalDocumentNumber??input.fiscalDocumentNumberAfter??null,
+        input.snapshotAfter?.fiscalSign??input.fiscalSign??null,
+        input.snapshotAfter?.shiftNumber??input.shiftNumberAfter??null,input.id)
   }
 
   getLatestPaymentAttempt(operationId: string): null | {
@@ -270,13 +273,13 @@ export class TransactionJournal {
     id:string; action:'sale'|'return'; state:string; receiptNumber?:string
     kktSerialNumber?:string;shiftNumberBefore?:string;fiscalDocumentNumberBefore?:string
     kktDateTimeBefore?:string;requestHash?:string;fiscalDocumentNumberAfter?:string
-    fiscalSign?:string;shiftNumberAfter?:string;snapshotBefore?:FiscalRecoverySnapshot
+    fiscalSign?:string;shiftNumberAfter?:string;snapshotBefore?:FiscalRecoverySnapshot;attemptStartedAt?:string
   } {
     const row = this.db.prepare(`SELECT id,action,state,receipt_number receiptNumber,
       kkt_serial_number kktSerialNumber,shift_number_before shiftNumberBefore,
       fiscal_document_number_before fiscalDocumentNumberBefore,kkt_datetime_before kktDateTimeBefore,
       request_hash requestHash,fiscal_document_number_after fiscalDocumentNumberAfter,
-      fiscal_sign fiscalSign,shift_number_after shiftNumberAfter
+      fiscal_sign fiscalSign,shift_number_after shiftNumberAfter,started_at attemptStartedAt
       FROM fiscal_attempts WHERE operation_id=? ORDER BY started_at DESC LIMIT 1`).get(operationId) as any
     if(!row)return null
     row.snapshotBefore=row.kktSerialNumber?{
