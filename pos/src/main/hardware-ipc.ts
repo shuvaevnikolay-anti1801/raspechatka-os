@@ -2,10 +2,8 @@ import { ipcMain } from "electron";
 import type { InpasSettings } from "../shared/contracts";
 import type { PosDiagnostics } from "./diagnostics";
 import type { AtolSettings, AtolSettingsStore } from "./providers/atol-settings";
-import {
-  NativeAtolDriverBridge,
-  type AtolDriverInfo,
-} from "./providers/atol-driver-bridge";
+import { NativeAtolDriverBridge } from "./providers/atol-driver-bridge";
+import type { AtolDriverInfo } from "./providers/atol-driver";
 import type { AtolWebManager } from "./atol-web-manager";
 import type { FiscalProvider } from "./providers/contracts";
 import type {
@@ -55,7 +53,7 @@ export function registerHardwareSettingsIpc(
   );
 
   ipcMain.handle("pos:get-atol-driver-info", async (): Promise<AtolDriverInfo> =>
-    driverBridge.driverInfo()
+    driverBridge.getDriverInfo()
   );
   ipcMain.handle("pos:discover-atol-devices", async () =>
     (await driverBridge.findDevices()).flatMap((device) =>
@@ -63,7 +61,7 @@ export function registerHardwareSettingsIpc(
         ? [{
             id: device.id,
             serialNumber: device.serialNumber,
-            modelName: device.model,
+            modelName: device.modelName,
             firmwareVersion: device.firmwareVersion,
             connection: device.connection === "usb" || device.connection === "com" || device.connection === "tcp"
               ? device.connection
@@ -103,12 +101,12 @@ export function registerHardwareSettingsIpc(
     try {
       await driverBridge.connect({
         id: `atol:${selectedDevice.serialNumber}`,
-        model: selectedDevice.modelName,
+        modelName: selectedDevice.modelName,
         serialNumber: selectedDevice.serialNumber,
         connection: selectedDevice.connection,
         settingsJson: selectedDevice.settingsJson,
       });
-      const status = await driverBridge.status();
+      const status = await driverBridge.getStatus();
       diagnostics.record({
         source: "fiscal",
         eventType: "atol.driver.connection_checked",
