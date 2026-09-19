@@ -97,4 +97,38 @@ describe('TransactionJournal',()=>{
     })
   })
 
+  it('idempotently upgrades old payment attempts with banking evidence',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-old-payment-'))
+    folders.push(folder)
+    const path=join(folder,'journal.sqlite')
+    const old=new DatabaseSync(path)
+    old.exec(`CREATE TABLE payment_attempts (
+      id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, action TEXT NOT NULL,
+      method TEXT NOT NULL, amount_minor INTEGER NOT NULL, state TEXT NOT NULL,
+      transaction_id TEXT, raw_result_json TEXT, error TEXT,
+      started_at TEXT NOT NULL, completed_at TEXT
+    )`)
+    old.close()
+
+    const journal=new TransactionJournal(path)
+    journals.push(journal)
+    journal.create({id:'op-bank',clientRequestId:'request-bank',kind:'sale',entityId:'sale-bank',
+      shiftId:'shift-1',amountMinor:10000,request:{...saleRequest,clientRequestId:'request-bank'}})
+    journal.startPaymentAttempt({id:'payment-bank',operationId:'op-bank',action:'charge',
+      method:'card',amountMinor:10000,provider:'inpas',adapter:'direct',
+      terminalId:'40000037',requestHash:'request-hash'})
+    journal.finishPaymentAttempt({id:'payment-bank',state:'approved',transactionId:'TRX-1',
+      bankingEvidence:{provider:'inpas',adapter:'direct',terminalId:'40000037',
+        referenceNumber:'RRN-1',terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',
+        responseCode:'00',amountMinor:10000,operationKind:'sale',
+        startedAt:'2026-09-19T10:00:00.000Z',completedAt:'2026-09-19T10:00:10.000Z'}})
+
+    expect(journal.getLatestPaymentAttempt('op-bank')).toMatchObject({
+      provider:'inpas',adapter:'direct',terminalId:'40000037',referenceNumber:'RRN-1',
+      terminalTransactionId:'TRX-1',authorizationCode:'AUTH-1',responseCode:'00',
+      requestHash:'request-hash',bankingEvidence:{operationKind:'sale',amountMinor:10000}
+    })
+  })
+
+
 })
