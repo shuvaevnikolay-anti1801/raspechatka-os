@@ -1,6 +1,7 @@
 import type { AtolWebManager } from "../atol-web-manager";
 import { AtolDriverFiscalProvider, type AtolDriverBridge } from "./atol-driver";
-import { NativeAtolDriverBridge } from "./atol-driver-bridge";
+import { NativeAtolDriverBridge, resolveAtolBridgeExecutablePath } from "./atol-driver-bridge";
+import type { PosDiagnostics } from "../diagnostics";
 import type { FiscalProvider, FiscalRecoverySnapshot } from "./contracts";
 import { MockFiscalProvider } from "./mock";
 import type { AtolSettingsStore } from "./atol-settings";
@@ -12,6 +13,7 @@ export type FiscalProviderFactoryOptions = {
   webManager?: AtolWebManager;
   currentOperator: () => string | undefined;
   driverBridge?: AtolDriverBridge;
+  diagnostics?: PosDiagnostics;
 };
 
 export function createFiscalProvider(
@@ -27,12 +29,11 @@ export function createFiscalProvider(
   const driver = new AtolDriverFiscalProvider(
     options.driverBridge ??
       new NativeAtolDriverBridge({
-        executablePath:
-          process.env.RASPECHATKA_ATOL_BRIDGE_PATH ??
-          "Raspechatka.AtolBridge.exe",
+        executablePath: resolveAtolBridgeExecutablePath(),
       }),
     options.settingsStore,
-    options.currentOperator
+    options.currentOperator,
+    options.diagnostics
   );
   const current = (): FiscalProvider =>
     options.settingsStore.load().adapter === "web" ? web : driver;
