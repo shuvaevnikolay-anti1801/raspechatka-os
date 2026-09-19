@@ -35,6 +35,16 @@ jobs:
           cache: npm
           cache-dependency-path: pos/package-lock.json
 
+      - name: Use .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish ATOL bridge
+        run: |
+          dotnet restore native/atol-bridge/Raspechatka.AtolBridge.csproj
+          dotnet publish native/atol-bridge/Raspechatka.AtolBridge.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output native/atol-bridge/publish
+
       - name: Install dependencies
         run: npm ci
 
