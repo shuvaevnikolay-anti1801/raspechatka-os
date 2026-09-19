@@ -1,9 +1,11 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { join } from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
   NativeInpasBridge,
+  resolveInpasBridgeExecutablePath,
   type InpasOriginalOperationRequest,
 } from "./inpas-direct-bridge";
 
@@ -156,6 +158,41 @@ describe("NativeInpasBridge refund protocol", () => {
     expect(spawnCalls).toBe(2);
     expect(requests.map((request) => request.command)).toEqual(["sale", "status"]);
     expect(requests.filter((request) => request.command === "sale")).toHaveLength(1);
+  });
+
+  it("resolves packaged and development helper paths deterministically", () => {
+    const electronProcess = process as NodeJS.Process & { resourcesPath?: string };
+    const previousResources = Object.getOwnPropertyDescriptor(process, "resourcesPath");
+    const previousEnv = process.env.RASPECHATKA_INPAS_BRIDGE_PATH;
+    try {
+      Object.defineProperty(process, "resourcesPath", {
+        configurable: true,
+        value: "C:\\Program Files\\Raspechatka\\resources",
+      });
+      expect(resolveInpasBridgeExecutablePath({ isPackaged: true })).toBe(join(
+        "C:\\Program Files\\Raspechatka\\resources",
+        "native",
+        "inpas",
+        "Raspechatka.InpasBridge.exe"
+      ));
+      process.env.RASPECHATKA_INPAS_BRIDGE_PATH = "D:\\tools\\InpasBridge.exe";
+      expect(resolveInpasBridgeExecutablePath({ isPackaged: false }))
+        .toBe("D:\\tools\\InpasBridge.exe");
+    } finally {
+      if (previousResources) Object.defineProperty(process, "resourcesPath", previousResources);
+      else delete electronProcess.resourcesPath;
+      if (previousEnv === undefined) delete process.env.RASPECHATKA_INPAS_BRIDGE_PATH;
+      else process.env.RASPECHATKA_INPAS_BRIDGE_PATH = previousEnv;
+    }
+  });
+
+  it("reports a missing helper as not_configured before spawn", async () => {
+    const bridge = new NativeInpasBridge({
+      executablePath: join(process.cwd(), "missing-inpas-bridge", "Raspechatka.InpasBridge.exe"),
+    });
+    await expect(bridge.getDriverInfo()).rejects.toMatchObject({
+      code: "not_configured",
+    });
   });
 
 });
