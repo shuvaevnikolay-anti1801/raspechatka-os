@@ -36,9 +36,10 @@ class TestFiscalProvider implements FiscalProvider {
   returnCalls=0
   statusCalls=0
   snapshotCalls=0
+  throwOnSnapshot=false
   throwOnSale=false
   nextStatus:FiscalOperationStatus={status:'fiscalized',receiptNumber:'FD-recovered'}
-  async captureRecoverySnapshot(){this.snapshotCalls++;return {kktSerialNumber:'KKT-1',shiftNumber:'5',fiscalDocumentNumber:'10',kktDateTime:'2026-09-19T10:00:00.000Z',documentClosed:true}}
+  async captureRecoverySnapshot(){this.snapshotCalls++;if(this.throwOnSnapshot)throw new Error('snapshot unavailable');return {kktSerialNumber:'KKT-1',shiftNumber:'5',fiscalDocumentNumber:'10',kktDateTime:'2026-09-19T10:00:00.000Z',documentClosed:true}}
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
   async getShiftStatus(){return {open:true,state:'opened' as const,message:'open'}}
   async openShift(){return}
@@ -196,6 +197,16 @@ describe('PosTransactionEngine safety',()=>{
     expect(completed.saleId).toBeTruthy()
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('does not start fiscalization when the pre-call snapshot is unavailable',async()=>{
+    fiscal.throwOnSnapshot=true
+    await expect(engine.completeSale(request([{method:'cash',amountMinor:2000}],'snapshot-failed'),shiftId))
+      .rejects.toThrow('snapshot unavailable')
+    expect(fiscal.saleCalls).toBe(0)
+    const unresolved=engine.listUnresolved()[0]
+    expect(unresolved.state).toBe('payment_confirmed')
+    expect(journal.getLatestFiscalAttempt(unresolved.id)).toBeNull()
   })
 
   it('keeps a timed-out fiscal attempt unknown and never fiscalizes it again without proof',async()=>{
