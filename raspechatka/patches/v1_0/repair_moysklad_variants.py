@@ -32,8 +32,7 @@ def execute():
 	# No mutation is allowed until every proven candidate passes validation.
 	if failures:
 		raise frappe.ValidationError(
-			"Не удалось безопасно восстановить модификации МоегоСклада: "
-			+ "; ".join(failures[:20])
+			"Не удалось безопасно восстановить модификации МоегоСклада: " + "; ".join(failures[:20])
 		)
 
 	_touched_parents = set()
@@ -55,10 +54,7 @@ def execute():
 	for plan in plans:
 		_verify_plan(plan)
 
-	print(
-		f"DEV-157: repaired {len(plans)} MoySklad variants "
-		f"across {len(_touched_parents)} parent products"
-	)
+	print(f"DEV-157: repaired {len(plans)} MoySklad variants across {len(_touched_parents)} parent products")
 
 
 def _source_product_items():
@@ -116,9 +112,7 @@ def _preflight_plan(item, proof):
 		limit_page_length=0,
 	)
 	if len(parents) != 1:
-		raise VariantRepairError(
-			f"parent Catalog Item должен быть ровно один, найдено {len(parents)}"
-		)
+		raise VariantRepairError(f"parent Catalog Item должен быть ровно один, найдено {len(parents)}")
 	parent = parents[0]
 	if parent.item_type != "Product" or not parent.active:
 		raise VariantRepairError("parent должен быть активным Catalog Item типа Product")
@@ -212,9 +206,7 @@ def _verify_plan(plan):
 		or stored.stock_uom != parent.stock_uom
 		or stored.default_supplier != expected_supplier
 	):
-		raise frappe.ValidationError(
-			f"DEV-157 postcondition failed for Catalog Item {item.name}"
-		)
+		raise frappe.ValidationError(f"DEV-157 postcondition failed for Catalog Item {item.name}")
 	if _signature(_variant_values(item.name)) != plan["signature"]:
 		raise frappe.ValidationError(
 			f"DEV-157 variant values postcondition failed for Catalog Item {item.name}"
@@ -258,8 +250,12 @@ def _signature(rows):
 	try:
 		pairs = [
 			(
-				_normalize(row.attribute_name if hasattr(row, "attribute_name") else row["attribute_name"]).casefold(),
-				_normalize(row.attribute_value if hasattr(row, "attribute_value") else row["attribute_value"]).casefold(),
+				_normalize(
+					row.attribute_name if hasattr(row, "attribute_name") else row["attribute_name"]
+				).casefold(),
+				_normalize(
+					row.attribute_value if hasattr(row, "attribute_value") else row["attribute_value"]
+				).casefold(),
 			)
 			for row in rows
 		]
@@ -303,8 +299,11 @@ def _parse_payload(value):
 
 def _payload_value(value):
 	if isinstance(value, dict):
-		return value.get("name") or value.get("value") or value.get("id") or json.dumps(
-			value, ensure_ascii=False, separators=(",", ":")
+		return (
+			value.get("name")
+			or value.get("value")
+			or value.get("id")
+			or json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 		)
 	if isinstance(value, list):
 		return ", ".join(str(_payload_value(item)) for item in value)
