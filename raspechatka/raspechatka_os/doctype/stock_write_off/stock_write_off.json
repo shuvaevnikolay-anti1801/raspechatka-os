@@ -8,7 +8,7 @@
   {"fieldname":"warehouse","fieldtype":"Link","label":"Склад","options":"Catalog Warehouse","reqd":1,"in_list_view":1,"in_standard_filter":1},
   {"fieldname":"reason","fieldtype":"Data","label":"Причина списания","reqd":1,"in_list_view":1},
   {"fieldname":"cashier","fieldtype":"Link","label":"Сотрудник POS","options":"Employee","read_only":1,"in_standard_filter":1},
-  {"fieldname":"source","fieldtype":"Select","label":"Источник","options":"Manual\nMoySklad","default":"Manual","read_only":1},
+  {"fieldname":"source","fieldtype":"Select","label":"Источник","options":"Manual\nMoySklad\nPOS","default":"Manual","read_only":1},
   {"fieldname":"external_id","fieldtype":"Data","label":"Внешний ID","unique":1,"read_only":1,"hidden":1},
   {"fieldname":"source_updated_at","fieldtype":"Datetime","label":"Изменено в источнике","read_only":1,"hidden":1},
   {"fieldname":"source_payload_json","fieldtype":"Long Text","label":"Исходные данные","read_only":1,"hidden":1},
