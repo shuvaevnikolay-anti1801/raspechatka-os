@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import calendar
+
 import frappe
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
@@ -613,6 +615,8 @@ def _receipt_comment(payload):
 def _get_workplace_data(employee, point, workplace):
 	return {
 		"schedule": _get_employee_schedule(employee, point.name),
+		"scheduleMonth": _get_schedule_month(point.name),
+		"myUpcomingShifts": _get_upcoming_shifts(employee, point.name),
 		"deliveries": _get_delivery_notices(point.name),
 		"supplyRequests": _get_supply_requests(point.name),
 		"cleaner": _get_cleaner_status(point.name),
@@ -699,28 +703,133 @@ def _doctype_exists(name):
 	return bool(frappe.db.exists("DocType", name))
 
 
-def _get_employee_schedule(employee, point_name):
-	if employee.name == "Administrator" or not _doctype_exists("Work Schedule"):
+def _schedule_rows(point_name, employee_name=None, month=None, upcoming=False, limit=None):
+	if not _doctype_exists("Work Schedule"):
 		return []
-	rows = frappe.db.sql(
-		"""select entry.name, entry.work_date, entry.shift_template, entry.start_time,
-		entry.end_time, entry.planned_hours
+	conditions = [
+		"assignment.business_point=%s",
+		"schedule.business_point=%s",
+		"schedule.status='Published'",
+		"employee.active=1",
+	]
+	values = [point_name, point_name]
+	if employee_name:
+		conditions.append("entry.employee=%s")
+		values.append(employee_name)
+	if month:
+		conditions.append("schedule.month=%s")
+		conditions.append("entry.work_date between %s and %s")
+		values.extend([month, f"{month[:7]}-01", f"{month[:7]}-{calendar.monthrange(int(month[:4]), int(month[5:7]))[1]:02d}"])
+	elif upcoming:
+		conditions.append("entry.work_date>=curdate()")
+	where = " and ".join(conditions)
+	limit_sql = f" limit {int(limit)}" if limit else ""
+	return frappe.db.sql(
+		f"""select entry.name, entry.work_date, entry.employee, employee.employee_name,
+		entry.shift_template, template.shift_code, template.shift_name,
+		entry.start_time entry_start_time, template.start_time template_start_time,
+		entry.end_time entry_end_time, template.end_time template_end_time,
+		entry.planned_hours entry_planned_hours, template.paid_hours template_paid_hours
 		from `tabWork Schedule Entry` entry
 		join `tabWork Schedule` schedule on schedule.name=entry.parent
-		where entry.employee=%s and schedule.business_point=%s and schedule.status='Published'
-		and entry.work_date between curdate() and date_add(curdate(), interval 31 day)
-		order by entry.work_date, entry.start_time""",
-		(employee.name, point_name),
+		join `tabEmployee Point Assignment` assignment
+			on assignment.parent=entry.employee and assignment.parenttype='Employee'
+		join `tabEmployee` employee on employee.name=entry.employee
+		left join `tabShift Template` template on template.name=entry.shift_template
+		where {where}
+		order by entry.work_date, coalesce(entry.start_time, template.start_time), entry.name{limit_sql}""",
+		values,
 		as_dict=True,
 	)
+
+
+def _schedule_entry(row):
+	start = row.entry_start_time or row.template_start_time or ""
+	end = row.entry_end_time or row.template_end_time or ""
+	planned = row.entry_planned_hours
+	if planned is None:
+		planned = row.template_paid_hours or 0
+	return {
+		"id": row.name,
+		"date": str(row.work_date),
+		"employeeId": row.employee,
+		"employeeName": row.employee_name or row.employee,
+		"shiftTemplate": row.shift_template,
+		"shiftCode": row.shift_code or "",
+		"shiftName": row.shift_name or row.shift_template,
+		"startTime": str(start),
+		"endTime": str(end),
+		"plannedHours": flt(planned),
+	}
+
+
+def _schedule_employees(point_name):
+	if not _doctype_exists("Employee"):
+		return []
+	assigned = frappe.get_all(
+		"Employee Point Assignment",
+		filters={"business_point": point_name, "parenttype": "Employee"},
+		pluck="parent",
+		limit_page_length=5000,
+	)
+	if not assigned:
+		return []
+	return [
+		{"id": row.name, "name": row.employee_name or row.name}
+		for row in frappe.get_all(
+			"Employee",
+			filters={"name": ["in", assigned], "active": 1},
+			fields=["name", "employee_name"],
+			order_by="employee_name asc",
+			limit_page_length=5000,
+		)
+	]
+
+
+def _schedule_month_value():
+	today = nowdate()
+	return f"{today[:7]}-01"
+
+
+def _get_schedule_month(point_name):
+	month = _schedule_month_value()
+	year, month_number = int(month[:4]), int(month[5:7])
+	rows = _schedule_rows(point_name, month=month)
+	return {
+		"month": month[:7],
+		"days": calendar.monthrange(year, month_number)[1],
+		"employees": _schedule_employees(point_name),
+		"entries": [_schedule_entry(row) for row in rows],
+	}
+
+
+def _get_upcoming_shifts(employee, point_name):
+	if employee.name == "Administrator":
+		return []
+	rows = _schedule_rows(point_name, employee_name=employee.name, upcoming=True, limit=5)
+	return [
+		{
+			key: value
+			for key, value in _schedule_entry(row).items()
+			if key not in {"employeeId", "employeeName"}
+		}
+		for row in rows
+	]
+
+
+def _get_employee_schedule(employee, point_name):
+	# Legacy personal schedule retained for cached clients; new UI uses explicit fields above.
+	if employee.name == "Administrator" or not _doctype_exists("Work Schedule"):
+		return []
+	rows = _schedule_rows(point_name, employee_name=employee.name, upcoming=True, limit=31)
 	return [
 		{
 			"id": row.name,
 			"date": str(row.work_date),
-			"shiftName": row.shift_template,
-			"startTime": str(row.start_time or ""),
-			"endTime": str(row.end_time or ""),
-			"plannedHours": flt(row.planned_hours),
+			"shiftName": row.shift_name or row.shift_template,
+			"startTime": str(row.entry_start_time or row.template_start_time or ""),
+			"endTime": str(row.entry_end_time or row.template_end_time or ""),
+			"plannedHours": flt(row.entry_planned_hours if row.entry_planned_hours is not None else row.template_paid_hours or 0),
 		}
 		for row in rows
 	]
