@@ -41,6 +41,36 @@ describe('PosDatabase',()=>{
     expect(database.updateOrder({id:order.id,status:'issued'}).issuedAt).toBeTruthy()
   })
 
+  it('never creates a second order for the same paid receipt',()=>{
+    const database=createDatabase()
+    const shift=database.openShift({id:'shift-order-duplicate',openedAt:'2026-09-06T10:00:00.000Z',cashierName:'Тест'})
+    database.saveSale({
+      id:'sale-order-duplicate',clientRequestId:'request-order-duplicate',shiftId:shift.id,totalMinor:2000,
+      paymentMethod:'cash',fiscalNumber:'FD-DUP',createdAt:'2026-09-06T10:01:00.000Z',receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'cash',amountMinor:2000}]
+    })
+    const first=database.createOrderFromSale({
+      saleId:'sale-order-duplicate',phone:'+7 900 123-45-67',comment:'Первый заказ',dueAt:'2026-09-06T12:00:00.000Z'
+    })
+    database.updateOrder({id:first.id,status:'ready'})
+    database.updateOrder({id:first.id,status:'issued'})
+    expect(()=>database.createOrderFromSale({
+      saleId:'sale-order-duplicate',phone:'+7 900 123-45-67',comment:'Повтор',dueAt:'2026-09-06T13:00:00.000Z'
+    })).toThrow(/уже существует заказ/)
+  })
+
+  it('keeps legacy orders without lifecycle timestamps readable',()=>{
+    const database=createDatabase()
+    const legacy=database.createUnpaidOrder({
+      phone:'+7 900 000-00-01',
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}]
+    })
+    expect(database.listOrders().find((order)=>order.id===legacy.id)).toMatchObject({
+      status:'new',readyAt:null,issuedAt:null
+    })
+  })
+
   it('stores split payments, partial returns and cash operations',()=>{
     const database=createDatabase()
     const shift=database.openShift({id:'shift-1',openedAt:'2026-09-06T10:00:00.000Z',cashierName:'Тест'})
