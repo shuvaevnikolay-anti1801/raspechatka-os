@@ -158,6 +158,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
     shiftExternalId:boot.shift?.id,
     receiptType:'Sale',
   })
+  const [appliedQuery,setAppliedQuery]=useState('')
   const [rows,setRows]=useState<DisplayRow[]>([])
   const [source,setSource]=useState<'server'|'cache'>('cache')
   const [searching,setSearching]=useState(false)
@@ -213,6 +214,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
       receiptType:'Sale',
     }
     setApplied(filters)
+    setAppliedQuery('')
     setDraft(emptyDraft())
     void runSearch('',filters)
     // A shift change defines a new default receipt scope.
@@ -220,7 +222,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
   },[boot.shift?.id])
 
   useEffect(()=>{
-    if(source==='cache')setRows(localRows(draft.text,applied))
+    if(source==='cache')setRows(localRows(appliedQuery,applied))
     // Keep offline results fresh after a local sale/return/sync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[sales])
@@ -248,6 +250,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
       return
     }
     setApplied(filters)
+    setAppliedQuery(draft.text)
     void runSearch(draft.text,filters)
   }
 
@@ -260,6 +263,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
     }
     setDraft(next)
     setApplied(filters)
+    setAppliedQuery('')
     void runSearch('',filters)
   }
 
