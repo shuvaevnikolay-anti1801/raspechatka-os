@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveUpsellAfterCart, selectUpsellCandidate } from './upsell'
+import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate } from './upsell'
 import type { CartLine, Product, UpsellRule } from './contracts'
 
 const product=(id:string, extra:Partial<Product>={}):Product=>({
@@ -11,6 +11,14 @@ const rule:UpsellRule={
   enabled:true,
   candidates:[{item:'a',cashierPhrase:'A'},{item:'b',cashierPhrase:'B'},{item:'c',cashierPhrase:'C'}],
 }
+
+describe('findUpsellRuleForProduct',()=>{
+  it('uses the rule for the product just added instead of an older trigger already in cart',()=>{
+    const other={...rule,triggerItem:'older'}
+    expect(findUpsellRuleForProduct([other,rule],'trigger')).toBe(rule)
+    expect(findUpsellRuleForProduct([other,rule],'missing')).toBeUndefined()
+  })
+})
 
 describe('selectUpsellCandidate',()=>{
   it('rotates deterministically and wraps around',()=>{
