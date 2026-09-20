@@ -515,7 +515,7 @@ export class PosDatabase {
       quantity:request.quantity,
       reason:request.reason,
       comment:request.comment,
-    })
+    },undefined,cashierId)
   }
   createSupplyRequest(request:SupplyRequestInput,cashierId:string):void {
     const catalog=this.getWorkplaceData().operationalCatalog
@@ -530,7 +530,7 @@ export class PosDatabase {
       itemName,
       quantity:request.quantity,
       comment:request.comment,
-    })
+    },undefined,cashierId)
   }
   createStockReceipt(request:StockReceiptRequest,cashierId:string):void {
     if(!request.purchaseOrderId.trim())throw new Error('Не указан заказ поставщику')
@@ -549,7 +549,7 @@ export class PosDatabase {
       if(!Number.isFinite(line.quantity)||line.quantity<=0||line.quantity>remaining+0.000001)throw new Error('Некорректное количество приёмки')
       return {purchaseOrderItemId:rowId,quantity:line.quantity}
     })
-    this.queue('stock.receipt.requested',{cashierId,purchaseOrderId:request.purchaseOrderId,lines})
+    this.queue('stock.receipt.requested',{cashierId,purchaseOrderId:request.purchaseOrderId,lines},undefined,cashierId)
 
     const receivedByRow=new Map(lines.map((line)=>[line.purchaseOrderItemId,line.quantity]))
     const nextItems=delivery.items
@@ -703,13 +703,15 @@ export class PosDatabase {
   listHeldReceipts():HeldReceipt[]{return (this.db.prepare('SELECT payload_json payload FROM held_receipts ORDER BY created_at DESC').all() as Array<{payload:string}>).map((x)=>JSON.parse(x.payload) as HeldReceipt)}
   deleteHeldReceipt(id:string):void{this.db.prepare('DELETE FROM held_receipts WHERE id=?').run(id)}
 
-  private queue(eventType:string,payload:unknown,createdAt=new Date().toISOString()):void {
+  private queue(eventType:string,payload:unknown,createdAt=new Date().toISOString(),trustedCashierId?:string):void {
     const value=payload&&typeof payload==='object'?payload as Record<string,unknown>:undefined
     const shiftId=String(value?.shiftId||value?.shift_id||'')
     const shift=(shiftId
       ?this.db.prepare('SELECT cashier_id cashierId FROM shifts WHERE id=?').get(shiftId)
       :this.db.prepare('SELECT cashier_id cashierId FROM shifts WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1').get()) as {cashierId:string}|undefined
-    const securedPayload=value&&shift?.cashierId?{...value,cashierId:shift.cashierId}:payload
+    const securedPayload=value&&trustedCashierId
+      ?{...value,cashierId:trustedCashierId}
+      :value&&shift?.cashierId?{...value,cashierId:shift.cashierId}:payload
     this.db.prepare('INSERT INTO outbox (id,event_type,payload_json,created_at) VALUES (?,?,?,?)').run(randomUUID(),eventType,JSON.stringify(securedPayload),createdAt)
   }
   pendingEvents(limit=100):OutboxEvent[]{return (this.db.prepare(`SELECT id,event_type eventType,payload_json payload,created_at createdAt
