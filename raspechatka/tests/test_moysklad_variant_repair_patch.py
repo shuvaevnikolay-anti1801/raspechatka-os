@@ -43,6 +43,12 @@ class TestMoySkladVariantRepairPatchContract(TestCase):
             self.patch.index("for plan in plans:"),
         )
 
+    def test_repair_verifies_postconditions_before_success(self):
+        self.assertIn("def _verify_plan", self.patch)
+        self.assertIn("_verify_plan(plan)", self.patch)
+        self.assertIn("DEV-157 postcondition failed", self.patch)
+        self.assertIn("DEV-157: repaired", self.patch)
+
     def test_identity_and_external_links_are_preserved(self):
         apply_source = self.patch.split("def _apply_plan", 1)[1].split(
             "def _variant_values", 1
