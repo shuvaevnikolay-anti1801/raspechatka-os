@@ -12,6 +12,8 @@ from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.pos_upsell import (
 	get_pos_upsell_config as read_pos_upsell_config,
+)
+from raspechatka.pos_upsell import (
 	save_pos_upsell_rules as reconcile_pos_upsell_rules,
 )
 from raspechatka.sales import log_cashier_action, update_shift_totals
