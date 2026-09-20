@@ -7,7 +7,7 @@ import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
-  Customer, HeldReceipt, ManualDiscount, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
+  Customer, HeldReceipt, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, WorkplaceData
 } from '../../shared/contracts'
@@ -216,7 +216,7 @@ export default function AppV2(){
           {breakdown.totalDiscountMinor>0&&<div className="subtotal"><span>Без скидок</span><s>{formatMoney(subtotal)}</s></div>}
           <div className="total"><span>Итого</span><strong>{formatMoney(total)}</strong></div>
           {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
-            <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
+            <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
             <small className="training">ККТ и оборудование проверяются перед каждой оплатой</small>
           </>}
         </footer>
@@ -234,7 +234,7 @@ export default function AppV2(){
     {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer));setMessage('Каталог, клиенты, настройки и очередь операций синхронизированы')}}/>}
 
     {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
-    {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
+    {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
@@ -282,24 +282,16 @@ function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAu
   </section></main>
 }
 
-function OrderModal({draft,total,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onClose:()=>void;onPay:()=>void}){
-  const [phone,setPhone]=useState(draft.phone);const [comment,setComment]=useState(draft.comment||'');const [dueAt,setDueAt]=useState(draft.dueAt||'')
-  useEffect(()=>{draft.phone=phone;draft.comment=comment;draft.dueAt=dueAt},[phone,comment,dueAt,draft])
-  const valid=phone.replace(/\D/g,'').length>=5&&Boolean(comment.trim())&&Boolean(dueAt)
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ОБЯЗАТЕЛЬСТВО КЛИЕНТУ</small><h2>Оформить заказ</h2></div><button onClick={onClose}>×</button></header><p>Сумма: <b>{formatMoney(total)}</b>. Заказ создастся после успешной оплаты.</p><label className="cash-input"><span>Телефон *</span><input autoFocus value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+7 900 000-00-00"/></label><label className="cash-input"><span>Описание заказа *</span><textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="Что изготовить или выдать"/></label><label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={dueAt} onChange={e=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</button></div></div>
+function OrderModal({draft,total,onChange,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onChange:(draft:{phone:string;comment?:string;dueAt?:string})=>void;onClose:()=>void;onPay:()=>void}){
+  const valid=draft.phone.replace(/\D/g,'').length>=5&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ОБЯЗАТЕЛЬСТВО КЛИЕНТУ</small><h2>Оформить заказ</h2></div><button onClick={onClose}>×</button></header>
+    <p>Сумма: <b>{formatMoney(total)}</b>. Заказ появится в работе только после успешной оплаты и фискализации.</p>
+    <label className="cash-input"><span>Телефон *</span><input autoFocus value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></label>
+    <label className="cash-input"><span>Описание заказа *</span><textarea value={draft.comment||''} onChange={(e)=>onChange({...draft,comment:e.target.value})} placeholder="Что нужно изготовить"/></label>
+    <label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></label>
+    <button className="primary confirm" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</button>
+  </div></div>
 }
-
-function OrdersPage({orders,onChanged,notify}:{orders:Order[];onChanged:()=>Promise<void>;notify:(text:string)=>void}){
-  const [editing,setEditing]=useState<Order|null>(null)
-  const update=async(id:string,status:OrderStatus)=>{try{await window.raspechatkaPos.updateOrder({id,status});await onChanged();notify('Статус заказа обновлён')}catch(e){notify(e instanceof Error?e.message:String(e))}}
-  return <Page title="Заказы" kicker=""><p className="orders-note">Заказ оформляется на кассе и отображается здесь как журнал выполнения. Остатки и складские движения меняются только при фактической продаже.</p><div className="orders-list">{orders.length?orders.map((o)=><article className="order-card" key={o.id}><header><div><small>{o.orderNumber}</small><h2>{o.phone}</h2><span>{o.customerName||'Покупатель не выбран'} · {new Date(o.createdAt).toLocaleString('ru-RU')}</span></div><b className={'order-status '+o.status}>{({new:'Новый',in_progress:'В работе',ready:'Готов',issued:'Выдан',cancelled:'Отменён'} as Record<string,string>)[o.status]}</b></header><div className="order-meta"><strong>{formatMoney(o.totalMinor)}</strong><span>{o.paymentStatus==='paid'?'Оплачено':o.paymentStatus==='partial'?'Частично оплачено':'Не оплачено'}</span>{o.dueAt&&<span>до {new Date(o.dueAt).toLocaleString('ru-RU')}</span>}</div>{o.comment&&<p>{o.comment}</p>}<footer><button onClick={()=>setEditing(o)}>Изменить</button><button onClick={()=>update(o.id,'in_progress')}>В работу</button><button onClick={()=>update(o.id,'ready')}>Готов</button><button onClick={()=>update(o.id,'issued')}>Выдан</button></footer></article>):<Empty title="Заказов пока нет" text="Оформите заказ из текущего чека — он появится здесь."/>}</div>{editing&&<EditOrderModal order={editing} onClose={()=>setEditing(null)} onSaved={async()=>{setEditing(null);await onChanged();notify('Заказ сохранён')}}/>}</Page>
-}
-
-function EditOrderModal({order,onClose,onSaved}:{order:Order;onClose:()=>void;onSaved:()=>Promise<void>}){
-  const [phone,setPhone]=useState(order.phone);const [comment,setComment]=useState(order.comment||'');const [status,setStatus]=useState<OrderStatus>(order.status);const [dueAt,setDueAt]=useState(order.dueAt||'')
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>{order.orderNumber}</small><h2>Изменить заказ</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Телефон</span><input value={phone} onChange={(e)=>setPhone(e.target.value)}/></label><label className="cash-input"><span>Комментарий</span><textarea value={comment} onChange={(e)=>setComment(e.target.value)}/></label><label className="cash-input"><span>Статус</span><select value={status} onChange={(e)=>setStatus(e.target.value as OrderStatus)}><option value="new">Новый</option><option value="in_progress">В работе</option><option value="ready">Готов</option><option value="issued">Выдан</option><option value="cancelled">Отменён</option></select></label><label className="cash-input"><span>Срок готовности</span><input type="datetime-local" value={dueAt} onChange={(e)=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={async()=>{await window.raspechatkaPos.updateOrder({id:order.id,phone,comment,status,dueAt:dueAt||undefined});await onSaved()}}>Сохранить</button></div></div>
-}
-
 function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boolean;onClose:()=>void;onComplete:(lines:Array<{saleItemId:number;quantity:number}>,payments:PaymentPart[])=>Promise<void>}){
   const [quantities,setQuantities]=useState<Record<number,number>>({})
   const [method,setMethod]=useState<PaymentMethod>(sale.payments[0]?.method??'cash')
