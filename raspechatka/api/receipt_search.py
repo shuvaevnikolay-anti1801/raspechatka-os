@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 
 import frappe
+from raspechatka.access_contract import access_contract
+
 from frappe.utils import add_days, cint, flt, getdate, today
 
 from raspechatka.api import pos_device as base_pos
@@ -177,6 +179,7 @@ def _summary(row, payments):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def search_receipts(
 	device_id,
 	token,
@@ -295,6 +298,7 @@ def search_receipts(
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def get_receipt(device_id, token, receipt_id):
 	"""Return one full receipt, point-scoped to the authenticated POS connection."""
 	connection = base_pos._authenticate(device_id, token)
