@@ -11,6 +11,7 @@ from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
 from raspechatka.pos_settings import get_pos_sales_rules
+from raspechatka.pos_upsell import get_pos_upsell_config
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
 POS_MIRROR_RETENTION_DAYS = 60
@@ -242,6 +243,33 @@ def _rules(_point):
 	return get_pos_sales_rules()
 
 
+def _upsell_rules(products):
+	"""Return only rules whose items are present in this point's POS catalog."""
+	available = {str(row.get("id")) for row in products if row.get("id")}
+	result = []
+	for rule in get_pos_upsell_config().get("rules", []):
+		trigger = str(rule.get("trigger_item") or "")
+		if trigger not in available:
+			continue
+		candidates = [
+			{
+				"item": str(candidate.get("item")),
+				"cashierPhrase": candidate.get("cashier_phrase") or "",
+			}
+			for candidate in rule.get("candidates", [])
+			if str(candidate.get("item") or "") in available
+		]
+		if candidates:
+			result.append(
+				{
+					"triggerItem": trigger,
+					"enabled": bool(rule.get("enabled")),
+					"candidates": candidates,
+				}
+			)
+	return result
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @access_contract(auth="pos_token", action="read", scope="pos_point")
 def get_bootstrap(device_id, token, cashier_id=None):
@@ -258,13 +286,15 @@ def get_bootstrap(device_id, token, cashier_id=None):
 			name=selected["id"] if selected else "__none__",
 			employee_name=selected["name"] if selected else "",
 		)
+		products = _products(point.name)
 		result = {
 			"point": {"id": point.name, "name": point.point_name},
 			"workplace": {"id": workplace.name, "name": workplace.workplace_name},
 			"employee": selected,
 			"employees": employees,
 			"rules": _rules(point),
-			"products": _products(point.name),
+			"upsellRules": _upsell_rules(products),
+			"products": products,
 			"customers": _customers(),
 			"workplaceData": legacy_pos._get_workplace_data(workplace_data_employee, point, workplace),
 			"receiptMirror": _receipt_mirror(point.name),
