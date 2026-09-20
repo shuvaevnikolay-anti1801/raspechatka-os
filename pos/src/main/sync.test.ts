@@ -17,6 +17,7 @@ describe('performSync single flight',()=>{
       replaceProducts:vi.fn(),replaceCustomers:vi.fn(),replacePointEmployees:vi.fn(),
       replaceReceiptMirror:vi.fn(),replaceServerOrders:vi.fn(),setWorkplaceData:vi.fn(),
       listPointEmployees:()=>[],pendingSyncCount:()=>0,currentShift:()=>null,pendingEvents:()=>[],markEventsSent:vi.fn(),
+      getUpsellCursor:(triggerItem:string)=>triggerItem==='trigger'?2:0,
     }
     const connectionStore:any={load:()=>({serverUrl:'https://example.test',deviceId:'dev',token:'token'})}
     const first=performSync(database,connectionStore,'cashier')
@@ -43,6 +44,7 @@ describe('performSync single flight',()=>{
     expect((await first).upsellRules).toEqual([
       {triggerItem:'trigger',enabled:true,candidates:[{item:'candidate',cashierPhrase:'Попробуйте'}]},
     ])
+    expect((await first).upsellCursors).toEqual({trigger:2})
     expect(mocks.pushEvents).not.toHaveBeenCalled()
   })
 })
