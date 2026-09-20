@@ -11,16 +11,19 @@ const boot:BootState={
   upsellRules:[],upsellCursors:{},
 }
 const auth:CashierAuthState={status:'signed_out'}
+const selectedAuth:CashierAuthState={status:'signed_out',openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
 
 describe('cashier workplace micro-contract',()=>{
   it('keeps normal selection calm and PIN as one four-digit form field',()=>{
-    const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
-    expect(markup).toContain('Выберите себя')
-    expect(markup).not.toContain('КТО РАБОТАЕТ?')
-    expect(markup).not.toMatch(/>Войти</)
-    expect(markup).toContain('maxLength="4"')
-    expect(markup).toContain('cashier-pin-input')
-    expect(markup).toContain('settings-open-trigger')
+    const selector=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    const login=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
+    expect(selector).toContain('Выберите себя')
+    expect(selector).not.toContain('КТО РАБОТАЕТ?')
+    expect(login).not.toMatch(/>Войти</)
+    expect(login).toContain('maxLength="4"')
+    expect(login).toContain('pattern="[0-9]{4}"')
+    expect(login).toContain('cashier-pin-input')
+    expect(login).toContain('settings-open-trigger')
   })
   it('keeps the toast timeout and shift metric label contract',()=>{
     expect(TOAST_DISMISS_MS).toBe(3000)
