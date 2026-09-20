@@ -15,7 +15,8 @@ export interface AtolDriverBridge {
   disconnect():Promise<void>;
   getStatus():Promise<AtolDriverStatus>;
   recoveryProbe():Promise<AtolRecoveryProbe>;
-  executeJson(request:Record<string,unknown>):Promise<Record<string,unknown>>;\n  reprintDocument(documentNumber:string):Promise<Record<string,unknown>>;
+  executeJson(request:Record<string,unknown>):Promise<Record<string,unknown>>;
+  reprintDocument(documentNumber:string):Promise<Record<string,unknown>>;
   health():Promise<DeviceHealth>;
 }
 
