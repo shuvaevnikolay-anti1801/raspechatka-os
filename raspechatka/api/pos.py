@@ -464,6 +464,7 @@ def _apply_order_updated(event_id, workplace, payload):
 		}.get(payload["status"], doc.status)
 	doc.save(ignore_permissions=True)
 
+
 def _apply_sale(event_id, workplace, payload):
 	sale_id = str(payload.get("id") or event_id)
 	if frappe.db.exists("Sales Receipt", {"external_id": sale_id}):
