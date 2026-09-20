@@ -789,7 +789,13 @@ def _schedule_rows(point_name, employee_name=None, month=None, upcoming=False, l
 	if month:
 		conditions.append("schedule.month=%s")
 		conditions.append("entry.work_date between %s and %s")
-		values.extend([month, f"{month[:7]}-01", f"{month[:7]}-{calendar.monthrange(int(month[:4]), int(month[5:7]))[1]:02d}"])
+		values.extend(
+			[
+				month,
+				f"{month[:7]}-01",
+				f"{month[:7]}-{calendar.monthrange(int(month[:4]), int(month[5:7]))[1]:02d}",
+			]
+		)
 	elif upcoming:
 		conditions.append("entry.work_date>=curdate()")
 	where = " and ".join(conditions)
@@ -899,7 +905,11 @@ def _get_employee_schedule(employee, point_name):
 			"shiftName": row.shift_name or row.shift_template,
 			"startTime": str(row.entry_start_time or row.template_start_time or ""),
 			"endTime": str(row.entry_end_time or row.template_end_time or ""),
-			"plannedHours": flt(row.entry_planned_hours if row.entry_planned_hours is not None else row.template_paid_hours or 0),
+			"plannedHours": flt(
+				row.entry_planned_hours
+				if row.entry_planned_hours is not None
+				else row.template_paid_hours or 0
+			),
 		}
 		for row in rows
 	]
