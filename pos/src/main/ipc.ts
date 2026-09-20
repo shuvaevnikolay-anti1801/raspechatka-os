@@ -305,6 +305,11 @@ export function registerIpcHandlers(dependencies:{
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
     const cashAmount=request.payments.find((x)=>x.method==='cash')?.amountMinor??0
     if(cashAmount&&(request.cashReceivedMinor??cashAmount)<cashAmount)throw new Error('Получено наличными меньше суммы наличной оплаты')
+    if(request.order){
+      if(request.order.phone.trim().replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон заказа')
+      if(!request.order.comment?.trim())throw new Error('Укажите описание заказа')
+      if(!request.order.dueAt?.trim()||Number.isNaN(Date.parse(request.order.dueAt)))throw new Error('Укажите корректный срок готовности')
+    }
 
     const hasRemote=request.payments.some((x)=>x.method==='remote_payment')
     if(hasRemote&&!request.remotePaymentConfirmation?.confirmed){
