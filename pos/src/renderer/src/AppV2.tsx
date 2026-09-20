@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
-import { formatPersonShortName } from './person-name'\nimport OrdersPage from './OrdersPage'
+import { formatPersonShortName } from './person-name'
+import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
