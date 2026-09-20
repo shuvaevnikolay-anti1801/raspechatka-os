@@ -60,6 +60,7 @@ type BridgeCommand =
   | 'status'
   | 'recoveryProbe'
   | 'executeJson'
+  | 'reprintDocument'
   | 'shutdown';
 
 type BridgeRequest = {
@@ -231,7 +232,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       } = { resolve: (value) => resolve(value as T), reject };
 
       const timeoutMs =
-        command === 'executeJson'
+        command === 'executeJson' || command === 'reprintDocument'
           ? this.options.fiscalOperationTimeoutMs ?? FISCAL_OPERATION_TIMEOUT_MS
           : command === 'driverInfo' || command === 'discover' || command === 'status' || command === 'recoveryProbe'
             ? this.options.readOnlyTimeoutMs ?? READ_ONLY_TIMEOUT_MS
