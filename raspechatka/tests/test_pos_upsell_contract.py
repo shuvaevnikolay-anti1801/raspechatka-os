@@ -34,7 +34,8 @@ class TestPosUpsellContract(TestCase):
 
     def test_sellable_guard_rejects_parent_products_with_active_variants(self):
         self.assertIn('SELLABLE_ITEM_TYPES = {"Product", "Service", "Variant", "Bundle"}', self.helper)
-        self.assertIn('row.item_type == "Product" and row.has_variants', self.helper)
+        self.assertIn('def _has_active_variants(row):', self.helper)
+        self.assertIn('{"variant_of": row.name, "active": 1}', self.helper)
         self.assertIn("if not row or not row.active", self.helper)
         self.assertIn("if row.item_type not in SELLABLE_ITEM_TYPES", self.helper)
 
