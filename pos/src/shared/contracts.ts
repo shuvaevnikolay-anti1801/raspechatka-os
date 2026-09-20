@@ -266,7 +266,18 @@ export type WorkScheduleMonth = {
   month:string; days:number; employees:Array<{id:string;name:string}>; entries:WorkScheduleEntry[]
 }
 export type UpcomingShift = Omit<WorkScheduleEntry,'employeeId'|'employeeName'>
-export type DeliveryNotice = { id:string; supplier:string; expectedDate?:string;deliveryCompany?:string; deliveryCode?:string; details?:string; status:string }
+export type OperationalCatalogItem = {
+  id:string; name:string; itemCode:string; itemType:string; uom:string;
+  trackInventory:boolean; stock:number|null; storageAddress:string
+}
+export type DeliveryNoticeItem = {
+  purchaseOrderItemId:string; itemId:string; itemName:string; itemCode:string; uom:string;
+  orderedQuantity:number; receivedQuantity:number; remainingQuantity:number
+}
+export type DeliveryNotice = {
+  id:string; supplier:string; expectedDate?:string; deliveryCompany?:string; deliveryCode?:string;
+  receivingNote?:string; comment?:string; details?:string; status:string; items:DeliveryNoticeItem[]
+}
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
 export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
@@ -274,6 +285,7 @@ export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth
   myUpcomingShifts:UpcomingShift[]
+  operationalCatalog:OperationalCatalogItem[]
   deliveries:DeliveryNotice[]
   supplyRequests:PointSupplyRequest[]
   cleaner:CleanerStatus
@@ -281,6 +293,10 @@ export type WorkplaceData = {
 }
 export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'|'Другое'; comment?:string }
 export type SupplyRequestInput = { productId?:string; itemName:string; quantity:number; comment?:string }
+export type StockReceiptRequest = {
+  purchaseOrderId:string
+  lines:Array<{purchaseOrderItemId:string;quantity:number}>
+}
 export type CashCountLine = { denominationMinor:number; quantity:number }
 export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
@@ -377,6 +393,7 @@ export type PosApi = {
   getWorkplaceData: () => Promise<WorkplaceData>
   reportStockWriteOff: (request:StockWriteOffRequest) => Promise<void>
   createSupplyRequest: (request:SupplyRequestInput) => Promise<void>
+  createStockReceipt: (request:StockReceiptRequest) => Promise<void>
   recordCleanerVisit: () => Promise<CleanerVisitResult>
   payCleaner: (amountMinor:number) => Promise<CashOperation>
   saveCashCount: (countType:CashCount['countType'], lines:CashCountLine[]) => Promise<CashCount>
