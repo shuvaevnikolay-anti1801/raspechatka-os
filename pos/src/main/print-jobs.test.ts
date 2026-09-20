@@ -23,7 +23,8 @@ const sale:SaleDetails={
 const boot:BootState={
   pointId:'point',pointName:'Распечатка',workplaceId:'workplace',workstationName:'Касса 1',cashierName:'Кассир',employees:[{id:'employee-1',name:'Кассир'}],
   accessRevoked:false,online:false,pendingSync:1,source:'demo',shift:null,
-  rules:{allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:50,acceptsCash:true,acceptsCard:false,acceptsQr:false,acceptsRemotePayment:true}
+  rules:{allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:50,acceptsCash:true,acceptsCard:false,acceptsQr:false,acceptsRemotePayment:true},
+  upsellRules:[],upsellCursors:{}
 }
 
 const makeQueue=(printer:PrintProvider)=>{
