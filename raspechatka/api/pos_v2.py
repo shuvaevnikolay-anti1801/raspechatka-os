@@ -4,7 +4,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, flt, now_datetime
+from frappe.utils import add_days, cint, flt, now_datetime, nowdate
 
 from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
@@ -13,6 +13,7 @@ from raspechatka.api import sales as sales_api
 from raspechatka.pos_settings import get_pos_sales_rules
 from raspechatka.pos_upsell import get_pos_upsell_rules
 from raspechatka.sales import log_cashier_action, update_shift_totals
+from raspechatka.stock import get_item
 
 POS_MIRROR_RETENTION_DAYS = 60
 
@@ -522,6 +523,220 @@ def _ingest_cash_count(event_id, payload, connection, cashier_id):
 	update_shift_totals(shift)
 
 
+def _point_stock_context(connection):
+	point = frappe.get_doc("Business Point", connection.business_point)
+	warehouse = frappe.db.get_value(
+		"Catalog Warehouse",
+		{"business_point": point.name, "active": 1},
+		"name",
+	)
+	if not warehouse:
+		frappe.throw(_("Для точки не настроен активный склад"))
+	return point, warehouse
+
+
+def _employee_user(employee_id):
+	return frappe.db.get_value("Employee", employee_id, "user") or None
+
+
+def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
+	if frappe.db.exists("Stock Write Off", {"external_id": event_id}):
+		return
+	point, warehouse = _point_stock_context(connection)
+	item_id = str(payload.get("productId") or "").strip()
+	if not item_id:
+		frappe.throw(_("Для списания не указан товар"))
+	get_item(item_id)
+	quantity = flt(payload.get("quantity"))
+	if quantity <= 0:
+		frappe.throw(_("Количество списания должно быть больше нуля"))
+	doc = frappe.get_doc(
+		{
+			"doctype": "Stock Write Off",
+			"posting_datetime": now_datetime(),
+			"business_entity": point.business_entity,
+			"business_point": point.name,
+			"warehouse": warehouse,
+			"reason": str(payload.get("reason") or "Другое").strip() or "Другое",
+			"cashier": cashier_id,
+			"source": "POS",
+			"external_id": event_id,
+			"source_payload_json": frappe.as_json(
+				{
+					"productId": item_id,
+					"quantity": quantity,
+					"reason": payload.get("reason"),
+					"comment": payload.get("comment"),
+				}
+			),
+			"remarks": str(payload.get("comment") or "").strip(),
+			"items": [
+				{
+					"item": item_id,
+					"quantity": quantity,
+					"storage_location": frappe.db.get_value(
+						"Catalog Item Storage",
+						{"item": item_id, "warehouse": warehouse, "active": 1},
+						"storage_location",
+					),
+				}
+			],
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	doc.submit()
+
+
+def _ingest_supply_request(event_id, payload, connection, cashier_id):
+	if frappe.db.exists("Point Supply Request", {"source_pos_event": event_id}):
+		return
+	point, warehouse = _point_stock_context(connection)
+	quantity = flt(payload.get("quantity"))
+	if quantity <= 0:
+		frappe.throw(_("Количество потребности должно быть больше нуля"))
+	item_id = str(payload.get("productId") or "").strip() or None
+	item_name = str(payload.get("itemName") or "").strip()
+	if item_id:
+		item = frappe.db.get_value(
+			"Catalog Item",
+			item_id,
+			["item_name", "item_type", "active", "has_variants"],
+			as_dict=True,
+		)
+		if not item or not cint(item.active) or (item.item_type == "Product" and cint(item.has_variants)):
+			frappe.throw(_("Выбранный товар недоступен для потребности точки"))
+		item_name = item.item_name or item_name
+	if not item_name:
+		frappe.throw(_("Укажите, что требуется точке"))
+	frappe.get_doc(
+		{
+			"doctype": "Point Supply Request",
+			"request_date": nowdate(),
+			"business_entity": point.business_entity,
+			"business_point": point.name,
+			"warehouse": warehouse,
+			"item": item_id,
+			"item_name": item_name,
+			"quantity": quantity,
+			"comment": str(payload.get("comment") or "").strip(),
+			"requested_by_employee": cashier_id,
+			"requested_by": _employee_user(cashier_id),
+			"source_pos_event": event_id,
+		}
+	).insert(ignore_permissions=True)
+
+
+def _ingest_stock_receipt(event_id, payload, connection, cashier_id):
+	if frappe.db.exists("Stock Receipt", {"external_id": event_id}):
+		return
+	purchase_order_id = str(payload.get("purchaseOrderId") or "").strip()
+	if not purchase_order_id:
+		frappe.throw(_("Не указан заказ поставщику"))
+	lines = payload.get("lines") or []
+	if not isinstance(lines, list) or not lines:
+		frappe.throw(_("В приёмке нет товаров"))
+	if len(lines) > 500:
+		frappe.throw(_("В одной приёмке слишком много строк"))
+
+	# Serialize POS receipts for the same order before reading remaining quantities.
+	locked = frappe.db.sql(
+		"""select name from `tabPurchase Order`
+		where name=%s and business_point=%s for update""",
+		(purchase_order_id, connection.business_point),
+	)
+	if not locked:
+		frappe.throw(_("Заказ поставщику недоступен для этой точки"), frappe.PermissionError)
+
+	order = frappe.db.get_value(
+		"Purchase Order",
+		purchase_order_id,
+		["name", "docstatus", "business_entity", "business_point", "warehouse", "supplier", "order_status"],
+		as_dict=True,
+	)
+	if (
+		not order
+		or order.business_point != connection.business_point
+		or cint(order.docstatus) != 1
+		or order.order_status == "Принято"
+	):
+		frappe.throw(_("Заказ поставщику уже закрыт или недоступен"))
+
+	requested = {}
+	for line in lines:
+		row_id = str((line or {}).get("purchaseOrderItemId") or "").strip()
+		quantity = flt((line or {}).get("quantity"))
+		if not row_id or quantity <= 0:
+			frappe.throw(_("У каждой строки приёмки должны быть строка заказа и количество больше нуля"))
+		if row_id in requested:
+			frappe.throw(_("Одна строка заказа указана в приёмке дважды"))
+		requested[row_id] = quantity
+
+	order_rows = frappe.get_all(
+		"Purchase Order Item",
+		filters={"parent": order.name, "parenttype": "Purchase Order", "name": ["in", list(requested)]},
+		fields=["name", "item", "item_code", "uom", "quantity", "received_quantity", "rate"],
+		limit_page_length=500,
+	)
+	if len(order_rows) != len(requested):
+		frappe.throw(_("В приёмке есть строка, которая не относится к выбранному заказу"))
+
+	receipt_items = []
+	for row in order_rows:
+		quantity = requested[row.name]
+		remaining = max(0, flt(row.quantity) - flt(row.received_quantity))
+		if quantity - remaining > 0.000001:
+			frappe.throw(
+				_("Количество приёмки превышает остаток по заказу для товара {0}.").format(
+					row.item_code or row.item
+				)
+			)
+		# The canonical Stock Receipt validates active stock items again on insert.
+		get_item(row.item)
+		receipt_items.append(
+			{
+				"item": row.item,
+				"uom": row.uom,
+				"quantity": quantity,
+				"rate": flt(row.rate),
+				"purchase_order_item": row.name,
+				"storage_location": frappe.db.get_value(
+					"Catalog Item Storage",
+					{"item": row.item, "warehouse": order.warehouse, "active": 1},
+					"storage_location",
+				),
+			}
+		)
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "Stock Receipt",
+			"receipt_type": "Приёмка",
+			"posting_datetime": now_datetime(),
+			"business_entity": order.business_entity,
+			"business_point": order.business_point,
+			"warehouse": order.warehouse,
+			"purchase_order": order.name,
+			"supplier": order.supplier,
+			"cashier": cashier_id,
+			"source": "POS",
+			"external_id": event_id,
+			"source_payload_json": frappe.as_json(
+				{
+					"purchaseOrderId": order.name,
+					"lines": [
+						{"purchaseOrderItemId": row_id, "quantity": quantity}
+						for row_id, quantity in requested.items()
+					],
+				}
+			),
+			"remarks": f"POS event: {event_id}",
+			"items": receipt_items,
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	doc.submit()
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
@@ -577,6 +792,12 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 				)
 			elif event_type == "cash.counted":
 				_ingest_cash_count(event_id, payload, connection, selected["id"])
+			elif event_type == "stock.write_off.requested":
+				_ingest_stock_write_off(event_id, payload, connection, selected["id"])
+			elif event_type == "point.supply.requested":
+				_ingest_supply_request(event_id, payload, connection, selected["id"])
+			elif event_type == "stock.receipt.requested":
+				_ingest_stock_receipt(event_id, payload, connection, selected["id"])
 			elif event_type in ("order.created", "order.updated"):
 				base_pos._ingest_order(event_type, event_id, connection, payload)
 			else:
