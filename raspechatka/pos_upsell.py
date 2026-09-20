@@ -157,7 +157,7 @@ def _catalog_items():
 	return [
 		{"name": row.name, "item_name": row.item_name, "item_type": row.item_type}
 		for row in rows
-		if not (row.item_type == "Product" and row.has_variants)
+		if not _has_active_variants(row)
 	]
 
 
@@ -172,12 +172,22 @@ def _require_sellable(name, label):
 		frappe.throw(_("{0} должна быть активной позицией каталога").format(label), frappe.ValidationError)
 	if row.item_type not in SELLABLE_ITEM_TYPES:
 		frappe.throw(_("{0} должна быть продаваемой позицией каталога").format(label), frappe.ValidationError)
-	if row.item_type == "Product" and row.has_variants:
+	if row.item_type == "Product" and _has_active_variants(row):
 		frappe.throw(
 			_("{0}: основной товар с активными модификациями нельзя использовать как отдельный SKU").format(label),
 			frappe.ValidationError,
 		)
 	return row
+
+
+def _has_active_variants(row):
+	return bool(
+		row.item_type == "Product"
+		and (
+			row.has_variants
+			or frappe.db.exists("Catalog Item", {"variant_of": row.name, "active": 1})
+		)
+	)
 
 
 def _as_bool(value):
