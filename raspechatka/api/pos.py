@@ -291,6 +291,24 @@ def _apply_pos_event(event_type, event_id, workplace, payload):
 		_apply_order_updated(event_id, workplace, payload)
 
 
+def _order_source_receipt(point_name, source_sale_id):
+	source_sale_id = str(source_sale_id or "").strip()
+	if not source_sale_id:
+		return None
+	if source_sale_id.startswith("server:"):
+		name = source_sale_id.removeprefix("server:")
+		return frappe.db.get_value(
+			"Sales Receipt",
+			{"name": name, "business_point": point_name, "receipt_type": "Sale"},
+			"name",
+		)
+	return frappe.db.get_value(
+		"Sales Receipt",
+		{"business_point": point_name, "external_id": source_sale_id, "receipt_type": "Sale"},
+		"name",
+	)
+
+
 def _apply_order_created(event_id, workplace, payload):
 	if not _doctype_exists("POS Order") or frappe.db.exists("POS Order", {"source_pos_event": event_id}):
 		return
@@ -302,15 +320,7 @@ def _apply_order_created(event_id, workplace, payload):
 		"cancelled": "Cancelled",
 	}.get(payload.get("status"), "New")
 	source_sale_id = str(payload.get("sourceSaleId") or "").strip() or None
-	source_receipt = (
-		frappe.db.get_value(
-			"Sales Receipt",
-			{"business_point": workplace.business_point, "external_id": source_sale_id},
-			"name",
-		)
-		if source_sale_id
-		else None
-	)
+	source_receipt = _order_source_receipt(workplace.business_point, source_sale_id)
 	doc = frappe.get_doc(
 		{
 			"doctype": "POS Order",
@@ -372,14 +382,7 @@ def _apply_order_updated(event_id, workplace, payload):
 	if payload.get("issuedAt") and not doc.issued_at:
 		doc.issued_at = payload.get("issuedAt")
 	if not doc.source_receipt and doc.source_sale_id:
-		doc.source_receipt = frappe.db.get_value(
-			"Sales Receipt",
-			{
-				"business_point": workplace.business_point,
-				"external_id": doc.source_sale_id,
-			},
-			"name",
-		)
+		doc.source_receipt = _order_source_receipt(workplace.business_point, doc.source_sale_id)
 	if payload.get("status"):
 		doc.status = {
 			"new": "New",
