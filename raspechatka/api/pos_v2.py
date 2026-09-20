@@ -78,7 +78,16 @@ def _receipt_mirror(point_name):
 			"docstatus": ["!=", 2],
 			"posting_datetime": [">=", add_days(now_datetime(), -POS_MIRROR_RETENTION_DAYS)],
 		},
-		fields=["name", "external_id", "posting_datetime", "client", "total_amount", "comment"],
+		fields=[
+			"name",
+			"external_id",
+			"posting_datetime",
+			"shift",
+			"cashier",
+			"client",
+			"total_amount",
+			"comment",
+		],
 		order_by="posting_datetime desc",
 		limit_page_length=2000,
 	)
@@ -86,14 +95,62 @@ def _receipt_mirror(point_name):
 		return []
 	parents = [row.name for row in rows]
 	clients = {
-		row.name: row.client_name
+		row.name: row
 		for row in frappe.get_all(
 			"Client",
 			filters={"name": ["in", [row.client for row in rows if row.client] or ["__none__"]]},
-			fields=["name", "client_name"],
+			fields=["name", "client_name", "phone"],
 			limit_page_length=2000,
 		)
 	}
+	cashiers = {
+		row.name: row.employee_name
+		for row in frappe.get_all(
+			"Employee",
+			filters={"name": ["in", [row.cashier for row in rows if row.cashier] or ["__none__"]]},
+			fields=["name", "employee_name"],
+			limit_page_length=2000,
+		)
+	}
+	shifts = {
+		row.name: row.external_id
+		for row in frappe.get_all(
+			"Sales Shift",
+			filters={"name": ["in", [row.shift for row in rows if row.shift] or ["__none__"]]},
+			fields=["name", "external_id"],
+			limit_page_length=2000,
+		)
+	}
+
+	return_rows = frappe.get_all(
+		"Sales Receipt",
+		filters={
+			"business_point": point_name,
+			"receipt_type": "Return",
+			"original_receipt": ["in", parents],
+			"docstatus": ["!=", 2],
+		},
+		fields=["name", "original_receipt", "total_amount"],
+		limit_page_length=5000,
+	)
+	returned_minor = {}
+	return_parent = {}
+	for row in return_rows:
+		returned_minor[row.original_receipt] = returned_minor.get(row.original_receipt, 0) + round(
+			flt(row.total_amount) * 100
+		)
+		return_parent[row.name] = row.original_receipt
+	returned_items = {}
+	if return_parent:
+		for item in frappe.get_all(
+			"Sales Receipt Item",
+			filters={"parent": ["in", list(return_parent)]},
+			fields=["parent", "item", "quantity"],
+			limit_page_length=20000,
+		):
+			key = (return_parent.get(item.parent), item.item)
+			returned_items[key] = returned_items.get(key, 0) + flt(item.quantity)
+
 	items = {}
 	for item in frappe.get_all(
 		"Sales Receipt Item",
@@ -109,7 +166,7 @@ def _receipt_mirror(point_name):
 				"quantity": flt(item.quantity),
 				"unitPriceMinor": round(flt(item.unit_price) * 100),
 				"discountPercent": flt(item.discount_percent),
-				"returnedQuantity": 0,
+				"returnedQuantity": returned_items.get((item.parent, item.item), 0),
 			}
 		)
 	payment_methods = {"Cash": "cash", "Card": "card", "QR": "qr"}
@@ -122,17 +179,24 @@ def _receipt_mirror(point_name):
 	):
 		payments.setdefault(payment.parent, []).append(
 			{
-				"method": payment_methods.get(payment.payment_channel, payment.payment_channel.lower()),
+				"method": payment_methods.get(payment.payment_channel, "card"),
 				"amountMinor": round(flt(payment.amount) * 100),
 				"transactionId": payment.external_payment_id,
 			}
 		)
+
 	result = []
 	for row in rows:
 		row_payments = payments.get(row.name, [])
 		methods = list(dict.fromkeys(payment["method"] for payment in row_payments))
 		identifier = row.external_id or f"server:{row.name}"
 		match = re.search(r"Фискальный чек:\s*([^\s]+)", str(row.comment or ""))
+		client = clients.get(row.client)
+		returned = returned_minor.get(row.name, 0)
+		total = round(flt(row.total_amount) * 100)
+		status = "returned" if returned >= total and total > 0 else "partially_returned" if returned > 0 else "completed"
+		row_items = items.get(row.name, [])
+		shift_external_id = shifts.get(row.shift)
 		result.append(
 			{
 				"id": identifier,
@@ -140,13 +204,28 @@ def _receipt_mirror(point_name):
 				"externalId": row.external_id,
 				"pointId": point_name,
 				"receiptNumber": match.group(1) if match else row.name,
-				"totalMinor": round(flt(row.total_amount) * 100),
-				"returnedMinor": 0,
+				"totalMinor": total,
+				"returnedMinor": returned,
 				"paymentMethod": methods[0] if len(methods) == 1 else "mixed",
-				"customerName": clients.get(row.client) or "Розничный покупатель",
+				"paymentMethods": methods,
+				"customerName": client.client_name if client else "Розничный покупатель",
+				"customerPhone": client.phone if client else None,
+				"cashierId": row.cashier,
+				"cashierName": cashiers.get(row.cashier) or row.cashier,
+				"shiftId": shift_external_id,
+				"shiftExternalId": shift_external_id,
+				"searchText": " ".join(
+					[
+						match.group(1) if match else row.name,
+						client.client_name if client else "",
+						client.phone if client else "",
+						cashiers.get(row.cashier) or row.cashier or "",
+						" ".join(item["name"] or "" for item in row_items),
+					]
+				),
 				"createdAt": str(row.posting_datetime),
-				"status": "completed",
-				"lines": items.get(row.name, []),
+				"status": status,
+				"lines": row_items,
 				"payments": row_payments,
 			}
 		)
