@@ -260,7 +260,8 @@ export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
 export type Order = { id:string; orderNumber:string; phone:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; fiscalNumber?:string }
-export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }\nexport type CreateOrderFromSaleRequest = { saleId:string; phone:string; comment:string; dueAt:string }
+export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }
+export type CreateOrderFromSaleRequest = { saleId:string; phone:string; comment:string; dueAt:string }
 export type UpdateOrderRequest = { id:string; phone?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
 export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
@@ -354,7 +355,8 @@ export type PosApi = {
   saveCashCount: (countType:CashCount['countType'], lines:CashCountLine[]) => Promise<CashCount>
   getLastCashCount: () => Promise<CashCount|null>
   listOrders: () => Promise<Order[]>
-  createUnpaidOrder: (request:CreateUnpaidOrderRequest) => Promise<Order>\n  createOrderFromSale: (request:CreateOrderFromSaleRequest) => Promise<Order>
+  createUnpaidOrder: (request:CreateUnpaidOrderRequest) => Promise<Order>
+  createOrderFromSale: (request:CreateOrderFromSaleRequest) => Promise<Order>
   updateOrder: (request:UpdateOrderRequest) => Promise<Order>
   completeSale: (request: CompleteSaleRequest) => Promise<CompleteSaleResult>
   getConnectionStatus: () => Promise<ConnectionStatus>
