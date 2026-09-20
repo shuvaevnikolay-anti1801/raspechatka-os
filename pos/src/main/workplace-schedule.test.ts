@@ -13,6 +13,7 @@ describe('workplace schedule compatibility',()=>{
     expect(value.scheduleMonth.employees).toEqual([])
     expect(value.scheduleMonth.entries).toEqual([])
     expect(value.myUpcomingShifts).toEqual([])
+    expect(value.operationalCatalog).toEqual([])
     expect(value.scheduleMonth.month).toMatch(/^\d{4}-\d{2}$/)
   })
   it('preserves published schedule data and upcoming shifts',()=>{
