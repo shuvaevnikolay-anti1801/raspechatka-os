@@ -93,7 +93,7 @@ const toMinor=(value:string):number|undefined=>{
 
 const methodsOf=(sale:SaleSummary):PaymentMethod[]=>{
   if(sale.paymentMethods?.length)return sale.paymentMethods
-  return sale.paymentMethod==='mixed'?[]:[sale.paymentMethod]
+  return sale.paymentMethod==='mixed'?[]:[sale.paymentMethod as PaymentMethod]
 }
 
 const matchesPeriod=(sale:SaleSummary,filters:ReceiptSearchFilters,currentShiftId?:string)=>{
