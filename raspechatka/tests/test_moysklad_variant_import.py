@@ -26,6 +26,13 @@ class TestMoySkladVariantImportContract(TestCase):
         self.assertIn('"attribute_value": attribute_value[:140]', values_block)
         self.assertLess(values_block.index('doc.set("variant_values", [])'), values_block.index("doc.save("))
 
+    def test_parent_variant_flag_uses_linked_active_variants(self):
+        sync = self.source.split("def _sync_catalog", 1)[1].split(
+            "def _sync_groups", 1
+        )[0]
+        self.assertIn('"variant_of": name, "item_type": "Variant", "active": 1', sync)
+        self.assertNotIn("_ref_id(variant.get(\"product\")) == source_id", sync)
+
     def test_variant_values_do_not_come_from_item_name(self):
         upsert = self.source.split("def _upsert_item(", 1)[1].split(
             "def _load_bundle_details", 1
