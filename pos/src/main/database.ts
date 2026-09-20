@@ -285,7 +285,7 @@ export class PosDatabase {
       const reduceStock=this.db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND track_inventory=1')
       input.lines.forEach((x)=>reduceStock.run(x.quantity,x.productId))
       this.queue('sale.completed',input,input.createdAt)
-      if (input.order) this.createOrderFromSale(input, input.order)
+      if (input.order) this.createPaidOrderFromSaleSnapshot(input, input.order)
       this.db.exec('COMMIT')
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
@@ -519,27 +519,47 @@ export class PosDatabase {
       source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 5000`).all() as any[])
       .map((x)=>({...x,lines:JSON.parse(x.lines),paymentStatus:x.paidMinor>=x.totalMinor?'paid':x.paidMinor>0?'partial':'unpaid'})) as Order[]
   }
-  private createOrderFromSale(input:any, meta:{phone:string;comment?:string;dueAt?:string}):Order {
-    if(meta.phone.replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
-    if(!meta.comment?.trim())throw new Error('Укажите описание заказа')
-    if(!meta.dueAt)throw new Error('Укажите срок готовности')
-    const duplicate=this.db.prepare("SELECT id FROM orders WHERE source_sale_id=? AND status IN ('new','in_progress','ready') LIMIT 1").get(input.id)
-    if(duplicate)throw new Error('Для этого чека уже существует активный заказ')
-    const now=input.createdAt||new Date().toISOString(); const id=randomUUID()
+
+  private createPaidOrderFromSaleSnapshot(
+    input:{id:string;createdAt:string;lines:CartLine[];totalMinor:number;customerId?:string;customerName?:string;fiscalNumber:string},
+    meta:{phone:string;comment?:string;dueAt?:string},
+  ):Order {
+    const phone=meta.phone.trim()
+    const comment=meta.comment?.trim()||''
+    const dueAt=meta.dueAt?.trim()||''
+    if(phone.replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
+    if(!comment)throw new Error('Укажите описание заказа')
+    if(!dueAt||Number.isNaN(Date.parse(dueAt)))throw new Error('Укажите корректный срок готовности')
+    const duplicate=this.db.prepare('SELECT id FROM orders WHERE source_sale_id=? LIMIT 1').get(input.id)
+    if(duplicate)throw new Error('Для этого чека уже существует заказ')
+    const now=input.createdAt||new Date().toISOString()
+    const id=randomUUID()
     const orderNumber=`ORD-${now.slice(0,10).replace(/-/g,'')}-${id.slice(0,6).toUpperCase()}`
-    const customer=this.listCustomers(meta.phone).find((x)=>x.phone===meta.phone)
-    const order:Order={id,orderNumber,phone:meta.phone.trim(),customerName:customer?.name||input.customerName,
+    const normalizedPhone=normalizeRussianPhone(phone)
+    const customer=this.listCustomers(normalizedPhone.replace(/\D/g,''))
+      .find((x)=>normalizeRussianPhone(x.phone)===normalizedPhone)
+    const order:Order={
+      id,orderNumber,phone,customerName:customer?.name||input.customerName,
       lines:input.lines,totalMinor:input.totalMinor,paidMinor:input.totalMinor,paymentStatus:'paid',status:'in_progress',
-      comment:meta.comment?.trim()||undefined,createdAt:now,dueAt:meta.dueAt,sourceSaleId:input.id,fiscalNumber:input.fiscalNumber}
-    this.db.prepare(`INSERT INTO orders (id,order_number,phone,customer_id,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(order.id,order.orderNumber,order.phone,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),order.totalMinor,order.paidMinor,order.status,order.comment||null,order.dueAt||null,order.sourceSaleId||null,order.fiscalNumber||null,now,now)
-    this.queue('order.created',order,now); return order
+      comment,createdAt:now,dueAt,sourceSaleId:input.id,fiscalNumber:input.fiscalNumber
+    }
+    this.db.prepare(`INSERT INTO orders
+      (id,order_number,phone,customer_id,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(order.id,order.orderNumber,order.phone,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),
+        order.totalMinor,order.paidMinor,order.status,order.comment,order.dueAt,order.sourceSaleId,order.fiscalNumber,now,now)
+    this.queue('order.created',order,now)
+    return order
   }
-  findOrderBySourceSale(saleId:string):Order|undefined{return this.listOrders().find((x)=>x.sourceSaleId===saleId)}
+
+  findOrderBySourceSale(saleId:string):Order|undefined {
+    return this.listOrders().find((x)=>x.sourceSaleId===saleId)
+  }
+
   createOrderFromSale(input:{saleId:string;phone:string;comment:string;dueAt:string}):Order {
     const sale=this.getSale(input.saleId)
-    if(sale.status!=='completed'&&sale.status!=='partially_returned')throw new Error('Заказ можно создать только по завершённой оплаченной продаже')
-    return this.createOrderFromSale({
+    if(sale.status!=='completed')throw new Error('Заказ можно создать только по завершённой оплаченной продаже без возврата')
+    return this.createPaidOrderFromSaleSnapshot({
       id:sale.id,createdAt:new Date().toISOString(),lines:sale.lines,totalMinor:sale.totalMinor,
       customerName:sale.customerName,fiscalNumber:sale.receiptNumber
     },input)
@@ -554,18 +574,36 @@ export class PosDatabase {
     const order:Order={id,orderNumber,phone:input.phone.trim(),lines:input.lines,totalMinor,paidMinor:0,paymentStatus:'unpaid',status:'new',comment:input.comment?.trim()||undefined,createdAt:now,dueAt:input.dueAt}
     this.db.prepare(`INSERT INTO orders (id,order_number,phone,lines_json,total_minor,paid_minor,status,comment,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id,orderNumber,order.phone,JSON.stringify(order.lines),totalMinor,0,'new',order.comment||null,order.dueAt||null,now,now)
-    this.queue('order.created',order,now);return order
+    this.queue('order.created',order,now)
+    return order
   }
+
   updateOrder(input:UpdateOrderRequest):Order {
-    const current=this.listOrders().find((x)=>x.id===input.id);if(!current)throw new Error('Заказ не найден')
-    const next={...current,phone:input.phone?.trim()||current.phone,comment:input.comment===undefined?current.comment:input.comment.trim()||undefined,status:input.status||current.status,dueAt:input.dueAt===undefined?current.dueAt:input.dueAt}
-    if(next.phone.replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
-    if(!['new','in_progress','ready','issued','cancelled'].includes(next.status))throw new Error('Некорректный статус заказа')
+    const current=this.listOrders().find((x)=>x.id===input.id)
+    if(!current)throw new Error('Заказ не найден')
+    if(input.phone!==undefined&&input.phone.trim().replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
+    if(input.comment!==undefined&&!input.comment.trim())throw new Error('Описание заказа не может быть пустым')
+    if(input.dueAt!==undefined&&(!input.dueAt.trim()||Number.isNaN(Date.parse(input.dueAt))))throw new Error('Укажите корректный срок готовности')
+    if(input.status&&input.status!==current.status){
+      const allowed=(['new','in_progress'].includes(current.status)&&input.status==='ready')
+        ||(current.status==='ready'&&input.status==='issued')
+      if(!allowed)throw new Error('Недопустимый переход статуса заказа')
+    }
+    const next:Order={
+      ...current,
+      phone:input.phone===undefined?current.phone:input.phone.trim(),
+      comment:input.comment===undefined?current.comment:input.comment.trim(),
+      status:input.status||current.status,
+      dueAt:input.dueAt===undefined?current.dueAt:input.dueAt,
+    }
     const updatedAt=new Date().toISOString()
-    const readyAt=current.readyAt||(next.status==='ready'?updatedAt:undefined)
-    const issuedAt=current.issuedAt||(next.status==='issued'?updatedAt:undefined)
-    this.db.prepare('UPDATE orders SET phone=?,comment=?,status=?,due_at=?,ready_at=?,issued_at=?,updated_at=? WHERE id=?').run(next.phone,next.comment||null,next.status,next.dueAt||null,readyAt||null,issuedAt||null,updatedAt,input.id)
-    const result={...next,readyAt,issuedAt};this.queue('order.updated',result,updatedAt);return result
+    const readyAt=current.readyAt||(input.status==='ready'&&current.status!=='ready'?updatedAt:undefined)
+    const issuedAt=current.issuedAt||(input.status==='issued'&&current.status!=='issued'?updatedAt:undefined)
+    this.db.prepare('UPDATE orders SET phone=?,comment=?,status=?,due_at=?,ready_at=?,issued_at=?,updated_at=? WHERE id=?')
+      .run(next.phone,next.comment||null,next.status,next.dueAt||null,readyAt||null,issuedAt||null,updatedAt,input.id)
+    const result={...next,readyAt,issuedAt}
+    this.queue('order.updated',result,updatedAt)
+    return result
   }
 
   holdReceipt(input:Omit<HeldReceipt,'id'|'createdAt'>):HeldReceipt {const x={...input,id:randomUUID(),createdAt:new Date().toISOString()};this.db.prepare('INSERT INTO held_receipts (id,label,payload_json,created_at) VALUES (?,?,?,?)').run(x.id,x.label,JSON.stringify(x),x.createdAt);return x}
