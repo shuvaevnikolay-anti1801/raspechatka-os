@@ -67,7 +67,7 @@ Legacy `new` в POS трактуется как «В работе» и оста�
 ## Временные события и аналитика
 
 Нужно хранить и передавать:
-- `createdAt` — уже существующее время создания;
+- `createdAt` — фактическое время создания на POS (не время последующей синхронизации);
 - `dueAt` — обязательный срок готовности;
 - `readyAt` — первый момент перехода в `ready`;
 - `issuedAt` — первый момент перехода в `issued`.
@@ -76,8 +76,9 @@ Legacy `new` в POS трактуется как «В работе» и оста�
 - `readyAt` выставляется атомарно при первом переходе в `ready`; повторное сохранение `ready` его не переписывает;
 - `issuedAt` выставляется атомарно при первом переходе в `issued`; повторное сохранение `issued` его не переписывает;
 - возврат статуса назад не стирает исторические timestamps;
-- server DocType хранит `ready_at` и `issued_at`; SQLite — `ready_at`, `issued_at`;
-- старые заказы без этих полей остаются валидны.
+- server DocType хранит `created_at`, `ready_at` и `issued_at`; SQLite уже хранит `created_at` и получает `ready_at`, `issued_at`;
+- при offline-создании сервер обязан сохранить POS `createdAt`, а не подменять его Frappe `creation` временем синхронизации;
+- старые server-заказы без `created_at` используют `creation` как fallback; старые заказы без ready/issued timestamps остаются валидны.
 
 Для Web OS вычислять/показывать:
 - время выполнения = `readyAt - createdAt`, если readyAt есть;
@@ -195,15 +196,16 @@ Outbox payload и server bootstrap должны включать timestamps.
 ## Server / POS Order
 
 Расширить DocType `POS Order`:
+- `created_at` Datetime, read-only — фактическое POS-время создания;
 - `ready_at` Datetime, read-only;
 - `issued_at` Datetime, read-only;
 - `source_receipt` Link -> Sales Receipt, read-only.
 
-`_apply_order_created` и `_apply_order_updated` принимают timestamps из доверенного POS event payload, но сохраняют monotonic first-event semantics: уже записанное ready_at/issued_at не перезаписывать более поздним duplicate/update.
+`_apply_order_created` сохраняет `created_at` из payload.createdAt; если его нет (legacy), допускается fallback на Frappe creation. `_apply_order_updated` не переписывает created_at.
 
-Существующий `creation` остаётся source of truth для server created time.
+`_apply_order_created` и `_apply_order_updated` сохраняют monotonic first-event semantics: уже записанное ready_at/issued_at не перезаписывать более поздним duplicate/update.
 
-`_get_orders` возвращает readyAt/issuedAt и source receipt metadata обратно POS.
+`_get_orders` возвращает createdAt = created_at || creation, readyAt/issuedAt и source receipt metadata обратно POS.
 
 ## Web OS: Продажи → Заказы
 
