@@ -43,6 +43,11 @@ const filters = reactive({
 	cashier: "",
 	search: "",
 	status: "",
+	overdue: "",
+	due_from: "",
+	due_to: "",
+	ready_from: "",
+	ready_to: "",
 	movement_type: "",
 	action_type: "",
 });
@@ -50,6 +55,7 @@ const cfg = {
 	overview: { title: "Точки продаж", desc: "Текущая работа касс и продажи по всей сети" },
 	shifts: { title: "Смены", desc: "Выручка, возвраты, скидки и действия за каждую смену" },
 	receipts: { title: "Продажи", desc: "Все чеки, оплаты, товары и клиенты" },
+	orders: { title: "Заказы", desc: "Оплаченные заказы, сроки готовности и история исполнения" },
 	returns: { title: "Возвраты", desc: "Возвратные чеки и связь с исходной продажей" },
 	cash: {
 		title: "Внесения и выплаты",
@@ -130,10 +136,19 @@ const columns = computed(
 			receipts: receiptCols(),
 			returns: receiptCols(),
 			orders: [
-				c("order_number", "Заказ"), c("phone", "Телефон"), c("business_point", "Точка", "point"),
-				c("comment", "Описание"), c("fiscal_number", "Чек"), c("total_amount", "Сумма", "money"),
-				c("status", "Статус"), c("created_at", "Создан", "date"), c("due_at", "Срок готовности", "date"),
-				c("ready_at", "Готов", "date"), c("issued_at", "Выдан", "date"), c("execution_time", "Время выполнения"), c("overdue", "Просрочка")
+				c("short_number", "Заказ"),
+				c("phone", "Телефон"),
+				c("business_point", "Точка", "point"),
+				c("comment", "Описание"),
+				c("fiscal_number", "Чек"),
+				c("total_amount", "Сумма", "money"),
+				c("status", "Статус", "order_status"),
+				c("created_at", "Создан", "date"),
+				c("due_at", "Срок готовности", "date"),
+				c("ready_at", "Готов", "date"),
+				c("issued_at", "Выдан", "date"),
+				c("execution_minutes", "Время выполнения", "duration"),
+				c("overdue", "Просрочка", "overdue"),
 			],
 			cash: [
 				c("name", "№"),
@@ -186,6 +201,14 @@ function fmt(v, col) {
 	if (col.format === "employee") return employeeMap.value[v] || v || "—";
 	if (col.format === "movement") return v === "Deposit" ? "Внесение" : "Выплата";
 	if (col.format === "action") return actionLabel(v);
+	if (col.format === "order_status")
+		return ({ New: "В работе", "In Progress": "В работе", Ready: "Готов к выдаче", Issued: "Выдан", Cancelled: "Отменён" }[v] || v || "—");
+	if (col.format === "duration") {
+		if (v === null || v === undefined || v === "") return "—";
+		const minutes = Math.max(0, Number(v) || 0), hours = Math.floor(minutes / 60), rest = minutes % 60;
+		return hours ? `${hours} ч ${rest} мин` : `${rest} мин`;
+	}
+	if (col.format === "overdue") return v ? "Просрочен" : "—";
 	if (col.format === "payment")
 		return (
 			Object.entries(v || {})
@@ -199,7 +222,7 @@ function fmt(v, col) {
 }
 const filterFields = computed(() => {
 	const result = [
-		{ key: "search", label: "Поиск", placeholder: "Номер или комментарий", wide: true },
+		{ key: "search", label: "Поиск", placeholder: kind.value === "orders" ? "Телефон, заказ, описание или чек" : "Номер или комментарий", wide: true },
 		{ key: "from_date", label: "Период с", type: "date" },
 		{ key: "to_date", label: "Период по", type: "date" },
 		{
@@ -227,11 +250,21 @@ const filterFields = computed(() => {
 		});
 	if (kind.value === "orders") {
 		result.push(
-			{ key: "search", label: "Поиск", placeholder: "Телефон, заказ, описание или чек", wide: true },
-			{ key: "status", label: "Статус", type: "select", allLabel: "Все статусы", options: ["New","In Progress","Ready","Issued","Cancelled"].map(value => ({ value, label: value })) },
-			{ key: "overdue", label: "Просрочен", type: "select", allLabel: "Все", options: [{ value: "1", label: "Только просроченные" }] },
-			{ key: "ready_from", label: "Готов с", type: "date" }, { key: "ready_to", label: "Готов по", type: "date" },
-			{ key: "due_from", label: "Срок с", type: "date" }, { key: "due_to", label: "Срок по", type: "date" }
+			{
+				key: "status", label: "Статус", type: "select", allLabel: "Все статусы",
+				options: [
+					{ value: "New", label: "В работе (legacy)" },
+					{ value: "In Progress", label: "В работе" },
+					{ value: "Ready", label: "Готов к выдаче" },
+					{ value: "Issued", label: "Выдан" },
+					{ value: "Cancelled", label: "Отменён" },
+				],
+			},
+			{ key: "overdue", label: "Просрочка", type: "select", allLabel: "Все", options: [{ value: "1", label: "Только просроченные" }] },
+			{ key: "due_from", label: "Срок с", type: "date" },
+			{ key: "due_to", label: "Срок по", type: "date" },
+			{ key: "ready_from", label: "Готов с", type: "date" },
+			{ key: "ready_to", label: "Готов по", type: "date" }
 		);
 	} else if (["shifts", "actions"].includes(kind.value))
 		result.push({
@@ -279,7 +312,7 @@ const filterFields = computed(() => {
 const tableColumns = computed(() =>
 	columns.value.map((col) => ({
 		...col,
-		primary: col.key === "name",
+		primary: col.key === "name" || (kind.value === "orders" && col.key === "short_number"),
 		number: ["money", "percent"].includes(col.format),
 		format: (value) => fmt(value, col),
 	}))
@@ -305,7 +338,8 @@ const tableTotals = computed(() => {
 });
 async function init() {
 	try {
-		Object.assign(options, await call("raspechatka.api.sales.get_sales_options"));
+		const optionsMethod = kind.value === "orders" ? "get_order_options" : "get_sales_options";
+		Object.assign(options, await call(`raspechatka.api.sales.${optionsMethod}`));
 		await load();
 	} catch (e) {
 		error.value = e.message;
@@ -351,9 +385,20 @@ async function load() {
 		}
 		if (kind.value === "orders") {
 			method = "get_orders";
-			params = { ...common, status: filters.status, search: filters.search, overdue: filters.overdue,
-				created_from: filters.from_date, created_to: filters.to_date, due_from: filters.due_from, due_to: filters.due_to,
-				ready_from: filters.ready_from, ready_to: filters.ready_to, limit_page_length: 5000 };
+			params = {
+				business_entity: filters.business_entity,
+				business_point: filters.business_point,
+				status: filters.status,
+				search: filters.search,
+				overdue: filters.overdue,
+				created_from: filters.from_date,
+				created_to: filters.to_date,
+				due_from: filters.due_from,
+				due_to: filters.due_to,
+				ready_from: filters.ready_from,
+				ready_to: filters.ready_to,
+				limit_page_length: 5000,
+			};
 		}
 		if (kind.value === "actions") {
 			method = "get_cashier_actions";
