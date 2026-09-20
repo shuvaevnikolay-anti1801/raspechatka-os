@@ -194,7 +194,13 @@ def _receipt_mirror(point_name):
 		client = clients.get(row.client)
 		returned = returned_minor.get(row.name, 0)
 		total = round(flt(row.total_amount) * 100)
-		status = "returned" if returned >= total and total > 0 else "partially_returned" if returned > 0 else "completed"
+		status = (
+			"returned"
+			if returned >= total and total > 0
+			else "partially_returned"
+			if returned > 0
+			else "completed"
+		)
 		row_items = items.get(row.name, [])
 		shift_external_id = shifts.get(row.shift)
 		result.append(
