@@ -14,6 +14,41 @@ const emptySummary=():ShiftSummary=>({
   depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0
 })
 
+const emptyWorkplaceData=():WorkplaceData=>{
+  const now=new Date()
+  const month=now.toISOString().slice(0,7)
+  return {
+    schedule:[],
+    scheduleMonth:{month,days:new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),employees:[],entries:[]},
+    myUpcomingShifts:[],
+    deliveries:[],
+    supplyRequests:[],
+    cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+    orders:[],
+  }
+}
+const normalizeWorkplaceData=(value:Partial<WorkplaceData>|null|undefined):WorkplaceData=>{
+  const defaults=emptyWorkplaceData()
+  const incoming=value||{}
+  const month=incoming.scheduleMonth||{}
+  return {
+    ...defaults,
+    ...incoming,
+    schedule:Array.isArray(incoming.schedule)?incoming.schedule:[],
+    scheduleMonth:{
+      ...defaults.scheduleMonth,
+      ...month,
+      employees:Array.isArray(month.employees)?month.employees:[],
+      entries:Array.isArray(month.entries)?month.entries:[],
+    },
+    myUpcomingShifts:Array.isArray(incoming.myUpcomingShifts)?incoming.myUpcomingShifts:[],
+    deliveries:Array.isArray(incoming.deliveries)?incoming.deliveries:[],
+    supplyRequests:Array.isArray(incoming.supplyRequests)?incoming.supplyRequests:[],
+    cleaner:incoming.cleaner||defaults.cleaner,
+    orders:Array.isArray(incoming.orders)?incoming.orders:[],
+  }
+}
+
 export class PosDatabase {
   private readonly db: DatabaseSync
 
@@ -444,9 +479,10 @@ export class PosDatabase {
 
   getWorkplaceData():WorkplaceData {
     const raw=this.getState('workplace_data')
-    return raw?JSON.parse(raw) as WorkplaceData:{schedule:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
+    if(!raw)return emptyWorkplaceData()
+    try{return normalizeWorkplaceData(JSON.parse(raw) as Partial<WorkplaceData>)}catch{return emptyWorkplaceData()}
   }
-  setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(value))}
+  setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(normalizeWorkplaceData(value)))}
   clearConfirmedPointData():void {
     this.db.exec('BEGIN')
     try {
