@@ -130,6 +130,7 @@ export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalM
 export type SaleSummary = {
   id:string
   receiptNumber:string
+  serverId?:string
   totalMinor:number
   returnedMinor:number
   paymentMethod:SalePaymentMethod
