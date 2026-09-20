@@ -374,7 +374,7 @@ function PriceOverrideModal({line,minimumMinor,onClose,onApply}:{line:CartLine;m
   return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ПОЗИЦИЯ ЧЕКА</small><h2>Изменить цену</h2></div><button onClick={onClose}>×</button></header><p>{line.name}</p><label className="cash-input"><span>Цена за единицу, ₽</span><input autoFocus type="number" min={minimumMinor/100} step="0.01" value={input} onChange={(event)=>setInput(event.target.value)}/></label>{!valid&&<div className="error-note">Минимальная цена: {formatMoney(minimumMinor)}</div>}<button className="primary confirm" disabled={!valid} onClick={()=>onApply(price)}>Применить · {formatMoney(price)}</button></div></div>
 }
 
-function WorkPage({products,data,shiftOpen,onChanged,notify}:{products:Product[];data:WorkplaceData;shiftOpen:boolean;onChanged:()=>Promise<void>;notify:(text:string)=>void}){
+export function WorkPage({products,data,shiftOpen,onChanged,notify}:{products:Product[];data:WorkplaceData;shiftOpen:boolean;onChanged:()=>Promise<void>;notify:(text:string)=>void}){
   const [tab,setTab]=useState<'schedule'|'stock'|'delivery'|'cleaner'>('schedule')
   const [writeOff,setWriteOff]=useState(false);const [need,setNeed]=useState(false)
   const scheduleMonth=data.scheduleMonth
