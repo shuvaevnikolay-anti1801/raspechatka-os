@@ -28,6 +28,19 @@ describe('PosDatabase',()=>{
     expect(database.listHeldReceipts()).toHaveLength(0)
   })
 
+  it('creates paid orders from a sale and keeps first lifecycle timestamps',()=>{
+    const database=createDatabase()
+    const shift=database.openShift({id:'shift-order',openedAt:'2026-09-06T10:00:00.000Z',cashierName:'Тест'})
+    database.saveSale({id:'sale-order',clientRequestId:'request-order',shiftId:shift.id,totalMinor:2000,paymentMethod:'cash',fiscalNumber:'FD-ORDER',createdAt:'2026-09-06T10:01:00.000Z',receiptDiscountPercent:0,lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],payments:[{method:'cash',amountMinor:2000}]})
+    const order=database.createOrderFromSale({saleId:'sale-order',phone:'+7 900 123-45-67',comment:'Срочная печать',dueAt:'2026-09-06T12:00:00.000Z'})
+    expect(order.status).toBe('in_progress')
+    expect(database.updateOrder({id:order.id,status:'ready'}).readyAt).toBeTruthy()
+    const first=database.listOrders()[0]
+    const again=database.updateOrder({id:order.id,status:'ready'})
+    expect(again.readyAt).toBe(first.readyAt)
+    expect(database.updateOrder({id:order.id,status:'issued'}).issuedAt).toBeTruthy()
+  })
+
   it('stores split payments, partial returns and cash operations',()=>{
     const database=createDatabase()
     const shift=database.openShift({id:'shift-1',openedAt:'2026-09-06T10:00:00.000Z',cashierName:'Тест'})
