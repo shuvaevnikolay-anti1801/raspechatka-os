@@ -1,6 +1,6 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
-
 
 SELLABLE_ITEM_TYPES = {"Product", "Service", "Variant", "Bundle"}
 
@@ -178,7 +178,9 @@ def _require_sellable(name, label):
 		frappe.throw(_("{0} должна быть продаваемой позицией каталога").format(label), frappe.ValidationError)
 	if row.item_type == "Product" and _has_active_variants(row):
 		frappe.throw(
-			_("{0}: основной товар с активными модификациями нельзя использовать как отдельный SKU").format(label),
+			_("{0}: основной товар с активными модификациями нельзя использовать как отдельный SKU").format(
+				label
+			),
 			frappe.ValidationError,
 		)
 	return row
@@ -187,10 +189,7 @@ def _require_sellable(name, label):
 def _has_active_variants(row):
 	return bool(
 		row.item_type == "Product"
-		and (
-			row.has_variants
-			or frappe.db.exists("Catalog Item", {"variant_of": row.name, "active": 1})
-		)
+		and (row.has_variants or frappe.db.exists("Catalog Item", {"variant_of": row.name, "active": 1}))
 	)
 
 
