@@ -492,7 +492,7 @@ def _trusted_event_cashier(connection, employees, event_type, payload, fallback_
 	if shift:
 		if incoming and incoming != shift.cashier:
 			frappe.throw(
-				_("Кассир события не совпадает с кассиром открытой смены"),  # noqa: RUF001
+				_("Кассир события не совпадает с кассиром открытой смены"),
 				frappe.PermissionError,
 			)
 		return {"id": shift.cashier}
@@ -751,7 +751,7 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 	if not isinstance(events, list):
 		frappe.throw(_("Ожидается список событий"))
 	if len(events) > 100:
-		frappe.throw(_("За один запрос можно передать не более 100 событий"))  # noqa: RUF001
+		frappe.throw(_("За один запрос можно передать не более 100 событий"))
 	accepted = []
 	try:
 		for event in events:
@@ -760,7 +760,7 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			payload = event.get("payload") or {}
 			selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)
 			if not event_id or not event_type:
-				frappe.throw(_("В событии отсутствует id или eventType"))  # noqa: RUF001
+				frappe.throw(_("В событии отсутствует id или eventType"))
 			if not selected:
 				frappe.throw(_("Кассир события не назначен на текущую точку"))
 			stats = {"created": 0, "duplicates": 0, "errors": []}
