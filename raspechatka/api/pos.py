@@ -301,6 +301,7 @@ def _apply_order_created(event_id, workplace, payload):
 		"issued": "Issued",
 		"cancelled": "Cancelled",
 	}.get(payload.get("status"), "New")
+	source_receipt = frappe.db.get_value("Sales Receipt", {"business_point": workplace.business_point, "external_id": payload.get("sourceSaleId")}, "name") if payload.get("sourceSaleId") else None
 	doc = frappe.get_doc(
 		{
 			"doctype": "POS Order",
@@ -316,6 +317,10 @@ def _apply_order_created(event_id, workplace, payload):
 			"status": status,
 			"comment": payload.get("comment"),
 			"due_at": payload.get("dueAt"),
+			"created_at": payload.get("createdAt") or None,
+			"ready_at": payload.get("readyAt") or None,
+			"issued_at": payload.get("issuedAt") or None,
+			"source_receipt": source_receipt,
 			"items": [
 				{
 					"item": x.get("productId")
@@ -343,6 +348,10 @@ def _apply_order_updated(event_id, workplace, payload):
 	for field in ("phone", "comment", "due_at"):
 		if field in payload:
 			setattr(doc, field, payload.get(field))
+	if payload.get("readyAt") and not doc.ready_at:
+		doc.ready_at = payload.get("readyAt")
+	if payload.get("issuedAt") and not doc.issued_at:
+		doc.issued_at = payload.get("issuedAt")
 	if payload.get("status"):
 		doc.status = {
 			"new": "New",
@@ -598,7 +607,11 @@ def _get_orders(point_name):
 			"comment",
 			"due_at",
 			"creation",
+			"created_at",
+			"ready_at",
+			"issued_at",
 			"source_sale_id",
+			"source_receipt",
 			"fiscal_number",
 		],
 		order_by="creation desc",
@@ -640,10 +653,13 @@ def _get_orders(point_name):
 			else ("partial" if flt(x.paid_amount) else "unpaid"),
 			"status": status.get(x.status, "new"),
 			"comment": x.comment,
-			"createdAt": str(x.creation),
+			"createdAt": str(x.created_at or x.creation),
 			"dueAt": x.due_at,
+			"readyAt": x.ready_at,
+			"issuedAt": x.issued_at,
 			"sourceSaleId": x.source_sale_id,
 			"fiscalNumber": x.fiscal_number,
+			"sourceReceipt": x.source_receipt,
 		}
 		for x in rows
 	]
