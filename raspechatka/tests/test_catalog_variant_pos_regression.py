@@ -46,4 +46,6 @@ class TestCatalogVariantPosRegressionContract(TestCase):
         self.assertNotIn("item_name =", self.repair_patch)
         self.assertNotIn("variant_values", self.pos_api)
         self.assertIn("variant_values", self.catalog_page)
-        self.assertNotIn("variant_values", self.catalog_page.split("async function saveItem", 1)[0])
+        script = self.catalog_page.split("<template>", 1)[0]
+        self.assertNotIn("itemForm.item_name =", script)
+        self.assertNotIn("itemForm.item_name +=", script)
