@@ -7,6 +7,7 @@ class TestPosUpsellContract(TestCase):
         root = Path(__file__).resolve().parents[1]
         self.helper = (root / "pos_upsell.py").read_text(encoding="utf-8")
         self.sales = (root / "api/sales.py").read_text(encoding="utf-8")
+        self.pos_v2 = (root / "api/pos_v2.py").read_text(encoding="utf-8")
         self.rule = (
             root / "raspechatka_os/doctype/pos_upsell_rule/pos_upsell_rule.json"
         ).read_text(encoding="utf-8")
@@ -50,6 +51,14 @@ class TestPosUpsellContract(TestCase):
         self.assertIn("frappe.db.rollback(save_point=savepoint)", self.helper)
         self.assertIn("frappe.delete_doc", self.helper)
         self.assertIn('doc.set("candidates", [])', self.helper)
+
+    def test_pos_bootstrap_filters_rules_to_enabled_point_products(self):
+        self.assertIn("from raspechatka.pos_upsell import get_pos_upsell_rules", self.pos_v2)
+        self.assertIn('available = {str(row.get("id")) for row in products if row.get("id")}', self.pos_v2)
+        self.assertIn('if not rule.get("enabled"):', self.pos_v2)
+        self.assertIn("if trigger not in available:", self.pos_v2)
+        self.assertIn('if str(candidate.get("item") or "") in available', self.pos_v2)
+        self.assertIn('"upsellRules": _upsell_rules(products)', self.pos_v2)
 
     def test_api_has_network_contract_and_global_write_guard(self):
         read_endpoint = self.sales.split("def get_pos_upsell_config", 1)[1].split(
