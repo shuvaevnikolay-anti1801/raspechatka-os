@@ -13,7 +13,7 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
   const [editing,setEditing]=useState<Order|null>(null)
   const [creating,setCreating]=useState(false)
   const active=useMemo(()=>orders
-    .filter((order)=>['new','in_progress','ready'].includes(order.status))
+    .filter((order)=>order.paymentStatus==='paid'&&['new','in_progress','ready'].includes(order.status))
     .sort((a,b)=>{
       const aReady=a.status==='ready',bReady=b.status==='ready'
       if(aReady!==bReady)return aReady?1:-1
