@@ -548,7 +548,7 @@ export class PosDatabase {
       (id,order_number,phone,customer_id,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(order.id,order.orderNumber,order.phone,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),
-        order.totalMinor,order.paidMinor,order.status,order.comment,order.dueAt,order.sourceSaleId,order.fiscalNumber,now,now)
+        order.totalMinor,order.paidMinor,order.status,order.comment??null,order.dueAt??null,order.sourceSaleId??null,order.fiscalNumber??null,now,now)
     this.queue('order.created',order,now)
     return order
   }
