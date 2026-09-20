@@ -14,7 +14,7 @@ import type {
   StockWriteOffRequest,
   SupplyRequestInput,
   UpdateOrderRequest,
-  AtolSettings,\n  ReceiptSearchFilters,
+  AtolSettings,
 } from "../shared/contracts";
 
 type ShiftRecoveryStatus = {
@@ -26,54 +26,6 @@ type ShiftRecoveryStatus = {
   fiscalState?: "closed" | "opened" | "expired" | "unknown";
   safeToRecover: boolean;
   message: string;
-};
-port { contextBridge, ipcRenderer } from "electron";
-import type {
-  CashCount,
-  CashCountLine,
-  CashOperationType,
-  CompleteSaleRequest,
-  ConnectionConfig,
-  CreateReturnRequest,
-  CreateUnpaidOrderRequest,
-  HeldReceipt,
-  InpasSettings,
-  PosApi,
-  PrintKind,
-  StockWriteOffRequest,
-  SupplyRequestInput,
-  UpdateOrderRequest,
-  AtolSettings,\n  ReceiptSearchFilters,
-} from "../shared/contracts";
-
-type ShiftRecoveryStatus = {
-  pending: boolean;
-  action?: "open" | "close";
-  startedAt?: string;
-  localOpen: boolean;
-  fiscalOpen?: boolean;
-  fiscalState?: "closed" | "opened" | "expired" | "unknown";
-  safeToRecover: boolean;
-  message: string;
-};
-type ReceiptSearchFilters = {
-  period?:
-    | "current_shift"
-    | "today"
-    | "yesterday"
-    | "7d"
-    | "30d"
-    | "custom"
-    | "all";
-  shiftExternalId?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  cashierId?: string;
-  amountMinMinor?: number;
-  amountMaxMinor?: number;
-  paymentChannel?: "Cash" | "Card" | "QR" | "";
-  status?: "Draft" | "Posted" | "Cancelled" | "";
-  receiptType?: "Sale" | "Return" | "";
 };
 type ExtendedPosApi = PosApi & {
   getAtolSettings: () => Promise<AtolSettings>;
@@ -88,10 +40,8 @@ type ExtendedPosApi = PosApi & {
     differenceMinor: number,
     note: string
   ) => Promise<unknown>;
-  setReceiptSearchFilters: (filters: ReceiptSearchFilters) => void;
 };
 
-let receiptSearchFilters: ReceiptSearchFilters = { period: "current_shift" };
 
 const cleanRemoteMessage = (error: unknown) => {
   const raw = error instanceof Error ? error.message : String(error);
@@ -126,21 +76,17 @@ const api: ExtendedPosApi = {
   listCustomers: (query) => ipcRenderer.invoke("pos:list-customers", query),
   getCustomer: (id) => ipcRenderer.invoke("pos:get-customer", id),
   listSales: () => ipcRenderer.invoke("pos:list-sales"),
-  searchPointReceipts: (query) =>
-    ipcRenderer.invoke(
-      "pos:search-point-receipts",
-      query,
-      receiptSearchFilters
-    ),
-  setReceiptSearchFilters: (filters) => {
-    receiptSearchFilters = { ...filters };
-  },
+  searchPointReceipts: (query, filters) =>
+    ipcRenderer.invoke("pos:search-point-receipts", query, filters),
+  getPointReceipt: (id: string) => ipcRenderer.invoke("pos:get-point-receipt", id),
   getSale: (id: string) => ipcRenderer.invoke("pos:get-sale", id),
   createReturn: (request: CreateReturnRequest) =>
     ipcRenderer.invoke("pos:create-return", request),
   listReturns: () => ipcRenderer.invoke("pos:list-returns"),
   printSale: (id: string, kind: PrintKind) =>
     ipcRenderer.invoke("pos:print-sale", id, kind),
+  printPointReceiptCommodity: (id: string) =>
+    ipcRenderer.invoke("pos:print-point-receipt-commodity", id),
   listPrintJobs: () => ipcRenderer.invoke("pos:list-print-jobs"),
   retryPrintJob: (id: string) => ipcRenderer.invoke("pos:retry-print-job", id),
   listPrinters: () => ipcRenderer.invoke("pos:list-printers"),
