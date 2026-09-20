@@ -21,6 +21,14 @@ def execute():
 		except VariantRepairError as exc:
 			failures.append(f"{item.name}: {exc}")
 
+	# Cross-candidate duplicates are invisible to sibling queries until mutation,
+	# so validate the complete repair set before any direct DB write.
+	if not failures:
+		try:
+			_validate_plan_set(plans)
+		except VariantRepairError as exc:
+			failures.append(str(exc))
+
 	# No mutation is allowed until every proven candidate passes validation.
 	if failures:
 		raise frappe.ValidationError(
@@ -128,8 +136,21 @@ def _preflight_plan(item, proof):
 		"item": item,
 		"parent": parent,
 		"characteristics": proof["characteristics"],
+		"signature": proof["signature"],
 		"existing_values": existing_values,
 	}
+
+
+def _validate_plan_set(plans):
+	seen = {}
+	for plan in plans:
+		key = (plan["parent"].name, plan["signature"])
+		previous = seen.get(key)
+		if previous:
+			raise VariantRepairError(
+				f"кандидаты {previous} и {plan['item'].name} имеют одинаковую variant signature"
+			)
+		seen[key] = plan["item"].name
 
 
 def _apply_plan(plan):
