@@ -1,14 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { buildStockReceiptRequest, CashierLogin, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
-import type { BootState, CashierAuthState, WorkplaceData } from '../../shared/contracts'
+import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
   pointId:'point',pointName:'Точка',workplaceId:'workplace',workstationName:'Касса',
   cashierName:'Выберите сотрудника',employees:[{id:'e1',name:'Иван Иванов'}],
   accessRevoked:false,online:false,pendingSync:0,source:'demo',shift:null,
   rules:{allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,acceptsCash:true,acceptsCard:true,acceptsQr:true},
-  upsellRules:[],
+  upsellRules:[],upsellCursors:{},
 }
 const auth:CashierAuthState={status:'signed_out'}
 
@@ -50,11 +50,11 @@ describe('read-only work schedule contract',()=>{
 
 
 describe('unified warehouse workplace contract',()=>{
-  const catalog=[
+  const catalog:OperationalCatalogItem[]=[
     {id:'hidden-paper',name:'Служебная бумага',itemCode:'HIDDEN',itemType:'Product',uom:'пачка',trackInventory:true,stock:7,storageAddress:'Шкаф 2'},
     {id:'service',name:'Ламинация',itemCode:'LAM',itemType:'Service',uom:'шт',trackInventory:false,stock:null,storageAddress:''},
   ]
-  const order={
+  const order:DeliveryNotice={
     id:'PO-1',supplier:'Поставщик',status:'Ожидается',items:[
       {purchaseOrderItemId:'POI-1',itemId:'hidden-paper',itemName:'Служебная бумага',itemCode:'HIDDEN',uom:'пачка',orderedQuantity:5,receivedQuantity:1,remainingQuantity:4},
       {purchaseOrderItemId:'POI-2',itemId:'service',itemName:'Ламинация',itemCode:'LAM',uom:'шт',orderedQuantity:1,receivedQuantity:0,remainingQuantity:1},
