@@ -37,7 +37,6 @@ export default function AppV2(){
   const [category,setCategory]=useState('Все')
   const [cart,setCart]=useState<CartLine[]>([])
   const [upsellCycle,setUpsellCycle]=useState<UpsellCycle>({state:'eligible'})
-  const [upsellCursors,setUpsellCursors]=useState<Record<string,number>>({})
   const [customer,setCustomer]=useState<Customer|null>(null)
   const [reviewCount,setReviewCount]=useState(0)
   const [manualDiscount,setManualDiscount]=useState<ManualDiscount|null>(null)
@@ -105,11 +104,13 @@ export default function AppV2(){
       : [...cart,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor,catalogUnitPriceMinor:product.priceMinor,preventDiscounts:product.preventDiscounts}]
     setCart(next)
     if(options.suppressUpsell||upsellCycle.state!=='eligible')return
-    const rule=boot?.upsellRules.find((candidate)=>candidate.enabled&&next.some((line)=>line.productId===candidate.triggerItem))
+    const rule=boot?.upsellRules.find((candidate)=>candidate.enabled&&candidate.triggerItem===product.id)
     if(!rule)return
-    const selection=selectUpsellCandidate(rule,products,next,upsellCursors[rule.triggerItem]??0)
+    const selection=selectUpsellCandidate(rule,products,next,boot?.upsellCursors[rule.triggerItem]??0)
     if(!selection.candidate)return
-    setUpsellCursors((current)=>({...current,[rule.triggerItem]:selection.nextCursor}))
+    const nextCursor=selection.nextCursor
+    setBoot((current)=>current?{...current,upsellCursors:{...current.upsellCursors,[rule.triggerItem]:nextCursor}}:current)
+    void window.raspechatkaPos.setUpsellCursor(rule.triggerItem,nextCursor).catch(()=>setMessage('Не удалось сохранить очередь рекомендаций локально'))
     setUpsellCycle({state:'showing',triggerItem:rule.triggerItem,candidate:selection.candidate})
   }
   const updateCart=(next:CartLine[])=>{
