@@ -241,8 +241,8 @@ def _canonical_characteristics(rows):
 	for row in rows:
 		if not isinstance(row, dict):
 			raise VariantRepairError("characteristic имеет неверный формат")
-		name = _normalize(row.get("name") or row.get("id"))
-		value = _normalize(_payload_value(row.get("value")))
+		name = _normalize(row.get("name") or row.get("id"))[:140]
+		value = _normalize(_payload_value(row.get("value")))[:140]
 		if not name or not value:
 			raise VariantRepairError("characteristic должен иметь имя и значение")
 		name_key = name.casefold()
