@@ -24,7 +24,7 @@ class TestMoySkladVariantRepairPatchContract(TestCase):
 		self.assertIn('meta_type != "variant"', self.patch)
 		self.assertIn('"/entity/variant/" not in href.casefold()', self.patch)
 		self.assertIn('_source_reference_uuid(payload.get("product"), "product")', self.patch)
-		self.assertIn("characteristics отсутствуют или пусты", self.patch)
+		self.assertIn("характеристики отсутствуют или пусты", self.patch)
 
 	def test_conflicts_fail_closed_and_manual_variants_are_not_touched(self):
 		self.assertIn('filters={"item_type": "Product"', self.patch)
