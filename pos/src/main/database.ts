@@ -382,10 +382,10 @@ export class PosDatabase {
       for(const row of orders){
         const existing=this.db.prepare('SELECT id FROM orders WHERE order_number=? OR (source_sale_id IS NOT NULL AND source_sale_id=?) LIMIT 1').get(row.orderNumber,row.sourceSaleId??'__none__') as {id:string}|undefined
         const id=existing?.id||previousByOrder.get(row.orderNumber)||(row.sourceSaleId?previousBySale.get(row.sourceSaleId):undefined)||row.id
-        this.db.prepare(`INSERT INTO orders (id,order_number,phone,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at,origin,point_id)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET order_number=excluded.order_number,phone=excluded.phone,
+        this.db.prepare(`INSERT INTO orders (id,order_number,phone,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,ready_at,issued_at,source_sale_id,fiscal_number,created_at,updated_at,origin,point_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET order_number=excluded.order_number,phone=excluded.phone,
           customer_name=excluded.customer_name,lines_json=excluded.lines_json,total_minor=excluded.total_minor,paid_minor=excluded.paid_minor,
-          status=excluded.status,comment=excluded.comment,due_at=excluded.due_at,source_sale_id=excluded.source_sale_id,
+          status=excluded.status,comment=excluded.comment,due_at=excluded.due_at,ready_at=COALESCE(orders.ready_at,excluded.ready_at),issued_at=COALESCE(orders.issued_at,excluded.issued_at),source_sale_id=excluded.source_sale_id,
           fiscal_number=excluded.fiscal_number,updated_at=excluded.updated_at,origin='server',point_id=excluded.point_id`)
           .run(id,row.orderNumber,row.phone,row.customerName??null,JSON.stringify(row.lines),row.totalMinor,row.paidMinor,row.status,row.comment??null,row.dueAt??null,row.readyAt??null,row.issuedAt??null,row.sourceSaleId??null,row.fiscalNumber??null,row.createdAt,now,'server',pointId)
       }
