@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { CashierLogin, EXPECTED_CASH_LABEL, TOAST_DISMISS_MS, WorkPage } from './AppV2'
+import { buildStockReceiptRequest, CashierLogin, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
 import type { BootState, CashierAuthState, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -32,7 +32,7 @@ const workplace:WorkplaceData={
   schedule:[],
   scheduleMonth:{month:'2026-09',days:30,employees:[{id:'e1',name:'Иван Иванов'}],entries:[{id:'entry',date:'2026-09-20',employeeId:'e1',employeeName:'Иван Иванов',shiftTemplate:'Утро',shiftCode:'U',shiftName:'Утренняя',startTime:'09:00:00',endTime:'18:00:00',plannedHours:8}]},
   myUpcomingShifts:[{id:'entry',date:'2026-09-20',shiftTemplate:'Утро',shiftCode:'U',shiftName:'Утренняя',startTime:'09:00:00',endTime:'18:00:00',plannedHours:8}],
-  deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[],
+  operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[],
 }
 
 describe('read-only work schedule contract',()=>{
@@ -45,5 +45,56 @@ describe('read-only work schedule contract',()=>{
     expect(markup).not.toContain('Быстрые действия')
     expect(markup).not.toContain('<select')
     expect(markup).not.toContain('Сохранить')
+  })
+})
+
+
+describe('unified warehouse workplace contract',()=>{
+  const catalog=[
+    {id:'hidden-paper',name:'Служебная бумага',itemCode:'HIDDEN',itemType:'Product',uom:'пачка',trackInventory:true,stock:7,storageAddress:'Шкаф 2'},
+    {id:'service',name:'Ламинация',itemCode:'LAM',itemType:'Service',uom:'шт',trackInventory:false,stock:null,storageAddress:''},
+  ]
+  const order={
+    id:'PO-1',supplier:'Поставщик',status:'Ожидается',items:[
+      {purchaseOrderItemId:'POI-1',itemId:'hidden-paper',itemName:'Служебная бумага',itemCode:'HIDDEN',uom:'пачка',orderedQuantity:5,receivedQuantity:1,remainingQuantity:4},
+      {purchaseOrderItemId:'POI-2',itemId:'service',itemName:'Ламинация',itemCode:'LAM',uom:'шт',orderedQuantity:1,receivedQuantity:0,remainingQuantity:1},
+    ],
+  }
+  it('keeps only three work tabs and no standalone deliveries tab',()=>{
+    const markup=renderToStaticMarkup(<WorkPage products={[]} data={{...workplace,operationalCatalog:catalog,deliveries:[order]}} shiftOpen={false} onChanged={async()=>undefined} notify={()=>undefined}/>)
+    expect(markup).toContain('График работы')
+    expect(markup).toContain('Товары и склад')
+    expect(markup).toContain('Уборка')
+    expect(markup).not.toMatch(/<button[^>]*>Поставки<\/button>/)
+  })
+  it('uses the operational catalog for stock and searches by name id or item code',()=>{
+    expect(operationalStockItems(catalog).map((item)=>item.id)).toEqual(['hidden-paper'])
+    expect(warehouseItemMatches(catalog[0],'служебная')).toBe(true)
+    expect(warehouseItemMatches(catalog[0],'hidden-paper')).toBe(true)
+    expect(warehouseItemMatches(catalog[0],'HIDDEN')).toBe(true)
+    expect(warehouseItemMatches(catalog[0],'other')).toBe(false)
+  })
+  it('keeps write-off fields vertical and independent from sale products',()=>{
+    const markup=renderToStaticMarkup(<WriteOffModal products={operationalStockItems(catalog)} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    const labels=['Товар','Количество','Причина','Комментарий']
+    const positions=labels.map((label)=>markup.indexOf('>'+label+'<'))
+    expect(positions.every((position)=>position>=0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a,b)=>a-b))
+    expect(markup).toContain('Служебная бумага')
+  })
+  it('builds a reduced receipt payload with removed zero rows and no price/header fields',()=>{
+    const request=buildStockReceiptRequest('PO-1',[
+      {purchaseOrderItemId:'POI-1',itemName:'Служебная бумага',uom:'пачка',remainingQuantity:4,quantity:2},
+      {purchaseOrderItemId:'POI-2',itemName:'Ламинация',uom:'шт',remainingQuantity:1,quantity:0},
+    ])
+    expect(request).toEqual({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]})
+    expect(JSON.stringify(request)).not.toMatch(/price|rate|itemId|supplier|warehouse/i)
+  })
+  it('prefills receive modal from remaining rows and never renders purchase price',()=>{
+    const markup=renderToStaticMarkup(<ReceiveModal order={order} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(markup).toContain('Служебная бумага')
+    expect(markup).toContain('Остаток: 4 пачка')
+    expect(markup).not.toContain('Цена')
+    expect(markup).not.toContain('rate')
   })
 })
