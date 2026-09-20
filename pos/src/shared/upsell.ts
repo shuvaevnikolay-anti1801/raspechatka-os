@@ -1,5 +1,9 @@
 import type { CartLine, Product, UpsellCandidate, UpsellRule } from './contracts'
 
+export function findUpsellRuleForProduct(rules:UpsellRule[],productId:string):UpsellRule|undefined {
+  return rules.find((rule)=>rule.enabled&&rule.triggerItem===productId)
+}
+
 export type UpsellSelection = {
   candidate: UpsellCandidate | null
   nextCursor: number
