@@ -1,0 +1,67 @@
+.cashier-workspace{grid-template-columns:minmax(0,1fr) minmax(390px,440px)!important;gap:10px;min-height:0;padding:10px;background:#eef1ec}
+.cashier-catalog{min-width:0;display:flex;flex-direction:column;padding:14px;border:1px solid var(--rp-line);background:#fff;overflow:hidden}
+.cashier-catalog-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:10px}
+.cashier-catalog-head small{color:var(--rp-muted);font-size:9px;font-weight:800;letter-spacing:.12em}
+.cashier-catalog-head h1{margin:3px 0 0;font-size:24px;letter-spacing:-.035em}
+.cashier-catalog-head>span{padding:7px 10px;border-radius:999px;background:#f0f3ed;color:var(--rp-muted);font-size:10px;font-weight:700}
+.cashier-search{padding:0!important;border:0!important}
+.cashier-search .search{min-height:54px!important;border:2px solid #c8cec4!important;border-radius:13px!important;background:#fff!important}
+.cashier-search .search:focus-within{border-color:var(--rp-green)!important;box-shadow:0 0 0 4px var(--rp-green-soft)}
+.cashier-search .search input{font-size:15px!important}
+.cashier-search .search>button{width:40px;height:40px;border:0;border-radius:9px;background:#edf0eb;font-size:22px}
+.cashier-type-filters,.cashier-category-filters{display:flex;gap:7px;overflow-x:auto;scrollbar-width:thin}
+.cashier-type-filters{padding:11px 0 8px}
+.cashier-type-filters button,.cashier-category-filters button{min-height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;border:1px solid var(--rp-line-dark);border-radius:12px;background:#fff;color:var(--rp-ink);font-size:11px;font-weight:750;white-space:nowrap;cursor:pointer;touch-action:manipulation}
+.cashier-type-filters button span{color:var(--rp-muted);font-size:9px}
+.cashier-type-filters button.active,.cashier-category-filters button.active{border-color:var(--rp-ink);background:var(--rp-ink);color:#fff}
+.cashier-type-filters button.active span{color:#dbe3d8}
+.cashier-category-filters{padding-bottom:12px}
+.cashier-category-filters button{min-height:42px;background:#f6f7f4}
+.cashier-category-filters button b{min-width:22px;padding:3px 6px;border-radius:999px;background:#e5e9e2;font-size:9px}
+.cashier-category-filters button.active b{background:#fff;color:var(--rp-ink)}
+.cashier-product-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))!important;gap:9px!important;padding:2px!important;overflow:auto}
+.cashier-product-card{position:relative;min-height:150px!important;padding:15px!important;border-radius:15px!important;box-shadow:0 2px 0 rgba(27,39,30,.04);touch-action:manipulation}
+.cashier-product-card:hover{transform:translateY(-1px);border-color:#8da397!important;box-shadow:0 8px 20px rgba(31,49,37,.09)}
+.cashier-product-card:active{transform:scale(.985);background:var(--rp-green-soft)!important}
+.cashier-product-card>strong{padding-top:17px;font-size:16px!important;line-height:1.25!important}
+.cashier-product-card>small{display:block!important;color:var(--rp-muted);font-size:9px;line-height:1.35}
+.cashier-product-kind{position:absolute;top:12px;left:12px;color:#56705f;font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.cashier-product-count{position:absolute;top:9px;right:9px;min-width:28px;height:28px;display:grid;place-items:center;padding:0 6px;border-radius:999px;background:var(--rp-green);color:#263407;font-size:11px;font-weight:850}
+.cashier-product-card footer{align-items:flex-end}
+.cashier-product-card footer b{font-size:22px!important}
+.cashier-product-card footer span{padding:5px 7px;border-radius:7px;background:#f0f3ed;color:#59625a;font-size:9px!important}
+.cashier-catalog-empty{grid-column:1/-1;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--rp-muted);text-align:center}
+.cashier-catalog-empty b{color:var(--rp-ink);font-size:18px}
+.cashier-catalog-empty button{min-height:44px;margin-top:7px;padding:0 16px;border:1px solid var(--rp-line-dark);border-radius:10px;background:#fff;font-weight:750}
+.cashier-receipt{min-height:0;border-radius:15px;box-shadow:0 6px 25px rgba(31,49,37,.07);overflow:hidden}
+.cashier-receipt>header{min-height:70px!important;padding:14px 16px!important}
+.cashier-receipt>header h2{display:block!important;margin-top:4px;font-size:17px!important}
+.cashier-receipt>header>button{min-height:42px;padding:0 14px;border-radius:10px}
+.cashier-customer{padding:10px 14px!important;background:#f7f9f5}
+.cashier-customer>button{min-height:44px;text-align:left}
+.cashier-receipt-lines{padding:5px 10px!important}
+.cashier-receipt-line{grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"main total" "qty qty";gap:10px!important;padding:12px 5px!important}
+.cashier-line-main{grid-area:main;min-width:0}
+.cashier-line-main>strong{display:block;font-size:12px!important}
+.cashier-line-main>small{display:flex;align-items:center;gap:7px;margin-top:5px}
+.cashier-line-main>small button{min-height:28px;padding:0 7px;border:0;border-radius:6px;background:#eef2eb;color:#526759;font-size:8px;font-weight:700}
+.cashier-line-total{grid-area:total;align-self:start;font-size:14px!important}
+.cashier-qty{grid-area:qty;width:max-content}
+.cashier-qty button{width:46px!important;height:42px!important;font-size:22px!important;touch-action:manipulation}
+.cashier-qty input{width:64px!important;height:42px!important;font-size:14px!important}
+.cashier-totals{padding:12px 16px 15px!important}
+.cashier-summary-row{display:flex;align-items:center;justify-content:space-between;min-height:32px;color:var(--rp-muted);font-size:11px}
+.cashier-summary-row b{color:var(--rp-ink);font-size:12px}
+.cashier-summary-row.discount b{color:#5e790c}
+.cashier-totals .review-discount-row{min-height:49px}
+.cashier-totals .review-count button{width:36px;height:34px}
+.cashier-totals .review-count input{height:34px}
+.cashier-grand-total{min-height:70px!important;margin-top:5px;padding-top:10px;border-top:2px solid var(--rp-ink)!important}
+.cashier-grand-total span{font-size:13px!important;font-weight:750}
+.cashier-grand-total strong{font-size:34px!important}
+.cashier-actions{gap:9px!important}
+.cashier-actions button,.cashier-open-shift{min-height:50px!important;border-radius:11px!important;font-size:12px!important;touch-action:manipulation}
+.cashier-actions .pos-v2-pay{min-height:60px!important;font-size:16px!important}
+.cashier-totals .training{display:block;margin-top:7px;text-align:center}
+@media(max-width:1180px){.cashier-workspace{grid-template-columns:minmax(0,1fr) 380px!important}.cashier-product-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important}}
+@media(max-width:900px){.cashier-workspace{grid-template-columns:1fr!important;overflow:auto}.cashier-catalog{min-height:620px}.cashier-receipt{min-height:680px}.cashier-product-grid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr))!important}}
