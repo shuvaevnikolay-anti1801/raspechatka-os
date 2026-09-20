@@ -4,7 +4,7 @@ import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import { formatPersonShortName } from './person-name'
 import { formatMoney } from './money'
-import { resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
+import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import type {
@@ -104,7 +104,7 @@ export default function AppV2(){
       : [...cart,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor,catalogUnitPriceMinor:product.priceMinor,preventDiscounts:product.preventDiscounts}]
     setCart(next)
     if(options.suppressUpsell||upsellCycle.state!=='eligible')return
-    const rule=boot?.upsellRules.find((candidate)=>candidate.enabled&&candidate.triggerItem===product.id)
+    const rule=findUpsellRuleForProduct(boot?.upsellRules??[],product.id)
     if(!rule)return
     const selection=selectUpsellCandidate(rule,products,next,boot?.upsellCursors[rule.triggerItem]??0)
     if(!selection.candidate)return
