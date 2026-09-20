@@ -288,14 +288,45 @@ export class PosDatabase {
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
-  listSales():SaleSummary[]{const local=this.db.prepare(`SELECT sales.id,fiscal_number receiptNumber,total_minor totalMinor,
-    COALESCE((SELECT SUM(line_total_minor) FROM return_items JOIN returns ON returns.id=return_items.return_id WHERE returns.sale_id=sales.id),0) returnedMinor,
-    payment_method paymentMethod,customer_name customerName,created_at createdAt,status
-    FROM sales ORDER BY created_at DESC LIMIT 2000`).all().map((row:any)=>({...row,returnable:true,source:'local'})) as SaleSummary[]
+  listSales():SaleSummary[]{
+    const localRows=this.db.prepare(`SELECT sales.id,fiscal_number receiptNumber,total_minor totalMinor,
+      COALESCE((SELECT SUM(line_total_minor) FROM return_items JOIN returns ON returns.id=return_items.return_id WHERE returns.sale_id=sales.id),0) returnedMinor,
+      payment_method paymentMethod,customer_name customerName,customers.phone customerPhone,sales.created_at createdAt,sales.status,
+      sales.shift_id shiftId,shifts.cashier_id cashierId,shifts.cashier_name cashierName,
+      COALESCE((SELECT GROUP_CONCAT(name,' ') FROM sale_items WHERE sale_id=sales.id),'') itemNames,
+      COALESCE((SELECT GROUP_CONCAT(method,',') FROM sale_payments WHERE sale_id=sales.id),'') methods
+      FROM sales
+      LEFT JOIN shifts ON shifts.id=sales.shift_id
+      LEFT JOIN customers ON customers.id=sales.customer_id
+      ORDER BY sales.created_at DESC LIMIT 2000`).all() as Array<any>
+    const local=localRows.map((row)=>{
+      const paymentMethods=String(row.methods||'').split(',').filter(Boolean) as PaymentPart['method'][]
+      return {
+        id:String(row.id),receiptNumber:String(row.receiptNumber),totalMinor:Number(row.totalMinor),
+        returnedMinor:Number(row.returnedMinor||0),paymentMethod:row.paymentMethod,
+        paymentMethods,customerName:row.customerName||undefined,customerPhone:row.customerPhone||undefined,
+        cashierId:row.cashierId||undefined,cashierName:row.cashierName||undefined,shiftId:row.shiftId||undefined,
+        searchText:[row.receiptNumber,row.customerName,row.customerPhone,row.cashierName,row.itemNames].filter(Boolean).join(' '),
+        createdAt:String(row.createdAt),status:row.status,returnable:row.status!=='returned',source:'local'
+      } as SaleSummary
+    })
     const localIds=new Set(local.map((row)=>row.id))
     const mirrored=(this.db.prepare('SELECT id,payload_json payload FROM receipt_mirror ORDER BY created_at DESC LIMIT 2000').all() as Array<{id:string;payload:string}>)
-      .filter((row)=>!localIds.has(row.id)).map((row)=>({...JSON.parse(row.payload),returnable:false,source:'server'} as SaleSummary))
-    return [...local,...mirrored].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,2000)}
+      .filter((row)=>!localIds.has(row.id))
+      .map((row)=>{
+        const payload=JSON.parse(row.payload) as ReceiptMirror
+        return {
+          ...payload,
+          searchText:payload.searchText||[
+            payload.receiptNumber,payload.customerName,payload.customerPhone,payload.cashierName,
+            ...payload.lines.map((line)=>line.name)
+          ].filter(Boolean).join(' '),
+          paymentMethods:payload.paymentMethods||payload.payments.map((payment)=>payment.method),
+          returnable:false,source:'server'
+        } as SaleSummary
+      })
+    return [...local,...mirrored].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,2000)
+  }
 
   getSale(id:string):SaleDetails {
     const localExists=this.db.prepare('SELECT 1 value FROM sales WHERE id=?').get(id)
