@@ -301,7 +301,16 @@ def _apply_order_created(event_id, workplace, payload):
 		"issued": "Issued",
 		"cancelled": "Cancelled",
 	}.get(payload.get("status"), "New")
-	source_receipt = frappe.db.get_value("Sales Receipt", {"business_point": workplace.business_point, "external_id": payload.get("sourceSaleId")}, "name") if payload.get("sourceSaleId") else None
+	source_sale_id = str(payload.get("sourceSaleId") or "").strip() or None
+	source_receipt = (
+		frappe.db.get_value(
+			"Sales Receipt",
+			{"business_point": workplace.business_point, "external_id": source_sale_id},
+			"name",
+		)
+		if source_sale_id
+		else None
+	)
 	doc = frappe.get_doc(
 		{
 			"doctype": "POS Order",
@@ -310,7 +319,7 @@ def _apply_order_created(event_id, workplace, payload):
 			"customer_name": payload.get("customerName"),
 			"business_point": workplace.business_point,
 			"source_pos_event": event_id,
-			"source_sale_id": payload.get("sourceSaleId"),
+			"source_sale_id": source_sale_id,
 			"fiscal_number": payload.get("fiscalNumber"),
 			"total_amount": flt(payload.get("totalMinor")) / 100,
 			"paid_amount": flt(payload.get("paidMinor")) / 100,
@@ -341,17 +350,36 @@ def _apply_order_created(event_id, workplace, payload):
 def _apply_order_updated(event_id, workplace, payload):
 	if not _doctype_exists("POS Order"):
 		return
-	name = frappe.db.get_value("POS Order", {"order_number": payload.get("orderNumber")}, "name")
+	name = frappe.db.get_value(
+		"POS Order",
+		{
+			"order_number": payload.get("orderNumber"),
+			"business_point": workplace.business_point,
+		},
+		"name",
+	)
 	if not name:
 		return
 	doc = frappe.get_doc("POS Order", name)
-	for field in ("phone", "comment", "due_at"):
-		if field in payload:
-			setattr(doc, field, payload.get(field))
+	if "phone" in payload:
+		doc.phone = payload.get("phone")
+	if "comment" in payload:
+		doc.comment = payload.get("comment")
+	if "dueAt" in payload:
+		doc.due_at = payload.get("dueAt")
 	if payload.get("readyAt") and not doc.ready_at:
 		doc.ready_at = payload.get("readyAt")
 	if payload.get("issuedAt") and not doc.issued_at:
 		doc.issued_at = payload.get("issuedAt")
+	if not doc.source_receipt and doc.source_sale_id:
+		doc.source_receipt = frappe.db.get_value(
+			"Sales Receipt",
+			{
+				"business_point": workplace.business_point,
+				"external_id": doc.source_sale_id,
+			},
+			"name",
+		)
 	if payload.get("status"):
 		doc.status = {
 			"new": "New",
@@ -361,7 +389,6 @@ def _apply_order_updated(event_id, workplace, payload):
 			"cancelled": "Cancelled",
 		}.get(payload["status"], doc.status)
 	doc.save(ignore_permissions=True)
-
 
 def _apply_sale(event_id, workplace, payload):
 	sale_id = str(payload.get("id") or event_id)
