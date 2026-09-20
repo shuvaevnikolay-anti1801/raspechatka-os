@@ -122,6 +122,10 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     });
   }
 
+  async reprintDocument(documentNumber: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('reprintDocument', { documentNumber });
+  }
+
   async findDevices(): Promise<AtolDriverDevice[]> {
     const devices = await this.request<AtolDriverDevice[]>('discover');
     return devices.map((device) => ({
