@@ -26,9 +26,18 @@ describe('performSync single flight',()=>{
     mocks.deferred.resolve?.({
       products:[],customers:[],employees:[],receiptMirror:[],retentionDays:60,
       point:{id:'point',name:'Point'},workplace:{id:'workplace',name:'POS'},
-      workplaceData:{orders:[]},rules:{allowDiscounts:true,maxDiscountPercent:20},
+      workplaceData:{orders:[{
+        id:'ORDER-1',orderNumber:'ORD-1',phone:'+79001234567',lines:[],totalMinor:2000,paidMinor:2000,
+        paymentStatus:'paid',status:'ready',createdAt:'2026-09-20T09:00:00.000Z',dueAt:'2026-09-20T10:00:00.000Z',
+        readyAt:'2026-09-20T09:45:00.000Z',issuedAt:undefined,sourceSaleId:'SALE-1',fiscalNumber:'777'
+      }]},rules:{allowDiscounts:true,maxDiscountPercent:20},
     })
     await expect(first).resolves.toMatchObject({online:true,pendingSync:0})
+    expect(database.replaceServerOrders).toHaveBeenCalledWith(
+      'point',
+      [expect.objectContaining({id:'ORDER-1',readyAt:'2026-09-20T09:45:00.000Z',sourceSaleId:'SALE-1'})],
+      60,
+    )
     expect(mocks.pushEvents).not.toHaveBeenCalled()
   })
 })
