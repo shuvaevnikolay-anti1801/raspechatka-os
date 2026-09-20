@@ -130,7 +130,7 @@ export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalM
 export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned'; returnable?:boolean; source?:'local'|'server' }
 export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[]; remotePaymentConfirmation?: RemotePaymentConfirmation }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
-export type PointReceiptSummary = {
+export type ReceiptSearchFilters = {\n  period?: 'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'\n  shiftExternalId?: string\n  dateFrom?: string\n  dateTo?: string\n  cashierId?: string\n  amountMinMinor?: number\n  amountMaxMinor?: number\n  paymentChannel?: 'Cash'|'Card'|'QR'|'Noncash'|''\n  status?: 'Draft'|'Posted'|'Cancelled'|''\n  receiptType?: 'Sale'|'Return'|''\n}\n\nexport type PointReceiptSummary = {
   id:string
   externalId?:string
   receiptNumber:string
@@ -258,7 +258,7 @@ export type PosApi = {
   listCustomers: (query?: string) => Promise<Customer[]>
   getCustomer: (id: string) => Promise<Customer|null>
   listSales: () => Promise<SaleSummary[]>
-  searchPointReceipts: (query?:string) => Promise<PointReceiptSummary[]>
+  searchPointReceipts: (query?:string, filters?:ReceiptSearchFilters) => Promise<PointReceiptSummary[]>
   getSale: (id: string) => Promise<SaleDetails>
   createReturn: (request: CreateReturnRequest) => Promise<ReturnResult>
   listReturns: () => Promise<ReturnSummary[]>
