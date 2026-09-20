@@ -97,4 +97,6 @@ jobs:
             exit 1
           fi
           git commit -m "DEV-159(1): fix app and browser icon transparency"
+          git fetch origin "${GITHUB_REF_NAME}"
+          git rebase "origin/${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
