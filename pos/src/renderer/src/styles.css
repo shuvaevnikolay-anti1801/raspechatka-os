@@ -28,6 +28,7 @@ h1,h2,h3,p { margin:0; }
 .pos-header-status.offline i { background:#c48272; }
 .pos-header-lock,.pos-header-refresh { min-height:40px; padding:0 11px; border:1px solid var(--rp-line); background:#fff; font-size:10px; font-weight:650; }
 .pos-header-refresh { border-color:var(--rp-line-dark); }
+.pos-header-refresh.secondary { min-height:40px; padding:0 11px; }
 .toast { position:fixed; z-index:80; top:70px; left:50%; display:flex; align-items:center; gap:20px; min-width:320px; transform:translateX(-50%); padding:12px 14px; border:1px solid #dbe8b8; background:#f7faeb; box-shadow:var(--rp-shadow); color:#526409; font-size:11px; }
 .toast button { margin-left:auto; border:0; background:transparent; font-size:18px; }
 
