@@ -5,7 +5,7 @@ from frappe import _
 SELLABLE_ITEM_TYPES = {"Product", "Service", "Variant", "Bundle"}
 
 
-def get_pos_upsell_config():
+def get_pos_upsell_rules():
 	rules = []
 	for rule in frappe.get_all(
 		"POS Upsell Rule",
@@ -34,7 +34,11 @@ def get_pos_upsell_config():
 				],
 			}
 		)
-	return {"rules": rules, "catalog_items": _catalog_items()}
+	return rules
+
+
+def get_pos_upsell_config():
+	return {"rules": get_pos_upsell_rules(), "catalog_items": _catalog_items()}
 
 
 def save_pos_upsell_rules(snapshot):
