@@ -473,12 +473,8 @@ def _upsert_item(
 	if item_type == "Variant":
 		doc.set("variant_values", [])
 		for characteristic in row.get("characteristics") or []:
-			attribute_name = _normalize_variant_text(
-				characteristic.get("name") or characteristic.get("id")
-			)
-			attribute_value = _normalize_variant_text(
-				_attribute_value(characteristic.get("value"))
-			)
+			attribute_name = _normalize_variant_text(characteristic.get("name") or characteristic.get("id"))
+			attribute_value = _normalize_variant_text(_attribute_value(characteristic.get("value")))
 			if attribute_name and attribute_value:
 				doc.append(
 					"variant_values",
