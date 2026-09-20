@@ -52,6 +52,14 @@ def execute():
 			"Catalog Item", parent_name, "has_variants", int(has_variants), update_modified=False
 		)
 
+	for plan in plans:
+		_verify_plan(plan)
+
+	print(
+		f"DEV-157: repaired {len(plans)} MoySklad variants "
+		f"across {len(_touched_parents)} parent products"
+	)
+
 
 def _source_product_items():
 	return frappe.get_all(
@@ -184,6 +192,33 @@ def _apply_plan(plan):
 				"attribute_value": characteristic["attribute_value"],
 			}
 		).db_insert()
+
+
+def _verify_plan(plan):
+	item = plan["item"]
+	parent = plan["parent"]
+	stored = frappe.db.get_value(
+		"Catalog Item",
+		item.name,
+		["item_type", "variant_of", "catalog_group", "stock_uom", "default_supplier"],
+		as_dict=True,
+	)
+	expected_supplier = item.default_supplier or parent.default_supplier
+	if (
+		not stored
+		or stored.item_type != "Variant"
+		or stored.variant_of != parent.name
+		or stored.catalog_group != parent.catalog_group
+		or stored.stock_uom != parent.stock_uom
+		or stored.default_supplier != expected_supplier
+	):
+		raise frappe.ValidationError(
+			f"DEV-157 postcondition failed for Catalog Item {item.name}"
+		)
+	if _signature(_variant_values(item.name)) != plan["signature"]:
+		raise frappe.ValidationError(
+			f"DEV-157 variant values postcondition failed for Catalog Item {item.name}"
+		)
 
 
 def _variant_values(item_name):
