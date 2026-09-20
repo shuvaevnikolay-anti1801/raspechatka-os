@@ -103,6 +103,7 @@ export type BootState = {
   shift: Shift | null
   rules: PointRules
   upsellRules: UpsellRule[]
+  upsellCursors: Record<string, number>
 }
 
 export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
@@ -380,5 +381,6 @@ export type PosApi = {
   logoutCashier: () => Promise<CashierAuthState>
   verifyAdminCode: (code:string) => Promise<boolean>
   resetCashierPin: (cashierId:string,adminCode:string,newPin:string,confirmation:string) => Promise<void>
+  setUpsellCursor: (triggerItem:string,cursor:number) => Promise<void>
   syncNow: () => Promise<BootState>
 }
