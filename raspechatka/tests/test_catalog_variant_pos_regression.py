@@ -32,9 +32,9 @@ class TestCatalogVariantPosRegressionContract(TestCase):
 		products = self.pos_api.split("def _get_products", 1)[1].split("def _get_customers", 1)[0]
 		self.assertIn("if not item or item.has_variants:", products)
 		self.assertIn('"has_variants"', self.frontend_api)
-		self.assertIn(
-			'filters={"variant_of": parent.name, "item_type": "Variant", "active": 1}', self.repair_patch
-		)
+		self.assertIn('"variant_of": parent_name', self.repair_patch)
+		self.assertIn('"item_type": "Variant"', self.repair_patch)
+		self.assertIn('"active": 1', self.repair_patch)
 		self.assertIn('filters={"name": ["in", [row.item for row in assortments]]', products)
 		self.assertIn("resolve_point_price(", products)
 		self.assertIn('"id": item.name', products)
