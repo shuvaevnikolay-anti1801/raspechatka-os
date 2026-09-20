@@ -187,19 +187,21 @@ export default function AppV2(){
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
   if(auth.status!=='authenticated')return <CashierLogin boot={boot} auth={auth} onAuthenticated={refresh}/>
   return <div className="app-shell">
-    <header className="topbar pos-v2-topbar">
-      <div className="point pos-v2-point"><b>{boot.pointName}</b></div>
-      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</button>{!boot.shift&&<button onClick={async()=>setAuth(await window.raspechatkaPos.logoutCashier())}>Выйти</button>}</div>
+    <header className="pos-header">
+      <nav className="pos-header-nav" aria-label="Разделы кассы">
+        <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
+        <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
+        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>!['issued','cancelled'].includes(x.status)).length} onClick={()=>setScreen('orders')}/>
+        <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
+        <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
+        <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
+      </nav>
+      <div className="pos-header-actions">
+        <span className={`pos-header-status ${boot.online?'online':'offline'}`} title={boot.lastSyncAt?'Последняя синхронизация: '+new Date(boot.lastSyncAt).toLocaleString('ru-RU')+' · К отправке: '+boot.pendingSync:'Успешной синхронизации ещё не было · К отправке: '+boot.pendingSync}><i/>{boot.online?'ОС на связи':'Локальный режим'}</span>
+        <button className="pos-header-lock" onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</button>
+        <button className="pos-header-refresh secondary" disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</button>
+      </div>
     </header>
-    <nav className="main-nav">
-      <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
-      <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
-      <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>!['issued','cancelled'].includes(x.status)).length} onClick={()=>setScreen('orders')}/>
-      <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
-      <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
-      <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
-      <div className="nav-spacer"/><span className="sync-state" title={boot.lastSyncAt?`Последняя синхронизация: ${new Date(boot.lastSyncAt).toLocaleString('ru-RU')}`:'Успешной синхронизации ещё не было'}>{boot.online?'OS на связи':'Локальный режим'} · К отправке: <b>{boot.pendingSync}</b></span><button className="secondary" disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</button>
-    </nav>
     {message&&<div className="toast" onClick={()=>setMessage('')}>{message}<button>×</button></div>}
 
     {screen==='sale'&&<main className="sale-layout">
