@@ -34,6 +34,15 @@ class TestMoySkladVariantRepairPatchContract(TestCase):
         self.assertIn("конфликтующая canonical variant signature", self.patch)
         self.assertIn('if plan["existing_values"]:', self.patch)
 
+    def test_cross_candidate_duplicate_signatures_fail_before_mutation(self):
+        self.assertIn("def _validate_plan_set", self.patch)
+        self.assertIn('key = (plan["parent"].name, plan["signature"])', self.patch)
+        self.assertIn("имеют одинаковую variant signature", self.patch)
+        self.assertLess(
+            self.patch.index("_validate_plan_set(plans)"),
+            self.patch.index("for plan in plans:"),
+        )
+
     def test_identity_and_external_links_are_preserved(self):
         apply_source = self.patch.split("def _apply_plan", 1)[1].split(
             "def _variant_values", 1
