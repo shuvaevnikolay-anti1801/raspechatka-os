@@ -155,6 +155,29 @@ describe('PosTransactionEngine safety',()=>{
     expect(database.getSale(database.listSales()[0].id).payments.map((x)=>x.method)).toEqual(['cash','card'])
   })
 
+  it('creates a paid production order only after the sale is fiscalized',async()=>{
+    const withOrder:CompleteSaleRequest={
+      ...request([{method:'cash',amountMinor:2000}],'sale-with-order'),
+      order:{phone:'+7 900 123-45-67',comment:'Напечатать комплект',dueAt:'2026-09-21T12:00:00.000Z'}
+    }
+    const completed=await engine.completeSale(withOrder,shiftId)
+    expect(fiscal.saleCalls).toBe(1)
+    expect(completed.order).toMatchObject({
+      status:'in_progress',paymentStatus:'paid',paidMinor:2000,sourceSaleId:completed.saleId
+    })
+    expect(database.listOrders()).toHaveLength(1)
+  })
+
+  it('does not create an order when fiscalization is unresolved',async()=>{
+    fiscal.throwOnSale=true
+    const withOrder:CompleteSaleRequest={
+      ...request([{method:'cash',amountMinor:2000}],'failed-sale-with-order'),
+      order:{phone:'+7 900 123-45-67',comment:'Не должен появиться',dueAt:'2026-09-21T12:00:00.000Z'}
+    }
+    await expect(engine.completeSale(withOrder,shiftId)).rejects.toThrow(/НЕ пробивайте чек повторно/)
+    expect(database.listOrders()).toHaveLength(0)
+  })
+
   it('stores manual remote payment confirmation without calling the terminal',async()=>{
     const remoteRequest:CompleteSaleRequest={
       ...request([{method:'remote_payment',amountMinor:2000}],'remote-request'),
