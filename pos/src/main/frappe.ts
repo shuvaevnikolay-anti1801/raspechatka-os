@@ -6,6 +6,7 @@ type BootstrapResponse = {
   employee?: PointEmployee|null
   employees: PointEmployee[]
   rules: BootState['rules']
+  upsellRules: BootState['upsellRules']
   products: Product[]
   customers: Customer[]
   workplaceData: WorkplaceData
