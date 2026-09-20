@@ -513,7 +513,7 @@ export class PosDatabase {
 
   listOrders():Order[] {
     return (this.db.prepare(`SELECT id,order_number orderNumber,phone,customer_name customerName,lines_json lines,
-      total_minor totalMinor,paid_minor paidMinor,status,comment,created_at createdAt,due_at dueAt,
+      total_minor totalMinor,paid_minor paidMinor,status,comment,created_at createdAt,due_at dueAt,ready_at readyAt,issued_at issuedAt,
       source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 5000`).all() as any[])
       .map((x)=>({...x,lines:JSON.parse(x.lines),paymentStatus:x.paidMinor>=x.totalMinor?'paid':x.paidMinor>0?'partial':'unpaid'})) as Order[]
   }
