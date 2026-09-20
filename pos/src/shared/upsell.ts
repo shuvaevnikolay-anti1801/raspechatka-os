@@ -29,3 +29,18 @@ export function selectUpsellCandidate(
 
   return { candidate: null, nextCursor: start }
 }
+
+
+export type UpsellCycleState = 'eligible' | 'showing' | 'resolved'
+export type UpsellCycle = {
+  state: UpsellCycleState
+  triggerItem?: string
+  candidate?: UpsellCandidate
+}
+
+export function resolveUpsellAfterCart(cycle: UpsellCycle, cart: CartLine[]): UpsellCycle {
+  if (cycle.state === 'showing' && cycle.triggerItem && !cart.some((line) => line.productId === cycle.triggerItem)) {
+    return { state: 'resolved' }
+  }
+  return cycle
+}
