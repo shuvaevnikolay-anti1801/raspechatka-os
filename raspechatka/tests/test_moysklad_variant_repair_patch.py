@@ -43,6 +43,10 @@ class TestMoySkladVariantRepairPatchContract(TestCase):
             self.patch.index("for plan in plans:"),
         )
 
+    def test_repair_uses_same_variant_value_length_as_importer(self):
+        self.assertIn('_normalize(row.get("name") or row.get("id"))[:140]', self.patch)
+        self.assertIn('_normalize(_payload_value(row.get("value")))[:140]', self.patch)
+
     def test_repair_verifies_postconditions_before_success(self):
         self.assertIn("def _verify_plan", self.patch)
         self.assertIn("_verify_plan(plan)", self.patch)
