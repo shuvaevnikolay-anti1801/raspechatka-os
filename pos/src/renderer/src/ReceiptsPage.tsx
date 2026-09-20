@@ -1,37 +1,502 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { BootState, HeldReceipt, PointReceiptSummary, ReceiptSearchFilters, ReturnSummary, SaleDetails, SaleSummary } from '../../shared/contracts'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import type {
+  BootState,
+  HeldReceipt,
+  PaymentMethod,
+  PointReceiptDetails,
+  PointReceiptSummary,
+  ReceiptSearchFilters,
+  SaleDetails,
+  SaleSummary,
+} from '../../shared/contracts'
 import { formatPersonShortName } from './person-name'
 
-const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
-const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'Безналичные',remote_payment:'Безналичные',mixed:'Смешанная'}
-const defaultFilters:ReceiptSearchFilters={period:'current_shift',paymentChannel:''}
+const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{
+  style:'currency',currency:'RUB',maximumFractionDigits:2
+}).format(minor/100)
 
-type Props={boot:BootState;sales:SaleSummary[];held:HeldReceipt[];returns:ReturnSummary[];onPrint:(id:string,kind:'fiscal-copy'|'commodity')=>Promise<void>;onReturn:(sale:SaleSummary)=>Promise<void>;onRestore:(receipt:HeldReceipt)=>Promise<void>;onRefresh:()=>Promise<void>;notify:(text:string)=>void}
-
-const rubles=(value:string)=>{if(!value.trim())return undefined;const n=Number(value.replace(',','.'));return Number.isFinite(n)?Math.max(0,Math.round(n*100)):undefined}
-const localMatch=(sale:SaleSummary,text:string)=>{const q=text.trim().toLocaleLowerCase('ru');if(!q)return true;return [sale.receiptNumber,sale.customerName||'',paymentNames[sale.paymentMethod]||sale.paymentMethod,new Date(sale.createdAt).toLocaleString('ru-RU')].join(' ').toLocaleLowerCase('ru').includes(q)}
-const channelMatch=(sale:SaleSummary,channel:ReceiptSearchFilters['paymentChannel'])=>!channel||channel==='Cash'&&sale.paymentMethod==='cash'||channel==='Noncash'&&sale.paymentMethod!=='cash'
-const dateMatch=(sale:SaleSummary,filters:ReceiptSearchFilters)=>{const t=new Date(sale.createdAt).getTime();const now=new Date();const day=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();if(filters.period==='today')return t>=day;if(filters.period==='yesterday')return t>=day-86400000&&t<day;if(filters.period==='7d')return t>=day-6*86400000;if(filters.period==='30d')return t>=day-29*86400000;if(filters.period==='custom'){const from=filters.dateFrom?new Date(filters.dateFrom+'T00:00:00').getTime():-Infinity;const to=filters.dateTo?new Date(filters.dateTo+'T23:59:59').getTime():Infinity;return t>=from&&t<=to}return true}
-
-export default function ReceiptsPage({boot,sales,held,returns,onPrint,onReturn,onRestore,onRefresh,notify}:Props){
- const [draft,setDraft]=useState({text:'',period:'current_shift' as ReceiptSearchFilters['period'],from:'',to:'',cashier:'',channel:'' as ReceiptSearchFilters['paymentChannel'],min:'',max:''})
- const [applied,setApplied]=useState<ReceiptSearchFilters>(defaultFilters)
- const [rows,setRows]=useState<Array<SaleSummary|PointReceiptSummary>>(sales)
- const [online,setOnline]=useState(false);const [details,setDetails]=useState<SaleDetails|null>(null);const [message,setMessage]=useState('')
- const search=async(next=applied)=>{try{const result=await window.raspechatkaPos.searchPointReceipts(draft.text,next);setRows(result);setOnline(true);setMessage('')}catch{setOnline(false);setRows(sales.filter(s=>localMatch(s,draft.text)&&dateMatch(s,next)&&channelMatch(s,next.paymentChannel)&&(!next.amountMinMinor||s.totalMinor>=next.amountMinMinor)&&(!next.amountMaxMinor||s.totalMinor<=next.amountMaxMinor)&&(!next.cashierId||false)));setMessage('Нет связи с OS · показан локальный кэш текущей точки')}} 
- useEffect(()=>{setRows(sales)},[sales])
- const apply=()=>{const next:ReceiptSearchFilters={period:draft.period,shiftExternalId:boot.shift?.id,dateFrom:draft.period==='custom'?draft.from:undefined,dateTo:draft.period==='custom'?draft.to:undefined,cashierId:draft.cashier||undefined,amountMinMinor:rubles(draft.min),amountMaxMinor:rubles(draft.max),paymentChannel:draft.channel};setApplied(next);void search(next)}
- const clear=()=>{setDraft({text:'',period:'current_shift',from:'',to:'',cashier:'',channel:'',min:'',max:''});const next={...defaultFilters,shiftExternalId:boot.shift?.id};setApplied(next);void window.raspechatkaPos.searchPointReceipts('',next).then(result=>{setRows(result);setOnline(true)}).catch(()=>{setRows(sales);setOnline(false)})}
- const shown=useMemo(()=>rows,[rows])
- const open=async(row:SaleSummary|PointReceiptSummary)=>{try{setDetails(await window.raspechatkaPos.getSale(row.id))}catch{setMessage('Детали доступны только для локального снимка чека')}}
- const sale=(row:SaleSummary|PointReceiptSummary):SaleSummary=>('source' in row?row:{id:row.id,receiptNumber:row.receiptNumber,totalMinor:row.totalMinor,returnedMinor:0,paymentMethod:row.paymentLabel==='Наличные'?'cash':'card',customerName:row.customerName,createdAt:row.createdAt,status:row.status==='returned'?'returned':'completed',source:'server',returnable:false})
- return <Page title="Чеки">
-  <div className="receipt-search-page"><form onSubmit={e=>{e.preventDefault();apply()}}><input value={draft.text} onChange={e=>setDraft({...draft,text:e.target.value})} placeholder="Номер, фискальный номер, покупатель, телефон или товар"/><div className="receipt-periods">{(['current_shift','today','yesterday','7d','30d','custom'] as const).map(p=><button type="button" key={p} className={draft.period===p?'active':''} onClick={()=>setDraft({...draft,period:p})}>{({current_shift:'Текущая смена',today:'Сегодня',yesterday:'Вчера','7d':'7 дней','30d':'30 дней',custom:'Период'} as Record<string,string>)[p]}</button>)}</div>{draft.period==='custom'&&<div className="receipt-filter-grid"><label>Дата с<input type="date" value={draft.from} onChange={e=>setDraft({...draft,from:e.target.value})}/></label><label>Дата по<input type="date" value={draft.to} onChange={e=>setDraft({...draft,to:e.target.value})}/></label></div>}<div className="receipt-filter-grid"><label>Кассир<select value={draft.cashier} onChange={e=>setDraft({...draft,cashier:e.target.value})}><option value="">Все кассиры</option>{boot.employees.map(e=><option key={e.id} value={e.id}>{formatPersonShortName(e.name)}</option>)}</select></label><label>Оплата<select value={draft.channel} onChange={e=>setDraft({...draft,channel:e.target.value as ReceiptSearchFilters['paymentChannel']})}><option value="">Любая</option><option value="Cash">Наличные</option><option value="Noncash">Безналичные</option></select></label><label>Сумма от<input inputMode="decimal" value={draft.min} onChange={e=>setDraft({...draft,min:e.target.value})}/></label><label>Сумма до<input inputMode="decimal" value={draft.max} onChange={e=>setDraft({...draft,max:e.target.value})}/></label><button type="submit" className="primary">Найти</button><button type="button" onClick={clear}>Очистить</button></div></form></div>
-  {online?null:<div className="receipt-cache-note">Локальный кэш текущей точки</div>}
-  {held.length>0&&<section className="held"><h3>Отложенные</h3>{held.map(r=><article key={r.id}><div><b>{r.customer?.name||r.label}</b><small>{money(r.totalMinor??r.lines.reduce((n,l)=>n+Math.round(l.quantity*l.unitPriceMinor),0))} · {r.lines.length} поз. · {new Date(r.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small><small>{r.lines.slice(0,4).map(l=>l.name+' × '+l.quantity).join(' · ')}{r.lines.length>4?' · + ещё '+(r.lines.length-4):''}</small></div><button onClick={()=>void onRestore(r)}>Продолжить</button></article>)}</section>}
-  <div className="data-table receipts-table"><header><span>Чек</span><span>Дата/время</span><span>Кассир</span><span>Покупатель</span><span>Оплата</span><span>Сумма/статус</span><span>Действия</span></header>{shown.length?shown.map(row=>{const s=sale(row);const server=s.source==='server';const reason=server?'Межкассовый возврат требует центрального резервирования':s.returnable===false?'Чек уже полностью возвращён':undefined;return <div key={row.id} onClick={()=>void open(row)}><b>{s.receiptNumber}</b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{'cashierName' in row?row.cashierName||'—':'—'}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]||s.paymentMethod}</span><strong>{money(s.totalMinor)}<small>{s.status}</small></strong><div className="sale-actions" onClick={e=>e.stopPropagation()}><button onClick={()=>void onPrint(s.id,'commodity')}>Товарный чек</button><button disabled={server} title={server?'Точная копия server-only чека недоступна':'Фискальная копия недоступна без точного документа'} onClick={()=>void onPrint(s.id,'fiscal-copy')}>Копия чека</button><button disabled={Boolean(reason)||!boot.shift} title={reason||(!boot.shift?'Откройте смену для возврата':'')} onClick={()=>void onReturn(s)}>Возврат</button></div></div>}) : <div className="page-empty">Чеки не найдены</div>}</div>
-  {details&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setDetails(null)}}><section className="payment-modal receipt-detail-modal"><header><div><small>ЧЕК</small><h2>{details.receiptNumber}</h2></div><button onClick={()=>setDetails(null)}>×</button></header><div className="receipt-detail-summary"><div><small>Дата/время</small><b>{new Date(details.createdAt).toLocaleString('ru-RU')}</b></div><div><small>Покупатель/телефон</small><b>{details.customerName||'Розничный покупатель'}</b></div><div><small>Оплата</small><b>{details.payments.map(p=>paymentNames[p.method]||p.method).join(' + ')}</b></div><div><small>Итого</small><strong>{money(details.totalMinor)}</strong></div></div><div className="receipt-detail-lines">{details.lines.map(l=><article key={l.id}><div><b>{l.name}</b><small>{l.quantity} × {money(l.unitPriceMinor)} · строка {money(Math.round(l.quantity*l.unitPriceMinor*(1-(l.discountPercent||0)/100)))}</small></div>{l.returnedQuantity>0&&<span>Возвращено: {l.returnedQuantity}</span>}</article>)}</div></section></div>}
-  {message&&<div className="pilot-message">{message}</div>}
- </Page>
+const paymentNames:Record<string,string>={
+  cash:'Наличные',
+  card:'Карта',
+  qr:'QR / СБП',
+  remote_payment:'Безналичные',
+  mixed:'Смешанная',
+  Cash:'Наличные',
+  Card:'Карта',
+  QR:'QR / СБП',
 }
-function Page({title,children}:{title:string;children:React.ReactNode}){return <main className="page"><div className="page-heading"><h1>{title}</h1></div>{children}</main>}
+
+const statusNames:Record<string,string>={
+  completed:'Проведён',
+  partially_returned:'Частичный возврат',
+  returned:'Возвращён',
+  Posted:'Проведён',
+  Draft:'Черновик',
+  Cancelled:'Отменён',
+}
+
+const periodLabels={
+  current_shift:'Текущая смена',
+  today:'Сегодня',
+  yesterday:'Вчера',
+  '7d':'7 дней',
+  '30d':'30 дней',
+  custom:'Период',
+} as const
+
+type Period=keyof typeof periodLabels
+type DraftFilters={
+  text:string
+  period:Period
+  dateFrom:string
+  dateTo:string
+  cashierId:string
+  paymentChannel:''|'Cash'|'Noncash'
+  amountMin:string
+  amountMax:string
+}
+type DisplayRow={
+  key:string
+  summary:SaleSummary|PointReceiptSummary
+  cached?:SaleSummary
+  server?:PointReceiptSummary
+}
+type ReceiptDetail=
+  | {kind:'cached';value:SaleDetails}
+  | {kind:'server';value:PointReceiptDetails}
+
+type Props={
+  boot:BootState
+  sales:SaleSummary[]
+  held:HeldReceipt[]
+  onReturn:(sale:SaleSummary)=>Promise<void>
+  onRestore:(receipt:HeldReceipt)=>Promise<void>
+  notify:(text:string)=>void
+}
+
+const emptyDraft=():DraftFilters=>({
+  text:'',
+  period:'current_shift',
+  dateFrom:'',
+  dateTo:'',
+  cashierId:'',
+  paymentChannel:'',
+  amountMin:'',
+  amountMax:'',
+})
+
+const toMinor=(value:string):number|undefined=>{
+  if(!value.trim())return undefined
+  const parsed=Number(value.replace(',','.'))
+  return Number.isFinite(parsed)&&parsed>=0?Math.round(parsed*100):undefined
+}
+
+const methodsOf=(sale:SaleSummary):PaymentMethod[]=>{
+  if(sale.paymentMethods?.length)return sale.paymentMethods
+  return sale.paymentMethod==='mixed'?[]:[sale.paymentMethod]
+}
+
+const matchesPeriod=(sale:SaleSummary,filters:ReceiptSearchFilters,currentShiftId?:string)=>{
+  if(filters.period==='current_shift')return Boolean(currentShiftId)&&sale.shiftId===currentShiftId
+  const time=new Date(sale.createdAt).getTime()
+  if(!Number.isFinite(time))return false
+  const now=new Date()
+  const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime()
+  if(filters.period==='today')return time>=todayStart
+  if(filters.period==='yesterday')return time>=todayStart-86400000&&time<todayStart
+  if(filters.period==='7d')return time>=todayStart-6*86400000
+  if(filters.period==='30d')return time>=todayStart-29*86400000
+  if(filters.period==='custom'){
+    const from=filters.dateFrom?new Date(filters.dateFrom+'T00:00:00').getTime():Number.NEGATIVE_INFINITY
+    const to=filters.dateTo?new Date(filters.dateTo+'T23:59:59.999').getTime():Number.POSITIVE_INFINITY
+    return time>=from&&time<=to
+  }
+  return true
+}
+
+const filterLocal=(sales:SaleSummary[],query:string,filters:ReceiptSearchFilters,currentShiftId?:string)=>{
+  const text=query.trim().toLocaleLowerCase('ru-RU')
+  return sales.filter((sale)=>{
+    if(!matchesPeriod(sale,filters,currentShiftId))return false
+    if(filters.cashierId&&sale.cashierId!==filters.cashierId)return false
+    if(filters.amountMinMinor!==undefined&&sale.totalMinor<filters.amountMinMinor)return false
+    if(filters.amountMaxMinor!==undefined&&sale.totalMinor>filters.amountMaxMinor)return false
+    if(filters.paymentChannel){
+      const methods=methodsOf(sale)
+      if(filters.paymentChannel==='Cash'&&!methods.includes('cash'))return false
+      if(filters.paymentChannel==='Noncash'&&!methods.some((method)=>method!=='cash'))return false
+    }
+    if(text){
+      const haystack=(sale.searchText||[
+        sale.receiptNumber,sale.customerName,sale.customerPhone,sale.cashierName,
+        paymentNames[sale.paymentMethod]||sale.paymentMethod,
+      ].filter(Boolean).join(' ')).toLocaleLowerCase('ru-RU')
+      if(!haystack.includes(text))return false
+    }
+    return true
+  })
+}
+
+const heldTotal=(receipt:HeldReceipt)=>{
+  if(receipt.totalMinor!==undefined)return receipt.totalMinor
+  const gross=receipt.lines.reduce((sum,line)=>sum+Math.round(line.quantity*line.unitPriceMinor),0)
+  return Math.max(0,Math.round(gross*(1-Math.min(100,Math.max(0,receipt.discountPercent||0))/100)))
+}
+
+const paymentLabelFromSale=(sale:SaleSummary)=>{
+  const methods=methodsOf(sale)
+  if(methods.length)return methods.map((method)=>paymentNames[method]||method).join(' + ')
+  return paymentNames[sale.paymentMethod]||sale.paymentMethod
+}
+
+const asStatus=(value:string)=>statusNames[value]||value||'—'
+
+export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}:Props){
+  const [draft,setDraft]=useState<DraftFilters>(emptyDraft)
+  const [applied,setApplied]=useState<ReceiptSearchFilters>({
+    period:'current_shift',
+    shiftExternalId:boot.shift?.id,
+    receiptType:'Sale',
+  })
+  const [rows,setRows]=useState<DisplayRow[]>([])
+  const [source,setSource]=useState<'server'|'cache'>('cache')
+  const [searching,setSearching]=useState(false)
+  const [detail,setDetail]=useState<ReceiptDetail|null>(null)
+  const [detailLoading,setDetailLoading]=useState(false)
+
+  const cachedByIdentity=useMemo(()=>{
+    const map=new Map<string,SaleSummary>()
+    for(const sale of sales){
+      map.set(sale.id,sale)
+      if(sale.serverId)map.set('server:'+sale.serverId,sale)
+    }
+    return map
+  },[sales])
+
+  const localRows=(query:string,filters:ReceiptSearchFilters):DisplayRow[]=>
+    filterLocal(sales,query,filters,boot.shift?.id).map((sale)=>({
+      key:'local:'+sale.id,
+      summary:sale,
+      cached:sale,
+    }))
+
+  const serverRows=(found:PointReceiptSummary[]):DisplayRow[]=>
+    found.map((receipt)=>{
+      const cached=(receipt.externalId?cachedByIdentity.get(receipt.externalId):undefined)
+        ||cachedByIdentity.get('server:'+receipt.id)
+      return {
+        key:'server:'+receipt.id,
+        summary:receipt,
+        cached,
+        server:receipt,
+      }
+    })
+
+  const runSearch=async(query:string,filters:ReceiptSearchFilters)=>{
+    setSearching(true)
+    try{
+      const found=await window.raspechatkaPos.searchPointReceipts(query,filters)
+      setRows(serverRows(found))
+      setSource('server')
+    }catch{
+      setRows(localRows(query,filters))
+      setSource('cache')
+    }finally{
+      setSearching(false)
+    }
+  }
+
+  useEffect(()=>{
+    const filters:ReceiptSearchFilters={
+      period:'current_shift',
+      shiftExternalId:boot.shift?.id,
+      receiptType:'Sale',
+    }
+    setApplied(filters)
+    setDraft(emptyDraft())
+    void runSearch('',filters)
+    // A shift change defines a new default receipt scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[boot.shift?.id])
+
+  useEffect(()=>{
+    if(source==='cache')setRows(localRows(draft.text,applied))
+    // Keep offline results fresh after a local sale/return/sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[sales])
+
+  const buildFilters=(value:DraftFilters):ReceiptSearchFilters=>({
+    period:value.period,
+    shiftExternalId:value.period==='current_shift'?boot.shift?.id:undefined,
+    dateFrom:value.period==='custom'&&value.dateFrom?value.dateFrom:undefined,
+    dateTo:value.period==='custom'&&value.dateTo?value.dateTo:undefined,
+    cashierId:value.cashierId||undefined,
+    amountMinMinor:toMinor(value.amountMin),
+    amountMaxMinor:toMinor(value.amountMax),
+    paymentChannel:value.paymentChannel,
+    receiptType:'Sale',
+  })
+
+  const apply=()=>{
+    const filters=buildFilters(draft)
+    if(filters.amountMinMinor!==undefined&&filters.amountMaxMinor!==undefined&&filters.amountMinMinor>filters.amountMaxMinor){
+      notify('Сумма «от» не может быть больше суммы «до»')
+      return
+    }
+    if(draft.period==='custom'&&draft.dateFrom&&draft.dateTo&&draft.dateFrom>draft.dateTo){
+      notify('Дата «с» не может быть позже даты «по»')
+      return
+    }
+    setApplied(filters)
+    void runSearch(draft.text,filters)
+  }
+
+  const clear=()=>{
+    const next=emptyDraft()
+    const filters:ReceiptSearchFilters={
+      period:'current_shift',
+      shiftExternalId:boot.shift?.id,
+      receiptType:'Sale',
+    }
+    setDraft(next)
+    setApplied(filters)
+    void runSearch('',filters)
+  }
+
+  const openDetails=async(row:DisplayRow)=>{
+    setDetailLoading(true)
+    try{
+      if(row.cached){
+        setDetail({kind:'cached',value:await window.raspechatkaPos.getSale(row.cached.id)})
+      }else if(row.server){
+        setDetail({kind:'server',value:await window.raspechatkaPos.getPointReceipt(row.server.id)})
+      }
+    }catch(error){
+      notify(error instanceof Error?error.message:String(error))
+    }finally{
+      setDetailLoading(false)
+    }
+  }
+
+  const printCommodity=async(row:DisplayRow)=>{
+    try{
+      const result=row.cached
+        ?await window.raspechatkaPos.printSale(row.cached.id,'commodity')
+        :row.server
+          ?await window.raspechatkaPos.printPointReceiptCommodity(row.server.id)
+          :undefined
+      if(result)notify(result.message)
+    }catch(error){
+      notify(error instanceof Error?error.message:String(error))
+    }
+  }
+
+  const printFiscalCopy=async(row:DisplayRow)=>{
+    if(!row.cached||row.cached.source!=='local')return
+    try{
+      const result=await window.raspechatkaPos.printSale(row.cached.id,'fiscal-copy')
+      notify(result.message)
+    }catch(error){
+      notify(error instanceof Error?error.message:String(error))
+    }
+  }
+
+  const returnReceipt=async(row:DisplayRow)=>{
+    if(!row.cached||row.cached.source!=='local')return
+    await onReturn(row.cached)
+  }
+
+  return <main className="page receipts-page">
+    <div className="page-heading"><h1>Чеки</h1></div>
+
+    <section className="receipt-search-page">
+      <form onSubmit={(event)=>{event.preventDefault();apply()}}>
+        <label className="receipt-search-input">
+          <span>⌕</span>
+          <input
+            value={draft.text}
+            onChange={(event)=>setDraft({...draft,text:event.target.value})}
+            placeholder="Номер чека, покупатель, телефон или товар"
+          />
+        </label>
+
+        <div className="receipt-periods" aria-label="Период">
+          {(Object.keys(periodLabels) as Period[]).map((period)=>
+            <button
+              type="button"
+              key={period}
+              className={draft.period===period?'active':''}
+              onClick={()=>setDraft({...draft,period})}
+            >{periodLabels[period]}</button>
+          )}
+        </div>
+
+        {draft.period==='custom'&&<div className="receipt-date-range">
+          <label>Дата с<input type="date" value={draft.dateFrom} onChange={(event)=>setDraft({...draft,dateFrom:event.target.value})}/></label>
+          <label>Дата по<input type="date" value={draft.dateTo} onChange={(event)=>setDraft({...draft,dateTo:event.target.value})}/></label>
+        </div>}
+
+        <div className="receipt-filter-grid">
+          <label>Кассир
+            <select value={draft.cashierId} onChange={(event)=>setDraft({...draft,cashierId:event.target.value})}>
+              <option value="">Все кассиры</option>
+              {boot.employees.map((employee)=><option key={employee.id} value={employee.id}>{formatPersonShortName(employee.name)}</option>)}
+            </select>
+          </label>
+          <label>Оплата
+            <select value={draft.paymentChannel} onChange={(event)=>setDraft({...draft,paymentChannel:event.target.value as DraftFilters['paymentChannel']})}>
+              <option value="">Любая</option>
+              <option value="Cash">Наличные</option>
+              <option value="Noncash">Безналичные</option>
+            </select>
+          </label>
+          <label>Сумма от, ₽
+            <input inputMode="decimal" value={draft.amountMin} onChange={(event)=>setDraft({...draft,amountMin:event.target.value})}/>
+          </label>
+          <label>Сумма до, ₽
+            <input inputMode="decimal" value={draft.amountMax} onChange={(event)=>setDraft({...draft,amountMax:event.target.value})}/>
+          </label>
+          <div className="receipt-filter-actions">
+            <button type="button" disabled={searching} onClick={clear}>Очистить</button>
+            <button type="submit" className="primary" disabled={searching}>{searching?'Ищем…':'Найти'}</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    {source==='cache'&&<div className="receipt-cache-note">
+      <b>Локальный кэш</b>
+      <span>Нет ответа от OS — поиск выполнен по сохранённым чекам этой точки.</span>
+    </div>}
+
+    {held.length>0&&<section className="held held-receipts">
+      <h3>Отложенные чеки</h3>
+      <div className="held-receipts-grid">
+        {held.map((receipt)=><article key={receipt.id}>
+          <div className="held-receipt-head">
+            <div>
+              <b>{receipt.customer?.name||receipt.label}</b>
+              <small>{new Date(receipt.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · {receipt.lines.length} поз.</small>
+            </div>
+            <strong>{money(heldTotal(receipt))}</strong>
+          </div>
+          <div className="held-receipt-lines">
+            {receipt.lines.slice(0,4).map((line)=><span key={line.productId}>{line.name} × {line.quantity}</span>)}
+            {receipt.lines.length>4&&<span>+ ещё {receipt.lines.length-4}</span>}
+          </div>
+          <button onClick={()=>void onRestore(receipt)}>Продолжить</button>
+        </article>)}
+      </div>
+    </section>}
+
+    <section className="receipts-table-wrap">
+      <div className="data-table receipts-table">
+        <header>
+          <span>Чек</span><span>Дата и время</span><span>Кассир</span><span>Покупатель</span>
+          <span>Оплата</span><span>Сумма / статус</span><span>Действия</span>
+        </header>
+        {rows.length?rows.map((row)=>{
+          const summary=row.summary
+          const isServer='receiptType' in summary
+          const local=row.cached?.source==='local'?row.cached:undefined
+          const cashierName=summary.cashierName
+          const customerName=summary.customerName||'Розничный покупатель'
+          const paymentLabel=isServer?summary.paymentLabel:paymentLabelFromSale(summary)
+          const copyReason=local?undefined:'Точная фискальная копия разрешена только для продажи, фискализированной этой POS на выбранной ККТ'
+          const returnReason=!local
+            ?'Межкассовый возврат требует центрального резервирования и защиты от повторного возврата'
+            :!boot.shift
+              ?'Для возврата сначала откройте смену'
+              :local.status==='returned'||local.returnable===false
+                ?'Чек уже полностью возвращён'
+                :undefined
+          return <div className="receipt-result-row" key={row.key} role="button" tabIndex={0}
+            onClick={()=>void openDetails(row)}
+            onKeyDown={(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void openDetails(row)}}}>
+            <b>{summary.receiptNumber}</b>
+            <span>{new Date(summary.createdAt).toLocaleString('ru-RU')}</span>
+            <span>{cashierName?formatPersonShortName(cashierName):'—'}</span>
+            <span>{customerName}</span>
+            <span>{paymentLabel||'—'}</span>
+            <strong>{money(summary.totalMinor)}<small>{asStatus(summary.status)}</small></strong>
+            <div className="sale-actions" onClick={(event)=>event.stopPropagation()}>
+              <button onClick={()=>void printCommodity(row)}>Товарный чек</button>
+              <button disabled={Boolean(copyReason)} title={copyReason||'Печать точной копии выбранного фискального документа'} onClick={()=>void printFiscalCopy(row)}>Копия чека</button>
+              <button className="danger" disabled={Boolean(returnReason)} title={returnReason||'Оформить возврат по этому чеку'} onClick={()=>void returnReceipt(row)}>Возврат</button>
+            </div>
+          </div>
+        }):<div className="page-empty">{searching?'Ищем чеки…':'Чеки не найдены'}</div>}
+      </div>
+    </section>
+
+    {detailLoading&&<div className="receipt-detail-loading">Загружаем чек…</div>}
+    {detail&&<ReceiptDetailModal detail={detail} onClose={()=>setDetail(null)}/>}
+  </main>
+}
+
+function ReceiptDetailModal({detail,onClose}:{detail:ReceiptDetail;onClose:()=>void}){
+  const value=detail.value
+  const cached=detail.kind==='cached'?detail.value:undefined
+  const server=detail.kind==='server'?detail.value:undefined
+  const cashier=value.cashierName
+  const phone=value.customerPhone
+  const payments=cached
+    ?cached.payments.map((payment)=>({label:paymentNames[payment.method]||payment.method,amountMinor:payment.amountMinor}))
+    :server!.payments.map((payment)=>({label:paymentNames[payment.channel]||payment.channel,amountMinor:payment.amountMinor}))
+  const lines=cached
+    ?cached.lines.map((line)=>({
+      key:String(line.id),name:line.name,quantity:line.quantity,unitPriceMinor:line.unitPriceMinor,
+      lineTotalMinor:Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent??0)/100)),
+      discountPercent:line.discountPercent??0,returnedQuantity:line.returnedQuantity,
+    }))
+    :server!.lines.map((line,index)=>({
+      key:line.productId||String(index),name:line.name,quantity:line.quantity,unitPriceMinor:line.unitPriceMinor,
+      lineTotalMinor:line.lineTotalMinor,discountPercent:line.discountPercent??0,returnedQuantity:line.returnedQuantity??0,
+    }))
+  const gross=lines.reduce((sum,line)=>sum+Math.round(line.quantity*line.unitPriceMinor),0)
+  const discount=Math.max(0,gross-value.totalMinor)
+
+  return <div className="modal-backdrop" onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose()}}>
+    <section className="payment-modal receipt-detail-modal">
+      <header>
+        <div><small>ЧЕК</small><h2>{value.receiptNumber}</h2></div>
+        <button onClick={onClose}>×</button>
+      </header>
+      <div className="receipt-detail-summary">
+        <DetailField label="Дата и время">{new Date(value.createdAt).toLocaleString('ru-RU')}</DetailField>
+        <DetailField label="Кассир">{cashier?formatPersonShortName(cashier):'—'}</DetailField>
+        <DetailField label="Покупатель">{value.customerName||'Розничный покупатель'}{phone&&<small>{phone}</small>}</DetailField>
+        <DetailField label="Статус">{asStatus(value.status)}</DetailField>
+      </div>
+
+      <div className="receipt-detail-lines">
+        <header><span>Позиция</span><span>Кол-во × цена</span><span>Сумма</span></header>
+        {lines.map((line)=><article key={line.key}>
+          <div>
+            <b>{line.name}</b>
+            <small>{(line.discountPercent>0?'Скидка '+line.discountPercent+'%':'Без скидки')+(line.returnedQuantity>0?' · возвращено '+line.returnedQuantity:'')}</small>
+          </div>
+          <span>{line.quantity} × {money(line.unitPriceMinor)}</span>
+          <strong>{money(line.lineTotalMinor)}</strong>
+        </article>)}
+      </div>
+
+      <div className="receipt-detail-bottom">
+        <section>
+          <h3>Оплата</h3>
+          {payments.map((payment,index)=><div key={index}><span>{payment.label}</span><strong>{money(payment.amountMinor)}</strong></div>)}
+        </section>
+        <section>
+          <div><span>До скидок</span><strong>{money(gross)}</strong></div>
+          {discount>0&&<div><span>Скидки</span><strong>− {money(discount)}</strong></div>}
+          {cached&&cached.returnedMinor>0&&<div><span>Возвращено</span><strong>{money(cached.returnedMinor)}</strong></div>}
+          <div className="receipt-detail-total"><span>Итого</span><strong>{money(value.totalMinor)}</strong></div>
+        </section>
+      </div>
+    </section>
+  </div>
+}
+
+function DetailField({label,children}:{label:string;children:ReactNode}){
+  return <div><small>{label}</small><b>{children}</b></div>
+}
