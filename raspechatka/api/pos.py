@@ -239,6 +239,75 @@ def _get_products(point_name):
 	return sorted(result, key=lambda row: (row["category"], row["name"]))
 
 
+def _get_operational_catalog(point_name):
+	"""Return active leaf catalog items with point warehouse facts, independent of sale assortment."""
+	warehouse = frappe.db.get_value(
+		"Catalog Warehouse",
+		{"business_point": point_name, "active": 1},
+		"name",
+	)
+	balances = (
+		{
+			row.item: flt(row.actual_qty)
+			for row in frappe.get_all(
+				"Stock Balance",
+				filters={"warehouse": warehouse},
+				fields=["item", "actual_qty"],
+				limit_page_length=0,
+			)
+		}
+		if warehouse
+		else {}
+	)
+	storage = (
+		{
+			row.item: row.full_address
+			for row in frappe.get_all(
+				"Catalog Item Storage",
+				filters={"warehouse": warehouse, "active": 1},
+				fields=["item", "full_address"],
+				limit_page_length=5000,
+			)
+		}
+		if warehouse
+		else {}
+	)
+	rows = frappe.get_all(
+		"Catalog Item",
+		filters={"active": 1},
+		fields=[
+			"name",
+			"item_name",
+			"item_code",
+			"item_type",
+			"stock_uom",
+			"track_inventory",
+			"has_variants",
+		],
+		order_by="item_name asc",
+		limit_page_length=0,
+	)
+	result = []
+	for row in rows:
+		# A Product template with variants is not an operational leaf. Variants,
+		# simple Products, Services and Bundles remain selectable for point needs.
+		if row.item_type == "Product" and row.has_variants:
+			continue
+		result.append(
+			{
+				"id": row.name,
+				"name": row.item_name,
+				"itemCode": row.item_code or "",
+				"itemType": row.item_type,
+				"uom": row.stock_uom or "шт",
+				"trackInventory": bool(row.track_inventory),
+				"stock": flt(balances.get(row.name)) if row.track_inventory else None,
+				"storageAddress": storage.get(row.name) or "",
+			}
+		)
+	return result
+
+
 def _get_customers():
 	purchases = {
 		row.client: row
@@ -617,6 +686,7 @@ def _get_workplace_data(employee, point, workplace):
 		"schedule": _get_employee_schedule(employee, point.name),
 		"scheduleMonth": _get_schedule_month(point.name),
 		"myUpcomingShifts": _get_upcoming_shifts(employee, point.name),
+		"operationalCatalog": _get_operational_catalog(point.name),
 		"deliveries": _get_delivery_notices(point.name),
 		"supplyRequests": _get_supply_requests(point.name),
 		"cleaner": _get_cleaner_status(point.name),
@@ -852,18 +922,72 @@ def _get_delivery_notices(point_name):
 		order_by="expected_date asc, creation asc",
 		limit_page_length=50,
 	)
-	return [
-		{
-			"id": row.name,
-			"supplier": row.supplier,
-			"expectedDate": str(row.expected_date or ""),
-			"deliveryCompany": row.delivery_company or "",
-			"deliveryCode": row.delivery_code or "",
-			"details": row.delivery_note or row.remarks or "",
-			"status": row.order_status,
-		}
-		for row in rows
-	]
+	if not rows:
+		return []
+
+	order_names = [row.name for row in rows]
+	order_items = frappe.get_all(
+		"Purchase Order Item",
+		filters={"parent": ["in", order_names], "parenttype": "Purchase Order"},
+		fields=[
+			"name",
+			"parent",
+			"item",
+			"item_code",
+			"uom",
+			"quantity",
+			"received_quantity",
+		],
+		order_by="idx asc",
+		limit_page_length=5000,
+	)
+	item_names = {
+		row.name: row.item_name
+		for row in frappe.get_all(
+			"Catalog Item",
+			filters={"name": ["in", list({row.item for row in order_items}) or ["__none__"]]},
+			fields=["name", "item_name"],
+			limit_page_length=5000,
+		)
+	}
+	by_order = {}
+	for item in order_items:
+		remaining = max(0, flt(item.quantity) - flt(item.received_quantity))
+		if remaining <= 0:
+			continue
+		by_order.setdefault(item.parent, []).append(
+			{
+				"purchaseOrderItemId": item.name,
+				"itemId": item.item,
+				"itemName": item_names.get(item.item) or item.item_code or item.item,
+				"itemCode": item.item_code or "",
+				"uom": item.uom or "шт",
+				"orderedQuantity": flt(item.quantity),
+				"receivedQuantity": flt(item.received_quantity),
+				"remainingQuantity": remaining,
+			}
+		)
+
+	result = []
+	for row in rows:
+		items = by_order.get(row.name, [])
+		if not items:
+			continue
+		result.append(
+			{
+				"id": row.name,
+				"supplier": row.supplier,
+				"expectedDate": str(row.expected_date or ""),
+				"deliveryCompany": row.delivery_company or "",
+				"deliveryCode": row.delivery_code or "",
+				"receivingNote": row.delivery_note or "",
+				"comment": row.remarks or "",
+				"details": row.delivery_note or row.remarks or "",
+				"status": row.order_status,
+				"items": items,
+			}
+		)
+	return result
 
 
 def _get_supply_requests(point_name):
