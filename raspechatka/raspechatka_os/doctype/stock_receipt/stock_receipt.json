@@ -22,7 +22,7 @@
   {"fieldname":"supplier_document_number","fieldtype":"Data","label":"Номер документа поставщика","depends_on":"eval:doc.receipt_type=='Приёмка'"},
   {"fieldname":"supplier_document_date","fieldtype":"Date","label":"Дата документа поставщика","depends_on":"eval:doc.receipt_type=='Приёмка'"},
   {"fieldname":"reason","fieldtype":"Data","label":"Основание оприходования","depends_on":"eval:doc.receipt_type=='Оприходование'"},
-  {"fieldname":"source","fieldtype":"Select","label":"Источник","options":"Manual\nMoySklad","default":"Manual","read_only":1},
+  {"fieldname":"source","fieldtype":"Select","label":"Источник","options":"Manual\nMoySklad\nPOS","default":"Manual","read_only":1},
   {"fieldname":"external_id","fieldtype":"Data","label":"Внешний ID","unique":1,"read_only":1,"hidden":1},
   {"fieldname":"source_updated_at","fieldtype":"Datetime","label":"Изменено в источнике","read_only":1,"hidden":1},
   {"fieldname":"source_payload_json","fieldtype":"Long Text","label":"Исходные данные","read_only":1,"hidden":1},
