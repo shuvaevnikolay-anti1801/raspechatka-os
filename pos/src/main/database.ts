@@ -14,7 +14,7 @@ const emptySummary=():ShiftSummary=>({
   depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0
 })
 
-const emptyWorkplaceData=():WorkplaceData=>{
+export const emptyWorkplaceData=():WorkplaceData=>{
   const now=new Date()
   const month=now.toISOString().slice(0,7)
   return {
@@ -27,10 +27,10 @@ const emptyWorkplaceData=():WorkplaceData=>{
     orders:[],
   }
 }
-const normalizeWorkplaceData=(value:Partial<WorkplaceData>|null|undefined):WorkplaceData=>{
+export const normalizeWorkplaceData=(value:Partial<WorkplaceData>|null|undefined):WorkplaceData=>{
   const defaults=emptyWorkplaceData()
   const incoming=value||{}
-  const month=incoming.scheduleMonth||{}
+  const month:any=incoming.scheduleMonth||{}
   return {
     ...defaults,
     ...incoming,
