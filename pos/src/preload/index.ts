@@ -7,6 +7,7 @@ import type {
   ConnectionConfig,
   CreateReturnRequest,
   CreateUnpaidOrderRequest,
+  CreateOrderFromSaleRequest,
   HeldReceipt,
   InpasSettings,
   PosApi,
@@ -149,6 +150,8 @@ const api: ExtendedPosApi = {
   listOrders: () => ipcRenderer.invoke("pos:list-orders"),
   createUnpaidOrder: (request: CreateUnpaidOrderRequest) =>
     ipcRenderer.invoke("pos:create-unpaid-order", request),
+  createOrderFromSale: (request: CreateOrderFromSaleRequest) =>
+    ipcRenderer.invoke("pos:create-order-from-sale", request),
   updateOrder: (request: UpdateOrderRequest) =>
     ipcRenderer.invoke("pos:update-order", request),
   completeSale: async (request: CompleteSaleRequest) => {

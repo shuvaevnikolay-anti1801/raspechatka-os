@@ -746,6 +746,162 @@ def _scope_filters():
 	}
 
 
+@frappe.whitelist()
+@access_contract(area="page.sales.orders", action="read", scope="point")
+def get_order_options():
+	require_access("page.sales.orders", "read")
+	entity_filters, point_filters = _scope_filters()
+	scope = get_scope()
+	employee_filters = {"active": 1}
+	if not scope["global"]:
+		employee_filters["business_entity"] = ["in", get_allowed_entities(scope) or ["__none__"]]
+	return {
+		"entities": frappe.get_all(
+			"Business Entity",
+			filters=entity_filters,
+			fields=["name", "short_name"],
+			order_by="short_name asc",
+		),
+		"points": frappe.get_all(
+			"Business Point",
+			filters=point_filters,
+			fields=["name", "point_name", "business_entity", "city"],
+			order_by="point_name asc",
+		),
+		"cashiers": frappe.get_all(
+			"Employee",
+			filters=employee_filters,
+			fields=["name", "employee_name as full_name", "business_entity"],
+			order_by="employee_name asc",
+		),
+	}
+
+
+@frappe.whitelist()
+@access_contract(area="page.sales.orders", action="read", scope="point")
+def get_orders(
+	business_entity=None,
+	business_point=None,
+	status=None,
+	search=None,
+	created_from=None,
+	created_to=None,
+	due_from=None,
+	due_to=None,
+	ready_from=None,
+	ready_to=None,
+	overdue=0,
+	limit_page_length=1000,
+):
+	require_access("page.sales.orders", "read")
+	point_names = frappe.get_all(
+		"Business Point",
+		filters=_business_point_filters(business_entity, business_point),
+		pluck="name",
+		limit_page_length=0,
+	)
+	if not point_names:
+		return {"rows": []}
+	filters = {"business_point": ["in", point_names]}
+	if status:
+		filters["status"] = status
+	rows = frappe.get_all(
+		"POS Order",
+		filters=filters,
+		fields=[
+			"name",
+			"order_number",
+			"phone",
+			"business_point",
+			"comment",
+			"total_amount",
+			"paid_amount",
+			"status",
+			"created_at",
+			"creation",
+			"due_at",
+			"ready_at",
+			"issued_at",
+			"source_sale_id",
+			"source_receipt",
+			"fiscal_number",
+		],
+		order_by="creation desc",
+		limit_page_length=5000,
+	)
+
+	def in_range(value, start_value, end_value):
+		if not start_value and not end_value:
+			return True
+		if not value:
+			return False
+		moment = get_datetime(value)
+		if start_value and moment < get_datetime(f"{start_value} 00:00:00"):
+			return False
+		if end_value and moment > get_datetime(f"{end_value} 23:59:59"):
+			return False
+		return True
+
+	def is_overdue(row):
+		if not row.due_at:
+			return False
+		due = get_datetime(row.due_at)
+		ready = get_datetime(row.ready_at) if row.ready_at else None
+		if ready:
+			return ready > due
+		return row.status in ("New", "In Progress") and now_datetime() > due
+
+	needle = str(search or "").strip().lower()
+	filtered = []
+	for row in rows:
+		created = row.created_at or row.creation
+		if not in_range(created, created_from, created_to):
+			continue
+		if not in_range(row.due_at, due_from, due_to):
+			continue
+		if not in_range(row.ready_at, ready_from, ready_to):
+			continue
+		if needle and needle not in " ".join(
+			str(row.get(key) or "")
+			for key in ("order_number", "phone", "comment", "fiscal_number", "source_receipt")
+		).lower():
+			continue
+		late = is_overdue(row)
+		if cint(overdue) and not late:
+			continue
+		digits = "".join(ch for ch in str(row.phone or "") if ch.isdigit())
+		execution_minutes = None
+		if row.ready_at and created:
+			execution_minutes = max(
+				0,
+				int((get_datetime(row.ready_at) - get_datetime(created)).total_seconds() // 60),
+			)
+		filtered.append(
+			{
+				"name": row.name,
+				"short_number": f"№ {digits[-4:]}" if digits else "—",
+				"order_number": row.order_number,
+				"phone": row.phone,
+				"business_point": row.business_point,
+				"comment": row.comment,
+				"fiscal_number": row.fiscal_number,
+				"source_receipt": row.source_receipt,
+				"total_amount": flt(row.total_amount),
+				"paid_amount": flt(row.paid_amount),
+				"status": row.status,
+				"created_at": str(created) if created else None,
+				"due_at": str(row.due_at) if row.due_at else None,
+				"ready_at": str(row.ready_at) if row.ready_at else None,
+				"issued_at": str(row.issued_at) if row.issued_at else None,
+				"execution_minutes": execution_minutes,
+				"overdue": late,
+			}
+		)
+
+	filtered.sort(key=lambda row: row["created_at"] or "", reverse=True)
+	limit = min(max(cint(limit_page_length) or 1000, 1), 5000)
+	return {"rows": filtered[:limit]}
+
 def _business_point_filters(business_entity=None, business_point=None):
 	scope = get_scope()
 	filters = {}

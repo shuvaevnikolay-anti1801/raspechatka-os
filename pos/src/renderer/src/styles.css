@@ -313,3 +313,50 @@ h1,h2,h3,p { margin:0; }
   .receipt-filter-actions { grid-column:1/-1; justify-content:flex-end; }
   .receipt-detail-summary { grid-template-columns:repeat(2,1fr); }
 }
+
+
+/* DEV-156 · production order worklist */
+.orders-page { overflow:auto; }
+.orders-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; }
+.orders-heading>div { display:grid; gap:5px; }
+.orders-heading p { margin:0; color:var(--rp-muted); font-size:9px; }
+.orders-heading>button { min-height:42px; padding:0 18px; }
+.orders-table { min-width:1180px; overflow:hidden; border:1px solid var(--rp-line); background:#fff; }
+.orders-table>header,.orders-table>.order-row {
+  display:grid!important;
+  grid-template-columns:100px 135px minmax(210px,1.6fr) 165px 150px 160px 125px 190px!important;
+  gap:10px;
+  align-items:center;
+  min-height:66px!important;
+  padding:8px 12px!important;
+}
+.orders-table>header { min-height:42px!important; }
+.order-row { transition:background .12s; }
+.order-row:hover { background:#fafbf9; }
+.order-row.order-overdue { box-shadow:inset 4px 0 0 var(--rp-danger); background:#fff9f7; }
+.order-number { display:flex; flex-direction:column; gap:3px; font-size:14px; }
+.order-number small,.order-payment small,.order-due small { color:var(--rp-muted); font-size:8px; font-weight:500; }
+.order-phone { font-weight:700; }
+.order-description { white-space:normal!important; line-height:1.35; }
+.order-payment { display:flex; flex-direction:column; gap:4px; }
+.order-due { display:flex; flex-direction:column; gap:4px; }
+.order-due.overdue { color:var(--rp-danger); font-weight:700; }
+.order-due.overdue small { color:var(--rp-danger); text-transform:uppercase; letter-spacing:.04em; }
+.orders-table .order-status { justify-self:start; padding:6px 9px; border-radius:2px; background:#f1f3ef; font-size:9px; font-weight:700; }
+.orders-table .order-status.ready { background:var(--rp-green-soft); color:#526b08; }
+.order-actions { display:grid; grid-template-columns:.8fr 1fr; gap:6px; }
+.order-actions button { min-height:40px; padding:0 8px; }
+.order-actions .order-issued { min-height:44px; font-size:11px; }
+.order-create-modal { width:min(620px,94vw); }
+.order-create-modal>p { color:var(--rp-muted); font-size:9px; line-height:1.45; }
+.order-selected-receipt { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; padding:11px; border:1px solid var(--rp-line); background:#f7f9f5; }
+.order-selected-receipt span { color:var(--rp-muted); font-size:8px; text-transform:uppercase; }
+.order-selected-receipt b { text-align:right; font-size:14px; }
+.order-selected-receipt small { grid-column:1/-1; color:var(--rp-muted); font-size:8px; }
+.order-create-modal textarea,.compact-modal textarea { min-height:92px; resize:vertical; }
+@media(max-width:1250px){
+  .orders-table { min-width:1080px; }
+  .orders-table>header,.orders-table>.order-row {
+    grid-template-columns:90px 125px minmax(180px,1.5fr) 145px 135px 145px 115px 175px!important;
+  }
+}

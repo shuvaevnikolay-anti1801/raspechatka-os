@@ -291,6 +291,24 @@ def _apply_pos_event(event_type, event_id, workplace, payload):
 		_apply_order_updated(event_id, workplace, payload)
 
 
+def _order_source_receipt(point_name, source_sale_id):
+	source_sale_id = str(source_sale_id or "").strip()
+	if not source_sale_id:
+		return None
+	if source_sale_id.startswith("server:"):
+		name = source_sale_id.removeprefix("server:")
+		return frappe.db.get_value(
+			"Sales Receipt",
+			{"name": name, "business_point": point_name, "receipt_type": "Sale"},
+			"name",
+		)
+	return frappe.db.get_value(
+		"Sales Receipt",
+		{"business_point": point_name, "external_id": source_sale_id, "receipt_type": "Sale"},
+		"name",
+	)
+
+
 def _apply_order_created(event_id, workplace, payload):
 	if not _doctype_exists("POS Order") or frappe.db.exists("POS Order", {"source_pos_event": event_id}):
 		return
@@ -301,6 +319,8 @@ def _apply_order_created(event_id, workplace, payload):
 		"issued": "Issued",
 		"cancelled": "Cancelled",
 	}.get(payload.get("status"), "New")
+	source_sale_id = str(payload.get("sourceSaleId") or "").strip() or None
+	source_receipt = _order_source_receipt(workplace.business_point, source_sale_id)
 	doc = frappe.get_doc(
 		{
 			"doctype": "POS Order",
@@ -309,13 +329,17 @@ def _apply_order_created(event_id, workplace, payload):
 			"customer_name": payload.get("customerName"),
 			"business_point": workplace.business_point,
 			"source_pos_event": event_id,
-			"source_sale_id": payload.get("sourceSaleId"),
+			"source_sale_id": source_sale_id,
 			"fiscal_number": payload.get("fiscalNumber"),
 			"total_amount": flt(payload.get("totalMinor")) / 100,
 			"paid_amount": flt(payload.get("paidMinor")) / 100,
 			"status": status,
 			"comment": payload.get("comment"),
 			"due_at": payload.get("dueAt"),
+			"created_at": payload.get("createdAt") or None,
+			"ready_at": payload.get("readyAt") or None,
+			"issued_at": payload.get("issuedAt") or None,
+			"source_receipt": source_receipt,
 			"items": [
 				{
 					"item": x.get("productId")
@@ -336,13 +360,29 @@ def _apply_order_created(event_id, workplace, payload):
 def _apply_order_updated(event_id, workplace, payload):
 	if not _doctype_exists("POS Order"):
 		return
-	name = frappe.db.get_value("POS Order", {"order_number": payload.get("orderNumber")}, "name")
+	name = frappe.db.get_value(
+		"POS Order",
+		{
+			"order_number": payload.get("orderNumber"),
+			"business_point": workplace.business_point,
+		},
+		"name",
+	)
 	if not name:
 		return
 	doc = frappe.get_doc("POS Order", name)
-	for field in ("phone", "comment", "due_at"):
-		if field in payload:
-			setattr(doc, field, payload.get(field))
+	if "phone" in payload:
+		doc.phone = payload.get("phone")
+	if "comment" in payload:
+		doc.comment = payload.get("comment")
+	if "dueAt" in payload:
+		doc.due_at = payload.get("dueAt")
+	if payload.get("readyAt") and not doc.ready_at:
+		doc.ready_at = payload.get("readyAt")
+	if payload.get("issuedAt") and not doc.issued_at:
+		doc.issued_at = payload.get("issuedAt")
+	if not doc.source_receipt and doc.source_sale_id:
+		doc.source_receipt = _order_source_receipt(workplace.business_point, doc.source_sale_id)
 	if payload.get("status"):
 		doc.status = {
 			"new": "New",
@@ -352,7 +392,6 @@ def _apply_order_updated(event_id, workplace, payload):
 			"cancelled": "Cancelled",
 		}.get(payload["status"], doc.status)
 	doc.save(ignore_permissions=True)
-
 
 def _apply_sale(event_id, workplace, payload):
 	sale_id = str(payload.get("id") or event_id)
@@ -598,7 +637,11 @@ def _get_orders(point_name):
 			"comment",
 			"due_at",
 			"creation",
+			"created_at",
+			"ready_at",
+			"issued_at",
 			"source_sale_id",
+			"source_receipt",
 			"fiscal_number",
 		],
 		order_by="creation desc",
@@ -640,10 +683,13 @@ def _get_orders(point_name):
 			else ("partial" if flt(x.paid_amount) else "unpaid"),
 			"status": status.get(x.status, "new"),
 			"comment": x.comment,
-			"createdAt": str(x.creation),
+			"createdAt": str(x.created_at or x.creation),
 			"dueAt": x.due_at,
+			"readyAt": x.ready_at,
+			"issuedAt": x.issued_at,
 			"sourceSaleId": x.source_sale_id,
 			"fiscalNumber": x.fiscal_number,
+			"sourceReceipt": x.source_receipt,
 		}
 		for x in rows
 	]

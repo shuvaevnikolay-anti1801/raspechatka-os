@@ -3,7 +3,7 @@ import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, SaleDetails, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest
+  ReturnResult, SaleDetails, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -205,6 +205,7 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
   ipcMain.handle('pos:list-orders',()=>database.listOrders())
   ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{assertCashierAccess();return database.createUnpaidOrder(request)})
+  ipcMain.handle('pos:create-order-from-sale',(_event,request:CreateOrderFromSaleRequest)=>{assertCashierAccess();return database.createOrderFromSale(request)})
   ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>{assertCashierAccess();return database.updateOrder(request)})
 
   ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
@@ -273,6 +274,7 @@ export function registerIpcHandlers(dependencies:{
   })
 
   ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
+    if(request.order&&(!request.order.phone?.replace(/\\D/g,'')||request.order.phone.replace(/\\D/g,'').length<5||!request.order.comment?.trim()||!request.order.dueAt))throw new Error('Телефон, описание и срок готовности заказа обязательны')
     lifecycle.requireReady()
     assertCashierAccess()
     const existing=database.findSaleByClientRequestId(request.clientRequestId)
@@ -303,6 +305,11 @@ export function registerIpcHandlers(dependencies:{
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма оплат должна совпадать с итогом чека')
     const cashAmount=request.payments.find((x)=>x.method==='cash')?.amountMinor??0
     if(cashAmount&&(request.cashReceivedMinor??cashAmount)<cashAmount)throw new Error('Получено наличными меньше суммы наличной оплаты')
+    if(request.order){
+      if(request.order.phone.trim().replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон заказа')
+      if(!request.order.comment?.trim())throw new Error('Укажите описание заказа')
+      if(!request.order.dueAt?.trim()||Number.isNaN(Date.parse(request.order.dueAt)))throw new Error('Укажите корректный срок готовности')
+    }
 
     const hasRemote=request.payments.some((x)=>x.method==='remote_payment')
     if(hasRemote&&!request.remotePaymentConfirmation?.confirmed){

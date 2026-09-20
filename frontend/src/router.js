@@ -83,6 +83,7 @@ const routes = [
   { path: "/sales", name: "sales-overview", component: SalesPage, meta: { module: "sales", kind: "overview" } },
   { path: "/sales/shifts", name: "sales-shifts", component: SalesPage, meta: { module: "sales", kind: "shifts" } },
   { path: "/sales/receipts", name: "sales-receipts", component: SalesPage, meta: { module: "sales", kind: "receipts" } },
+  { path: "/sales/orders", name: "sales-orders", component: SalesPage, meta: { module: "sales", kind: "orders" } },
   { path: "/sales/returns", name: "sales-returns", component: SalesPage, meta: { module: "sales", kind: "returns" } },
   { path: "/sales/cash", name: "sales-cash", component: SalesPage, meta: { module: "sales", kind: "cash" } },
   { path: "/sales/actions", name: "sales-actions", component: SalesPage, meta: { module: "sales", kind: "actions" } },
