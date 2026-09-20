@@ -3,7 +3,7 @@ import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, SaleDetails, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest
+  ReturnResult, SaleDetails, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -204,7 +204,7 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>{assertCashierAccess();return database.saveCashCount(countType,lines)})
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
   ipcMain.handle('pos:list-orders',()=>database.listOrders())
-  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{assertCashierAccess();return database.createUnpaidOrder(request)})
+  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{assertCashierAccess();return database.createUnpaidOrder(request)})\n  ipcMain.handle('pos:create-order-from-sale',(_event,request:CreateOrderFromSaleRequest)=>{assertCashierAccess();return database.createOrderFromSale(request)})
   ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>{assertCashierAccess();return database.updateOrder(request)})
 
   ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
@@ -272,7 +272,7 @@ export function registerIpcHandlers(dependencies:{
     }
   })
 
-  ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
+  ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{\n    if(request.order&&(!request.order.phone?.replace(/\\D/g,'')||request.order.phone.replace(/\\D/g,'').length<5||!request.order.comment?.trim()||!request.order.dueAt))throw new Error('Телефон, описание и срок готовности заказа обязательны')
     lifecycle.requireReady()
     assertCashierAccess()
     const existing=database.findSaleByClientRequestId(request.clientRequestId)
