@@ -6,7 +6,7 @@ import { formatPersonShortName } from './person-name'\nimport ReceiptsPage from 
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, ManualDiscount, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
-  RemotePaymentConfirmation, ReturnSummary, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
+  RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, WorkplaceData
 } from '../../shared/contracts'
 
@@ -24,7 +24,6 @@ export default function AppV2(){
   const [products,setProducts]=useState<Product[]>([])
   const [sales,setSales]=useState<SaleSummary[]>([])
   const [orders,setOrders]=useState<Order[]>([])
-  const [returns,setReturns]=useState<ReturnSummary[]>([])
   const [held,setHeld]=useState<HeldReceipt[]>([])
   const [cashOperations,setCashOperations]=useState<CashOperation[]>([])
   const [summary,setSummary]=useState<ShiftSummary>(emptySummary)
@@ -49,21 +48,19 @@ export default function AppV2(){
   const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
   const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
   const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
-  const [receiptQuery,setReceiptQuery]=useState('')
 
   const refresh=async()=>{
     const nextAuth=await window.raspechatkaPos.getCashierAuthState()
     const result=await Promise.all([
       window.raspechatkaPos.getBootState(),window.raspechatkaPos.listProducts(),
-      window.raspechatkaPos.listSales(),
-      window.raspechatkaPos.listReturns(),window.raspechatkaPos.listHeldReceipts(),
+      window.raspechatkaPos.listSales(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
       window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
       window.raspechatkaPos.getLastCashCount()
     ])
-    setBoot(result[0]);setProducts(result[1]);setSales(result[2])
-    setReturns(result[3]);setHeld(result[4]);setSummary(result[5]);setCashOperations(result[6]);setConnection(result[7])
-    setWorkplace(result[8]);setOrders(result[9]);setLastCashCount(result[10])
+    setBoot(result[0]);setProducts(result[1]);setSales(result[2]);setHeld(result[3])
+    setSummary(result[4]);setCashOperations(result[5]);setConnection(result[6])
+    setWorkplace(result[7]);setOrders(result[8]);setLastCashCount(result[9])
     setAuth(nextAuth)
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
@@ -173,16 +170,7 @@ export default function AppV2(){
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
   const chooseCustomer=(value:Customer|null)=>{setCustomer(value);setReviewCount(0);setCustomerOpen(false)}
-  const printSale=async(id:string,kind:'fiscal-copy'|'commodity')=>{
-    try{const result=await window.raspechatkaPos.printSale(id,kind);setMessage(result.message)}
-    catch(e){setMessage(e instanceof Error?e.message:String(e))}
-  }
 
-  const localFilteredSales=useMemo(()=>{
-    const text=receiptQuery.trim().toLocaleLowerCase('ru')
-    if(!text)return sales
-    return sales.filter((sale)=>(sale.receiptNumber+' '+(sale.customerName||'')).toLocaleLowerCase('ru').includes(text))
-  },[sales,receiptQuery])
 
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
   if(auth.status!=='authenticated')return <CashierLogin boot={boot} auth={auth} onAuthenticated={refresh}/>
