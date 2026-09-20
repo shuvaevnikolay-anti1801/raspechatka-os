@@ -129,6 +129,12 @@ const columns = computed(
 			],
 			receipts: receiptCols(),
 			returns: receiptCols(),
+			orders: [
+				c("order_number", "Заказ"), c("phone", "Телефон"), c("business_point", "Точка", "point"),
+				c("comment", "Описание"), c("fiscal_number", "Чек"), c("total_amount", "Сумма", "money"),
+				c("status", "Статус"), c("created_at", "Создан", "date"), c("due_at", "Срок готовности", "date"),
+				c("ready_at", "Готов", "date"), c("issued_at", "Выдан", "date"), c("execution_time", "Время выполнения"), c("overdue", "Просрочка")
+			],
 			cash: [
 				c("name", "№"),
 				c("posting_datetime", "Время", "date"),
@@ -219,7 +225,15 @@ const filterFields = computed(() => {
 			allLabel: "Все кассиры",
 			options: options.cashiers.map((x) => ({ value: x.name, label: x.full_name })),
 		});
-	if (kind.value === "shifts")
+	if (kind.value === "orders") {
+		result.push(
+			{ key: "search", label: "Поиск", placeholder: "Телефон, заказ, описание или чек", wide: true },
+			{ key: "status", label: "Статус", type: "select", allLabel: "Все статусы", options: ["New","In Progress","Ready","Issued","Cancelled"].map(value => ({ value, label: value })) },
+			{ key: "overdue", label: "Просрочен", type: "select", allLabel: "Все", options: [{ value: "1", label: "Только просроченные" }] },
+			{ key: "ready_from", label: "Готов с", type: "date" }, { key: "ready_to", label: "Готов по", type: "date" },
+			{ key: "due_from", label: "Срок с", type: "date" }, { key: "due_to", label: "Срок по", type: "date" }
+		);
+	} else if (["shifts", "actions"].includes(kind.value))
 		result.push({
 			key: "status",
 			label: "Статус",
@@ -334,6 +348,12 @@ async function load() {
 		if (kind.value === "cash") {
 			method = "get_cash_movements";
 			params = { ...common, movement_type: filters.movement_type, search: filters.search };
+		}
+		if (kind.value === "orders") {
+			method = "get_orders";
+			params = { ...common, status: filters.status, search: filters.search, overdue: filters.overdue,
+				created_from: filters.from_date, created_to: filters.to_date, due_from: filters.due_from, due_to: filters.due_to,
+				ready_from: filters.ready_from, ready_to: filters.ready_to, limit_page_length: 5000 };
 		}
 		if (kind.value === "actions") {
 			method = "get_cashier_actions";
