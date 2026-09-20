@@ -59,13 +59,15 @@ describe("AtolDriverFiscalProvider", () => {
     });
   });
 
-  it("reprints only the last receipt and never starts a new fiscal sale", async () => {
+  it("reprints the requested fiscal document and never falls back to the last receipt", async () => {
     const executeJson = vi.fn(async () => ({}));
+    const reprintDocument = vi.fn(async () => ({ documentNumber: "777", printed: true }));
     const bridge = {
       connect: vi.fn(async () => undefined),
       disconnect: vi.fn(async () => undefined),
       getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123" })),
       executeJson,
+      reprintDocument,
     } as unknown as AtolDriverBridge;
     const provider = new AtolDriverFiscalProvider(
       bridge,
@@ -74,8 +76,27 @@ describe("AtolDriverFiscalProvider", () => {
 
     await provider.reprintReceipt({ saleId: "sale-1", receiptNumber: "777" });
 
-    expect(executeJson).toHaveBeenCalledTimes(1);
-    expect(executeJson).toHaveBeenCalledWith({ type: "printLastReceiptCopy" });
+    expect(reprintDocument).toHaveBeenCalledTimes(1);
+    expect(reprintDocument).toHaveBeenCalledWith("777");
+    expect(executeJson).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a receipt has no fiscal document number", async () => {
+    const reprintDocument = vi.fn();
+    const bridge = {
+      connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
+      getStatus: vi.fn(async () => ({ connected: true, serialNumber: "123" })),
+      reprintDocument,
+    } as unknown as AtolDriverBridge;
+    const provider = new AtolDriverFiscalProvider(
+      bridge,
+      { load: () => settings } as AtolSettingsStore
+    );
+
+    await expect(provider.reprintReceipt({ saleId: "sale-1", receiptNumber: "SALE-2026-1" }))
+      .rejects.toThrow("числовой номер фискального документа");
+    expect(reprintDocument).not.toHaveBeenCalled();
   });
 
   it("does not accept a non-fiscal receipt counter as proof of fiscalization", async () => {

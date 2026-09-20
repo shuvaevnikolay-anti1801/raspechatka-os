@@ -1,4 +1,4 @@
-import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptSummary, Product, ReceiptMirror, WorkplaceData } from '../shared/contracts'
+import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptDetails, PointReceiptSummary, Product, ReceiptMirror, ReceiptSearchFilters, WorkplaceData } from '../shared/contracts'
 
 type BootstrapResponse = {
   point: { id:string; name:string }
@@ -13,18 +13,6 @@ type BootstrapResponse = {
   retentionDays: number
 }
 
-type ReceiptSearchFilters={
-  period?:'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
-  shiftExternalId?:string
-  dateFrom?:string
-  dateTo?:string
-  cashierId?:string
-  amountMinMinor?:number
-  amountMaxMinor?:number
-  paymentChannel?:'Cash'|'Card'|'QR'|''
-  status?:'Draft'|'Posted'|'Cancelled'|''
-  receiptType?:'Sale'|'Return'|''
-}
 
 type FrappeResponse<T>={message?:T;exception?:string;exc_type?:string;_server_messages?:string}
 
@@ -93,9 +81,16 @@ export async function searchPointReceipts(config:ConnectionConfig,query='',filte
     amount_min_minor:filters.amountMinMinor??null,
     amount_max_minor:filters.amountMaxMinor??null,
     payment_channel:filters.paymentChannel||null,
-    status:filters.status||null,
-    receipt_type:filters.receiptType||null,
+    receipt_type:filters.receiptType||'Sale',
     limit:100
   },15000)
   return result.rows||[]
+}
+
+export async function getPointReceipt(config:ConnectionConfig,id:string):Promise<PointReceiptDetails> {
+  return post<PointReceiptDetails>(config,'raspechatka.api.receipt_search.get_receipt',{
+    device_id:config.deviceId,
+    token:config.token,
+    receipt_id:id
+  },15000)
 }

@@ -3,10 +3,11 @@ import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import { formatPersonShortName } from './person-name'
+import ReceiptsPage from './ReceiptsPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, ManualDiscount, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
-  RemotePaymentConfirmation, ReturnSummary, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
+  RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, WorkplaceData
 } from '../../shared/contracts'
 
@@ -24,7 +25,6 @@ export default function AppV2(){
   const [products,setProducts]=useState<Product[]>([])
   const [sales,setSales]=useState<SaleSummary[]>([])
   const [orders,setOrders]=useState<Order[]>([])
-  const [returns,setReturns]=useState<ReturnSummary[]>([])
   const [held,setHeld]=useState<HeldReceipt[]>([])
   const [cashOperations,setCashOperations]=useState<CashOperation[]>([])
   const [summary,setSummary]=useState<ShiftSummary>(emptySummary)
@@ -49,21 +49,19 @@ export default function AppV2(){
   const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
   const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
   const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
-  const [receiptQuery,setReceiptQuery]=useState('')
 
   const refresh=async()=>{
     const nextAuth=await window.raspechatkaPos.getCashierAuthState()
     const result=await Promise.all([
       window.raspechatkaPos.getBootState(),window.raspechatkaPos.listProducts(),
-      window.raspechatkaPos.listSales(),
-      window.raspechatkaPos.listReturns(),window.raspechatkaPos.listHeldReceipts(),
+      window.raspechatkaPos.listSales(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
       window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
       window.raspechatkaPos.getLastCashCount()
     ])
-    setBoot(result[0]);setProducts(result[1]);setSales(result[2])
-    setReturns(result[3]);setHeld(result[4]);setSummary(result[5]);setCashOperations(result[6]);setConnection(result[7])
-    setWorkplace(result[8]);setOrders(result[9]);setLastCashCount(result[10])
+    setBoot(result[0]);setProducts(result[1]);setSales(result[2]);setHeld(result[3])
+    setSummary(result[4]);setCashOperations(result[5]);setConnection(result[6])
+    setWorkplace(result[7]);setOrders(result[8]);setLastCashCount(result[9])
     setAuth(nextAuth)
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
@@ -125,7 +123,7 @@ export default function AppV2(){
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
-    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount})
+    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,totalMinor:total,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount})
     clear();await refresh();setMessage('Чек отложен')
   }
   const restoreReceipt=async(receipt:HeldReceipt)=>{
@@ -173,16 +171,7 @@ export default function AppV2(){
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
   const chooseCustomer=(value:Customer|null)=>{setCustomer(value);setReviewCount(0);setCustomerOpen(false)}
-  const printSale=async(id:string,kind:'fiscal-copy'|'commodity')=>{
-    try{const result=await window.raspechatkaPos.printSale(id,kind);setMessage(result.message)}
-    catch(e){setMessage(e instanceof Error?e.message:String(e))}
-  }
 
-  const localFilteredSales=useMemo(()=>{
-    const text=receiptQuery.trim().toLocaleLowerCase('ru')
-    if(!text)return sales
-    return sales.filter((sale)=>(sale.receiptNumber+' '+(sale.customerName||'')).toLocaleLowerCase('ru').includes(text))
-  },[sales,receiptQuery])
 
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
   if(auth.status!=='authenticated')return <CashierLogin boot={boot} auth={auth} onAuthenticated={refresh}/>
@@ -233,13 +222,7 @@ export default function AppV2(){
       </aside>
     </main>}
 
-    {screen==='receipts'&&<Page title="Чеки и возвраты" kicker="">
-      <div className="receipt-search"><label><span>⌕</span><input autoFocus value={receiptQuery} onChange={(e)=>setReceiptQuery(e.target.value)} placeholder="Номер чека, телефон, клиент или товар"/></label><div><b>Локальная история текущей точки</b><small>{boot.online?'Кэш обновлён с сервера':'Нет сети · доступны сохранённые чеки'}</small></div></div>
-      {held.length>0&&<section className="held"><h3>Отложенные</h3>{held.map((r)=><article key={r.id}><div><b>{r.label}</b><small>{r.lines.length} поз. · {new Date(r.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small></div><button onClick={()=>restoreReceipt(r)}>Продолжить</button></article>)}</section>}
-      <LocalReceiptTable rows={localFilteredSales} onPrint={printSale} onReturn={startReturn}/>
-      {returns.length>0&&<section className="return-history"><h3>Оформленные возвраты этой кассы</h3>{returns.map((x)=><article key={x.id}><div><b>{x.receiptNumber}</b><small>к чеку {x.originalReceiptNumber} · {new Date(x.createdAt).toLocaleString('ru-RU')}</small></div><strong>− {formatMoney(x.totalMinor)}</strong></article>)}</section>}
-    </Page>}
-
+    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>}
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label="В кассе ожидается" value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
@@ -296,10 +279,6 @@ function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAu
     </form>}
     {auth.status!=='locked'&&<button className="settings-open-trigger" type="button">Настройки кассы</button>}
   </section></main>
-}
-
-function LocalReceiptTable({rows,onPrint,onReturn}:{rows:SaleSummary[];onPrint:(id:string,kind:'fiscal-copy'|'commodity')=>Promise<void>;onReturn:(sale:SaleSummary)=>Promise<void>}){
-  return <div className="data-table receipts-table"><header><span>Чек</span><span>Дата</span><span>Покупатель</span><span>Оплата</span><span>Сумма</span><span/></header>{rows.length?rows.map((s)=><div key={s.id}><b>{s.receiptNumber}<small className={'sale-status '+s.status}>{s.status==='returned'?'Возвращён':s.status==='partially_returned'?'Частичный возврат':s.source==='server'?'Синхронизирован':''}</small></b><span>{new Date(s.createdAt).toLocaleString('ru-RU')}</span><span>{s.customerName||'Розничный покупатель'}</span><span>{paymentNames[s.paymentMethod]||s.paymentMethod}</span><strong>{formatMoney(s.totalMinor)}{s.returnedMinor>0&&<small>− {formatMoney(s.returnedMinor)}</small>}</strong><div className="sale-actions">{s.source!=='server'&&<button onClick={()=>onPrint(s.id,'fiscal-copy')}>Копия чека</button>}<button onClick={()=>onPrint(s.id,'commodity')}>Товарный чек</button><button disabled={s.status==='returned'||s.returnable===false} onClick={()=>onReturn(s)}>Возврат</button></div></div>):<Empty title="Чеки не найдены" text="В локальном кэше текущей точки подходящих чеков нет."/>}</div>
 }
 
 function OrderModal({draft,total,onClose,onPay,onSave}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onClose:()=>void;onPay:()=>void;onSave:(draft:{phone:string;comment?:string;dueAt?:string})=>Promise<void>}){

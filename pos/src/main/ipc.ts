@@ -3,7 +3,7 @@ import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest
+  ReturnResult, SaleDetails, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -15,6 +15,7 @@ import { buildBootState, performSync } from './sync'
 import { PosTransactionEngine } from './transaction-engine'
 import { CashierAuthSession } from './cashier-auth'
 import { PosLifecycleStore } from './pos-lifecycle'
+import { getPointReceipt } from './frappe'
 
 const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='cash'?rules.acceptsCash:
@@ -80,6 +81,38 @@ export function registerIpcHandlers(dependencies:{
       return result
     }catch(error){
       diagnostics.record({source:kind==='fiscal-copy'?'fiscal':'printer',level:'error',eventType:'receipt.reprint_failed',message:errorMessage(error),operationId:id,details:{kind}})
+      throw error
+    }
+  })
+  ipcMain.handle('pos:print-point-receipt-commodity',async(_event,id:string)=>{
+    assertCashierAccess()
+    const config=connectionStore.load()
+    if(!config)throw new Error('Касса не подключена к Распечатка OS')
+    const receipt=await getPointReceipt(config,id)
+    if(receipt.receiptType!=='Sale')throw new Error('Товарный чек можно печатать только для продажи')
+    const methods=receipt.payments.map((payment)=>payment.method).filter(Boolean) as NonNullable<(typeof receipt.payments)[number]['method']>[]
+    const unique=[...new Set(methods)]
+    const sale:SaleDetails={
+      id:'server:'+receipt.id,receiptNumber:receipt.receiptNumber,totalMinor:receipt.totalMinor,returnedMinor:0,
+      paymentMethod:unique.length===1?unique[0]:'mixed',paymentMethods:unique,
+      customerName:receipt.customerName,customerPhone:receipt.customerPhone,cashierId:receipt.cashierId,cashierName:receipt.cashierName,
+      shiftId:receipt.shiftExternalId,createdAt:receipt.createdAt,status:'completed',returnable:false,source:'server',
+      lines:receipt.lines.map((line,index)=>({
+        id:index,productId:line.productId||('server-line-'+index),name:line.name,quantity:line.quantity,
+        unitPriceMinor:line.unitPriceMinor,discountPercent:line.discountPercent,returnedQuantity:line.returnedQuantity??0
+      })),
+      payments:receipt.payments.filter((payment)=>payment.method).map((payment)=>({
+        method:payment.method!,amountMinor:payment.amountMinor,transactionId:payment.transactionId
+      }))
+    }
+    diagnostics.record({source:'printer',eventType:'receipt.reprint_started',message:`Печать товарного чека ${receipt.receiptNumber} из server snapshot`,operationId:receipt.id,details:{kind:'commodity',source:'server'}})
+    try{
+      const boot=bootState()
+      const result=await printProvider.printCommodityReceipt(sale,{...boot,cashierName:receipt.cashierName||boot.cashierName})
+      diagnostics.record({source:'printer',eventType:'receipt.reprint_completed',message:result.message,operationId:receipt.id,details:{kind:'commodity',source:'server'}})
+      return result
+    }catch(error){
+      diagnostics.record({source:'printer',level:'error',eventType:'receipt.reprint_failed',message:errorMessage(error),operationId:receipt.id,details:{kind:'commodity',source:'server'}})
       throw error
     }
   })

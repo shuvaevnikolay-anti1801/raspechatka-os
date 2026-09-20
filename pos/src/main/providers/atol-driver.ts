@@ -16,6 +16,7 @@ export interface AtolDriverBridge {
   getStatus():Promise<AtolDriverStatus>;
   recoveryProbe():Promise<AtolRecoveryProbe>;
   executeJson(request:Record<string,unknown>):Promise<Record<string,unknown>>;
+  reprintDocument(documentNumber:string):Promise<Record<string,unknown>>;
   health():Promise<DeviceHealth>;
 }
 
@@ -134,8 +135,11 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
   }
 
   async reprintReceipt(request:{saleId:string;receiptNumber:string}):Promise<PrintResult> {
-    await this.execute({type:"printLastReceiptCopy"});
-    return {kind:"fiscal-copy",status:"printed",message:"Копия последнего фискального чека отправлена на АТОЛ ("+request.receiptNumber+")"};
+    const documentNumber=String(request.receiptNumber||'').trim();
+    if(!/^\d+$/.test(documentNumber)) throw new Error("Точная копия недоступна: чек не содержит числовой номер фискального документа ФН");
+    await this.ensureConnected();
+    await this.bridge.reprintDocument(documentNumber);
+    return {kind:"fiscal-copy",status:"printed",message:"Копия фискального документа "+documentNumber+" отправлена на АТОЛ"};
   }
 
   private async fiscalize(type:"sell"|"sellReturn",request:FiscalRequest|FiscalReturnRequest):Promise<FiscalResult> {

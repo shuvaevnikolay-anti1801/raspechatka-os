@@ -82,6 +82,7 @@ internal sealed class AtolSession {
         "status" => Status(),
         "recoveryProbe" => RecoveryProbe(),
         "executeJson" => ExecuteJson(request.Args),
+        "reprintDocument" => ReprintDocument(request.Args),
         "shutdown" => Shutdown(),
         _ => throw new ProtocolException("unknown_command", $"Unsupported command: {request.Command}"),
     };
@@ -301,6 +302,49 @@ internal sealed class AtolSession {
         } catch (JsonException error) {
             throw new DriverFailure(null, $"ATOL Driver returned invalid JSON: {error.Message}");
         }
+    }
+
+    private object ReprintDocument(JsonElement? args) {
+        var rawDocumentNumber = ArgumentString(args, "documentNumber");
+        if (string.IsNullOrWhiteSpace(rawDocumentNumber) ||
+            !long.TryParse(rawDocumentNumber, out var documentNumber) ||
+            documentNumber <= 0) {
+            throw new ProtocolException("invalid_request", "documentNumber must be a positive fiscal document number.");
+        }
+
+        var fptr = EnsureDriver();
+        if (!IsOpened(fptr)) {
+            throw new ProtocolException("not_connected", "Connect the selected KKT before reprintDocument.");
+        }
+        QueryStatus(fptr);
+
+        var reportTypeParam = TryConstant(fptr, "LIBFPTR_PARAM_REPORT_TYPE");
+        var documentNumberParam = TryConstant(fptr, "LIBFPTR_PARAM_DOCUMENT_NUMBER");
+        var fnDocumentReport = TryConstant(fptr, "LIBFPTR_RT_FN_DOC_BY_NUMBER");
+        if (reportTypeParam is null || documentNumberParam is null || fnDocumentReport is null) {
+            throw new ProtocolException(
+                "not_supported",
+                "Installed ATOL Driver does not expose exact FN document printing by number."
+            );
+        }
+
+        try {
+            fptr.setParam(reportTypeParam, fnDocumentReport);
+            fptr.setParam(documentNumberParam, documentNumber);
+            Check(fptr.report(), fptr);
+        } catch (DriverFailure) {
+            throw;
+        } catch (Exception error) {
+            throw new DriverFailure(
+                null,
+                $"ATOL exact fiscal document print is unavailable: {error.Message}"
+            );
+        }
+
+        return new {
+            documentNumber,
+            printed = true,
+        };
     }
 
     private object Shutdown() {

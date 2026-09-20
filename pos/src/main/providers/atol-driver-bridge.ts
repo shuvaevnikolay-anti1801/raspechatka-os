@@ -60,6 +60,7 @@ type BridgeCommand =
   | 'status'
   | 'recoveryProbe'
   | 'executeJson'
+  | 'reprintDocument'
   | 'shutdown';
 
 type BridgeRequest = {
@@ -120,6 +121,10 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     return this.request<Record<string, unknown>>('executeJson', {
       json: JSON.stringify(request),
     });
+  }
+
+  async reprintDocument(documentNumber: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('reprintDocument', { documentNumber });
   }
 
   async findDevices(): Promise<AtolDriverDevice[]> {
@@ -227,7 +232,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       } = { resolve: (value) => resolve(value as T), reject };
 
       const timeoutMs =
-        command === 'executeJson'
+        command === 'executeJson' || command === 'reprintDocument'
           ? this.options.fiscalOperationTimeoutMs ?? FISCAL_OPERATION_TIMEOUT_MS
           : command === 'driverInfo' || command === 'discover' || command === 'status' || command === 'recoveryProbe'
             ? this.options.readOnlyTimeoutMs ?? READ_ONLY_TIMEOUT_MS
