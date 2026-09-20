@@ -62,7 +62,7 @@ UI оплаты — cash/noncash. На server boundary:
 
 Online: использовать server receipt search как авторитетный поиск по истории точки.
 
-Offline или server error: не ломать страницу. Фильтровать `listSales()`/receipt mirror локально по доступным полям и явно показывать, что это локальный кэш. Текущая смена, даты, сумма и cash/noncash должны работать локально. Если конкретное поле отсутствует в старом mirror snapshot, не выдумывать его.
+Offline или server error: не ломать страницу. Фильтровать `listSales()`/receipt mirror локально по доступным полям и явно показывать, что это локальный кэш. Текущая смена, даты, кассир, сумма и cash/noncash должны работать локально для новых snapshots. Обогатить receipt mirror cashier/shift/customer-phone metadata, не меняя 60-дневную retention policy. Старые snapshots остаются читаемыми; если конкретного поля нет, не выдумывать его.
 
 ### 5. Таблица
 
@@ -156,6 +156,7 @@ Modal/drawer:
 - `pos/src/main/frappe.ts`
 - `pos/src/main/database.ts` только для receipt read/fallback/held payload
 - `raspechatka/api/receipt_search.py`
+- `raspechatka/api/pos_v2.py` только для enrichment receipt mirror (cashier/customer/payment/actionability data для offline журнала)
 - `pos/src/main/providers/contracts.ts`
 - `pos/src/main/providers/atol-driver.ts`
 - `pos/src/main/providers/atol-driver-bridge.ts`
