@@ -159,7 +159,7 @@ describe('PosDatabase',()=>{
       orders:[],
     })
     expect(database.listProducts().some((x)=>x.id==='paper-hidden')).toBe(false)
-    database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierId:'EMP-1',cashierName:'Николай'})
+    database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierId:'SHIFT-EMP',cashierName:'Николай'})
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
     expect(count).toMatchObject({totalMinor:200000,differenceMinor:0})
     expect(database.getShiftSummary().expectedCashMinor).toBe(200000)
@@ -187,7 +187,32 @@ describe('PosDatabase',()=>{
       lines:[{purchaseOrderItemId:'POI-1',quantity:2}],
     })
     expect(JSON.stringify(receipt)).not.toContain('rate')
+    expect(receipt.cashierId).not.toBe('SHIFT-EMP')
     expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
+  })
+
+  it('removes a fully received purchase order from the optimistic workplace snapshot',()=>{
+    const database=createDatabase()
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[],
+      deliveries:[{
+        id:'PO-FULL',supplier:'Поставщик',status:'Ожидается',items:[{
+          purchaseOrderItemId:'POI-FULL',itemId:'item',itemName:'Товар',itemCode:'ITEM',
+          uom:'шт',orderedQuantity:2,receivedQuantity:0,remainingQuantity:2
+        }]
+      }],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+    database.createStockReceipt({
+      purchaseOrderId:'PO-FULL',
+      lines:[{purchaseOrderItemId:'POI-FULL',quantity:2}],
+    },'EMP-1')
+    expect(database.getWorkplaceData().deliveries).toEqual([])
   })
 
   it('assigns morning and evening explicitly and preserves them after restart',()=>{
