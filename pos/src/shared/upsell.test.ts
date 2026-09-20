@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { selectUpsellCandidate } from './upsell'
+import { resolveUpsellAfterCart, selectUpsellCandidate } from './upsell'
 import type { CartLine, Product, UpsellRule } from './contracts'
 
 const product=(id:string, extra:Partial<Product>={}):Product=>({
@@ -35,5 +35,15 @@ describe('selectUpsellCandidate',()=>{
     ]
     expect(selectUpsellCandidate({...rule,candidates:rule.candidates.slice(0,2)},products,cart,0))
       .toEqual({candidate:null,nextCursor:0})
+  })
+})
+
+
+describe('upsell receipt cycle',()=>{
+  it('resolves when its trigger is removed and never retargets itself',()=>{
+    const showing={state:'showing' as const,triggerItem:'trigger',candidate:rule.candidates[0]}
+    const cart=[{productId:'trigger',name:'trigger',quantity:1,unitPriceMinor:100}]
+    expect(resolveUpsellAfterCart(showing,cart)).toBe(showing)
+    expect(resolveUpsellAfterCart(showing,[])).toEqual({state:'resolved'})
   })
 })
