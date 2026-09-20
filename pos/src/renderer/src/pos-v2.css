@@ -1,6 +1,3 @@
-.pos-v2-topbar{grid-template-columns:minmax(0,1fr) auto!important}
-.pos-v2-point{justify-self:start!important;align-items:flex-start!important}
-.pos-v2-point b{font-size:15px;letter-spacing:-.02em}
 .pos-v2-product{min-height:118px!important;justify-content:space-between}
 .pos-v2-product>strong{font-size:15px!important;line-height:1.3!important}
 .pos-v2-product footer b{font-size:21px!important}
