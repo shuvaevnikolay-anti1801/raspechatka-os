@@ -8,7 +8,7 @@ class TestCatalogVariantPosRegressionContract(TestCase):
         self.frontend_api = (root / "api/frontend.py").read_text(encoding="utf-8")
         self.pos_api = (root / "api/pos.py").read_text(encoding="utf-8")
         self.catalog_page = (
-            root.parents[1] / "frontend/src/pages/CatalogPage.vue"
+            root.parent / "frontend/src/pages/CatalogPage.vue"
         ).read_text(encoding="utf-8")
         self.repair_patch = (
             root / "patches/v1_0/repair_moysklad_variants.py"
