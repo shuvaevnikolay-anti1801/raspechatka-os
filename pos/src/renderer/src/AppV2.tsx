@@ -3,6 +3,8 @@ import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import { formatPersonShortName } from './person-name'
+import { formatMoney } from './money'
+import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import type {
@@ -13,8 +15,6 @@ import type {
 } from '../../shared/contracts'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
-const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2})
-const formatMoney=(minor:number)=>money.format(minor/100)
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,averageCheckBeforeDiscountMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
@@ -36,6 +36,7 @@ export default function AppV2(){
   const [query,setQuery]=useState('')
   const [category,setCategory]=useState('Все')
   const [cart,setCart]=useState<CartLine[]>([])
+  const [upsellCycle,setUpsellCycle]=useState<UpsellCycle>({state:'eligible'})
   const [customer,setCustomer]=useState<Customer|null>(null)
   const [reviewCount,setReviewCount]=useState(0)
   const [manualDiscount,setManualDiscount]=useState<ManualDiscount|null>(null)
@@ -96,13 +97,35 @@ export default function AppV2(){
   const maxReviews=reviewUnitMinor>0?Math.floor(Math.max(0,subtotal-clubDiscountMinor-1)/reviewUnitMinor):0
   const preferredPayment:PaymentChoice=boot?.rules.acceptsCash?'cash':boot?.rules.acceptsRemotePayment!==false?'remote_payment':boot?.rules.acceptsCard?'card':'qr'
 
-  const add=(product:Product)=>setCart((current)=>{
-    const found=current.find((line)=>line.productId===product.id)
-    return found?current.map((line)=>line.productId===product.id?{...line,quantity:line.quantity+1}:line):[...current,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor,catalogUnitPriceMinor:product.priceMinor,preventDiscounts:product.preventDiscounts}]
-  })
-  const setQuantity=(id:string,value:number)=>setCart((current)=>current.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
-  const change=(id:string,delta:number)=>setCart((current)=>current.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{setCart([]);setCustomer(null);setReviewCount(0);setManualDiscount(null);setOrderDraft(null)}
+  const add=(product:Product,options:{suppressUpsell?:boolean}={})=>{
+    const found=cart.find((line)=>line.productId===product.id)
+    const next=found
+      ? cart.map((line)=>line.productId===product.id?{...line,quantity:line.quantity+1}:line)
+      : [...cart,{productId:product.id,name:product.name,quantity:1,unitPriceMinor:product.priceMinor,catalogUnitPriceMinor:product.priceMinor,preventDiscounts:product.preventDiscounts}]
+    setCart(next)
+    if(options.suppressUpsell||upsellCycle.state!=='eligible')return
+    const rule=findUpsellRuleForProduct(boot?.upsellRules??[],product.id)
+    if(!rule)return
+    const selection=selectUpsellCandidate(rule,products,next,boot?.upsellCursors[rule.triggerItem]??0)
+    if(!selection.candidate)return
+    const nextCursor=selection.nextCursor
+    setBoot((current)=>current?{...current,upsellCursors:{...current.upsellCursors,[rule.triggerItem]:nextCursor}}:current)
+    void window.raspechatkaPos.setUpsellCursor(rule.triggerItem,nextCursor).catch(()=>setMessage('Не удалось сохранить очередь рекомендаций локально'))
+    setUpsellCycle({state:'showing',triggerItem:rule.triggerItem,candidate:selection.candidate})
+  }
+  const updateCart=(next:CartLine[])=>{
+    setCart(next)
+    setUpsellCycle((current)=>resolveUpsellAfterCart(current,next))
+  }
+  const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
+  const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
+  const clear=()=>{setCart([]);setCustomer(null);setReviewCount(0);setManualDiscount(null);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
+  const dismissUpsell=()=>setUpsellCycle({state:'resolved'})
+  const acceptUpsell=()=>{
+    const target=upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)
+    setUpsellCycle({state:'resolved'})
+    if(target)add(target,{suppressUpsell:true})
+  }
   const overridePrice=(line:CartLine)=>{
     const product=productById.get(line.productId)
     if(!product||!boot?.rules.allowFreePrice)return
@@ -129,6 +152,7 @@ export default function AppV2(){
   }
   const restoreReceipt=async(receipt:HeldReceipt)=>{
     const fresh=await resolveCurrentCustomer(receipt.customer,window.raspechatkaPos.getCustomer)
+    setUpsellCycle({state:'eligible'})
     setCart(receipt.lines);setCustomer(fresh);setReviewCount(receipt.reviewCount??0);setManualDiscount(receipt.manualDiscount??null)
     await window.raspechatkaPos.deleteHeldReceipt(receipt.id);await refresh();setScreen('sale')
     const restored=calculateDiscountBreakdown(
@@ -208,16 +232,23 @@ export default function AppV2(){
           <div className="qty pos-v2-qty"><button onClick={()=>change(line.productId,-1)}>−</button><input aria-label={'Количество '+line.name} type="number" min="0.001" step="0.001" value={line.quantity} onChange={(e)=>setQuantity(line.productId,Number(e.target.value))}/><button onClick={()=>change(line.productId,1)}>+</button></div>
           <b>{formatMoney(line.quantity*line.unitPriceMinor)}</b>
         </div>)}</div>
+        {upsellCycle.state==='showing'&&upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)&&<div className="upsell-card">
+          <small>ПРЕДЛОЖИТЕ ПОКУПАТЕЛЮ</small>
+          <p>{upsellCycle.candidate.cashierPhrase||'Предложите покупателю: '+productById.get(upsellCycle.candidate.item)!.name}</p>
+          <div className="upsell-card-row"><strong>{productById.get(upsellCycle.candidate.item)!.name}</strong><b>{formatMoney(productById.get(upsellCycle.candidate.item)!.priceMinor)}</b></div>
+          <div className="upsell-card-actions"><button className="primary" onClick={acceptUpsell}>＋ Добавить</button><button onClick={dismissUpsell}>Не сейчас</button></div>
+        </div>}
         <footer className="receipt-total">
           {clubDiscountMinor>0&&<div className="subtotal"><span>Скидка клуба {clubPercent}%</span><strong>− {formatMoney(clubDiscountMinor)}</strong></div>}
           <div className={'review-discount-row '+(!discountRules.allowDiscounts?'disabled':'')}><div><span>Отзывы</span><small>{reviewUnitMinor>0?`${formatMoney(reviewUnitMinor)} за отзыв`:'Скидка не настроена'}</small></div><div className="review-count"><button disabled={!discountRules.allowDiscounts||safeReviewCount<=0} onClick={()=>setReviewCount(Math.max(0,safeReviewCount-1))}>−</button><input type="number" min="0" max={maxReviews} step="1" value={safeReviewCount} disabled={!discountRules.allowDiscounts||reviewUnitMinor<=0} onChange={(e)=>setReviewCount(Math.max(0,Math.floor(Number(e.target.value)||0)))}/><button disabled={!discountRules.allowDiscounts} onClick={()=>setReviewCount(safeReviewCount+1)}>+</button></div><strong>{reviewDiscountMinor?`− ${formatMoney(reviewDiscountMinor)}`:'—'}</strong></div>
           <div className="review-discount-row"><div><span>Доп. скидка{manualDiscount?.type==='percent'?` ${manualDiscount.value}%`:''}</span><small>Ограничена настройками точки</small></div><button disabled={!discountRules.allowDiscounts} onClick={()=>setManualDiscountOpen(true)}>{manualDiscount?'Изменить':'Скидка'}</button><strong>{breakdown.manualDiscountMinor?`− ${formatMoney(breakdown.manualDiscountMinor)}`:'—'}</strong></div>
           {cart.some((line)=>productById.get(line.productId)?.preventDiscounts)&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}
-          {breakdown.totalDiscountMinor>0&&<div className="subtotal"><span>Без скидок</span><s>{formatMoney(subtotal)}</s></div>}
-          <div className="total"><span>Итого</span><strong>{formatMoney(total)}</strong></div>
+          {breakdown.totalDiscountMinor>0&&<>
+            <div className="subtotal"><span>Без скидок</span><strong>{formatMoney(subtotal)}</strong></div>
+            <div className="subtotal"><span>Скидка составила</span><strong>− {formatMoney(breakdown.totalDiscountMinor)}</strong></div>
+          </>}
           {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
             <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
-            <small className="training">ККТ и оборудование проверяются перед каждой оплатой</small>
           </>}
         </footer>
       </aside>

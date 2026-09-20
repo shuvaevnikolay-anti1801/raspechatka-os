@@ -66,6 +66,15 @@ export type CashierAuthState = {
   requiresPinSetup?:boolean
 }
 export type ReceiptMirror = SaleDetails & { pointId:string; serverId:string; externalId?:string; cashierId?:string; cashierName?:string; customerPhone?:string; shiftExternalId?:string }
+export type UpsellCandidate = {
+  item: string
+  cashierPhrase?: string
+}
+export type UpsellRule = {
+  triggerItem: string
+  enabled: boolean
+  candidates: UpsellCandidate[]
+}
 export type PointRules = {
   allowFreePrice: boolean
   allowRemoveCartItem: boolean
@@ -93,6 +102,8 @@ export type BootState = {
   source: 'demo' | 'frappe'
   shift: Shift | null
   rules: PointRules
+  upsellRules: UpsellRule[]
+  upsellCursors: Record<string, number>
 }
 
 export type ConnectionConfig = { serverUrl: string; deviceId?: string; token?: string; apiKey?:string; apiSecret?:string; workplaceCode?:string }
@@ -370,5 +381,6 @@ export type PosApi = {
   logoutCashier: () => Promise<CashierAuthState>
   verifyAdminCode: (code:string) => Promise<boolean>
   resetCashierPin: (cashierId:string,adminCode:string,newPin:string,confirmation:string) => Promise<void>
+  setUpsellCursor: (triggerItem:string,cursor:number) => Promise<void>
   syncNow: () => Promise<BootState>
 }

@@ -30,6 +30,9 @@ const posSettings = reactive({
 	markup_upper_threshold: 200,
 });
 const canEditIntegration = computed(() => canAccess("page.sales.integration", "Edit"));
+const upsellConfig = reactive({ rules: [], catalog_items: [] });
+const upsellSaving = ref(false);
+const upsellMessage = ref("");
 const options = reactive({ entities: [], points: [], cashiers: [] });
 const today = new Date().toISOString().slice(0, 10),
 	month = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -407,10 +410,16 @@ async function load() {
 		if (kind.value === "integration") {
 			method = "get_connections";
 			params = {};
-			Object.assign(
-				posSettings,
-				await call("raspechatka.api.sales.get_pos_sales_settings_api")
-			);
+			const [salesSettings, upsellSettings] = await Promise.all([
+				call("raspechatka.api.sales.get_pos_sales_settings_api"),
+				call("raspechatka.api.sales.get_pos_upsell_config"),
+			]);
+			Object.assign(posSettings, salesSettings);
+			upsellConfig.catalog_items = upsellSettings.catalog_items || [];
+			upsellConfig.rules = (upsellSettings.rules || []).map((rule) => ({
+				...rule,
+				candidates: (rule.candidates || []).map((candidate) => ({ ...candidate })),
+			}));
 		}
 		const result = await call(`raspechatka.api.sales.${method}`, params);
 		rows.value = result.rows || [];
@@ -438,6 +447,40 @@ async function savePosSettings() {
 		settingsMessage.value = e.message;
 	} finally {
 		settingsSaving.value = false;
+	}
+}
+function addUpsellRule() {
+	upsellConfig.rules.push({ name: null, trigger_item: "", enabled: 1, candidates: [] });
+}
+function removeUpsellRule(index) {
+	upsellConfig.rules.splice(index, 1);
+}
+function addUpsellCandidate(rule) {
+	rule.candidates ||= [];
+	rule.candidates.push({ item: "", cashier_phrase: "" });
+}
+function removeUpsellCandidate(rule, index) {
+	rule.candidates.splice(index, 1);
+}
+async function saveUpsellRules() {
+	upsellSaving.value = true;
+	upsellMessage.value = "";
+	try {
+		const result = await call(
+			"raspechatka.api.sales.save_pos_upsell_rules",
+			{ data: JSON.stringify({ rules: upsellConfig.rules }) },
+			{ method: "POST" }
+		);
+		upsellConfig.catalog_items = result.catalog_items || upsellConfig.catalog_items;
+		upsellConfig.rules = (result.rules || []).map((rule) => ({
+			...rule,
+			candidates: (rule.candidates || []).map((candidate) => ({ ...candidate })),
+		}));
+		upsellMessage.value = "Дополнительные продажи сохранены";
+	} catch (e) {
+		upsellMessage.value = e.message;
+	} finally {
+		upsellSaving.value = false;
 	}
 }
 async function openRow(row) {
@@ -642,6 +685,118 @@ onMounted(init);
 					</button>
 				</div>
 			</div>
+			<div class="form-section upsell-settings">
+				<h2>Дополнительные продажи</h2>
+				<p class="form-help">
+					Правила общие для всех касс сети. На кассе одновременно показывается одно предложение.
+				</p>
+				<div class="upsell-rules">
+					<div v-if="!upsellConfig.rules.length" class="table-message">
+						Правила ещё не настроены.
+					</div>
+					<article v-for="(rule, ruleIndex) in upsellConfig.rules" :key="rule.name || `new-${ruleIndex}`" class="upsell-rule">
+						<div class="upsell-rule__header">
+							<label class="check-field">
+								<input
+									v-model="rule.enabled"
+									type="checkbox"
+									:true-value="1"
+									:false-value="0"
+									:disabled="!canEditIntegration"
+								/>Включено</label
+							>
+							<button
+								v-if="canEditIntegration"
+								class="text-button"
+								type="button"
+								@click="removeUpsellRule(ruleIndex)"
+							>
+								Удалить правило
+							</button>
+						</div>
+						<label
+							>Основная позиция<select
+								v-model="rule.trigger_item"
+								:disabled="!canEditIntegration"
+							>
+								<option value="">Выберите позицию</option>
+								<option
+									v-for="item in upsellConfig.catalog_items"
+									:key="item.name"
+									:value="item.name"
+									>{{ item.item_name }} · {{ item.item_type }}</option
+								>
+							</select></label
+						>
+						<div class="upsell-candidates">
+							<div
+								v-for="(candidate, candidateIndex) in rule.candidates"
+								:key="`${rule.name || ruleIndex}-${candidateIndex}`"
+								class="upsell-candidate"
+							>
+								<label
+									>Кандидат<select
+										v-model="candidate.item"
+										:disabled="!canEditIntegration"
+									>
+										<option value="">Выберите позицию</option>
+										<option
+											v-for="item in upsellConfig.catalog_items"
+											:key="item.name"
+											:value="item.name"
+											>{{ item.item_name }} · {{ item.item_type }}</option
+										>
+									</select></label
+								>
+								<label
+									>Фраза кассиру<textarea
+										v-model="candidate.cashier_phrase"
+										rows="2"
+										placeholder="Оставьте пустым для стандартной фразы"
+										:disabled="!canEditIntegration"
+									></textarea></label
+								>
+								<button
+									v-if="canEditIntegration"
+									class="text-button"
+									type="button"
+									@click="removeUpsellCandidate(rule, candidateIndex)"
+								>
+									Удалить
+								</button>
+							</div>
+						</div>
+						<button
+							v-if="canEditIntegration"
+							class="text-button"
+							type="button"
+							@click="addUpsellCandidate(rule)"
+						>
+							＋ Добавить кандидата
+						</button>
+				</article>
+				</div>
+				<div class="upsell-actions">
+					<button
+						v-if="canEditIntegration"
+						class="button button-secondary"
+						type="button"
+						@click="addUpsellRule"
+					>
+						＋ Добавить правило
+					</button>
+					<div v-if="canEditIntegration" class="footer-actions">
+						<span>{{ upsellMessage }}</span
+						><button
+							class="button button-primary"
+							:disabled="upsellSaving"
+							@click="saveUpsellRules"
+						>
+							{{ upsellSaving ? "Сохраняем…" : "Сохранить дополнительные продажи" }}
+						</button>
+					</div>
+				</div>
+			</div>
 			<div class="bank-security-note">
 				<span>✓</span>
 				<div>
@@ -819,3 +974,18 @@ onMounted(init);
 		>
 	</section>
 </template>
+<style scoped>
+.upsell-settings { display: grid; gap: 12px; }
+.upsell-settings .form-help { margin: -4px 0 4px; color: var(--muted); }
+.upsell-rules { display: grid; gap: 12px; }
+.upsell-rule { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.upsell-rule__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.upsell-candidates { display: grid; gap: 8px; }
+.upsell-candidate { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) auto; gap: 10px; align-items: end; }
+.upsell-candidate label, .upsell-rule > label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+.upsell-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+	.upsell-candidate { grid-template-columns: 1fr; }
+	.upsell-actions { align-items: stretch; flex-direction: column; }
+}
+</style>

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { BootState, PaymentMethod, PaymentPart, RemotePaymentConfirmation } from '../../shared/contracts'
 import './checkout.css'
+import { formatMoney } from './money'
 
 export type PaymentChoice=PaymentMethod|'mixed'
 
-const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2})
-const formatMoney=(minor:number)=>money.format(minor/100)
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 
 export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose,onComplete}:{
@@ -93,7 +92,7 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
 
     {(terminalChoice||mixedUsesTerminal)&&!terminalReady&&<div className="payment-warning"><strong>Эквайринг пока недоступен</strong><span>{terminalMessage}. Деньги не будут считаться принятыми без ответа реального терминала.</span></div>}
 
-    {choice==='cash'&&<label className="cash-input"><span>Получено от клиента</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} placeholder={(total/100).toFixed(2)}/><small>{cashMinor>0&&cashMinor<total?'Получено меньше суммы чека':'Сдача: '+formatMoney(Math.max(0,cashMinor-total))}</small></label>}
+    {choice==='cash'&&<label className="cash-input"><span>Получено от клиента</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} placeholder={formatMoney(total).replace(/\s₽$/,'')}/><small>{cashMinor>0&&cashMinor<total?'Получено меньше суммы чека':'Сдача: '+formatMoney(Math.max(0,cashMinor-total))}</small></label>}
 
     {remoteChoice&&<section className="remote-confirmation">
       <strong>Удалённая оплата по ссылке Точки</strong>

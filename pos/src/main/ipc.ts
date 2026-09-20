@@ -55,6 +55,9 @@ export function registerIpcHandlers(dependencies:{
   }
 
   ipcMain.handle('pos:get-boot-state',bootState)
+  ipcMain.handle('pos:set-upsell-cursor',(_event,triggerItem:string,cursor:number)=>{
+    database.setUpsellCursor(triggerItem,cursor)
+  })
   ipcMain.handle('pos:get-pos-lifecycle',()=>lifecycle.status())
   ipcMain.handle('pos:begin-initial-setup',()=>lifecycle.beginConfiguration())
   ipcMain.handle('pos:complete-initial-setup',async()=>{

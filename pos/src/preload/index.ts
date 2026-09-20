@@ -195,6 +195,8 @@ const api: ExtendedPosApi = {
       pin,
       confirmation
     ),
+  setUpsellCursor: (triggerItem: string, cursor: number) =>
+    ipcRenderer.invoke("pos:set-upsell-cursor", triggerItem, cursor),
   syncNow: () => ipcRenderer.invoke("pos:sync-now"),
 };
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './pilot-ux.css'
+import { formatMoney } from './money'
 
 type ExtendedPosApi=typeof window.raspechatkaPos&{
   recordShiftDiscrepancy:(differenceMinor:number,note:string)=>Promise<unknown>
@@ -46,7 +47,7 @@ export default function ShiftCloseGuard(){
   return <div className="pilot-backdrop">
     <section className="pilot-modal discrepancy-modal">
       <header><div><small>ЗАКРЫТИЕ СМЕНЫ</small><h2>Есть расхождение наличных</h2></div><button onClick={()=>setOpen(false)}>×</button></header>
-      <div className="discrepancy-amount"><span>Расхождение</span><strong>{new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB'}).format(differenceMinor/100)}</strong></div>
+      <div className="discrepancy-amount"><span>Расхождение</span><strong>{formatMoney(differenceMinor)}</strong></div>
       <p>Смена может быть закрыта, но причина должна остаться в журнале кассы. Напишите коротко, что произошло.</p>
       <label className="discrepancy-note"><span>Комментарий *</span><textarea autoFocus value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Например: при пересчёте не хватает 100 ₽, сообщено старшему менеджеру"/></label>
       {error&&<div className="pilot-message error">{error}</div>}

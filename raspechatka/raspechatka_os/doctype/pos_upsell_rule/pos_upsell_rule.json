@@ -1,0 +1,49 @@
+{
+ "doctype": "DocType",
+ "name": "POS Upsell Rule",
+ "module": "Raspechatka OS",
+ "track_changes": 1,
+ "field_order": [
+  "trigger_item",
+  "enabled",
+  "candidates"
+ ],
+ "fields": [
+  {
+   "fieldname": "trigger_item",
+   "fieldtype": "Link",
+   "label": "Основная позиция",
+   "options": "Catalog Item",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Включено",
+   "default": "1"
+  },
+  {
+   "fieldname": "candidates",
+   "fieldtype": "Table",
+   "label": "Кандидаты",
+   "options": "POS Upsell Candidate"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0
+  },
+  {
+   "role": "Raspechatka Network Admin",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0
+  }
+ ]
+}

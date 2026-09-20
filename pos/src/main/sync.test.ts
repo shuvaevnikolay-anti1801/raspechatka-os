@@ -17,6 +17,7 @@ describe('performSync single flight',()=>{
       replaceProducts:vi.fn(),replaceCustomers:vi.fn(),replacePointEmployees:vi.fn(),
       replaceReceiptMirror:vi.fn(),replaceServerOrders:vi.fn(),setWorkplaceData:vi.fn(),
       listPointEmployees:()=>[],pendingSyncCount:()=>0,currentShift:()=>null,pendingEvents:()=>[],markEventsSent:vi.fn(),
+      getUpsellCursor:(triggerItem:string)=>triggerItem==='trigger'?2:0,
     }
     const connectionStore:any={load:()=>({serverUrl:'https://example.test',deviceId:'dev',token:'token'})}
     const first=performSync(database,connectionStore,'cashier')
@@ -30,7 +31,8 @@ describe('performSync single flight',()=>{
         id:'ORDER-1',orderNumber:'ORD-1',phone:'+79001234567',lines:[],totalMinor:2000,paidMinor:2000,
         paymentStatus:'paid',status:'ready',createdAt:'2026-09-20T09:00:00.000Z',dueAt:'2026-09-20T10:00:00.000Z',
         readyAt:'2026-09-20T09:45:00.000Z',issuedAt:undefined,sourceSaleId:'SALE-1',fiscalNumber:'777'
-      }]},rules:{allowDiscounts:true,maxDiscountPercent:20},
+      }]},upsellRules:[{triggerItem:'trigger',enabled:true,candidates:[{item:'candidate',cashierPhrase:'Попробуйте'}]}],
+      rules:{allowDiscounts:true,maxDiscountPercent:20},
     })
     await expect(first).resolves.toMatchObject({online:true,pendingSync:0})
     expect(database.replaceServerOrders).toHaveBeenCalledWith(
@@ -38,6 +40,11 @@ describe('performSync single flight',()=>{
       [expect.objectContaining({id:'ORDER-1',readyAt:'2026-09-20T09:45:00.000Z',sourceSaleId:'SALE-1'})],
       60,
     )
+    expect(database.setState).toHaveBeenCalledWith('bootstrap',expect.stringContaining('"upsellRules"'))
+    expect((await first).upsellRules).toEqual([
+      {triggerItem:'trigger',enabled:true,candidates:[{item:'candidate',cashierPhrase:'Попробуйте'}]},
+    ])
+    expect((await first).upsellCursors).toEqual({trigger:2})
     expect(mocks.pushEvents).not.toHaveBeenCalled()
   })
 })
