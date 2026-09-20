@@ -14,6 +14,7 @@ import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performSync } from './sync'
 import { PosTransactionEngine } from './transaction-engine'
 import { CashierAuthSession } from './cashier-auth'
+import { PosLifecycleStore } from './pos-lifecycle'
 
 const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='cash'?rules.acceptsCash:
@@ -34,8 +35,9 @@ export function registerIpcHandlers(dependencies:{
   shiftCoordinator:ShiftCoordinator
   diagnostics:PosDiagnostics
   cashierAuth:CashierAuthSession
+  lifecycle:PosLifecycleStore
 }):void {
-  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics,cashierAuth}=dependencies
+  const {database,connectionStore,paymentProvider,fiscalProvider,printProvider,printQueue,transactionEngine,shiftCoordinator,diagnostics,cashierAuth,lifecycle}=dependencies
   const bootState=()=>{
     const boot=buildBootState(database)
     const auth=cashierAuth.state()
@@ -52,6 +54,15 @@ export function registerIpcHandlers(dependencies:{
   }
 
   ipcMain.handle('pos:get-boot-state',bootState)
+  ipcMain.handle('pos:get-pos-lifecycle',()=>lifecycle.status())
+  ipcMain.handle('pos:begin-initial-setup',()=>lifecycle.beginConfiguration())
+  ipcMain.handle('pos:complete-initial-setup',async()=>{
+    lifecycle.beginConfiguration()
+    await performSync(database,connectionStore)
+    const status=lifecycle.markReady()
+    diagnostics.record({source:'app',eventType:'lifecycle.ready',message:'Первоначальная настройка POS завершена'})
+    return status
+  })
   ipcMain.handle('pos:list-products',()=>database.listProducts())
   ipcMain.handle('pos:list-customers',(_event,query?:string)=>database.listCustomers(query))
   ipcMain.handle('pos:get-customer',(_event,id:string)=>database.getCustomer(id))
@@ -201,6 +212,7 @@ export function registerIpcHandlers(dependencies:{
 
   ipcMain.handle('pos:get-connection-status',()=>connectionStore.status(bootState().lastSyncAt,database.getState('sync_error')))
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
+    if(lifecycle.status().state!=='READY')lifecycle.beginConfiguration()
     const previous=connectionStore.load()
     const normalizeServer=(value?:string)=>value?.trim().replace(/\/+$/,'')??''
     const identityChanged=Boolean(previous)&&(
@@ -228,6 +240,7 @@ export function registerIpcHandlers(dependencies:{
   })
 
   ipcMain.handle('pos:complete-sale',async(_event,request:CompleteSaleRequest):Promise<CompleteSaleResult>=>{
+    lifecycle.requireReady()
     assertCashierAccess()
     const existing=database.findSaleByClientRequestId(request.clientRequestId)
     if(existing)return {...existing,changeMinor:0,queuedForSync:true}

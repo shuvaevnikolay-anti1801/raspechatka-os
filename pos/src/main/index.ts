@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
 import { PosDatabase } from "./database";
@@ -26,6 +27,7 @@ import { buildBootState, startAutomaticSync } from "./sync";
 import { PosDiagnostics } from "./diagnostics";
 import { InpasPaymentProvider, InpasSettingsStore } from "./providers/inpas";
 import { CashierAuthSession } from "./cashier-auth";
+import { PosLifecycleStore } from "./pos-lifecycle";
 import { AtolCredentialStore, AtolWebManager } from "./atol-web-manager";
 
 let stopAutomaticSync: (() => void) | undefined;
@@ -84,7 +86,9 @@ if (!hasLock) {
 
   app.whenReady().then(async () => {
     const userData = app.getPath("userData");
-    database = new PosDatabaseV2(join(userData, "raspechatka-pos.sqlite"));
+    const databasePath = join(userData, "raspechatka-pos.sqlite");
+    const existingInstallation = existsSync(databasePath);
+    database = new PosDatabaseV2(databasePath);
     journal = new TransactionJournal(
       join(userData, "raspechatka-pos-journal.sqlite")
     );
@@ -100,6 +104,7 @@ if (!hasLock) {
       join(userData, "connection.bin")
     );
     const cashierAuth = new CashierAuthSession(database);
+    const lifecycle = new PosLifecycleStore(database, existingInstallation);
     const trainingMode = process.env.RASPECHATKA_TRAINING_MODE === "1";
     const atolSettingsStore = new AtolSettingsStore(
       join(userData, "atol-settings.json")
@@ -213,6 +218,7 @@ if (!hasLock) {
       shiftCoordinator,
       diagnostics,
       cashierAuth,
+      lifecycle,
     });
     registerPosV2Ipc(connectionStore);
     registerShiftRecoveryIpc({

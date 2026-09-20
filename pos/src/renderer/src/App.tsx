@@ -5,7 +5,7 @@ import type {
   BootState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, PaymentMethod, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary, SaleDetails,
   SalePaymentMethod, SaleSummary, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, Order, OrderStatus,
-  CashierAuthState, PointEmployee
+  PosLifecycleStatus, CashierAuthState, PointEmployee
 } from '../../shared/contracts'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
@@ -18,6 +18,8 @@ const emptyWorkplace:WorkplaceData={schedule:[],deliveries:[],supplyRequests:[],
 
 export default function App(){
   const [boot,setBoot]=useState<BootState|null>(null)
+  const [lifecycle,setLifecycle]=useState<PosLifecycleStatus|null>(null)
+  const [cashierAuth,setCashierAuth]=useState<CashierAuthState|null>(null)
   const [products,setProducts]=useState<Product[]>([])
   const [customers,setCustomers]=useState<Customer[]>([])
   const [sales,setSales]=useState<SaleSummary[]>([])
@@ -29,7 +31,6 @@ export default function App(){
   const [workplace,setWorkplace]=useState<WorkplaceData>(emptyWorkplace)
   const [lastCashCount,setLastCashCount]=useState<CashCount|null>(null)
   const [connection,setConnection]=useState<ConnectionStatus|null>(null)
-  const [cashierAuth,setCashierAuth]=useState<CashierAuthState|null>(null)
   const [screen,setScreen]=useState<Screen>('sale')
   const [query,setQuery]=useState('')
   const [category,setCategory]=useState('Все')
@@ -53,11 +54,11 @@ export default function App(){
       window.raspechatkaPos.listReturns(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
       window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
-      window.raspechatkaPos.getLastCashCount(),window.raspechatkaPos.getCashierAuthState()
+      window.raspechatkaPos.getLastCashCount(),window.raspechatkaPos.getPosLifecycle(),window.raspechatkaPos.getCashierAuthState()
     ])
     setBoot(result[0]);setProducts(result[1]);setCustomers(result[2]);setSales(result[3])
     setReturns(result[4]);setHeld(result[5]);setSummary(result[6]);setCashOperations(result[7]);setConnection(result[8])
-    setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11]);setCashierAuth(result[12])
+    setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11]);setLifecycle(result[12]);setCashierAuth(result[13])
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
 
@@ -111,7 +112,8 @@ export default function App(){
     catch(e){setMessage(e instanceof Error?e.message:String(e))}
   }
 
-  if(!boot||!cashierAuth)return <div className="loading"><i/>Запускаем кассу…</div>
+  if(!boot||!lifecycle||!cashierAuth)return <div className="loading"><i/>Запускаем кассу…</div>
+  if(lifecycle.state!=='READY')return <InitialSetup lifecycle={lifecycle} onCompleted={refresh}/>
   if(cashierAuth.status!=='authenticated')return <CashierAccess employees={boot.employees} auth={cashierAuth} onChanged={refresh}/>
   return <div className="app-shell">
     <header className="topbar">
@@ -281,6 +283,38 @@ function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount[
 }
 
 function Nav({active,icon,label,badge,onClick}:{active:boolean;icon:string;label:string;badge?:number;onClick:()=>void}){return <button className={active?'active':''} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}
+function InitialSetup({lifecycle,onCompleted}:{lifecycle:PosLifecycleStatus;onCompleted:()=>Promise<void>}){
+  const [config,setConfig]=useState<ConnectionConfig>({serverUrl:'https://os.rpechatka.ru',deviceId:'',token:''})
+  const [message,setMessage]=useState(lifecycle.state==='NEW'
+    ?'Подключите кассу к Распечатка OS. До завершения настройки продажи недоступны.'
+    :'Продолжите первоначальную настройку кассы.')
+  const [busy,setBusy]=useState(false)
+
+  const complete=async()=>{
+    setBusy(true)
+    try{
+      await window.raspechatkaPos.beginInitialSetup()
+      await window.raspechatkaPos.saveConnection(config)
+      await window.raspechatkaPos.completeInitialSetup()
+      await onCompleted()
+    }catch(error){
+      setMessage(error instanceof Error?error.message:String(error))
+    }finally{setBusy(false)}
+  }
+
+  return <main className="app-shell">
+    <section className="page">
+      <div className="page-heading"><div><small>Первый запуск</small><h1>Настройка кассы</h1><p>{message}</p></div></div>
+      <div className="settings-card">
+        <label><span>Адрес Распечатка OS</span><input value={config.serverUrl} onChange={(e)=>setConfig({...config,serverUrl:e.target.value})} placeholder="https://os.example.ru"/></label>
+        <label><span>Device ID</span><input value={config.deviceId||''} onChange={(e)=>setConfig({...config,deviceId:e.target.value})}/></label>
+        <label><span>Token</span><input type="password" value={config.token||''} onChange={(e)=>setConfig({...config,token:e.target.value})}/></label>
+        <button className="primary" disabled={busy} onClick={()=>void complete()}>{busy?'Проверяем подключение…':'Подключить и завершить настройку'}</button>
+      </div>
+    </section>
+  </main>
+}
+
 function Page({title,kicker,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className="page"><div className="page-heading"><div><small>{kicker}</small><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
 function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i>＋</i><b>{title}</b><span>{text}</span></div>}
@@ -300,7 +334,6 @@ function Settings({boot,connection,onSaved,onSynced}:{boot:BootState;connection:
     <section className="settings-card"><h2>Состояние</h2><dl><div><dt>Режим</dt><dd>{boot.source==='frappe'?'Данные из OS':'Демо-данные'}</dd></div><div><dt>Точка</dt><dd>{boot.pointName}</dd></div><div><dt>Последнее обновление</dt><dd>{boot.lastSyncAt?new Date(boot.lastSyncAt).toLocaleString('ru-RU'):'Ещё не было'}</dd></div><div><dt>Очередь</dt><dd>{boot.pendingSync} операций</dd></div></dl>{connection?.lastError&&<div className="error-note">{connection.lastError}</div>}</section>
   </div></Page>
 }
-
 
 function CashierAccess({employees,auth,onChanged}:{employees:PointEmployee[];auth:CashierAuthState;onChanged:()=>Promise<void>}){
   const [selectedId,setSelectedId]=useState(auth.employee?.id||'')
