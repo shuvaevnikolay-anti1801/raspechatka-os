@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Order, SaleSummary } from '../../shared/contracts'
+import { formatMoney } from './money'
 
-const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(minor/100)
 const short=(phone:string)=>{const digits=phone.replace(/\D/g,'');return digits.slice(-4)||'—'}
 const statusName=(status:Order['status'])=>status==='ready'?'Готов к выдаче':status==='issued'?'Выдан':status==='cancelled'?'Отменён':'В работе'
 const overdue=(order:Order)=>Boolean(order.dueAt&&new Date(order.dueAt).getTime()<Date.now()&&!['ready','issued','cancelled'].includes(order.status))
@@ -48,7 +48,7 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
         <b className="order-number">№ {short(order.phone)}<small>{order.orderNumber}</small></b>
         <span className="order-phone">{order.phone}</span>
         <span className="order-description">{order.comment||'Без описания'}</span>
-        <span className="order-payment"><b>Оплачено · {money(order.totalMinor)}</b>{order.fiscalNumber&&<small>чек {order.fiscalNumber}</small>}</span>
+        <span className="order-payment"><b>Оплачено · {formatMoney(order.totalMinor)}</b>{order.fiscalNumber&&<small>чек {order.fiscalNumber}</small>}</span>
         <span>{new Date(order.createdAt).toLocaleString('ru-RU')}</span>
         <span className={overdue(order)?'order-due overdue':'order-due'}>
           {order.dueAt?new Date(order.dueAt).toLocaleString('ru-RU'):'Срок не указан'}
@@ -152,10 +152,10 @@ function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:(
           if(sale?.customerPhone)setPhone(sale.customerPhone)
         }}>
           <option value="">{loading?'Загружаем чеки…':'Выберите чек'}</option>
-          {matches.map((sale)=><option key={sale.id} value={sale.id}>{sale.receiptNumber} · {sale.customerName||'Покупатель'} · {money(sale.totalMinor)}</option>)}
+          {matches.map((sale)=><option key={sale.id} value={sale.id}>{sale.receiptNumber} · {sale.customerName||'Покупатель'} · {formatMoney(sale.totalMinor)}</option>)}
         </select>
       </label>
-      {selected&&<div className="order-selected-receipt"><span>Оплачено</span><b>{money(selected.totalMinor)}</b><small>{selected.receiptNumber} · {new Date(selected.createdAt).toLocaleString('ru-RU')}</small></div>}
+      {selected&&<div className="order-selected-receipt"><span>Оплачено</span><b>{formatMoney(selected.totalMinor)}</b><small>{selected.receiptNumber} · {new Date(selected.createdAt).toLocaleString('ru-RU')}</small></div>}
       <label className="cash-input"><span>Телефон *</span><input value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="+7 900 000-00-00"/></label>
       <label className="cash-input"><span>Описание заказа *</span><textarea value={comment} onChange={(event)=>setComment(event.target.value)} placeholder="Что нужно изготовить"/></label>
       <label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></label>
