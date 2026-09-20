@@ -746,6 +746,47 @@ def _scope_filters():
 	}
 
 
+@frappe.whitelist()
+@access_contract(area="page.sales.orders", action="read", scope="point")
+def get_orders(
+	business_entity=None, business_point=None, status=None, search=None,
+	created_from=None, created_to=None, due_from=None, due_to=None,
+	ready_from=None, ready_to=None, overdue=0, limit_page_length=1000,
+):
+	require_access("page.sales.orders", "read")
+	point_filters = _scope_point_filter(business_entity, business_point)
+	filters = dict(point_filters)
+	if status:
+		filters["status"] = status
+	for field, start, end in (
+		("created_at", created_from, created_to),
+		("due_at", due_from, due_to),
+		("ready_at", ready_from, ready_to),
+	):
+		if start and end: filters[field] = ["between", [f"{start} 00:00:00", f"{end} 23:59:59"]]
+		elif start: filters[field] = [">=", f"{start} 00:00:00"]
+		elif end: filters[field] = ["<=", f"{end} 23:59:59"]
+	rows = frappe.get_all("POS Order", filters=filters, fields=[
+		"name","order_number","phone","business_point","comment","total_amount","paid_amount",
+		"status","created_at","creation","due_at","ready_at","issued_at","source_sale_id","fiscal_number"
+	], order_by="created_at desc, creation desc", limit_page_length=min(max(cint(limit_page_length) or 1000, 1), 5000))
+	if search:
+		needle = str(search).lower()
+		rows = [row for row in rows if needle in " ".join(str(row.get(key) or "") for key in ("order_number","phone","comment","fiscal_number")).lower()]
+	if cint(overdue):
+		now = now_datetime()
+		rows = [row for row in rows if row.due_at and get_datetime(row.due_at) < now and (not row.ready_at or get_datetime(row.ready_at) > get_datetime(row.due_at))]
+	points = {x.name: x.point_name for x in frappe.get_all("Business Point", filters={"name":["in",[x.business_point for x in rows] or ["__none__"]]}, fields=["name","point_name"])}
+	status_labels={"New":"new","In Progress":"in_progress","Ready":"ready","Issued":"issued","Cancelled":"cancelled"}
+	return {"rows":[{
+		"id":x.name,"orderNumber":x.order_number,"phone":x.phone,"businessPoint":x.business_point,
+		"businessPointName":points.get(x.business_point), "comment":x.comment,
+		"totalMinor":round(flt(x.total_amount)*100),"paidMinor":round(flt(x.paid_amount)*100),
+		"status":status_labels.get(x.status,"new"),"createdAt":str(x.created_at or x.creation),
+		"dueAt":x.due_at,"readyAt":x.ready_at,"issuedAt":x.issued_at,
+		"sourceSaleId":x.source_sale_id,"fiscalNumber":x.fiscal_number
+	} for x in rows]}
+
 def _business_point_filters(business_entity=None, business_point=None):
 	scope = get_scope()
 	filters = {}
