@@ -1,0 +1,24 @@
+{
+ "doctype": "DocType",
+ "name": "POS Upsell Candidate",
+ "module": "Raspechatka OS",
+ "istable": 1,
+ "field_order": [
+  "item",
+  "cashier_phrase"
+ ],
+ "fields": [
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Рекомендуемая позиция",
+   "options": "Catalog Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cashier_phrase",
+   "fieldtype": "Small Text",
+   "label": "Фраза кассиру"
+  }
+ ]
+}
