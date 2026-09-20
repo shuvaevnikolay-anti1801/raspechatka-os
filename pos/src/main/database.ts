@@ -526,10 +526,11 @@ export class PosDatabase {
   ):Order {
     const phone=meta.phone.trim()
     const comment=meta.comment?.trim()||''
-    const dueAt=meta.dueAt?.trim()||''
+    const dueInput=meta.dueAt?.trim()||''
     if(phone.replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
     if(!comment)throw new Error('Укажите описание заказа')
-    if(!dueAt||Number.isNaN(Date.parse(dueAt)))throw new Error('Укажите корректный срок готовности')
+    if(!dueInput||Number.isNaN(Date.parse(dueInput)))throw new Error('Укажите корректный срок готовности')
+    const dueAt=new Date(dueInput).toISOString()
     const duplicate=this.db.prepare('SELECT id FROM orders WHERE source_sale_id=? LIMIT 1').get(input.id)
     if(duplicate)throw new Error('Для этого чека уже существует заказ')
     const now=input.createdAt||new Date().toISOString()
@@ -584,6 +585,7 @@ export class PosDatabase {
     if(input.phone!==undefined&&input.phone.trim().replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
     if(input.comment!==undefined&&!input.comment.trim())throw new Error('Описание заказа не может быть пустым')
     if(input.dueAt!==undefined&&(!input.dueAt.trim()||Number.isNaN(Date.parse(input.dueAt))))throw new Error('Укажите корректный срок готовности')
+    const normalizedDueAt=input.dueAt===undefined?current.dueAt:new Date(input.dueAt).toISOString()
     if(input.status&&input.status!==current.status){
       const allowed=(['new','in_progress'].includes(current.status)&&input.status==='ready')
         ||(current.status==='ready'&&input.status==='issued')
@@ -594,7 +596,7 @@ export class PosDatabase {
       phone:input.phone===undefined?current.phone:input.phone.trim(),
       comment:input.comment===undefined?current.comment:input.comment.trim(),
       status:input.status||current.status,
-      dueAt:input.dueAt===undefined?current.dueAt:input.dueAt,
+      dueAt:normalizedDueAt,
     }
     const updatedAt=new Date().toISOString()
     const readyAt=current.readyAt||(input.status==='ready'&&current.status!=='ready'?updatedAt:undefined)
