@@ -16,7 +16,7 @@
       { "area": "page.sales.overview", "label": "Точки продаж", "route": "/sales", "legacy_area": "sales.analytics", "order": 10 },
       { "area": "page.sales.shifts", "label": "Смены", "route": "/sales/shifts", "legacy_area": "sales.shifts", "order": 20 },
       { "area": "page.sales.receipts", "label": "Продажи", "route": "/sales/receipts", "legacy_area": "sales.receipts", "order": 30 },
-      { "area": "page.sales.orders", "label": "Заказы", "route": "/sales/orders", "legacy_area": "sales.orders", "order": 35 },
+      { "area": "page.sales.orders", "label": "Заказы", "route": "/sales/orders", "order": 35 },
       { "area": "page.sales.returns", "label": "Возвраты", "route": "/sales/returns", "legacy_area": "sales.receipts", "order": 40 },
       { "area": "page.sales.cash", "label": "Внесения и выплаты", "route": "/sales/cash", "legacy_area": "sales.cash", "order": 50 },
       { "area": "page.sales.audit", "label": "Действия кассира", "route": "/sales/actions", "legacy_area": "sales.audit", "order": 60 },
