@@ -11,7 +11,7 @@ from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
 from raspechatka.pos_settings import get_pos_sales_rules
-from raspechatka.pos_upsell import get_pos_upsell_config
+from raspechatka.pos_upsell import get_pos_upsell_rules
 from raspechatka.sales import log_cashier_action, update_shift_totals
 
 POS_MIRROR_RETENTION_DAYS = 60
@@ -247,7 +247,9 @@ def _upsell_rules(products):
 	"""Return only rules whose items are present in this point's POS catalog."""
 	available = {str(row.get("id")) for row in products if row.get("id")}
 	result = []
-	for rule in get_pos_upsell_config().get("rules", []):
+	for rule in get_pos_upsell_rules():
+		if not rule.get("enabled"):
+			continue
 		trigger = str(rule.get("trigger_item") or "")
 		if trigger not in available:
 			continue
