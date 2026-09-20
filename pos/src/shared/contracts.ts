@@ -65,7 +65,7 @@ export type CashierAuthState = {
   openShiftCashierName?:string
   requiresPinSetup?:boolean
 }
-export type ReceiptMirror = SaleDetails & { pointId:string; serverId:string; externalId?:string }
+export type ReceiptMirror = SaleDetails & { pointId:string; serverId:string; externalId?:string; cashierId?:string; cashierName?:string; customerPhone?:string; shiftExternalId?:string }
 export type PointRules = {
   allowFreePrice: boolean
   allowRemoveCartItem: boolean
@@ -127,22 +127,74 @@ export type CompleteSaleRequest = {
 }
 
 export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order }
-export type SaleSummary = { id: string; receiptNumber: string; totalMinor: number; returnedMinor: number; paymentMethod: SalePaymentMethod; customerName?: string; createdAt: string; status: 'completed' | 'partially_returned' | 'returned'; returnable?:boolean; source?:'local'|'server' }
+export type SaleSummary = {
+  id:string
+  receiptNumber:string
+  totalMinor:number
+  returnedMinor:number
+  paymentMethod:SalePaymentMethod
+  paymentMethods?:PaymentMethod[]
+  customerName?:string
+  customerPhone?:string
+  cashierId?:string
+  cashierName?:string
+  shiftId?:string
+  searchText?:string
+  createdAt:string
+  status:'completed'|'partially_returned'|'returned'
+  returnable?:boolean
+  source?:'local'|'server'
+}
 export type SaleDetails = SaleSummary & { lines: SaleLine[]; payments: PaymentPart[]; remotePaymentConfirmation?: RemotePaymentConfirmation }
 export type SaleLine = CartLine & { id: number; returnedQuantity: number }
-export type ReceiptSearchFilters = {\n  period?: 'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'\n  shiftExternalId?: string\n  dateFrom?: string\n  dateTo?: string\n  cashierId?: string\n  amountMinMinor?: number\n  amountMaxMinor?: number\n  paymentChannel?: 'Cash'|'Card'|'QR'|'Noncash'|''\n  status?: 'Draft'|'Posted'|'Cancelled'|''\n  receiptType?: 'Sale'|'Return'|''\n}\n\nexport type PointReceiptSummary = {
+
+export type ReceiptSearchFilters = {
+  period?:'current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
+  shiftExternalId?:string
+  dateFrom?:string
+  dateTo?:string
+  cashierId?:string
+  amountMinMinor?:number
+  amountMaxMinor?:number
+  paymentChannel?:'Cash'|'Noncash'|''
+  receiptType?:'Sale'|'Return'|''
+}
+export type PointReceiptSummary = {
   id:string
   externalId?:string
   receiptNumber:string
+  receiptType:'Sale'|'Return'
   createdAt:string
   customerName:string
   customerPhone?:string
+  cashierId?:string
   cashierName?:string
+  shiftExternalId?:string
   paymentLabel:string
   totalMinor:number
   discountMinor:number
   reviewDiscountMinor:number
   status:string
+}
+export type PointReceiptLine = {
+  productId?:string
+  name:string
+  quantity:number
+  unitPriceMinor:number
+  discountPercent?:number
+  lineTotalMinor:number
+  returnedQuantity?:number
+}
+export type PointReceiptPayment = {
+  method?:PaymentMethod
+  channel:string
+  amountMinor:number
+  transactionId?:string
+}
+export type PointReceiptDetails = PointReceiptSummary & {
+  lines:PointReceiptLine[]
+  payments:PointReceiptPayment[]
+  originalReceiptId?:string
 }
 
 export type ReturnLine = { saleItemId: number; quantity: number }
@@ -171,6 +223,7 @@ export type HeldReceipt = {
   discountPercent: number
   reviewCount?: number
   manualDiscount?: ManualDiscount | null
+  totalMinor?: number
   createdAt: string
 }
 export type CashOperationType = 'deposit' | 'withdrawal'
@@ -259,10 +312,12 @@ export type PosApi = {
   getCustomer: (id: string) => Promise<Customer|null>
   listSales: () => Promise<SaleSummary[]>
   searchPointReceipts: (query?:string, filters?:ReceiptSearchFilters) => Promise<PointReceiptSummary[]>
+  getPointReceipt: (id:string) => Promise<PointReceiptDetails>
   getSale: (id: string) => Promise<SaleDetails>
   createReturn: (request: CreateReturnRequest) => Promise<ReturnResult>
   listReturns: () => Promise<ReturnSummary[]>
   printSale: (id: string, kind: PrintKind) => Promise<PrintResult>
+  printPointReceiptCommodity: (id:string) => Promise<PrintResult>
   listPrintJobs: () => Promise<PrintJobSummary[]>
   retryPrintJob: (id:string) => Promise<PrintResult>
   listPrinters: () => Promise<PrinterInfo[]>
