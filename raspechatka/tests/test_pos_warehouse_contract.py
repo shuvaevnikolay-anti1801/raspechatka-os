@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
@@ -38,9 +39,10 @@ class TestPosOperationalWarehouseContract(TestCase):
 				]
 			raise AssertionError(f"Unexpected doctype: {doctype}")
 
-		with patch.object(pos_api.frappe.db, "get_value", return_value="WH-A"), patch.object(
-			pos_api.frappe, "get_all", side_effect=get_all
-		) as get_all_mock:
+		with (
+			patch.object(pos_api.frappe.db, "get_value", return_value="WH-A"),
+			patch.object(pos_api.frappe, "get_all", side_effect=get_all) as get_all_mock,
+		):
 			result = pos_api._get_operational_catalog("POINT-A")
 
 		self.assertEqual(
@@ -215,7 +217,10 @@ class TestPosWarehouseIngestion(TestCase):
 			with self.assertRaises(Exception):
 				pos_v2._ingest_stock_receipt(
 					"EVENT-FOREIGN",
-					{"purchaseOrderId": "PO-FOREIGN", "lines": [{"purchaseOrderItemId": "POI-X", "quantity": 1}]},
+					{
+						"purchaseOrderId": "PO-FOREIGN",
+						"lines": [{"purchaseOrderItemId": "POI-X", "quantity": 1}],
+					},
 					SimpleNamespace(business_point="POINT-A"),
 					"EMP-1",
 				)
@@ -227,10 +232,16 @@ class TestPosWarehouseIngestion(TestCase):
 			patch.object(pos_v2.frappe, "get_doc") as get_doc,
 		):
 			pos_v2._ingest_stock_write_off(
-				"EVENT-WO", {"productId": "ITEM-1", "quantity": 1}, SimpleNamespace(business_point="POINT-A"), "EMP-1"
+				"EVENT-WO",
+				{"productId": "ITEM-1", "quantity": 1},
+				SimpleNamespace(business_point="POINT-A"),
+				"EMP-1",
 			)
 			pos_v2._ingest_supply_request(
-				"EVENT-NEED", {"itemName": "Бумага", "quantity": 1}, SimpleNamespace(business_point="POINT-A"), "EMP-1"
+				"EVENT-NEED",
+				{"itemName": "Бумага", "quantity": 1},
+				SimpleNamespace(business_point="POINT-A"),
+				"EMP-1",
 			)
 			pos_v2._ingest_stock_receipt(
 				"EVENT-REC",
