@@ -14,7 +14,36 @@ import type {
   StockWriteOffRequest,
   SupplyRequestInput,
   UpdateOrderRequest,
-  AtolSettings,
+  AtolSettings,\n  ReceiptSearchFilters,
+} from "../shared/contracts";
+
+type ShiftRecoveryStatus = {
+  pending: boolean;
+  action?: "open" | "close";
+  startedAt?: string;
+  localOpen: boolean;
+  fiscalOpen?: boolean;
+  fiscalState?: "closed" | "opened" | "expired" | "unknown";
+  safeToRecover: boolean;
+  message: string;
+};
+port { contextBridge, ipcRenderer } from "electron";
+import type {
+  CashCount,
+  CashCountLine,
+  CashOperationType,
+  CompleteSaleRequest,
+  ConnectionConfig,
+  CreateReturnRequest,
+  CreateUnpaidOrderRequest,
+  HeldReceipt,
+  InpasSettings,
+  PosApi,
+  PrintKind,
+  StockWriteOffRequest,
+  SupplyRequestInput,
+  UpdateOrderRequest,
+  AtolSettings,\n  ReceiptSearchFilters,
 } from "../shared/contracts";
 
 type ShiftRecoveryStatus = {
