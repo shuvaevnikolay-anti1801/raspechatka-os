@@ -646,6 +646,9 @@ def _ingest_stock_receipt(event_id, payload, connection, cashier_id):
 	)
 	if not locked:
 		frappe.throw(_("Заказ поставщику недоступен для этой точки"), frappe.PermissionError)
+	# A concurrent retry may have been waiting on the order lock.
+	if frappe.db.exists("Stock Receipt", {"external_id": event_id}):
+		return
 
 	order = frappe.db.get_value(
 		"Purchase Order",
