@@ -231,9 +231,15 @@ def _sync_catalog(settings):
 
 	for source_id, name in item_map.items():
 		if source_id and name:
-			frappe.db.set_value("Catalog Item", name, "has_variants", int(any(
-				_ref_id(variant.get("product")) == source_id for variant in variants
-			)), update_modified=False)
+			has_variants = bool(
+				frappe.db.exists(
+					"Catalog Item",
+					{"variant_of": name, "item_type": "Variant", "active": 1},
+				)
+			)
+			frappe.db.set_value(
+				"Catalog Item", name, "has_variants", int(has_variants), update_modified=False
+			)
 
 	stats["database_items"] = frappe.db.count("Catalog Item", {"moysklad_id": ["!=", ""]})
 	stats["database_groups"] = frappe.db.count("Catalog Group", {"moysklad_id": ["!=", ""]})
