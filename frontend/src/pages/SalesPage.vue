@@ -449,10 +449,6 @@ async function savePosSettings() {
 		settingsSaving.value = false;
 	}
 }
-function catalogItemLabel(itemName) {
-	const item = upsellConfig.catalog_items.find((candidate) => candidate.name === itemName);
-	return item ? item.item_name : "Выберите позицию";
-}
 function addUpsellRule() {
 	upsellConfig.rules.push({ name: null, trigger_item: "", enabled: 1, candidates: [] });
 }
