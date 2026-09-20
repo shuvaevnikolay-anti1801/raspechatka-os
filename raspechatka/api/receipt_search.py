@@ -189,8 +189,12 @@ def search_receipts(
 			return {"rows": []}
 		filters.append(["Sales Receipt", "name", "in", list(candidates)])
 
-	if payment_channel in ("Cash", "Card", "QR"):
-		payment_receipts = _payment_receipts(point, payment_channel)
+	if payment_channel in ("Cash", "Card", "QR", "Noncash"):
+		if payment_channel == "Noncash":
+			parents = frappe.get_all("Sales Receipt Payment", filters={"payment_channel": ["in", ["Card", "QR"]]}, pluck="parent", limit_page_length=5000)
+			payment_receipts = set(frappe.get_all("Sales Receipt", filters={"business_point": point, "docstatus": ["!=", 2], "name": ["in", parents or ["__none__"]]}, pluck="name", limit_page_length=5000))
+		else:
+			payment_receipts = _payment_receipts(point, payment_channel)
 		if not payment_receipts:
 			return {"rows": []}
 		filters.append(["Sales Receipt", "name", "in", list(payment_receipts)])
