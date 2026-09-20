@@ -181,7 +181,7 @@ export default function AppV2(){
       <nav className="pos-header-nav" aria-label="Разделы кассы">
         <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
         <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
-        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>x.status==='new'||x.status==='in_progress').length} onClick={()=>setScreen('orders')}/>
+        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
         <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
         <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
         <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
