@@ -879,7 +879,7 @@ def get_orders(
 		filtered.append(
 			{
 				"name": row.name,
-				"short_number": digits[-4:] if digits else "—",
+				"short_number": f"№ {digits[-4:]}" if digits else "—",
 				"order_number": row.order_number,
 				"phone": row.phone,
 				"business_point": row.business_point,
@@ -898,6 +898,7 @@ def get_orders(
 			}
 		)
 
+	filtered.sort(key=lambda row: row["created_at"] or "", reverse=True)
 	limit = min(max(cint(limit_page_length) or 1000, 1), 5000)
 	return {"rows": filtered[:limit]}
 
