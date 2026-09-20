@@ -11,6 +11,8 @@ export function buildBootState(database:PosDatabase):BootState{
     database.setState('point_employees_initialized','1')
   }
   const employees=database.listPointEmployees()
+  const upsellRules=remote.upsellRules??[]
+  const upsellCursors=Object.fromEntries(upsellRules.map((rule)=>[rule.triggerItem,database.getUpsellCursor(rule.triggerItem)]))
   return {
     pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
     workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
@@ -21,7 +23,7 @@ export function buildBootState(database:PosDatabase):BootState{
       allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,
       acceptsCash:true,acceptsCard:true,acceptsQr:false,acceptsRemotePayment:true
     },
-    upsellRules:remote.upsellRules??[]
+    upsellRules,upsellCursors
   }
 }
 
