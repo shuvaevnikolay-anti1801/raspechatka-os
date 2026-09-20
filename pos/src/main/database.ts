@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type {
   CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
   CashCount, CashCountLine, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
-  SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, WorkScheduleMonth,
+  SaleDetails, SaleSummary, Shift, ShiftSummary, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, WorkScheduleMonth,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 import type { PointEmployee, ReceiptMirror } from '../shared/contracts'
@@ -21,6 +21,7 @@ export const emptyWorkplaceData=():WorkplaceData=>{
     schedule:[],
     scheduleMonth:{month,days:new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),employees:[],entries:[]},
     myUpcomingShifts:[],
+    operationalCatalog:[],
     deliveries:[],
     supplyRequests:[],
     cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
@@ -42,7 +43,12 @@ export const normalizeWorkplaceData=(value:Partial<WorkplaceData>|null|undefined
       entries:Array.isArray(month.entries)?month.entries:[],
     },
     myUpcomingShifts:Array.isArray(incoming.myUpcomingShifts)?incoming.myUpcomingShifts:[],
-    deliveries:Array.isArray(incoming.deliveries)?incoming.deliveries:[],
+    operationalCatalog:Array.isArray(incoming.operationalCatalog)?incoming.operationalCatalog:[],
+    deliveries:Array.isArray(incoming.deliveries)?incoming.deliveries.map((delivery)=>({
+      ...delivery,
+      items:Array.isArray(delivery.items)?delivery.items:[],
+    })):[],
+
     supplyRequests:Array.isArray(incoming.supplyRequests)?incoming.supplyRequests:[],
     cleaner:incoming.cleaner||defaults.cleaner,
     orders:Array.isArray(incoming.orders)?incoming.orders:[],
@@ -498,17 +504,66 @@ export class PosDatabase {
       this.setState('point_employees_initialized','1')
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
-  reportStockWriteOff(request:StockWriteOffRequest):void {
-    const product=this.listProducts().find((x)=>x.id===request.productId)
-    if(!product)throw new Error('Товар не найден')
-    if(!product.trackInventory)throw new Error('Для этой позиции складской учёт не ведётся')
+  reportStockWriteOff(request:StockWriteOffRequest,cashierId:string):void {
+    const product=this.getWorkplaceData().operationalCatalog.find((x)=>x.id===request.productId)
+    if(!product)throw new Error('Товар не найден в оперативном каталоге')
+    if(!product.trackInventory||!['Product','Variant'].includes(product.itemType))throw new Error('Для этой позиции складское списание недоступно')
     if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
-    this.queue('stock.write_off.requested',{...request,productName:product.name,storageAddress:product.storageAddress})
+    this.queue('stock.write_off.requested',{
+      cashierId,
+      productId:request.productId,
+      quantity:request.quantity,
+      reason:request.reason,
+      comment:request.comment,
+    })
   }
-  createSupplyRequest(request:SupplyRequestInput):void {
-    if(!request.itemName.trim())throw new Error('Укажите, что требуется точке')
+  createSupplyRequest(request:SupplyRequestInput,cashierId:string):void {
+    const catalog=this.getWorkplaceData().operationalCatalog
+    const product=request.productId?catalog.find((x)=>x.id===request.productId):undefined
+    if(request.productId&&!product)throw new Error('Товар не найден в оперативном каталоге')
+    const itemName=(product?.name||request.itemName||'').trim()
+    if(!itemName)throw new Error('Укажите, что требуется точке')
     if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
-    this.queue('point.supply.requested',{...request,itemName:request.itemName.trim()})
+    this.queue('point.supply.requested',{
+      cashierId,
+      productId:product?.id,
+      itemName,
+      quantity:request.quantity,
+      comment:request.comment,
+    })
+  }
+  createStockReceipt(request:StockReceiptRequest,cashierId:string):void {
+    if(!request.purchaseOrderId.trim())throw new Error('Не указан заказ поставщику')
+    if(!Array.isArray(request.lines)||!request.lines.length)throw new Error('В приёмке нет товаров')
+    const data=this.getWorkplaceData()
+    const delivery=data.deliveries.find((x)=>x.id===request.purchaseOrderId)
+    if(!delivery)throw new Error('Заказ поставщику не найден среди открытых поставок')
+    const available=new Map(delivery.items.map((x)=>[x.purchaseOrderItemId,x.remainingQuantity]))
+    const seen=new Set<string>()
+    const lines=request.lines.map((line)=>{
+      const rowId=line.purchaseOrderItemId.trim()
+      if(!rowId||seen.has(rowId))throw new Error('Строки приёмки должны быть уникальны')
+      seen.add(rowId)
+      const remaining=available.get(rowId)
+      if(remaining===undefined)throw new Error('Строка не относится к открытому заказу')
+      if(!Number.isFinite(line.quantity)||line.quantity<=0||line.quantity>remaining+0.000001)throw new Error('Некорректное количество приёмки')
+      return {purchaseOrderItemId:rowId,quantity:line.quantity}
+    })
+    this.queue('stock.receipt.requested',{cashierId,purchaseOrderId:request.purchaseOrderId,lines})
+
+    const receivedByRow=new Map(lines.map((line)=>[line.purchaseOrderItemId,line.quantity]))
+    const nextItems=delivery.items
+      .map((item)=>{
+        const accepted=receivedByRow.get(item.purchaseOrderItemId)||0
+        const receivedQuantity=item.receivedQuantity+accepted
+        const remainingQuantity=Math.max(0,item.remainingQuantity-accepted)
+        return {...item,receivedQuantity,remainingQuantity}
+      })
+      .filter((item)=>item.remainingQuantity>0.000001)
+    data.deliveries=data.deliveries
+      .map((row)=>row.id===delivery.id?{...row,items:nextItems,status:nextItems.length?'Частично принято':'Принято'}:row)
+      .filter((row)=>row.items.length>0)
+    this.setWorkplaceData(data)
   }
   recordCleanerVisit(cashierName:string):CleanerVisitResult {
     const data=this.getWorkplaceData();const createdAt=new Date().toISOString()
