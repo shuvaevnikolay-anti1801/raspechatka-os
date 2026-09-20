@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type {
   CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
   CashCount, CashCountLine, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
-  SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData,
+  SaleDetails, SaleSummary, Shift, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, WorkScheduleMonth,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 import type { PointEmployee, ReceiptMirror } from '../shared/contracts'
@@ -30,7 +30,7 @@ export const emptyWorkplaceData=():WorkplaceData=>{
 export const normalizeWorkplaceData=(value:Partial<WorkplaceData>|null|undefined):WorkplaceData=>{
   const defaults=emptyWorkplaceData()
   const incoming=value||{}
-  const month:any=incoming.scheduleMonth||{}
+  const month:Partial<WorkScheduleMonth>=incoming.scheduleMonth||{}
   return {
     ...defaults,
     ...incoming,
