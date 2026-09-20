@@ -38,6 +38,12 @@ class TestPosUpsellContract(TestCase):
         self.assertIn("if not row or not row.active", self.helper)
         self.assertIn("if row.item_type not in SELLABLE_ITEM_TYPES", self.helper)
 
+    def test_config_returns_selector_identity_and_display_fields(self):
+        self.assertIn('"name": row.name', self.helper)
+        self.assertIn('"item_name": row.item_name', self.helper)
+        self.assertIn('"item_type": row.item_type', self.helper)
+        self.assertIn('"cashier_phrase": row.cashier_phrase or ""', self.helper)
+
     def test_snapshot_reconcile_validates_then_rolls_back(self):
         self.assertLess(self.helper.index("rules = _validate_snapshot(snapshot)"), self.helper.index("frappe.db.savepoint"))
         self.assertIn("frappe.db.rollback(save_point=savepoint)", self.helper)
