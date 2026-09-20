@@ -10,10 +10,7 @@ import type {
   SaleSummary,
 } from '../../shared/contracts'
 import { formatPersonShortName } from './person-name'
-
-const money=(minor:number)=>new Intl.NumberFormat('ru-RU',{
-  style:'currency',currency:'RUB',maximumFractionDigits:2
-}).format(minor/100)
+import { formatMoney } from './money'
 
 const paymentNames:Record<string,string>={
   cash:'Наличные',
@@ -391,7 +388,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
               <b>{receipt.customer?.name||receipt.label}</b>
               <small>{new Date(receipt.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · {receipt.lines.length} поз.</small>
             </div>
-            <strong>{money(heldTotal(receipt))}</strong>
+            <strong>{formatMoney(heldTotal(receipt))}</strong>
           </div>
           <div className="held-receipt-lines">
             {receipt.lines.slice(0,4).map((line)=><span key={line.productId}>{line.name} × {line.quantity}</span>)}
@@ -435,7 +432,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             <span>{cashierName?formatPersonShortName(cashierName):'—'}</span>
             <span>{customerName}</span>
             <span>{paymentLabel||'—'}</span>
-            <strong>{money(summary.totalMinor)}<small>{asStatus(summary.status)}</small></strong>
+            <strong>{formatMoney(summary.totalMinor)}<small>{asStatus(summary.status)}</small></strong>
             <div className="sale-actions" onClick={(event)=>event.stopPropagation()}>
               <button onClick={()=>void printCommodity(row)}>Товарный чек</button>
               <button disabled={Boolean(copyReason)} title={copyReason||'Печать точной копии выбранного фискального документа'} onClick={()=>void printFiscalCopy(row)}>Копия чека</button>
@@ -493,21 +490,21 @@ function ReceiptDetailModal({detail,onClose}:{detail:ReceiptDetail;onClose:()=>v
             <b>{line.name}</b>
             <small>{(line.discountPercent>0?'Скидка '+line.discountPercent+'%':'Без скидки')+(line.returnedQuantity>0?' · возвращено '+line.returnedQuantity:'')}</small>
           </div>
-          <span>{line.quantity} × {money(line.unitPriceMinor)}</span>
-          <strong>{money(line.lineTotalMinor)}</strong>
+          <span>{line.quantity} × {formatMoney(line.unitPriceMinor)}</span>
+          <strong>{formatMoney(line.lineTotalMinor)}</strong>
         </article>)}
       </div>
 
       <div className="receipt-detail-bottom">
         <section>
           <h3>Оплата</h3>
-          {payments.map((payment,index)=><div key={index}><span>{payment.label}</span><strong>{money(payment.amountMinor)}</strong></div>)}
+          {payments.map((payment,index)=><div key={index}><span>{payment.label}</span><strong>{formatMoney(payment.amountMinor)}</strong></div>)}
         </section>
         <section>
-          <div><span>До скидок</span><strong>{money(gross)}</strong></div>
-          {discount>0&&<div><span>Скидки</span><strong>− {money(discount)}</strong></div>}
-          {cached&&cached.returnedMinor>0&&<div><span>Возвращено</span><strong>{money(cached.returnedMinor)}</strong></div>}
-          <div className="receipt-detail-total"><span>Итого</span><strong>{money(value.totalMinor)}</strong></div>
+          <div><span>До скидок</span><strong>{formatMoney(gross)}</strong></div>
+          {discount>0&&<div><span>Скидки</span><strong>− {formatMoney(discount)}</strong></div>}
+          {cached&&cached.returnedMinor>0&&<div><span>Возвращено</span><strong>{formatMoney(cached.returnedMinor)}</strong></div>}
+          <div className="receipt-detail-total"><span>Итого</span><strong>{formatMoney(value.totalMinor)}</strong></div>
         </section>
       </div>
     </section>
