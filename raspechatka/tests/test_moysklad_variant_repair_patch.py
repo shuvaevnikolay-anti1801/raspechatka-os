@@ -1,0 +1,44 @@
+from pathlib import Path
+from unittest import TestCase
+
+
+class TestMoySkladVariantRepairPatchContract(TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parents[1]
+        self.patch = (
+            root / "patches/v1_0/repair_moysklad_variants.py"
+        ).read_text(encoding="utf-8")
+        self.patches = (root / "patches.txt").read_text(encoding="utf-8")
+
+    def test_patch_is_registered_once(self):
+        entry = "raspechatka.patches.v1_0.repair_moysklad_variants"
+        self.assertEqual(self.patches.count(entry), 1)
+
+    def test_all_candidates_are_preflighted_before_mutation(self):
+        self.assertLess(
+            self.patch.index("if failures:"),
+            self.patch.index("for plan in plans:"),
+        )
+        self.assertIn("def _preflight_plan", self.patch)
+        self.assertIn("def _apply_plan", self.patch)
+
+    def test_candidate_requires_variant_meta_and_product_reference(self):
+        self.assertIn('meta_type != "variant"', self.patch)
+        self.assertIn('"/entity/variant/" not in href.casefold()', self.patch)
+        self.assertIn('_source_reference_uuid(payload.get("product"), "product")', self.patch)
+        self.assertIn("characteristics отсутствуют или пусты", self.patch)
+
+    def test_conflicts_fail_closed_and_manual_variants_are_not_touched(self):
+        self.assertIn('filters={"item_type": "Product"', self.patch)
+        self.assertIn("обнаружен конфликтующий variant_of", self.patch)
+        self.assertIn("конфликтующая canonical variant signature", self.patch)
+        self.assertIn('if plan["existing_values"]:', self.patch)
+
+    def test_identity_and_external_links_are_preserved(self):
+        apply_source = self.patch.split("def _apply_plan", 1)[1].split(
+            "def _variant_values", 1
+        )[0]
+        self.assertIn('frappe.db.set_value("Catalog Item", item.name, values', apply_source)
+        self.assertNotIn("item.name =", apply_source)
+        self.assertNotIn("frappe.delete_doc", apply_source)
+        self.assertNotIn("requests.", self.patch)
