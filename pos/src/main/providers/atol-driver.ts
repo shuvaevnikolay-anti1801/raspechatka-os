@@ -135,7 +135,7 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
 
   async reprintReceipt(request:{saleId:string;receiptNumber:string}):Promise<PrintResult> {
     const documentNumber=String(request.receiptNumber||'').trim();
-    if(!documentNumber) throw new Error("Точная копия недоступна: отсутствует номер фискального документа");
+    if(!/^\d+$/.test(documentNumber)) throw new Error("Точная копия недоступна: чек не содержит числовой номер фискального документа ФН");
     await this.ensureConnected();
     await this.bridge.reprintDocument(documentNumber);
     return {kind:"fiscal-copy",status:"printed",message:"Копия фискального документа "+documentNumber+" отправлена на АТОЛ"};
