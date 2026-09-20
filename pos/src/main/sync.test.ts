@@ -13,7 +13,7 @@ describe('performSync single flight',()=>{
   it('coalesces a manual and background request for the same database',async()=>{
     const state=new Map<string,string>()
     const database:any={
-      getState:(key:string)=>state.get(key),setState:(key:string,value:string)=>state.set(key,value),
+      getState:(key:string)=>state.get(key),setState:vi.fn((key:string,value:string)=>state.set(key,value)),
       replaceProducts:vi.fn(),replaceCustomers:vi.fn(),replacePointEmployees:vi.fn(),
       replaceReceiptMirror:vi.fn(),replaceServerOrders:vi.fn(),setWorkplaceData:vi.fn(),
       listPointEmployees:()=>[],pendingSyncCount:()=>0,currentShift:()=>null,pendingEvents:()=>[],markEventsSent:vi.fn(),
