@@ -4,7 +4,8 @@ import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import type {
   BootState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, PaymentMethod, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary, SaleDetails,
-  SalePaymentMethod, SaleSummary, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, Order, OrderStatus
+  SalePaymentMethod, SaleSummary, ShiftSummary, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, Order, OrderStatus,
+  CashierAuthState, PointEmployee
 } from '../../shared/contracts'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
@@ -28,6 +29,7 @@ export default function App(){
   const [workplace,setWorkplace]=useState<WorkplaceData>(emptyWorkplace)
   const [lastCashCount,setLastCashCount]=useState<CashCount|null>(null)
   const [connection,setConnection]=useState<ConnectionStatus|null>(null)
+  const [cashierAuth,setCashierAuth]=useState<CashierAuthState|null>(null)
   const [screen,setScreen]=useState<Screen>('sale')
   const [query,setQuery]=useState('')
   const [category,setCategory]=useState('Все')
@@ -51,11 +53,11 @@ export default function App(){
       window.raspechatkaPos.listReturns(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
       window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
-      window.raspechatkaPos.getLastCashCount()
+      window.raspechatkaPos.getLastCashCount(),window.raspechatkaPos.getCashierAuthState()
     ])
     setBoot(result[0]);setProducts(result[1]);setCustomers(result[2]);setSales(result[3])
     setReturns(result[4]);setHeld(result[5]);setSummary(result[6]);setCashOperations(result[7]);setConnection(result[8])
-    setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11])
+    setWorkplace(result[9]);setOrders(result[10]);setLastCashCount(result[11]);setCashierAuth(result[12])
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
 
@@ -109,12 +111,13 @@ export default function App(){
     catch(e){setMessage(e instanceof Error?e.message:String(e))}
   }
 
-  if(!boot)return <div className="loading"><i/>Запускаем кассу…</div>
+  if(!boot||!cashierAuth)return <div className="loading"><i/>Запускаем кассу…</div>
+  if(cashierAuth.status!=='authenticated')return <CashierAccess employees={boot.employees} auth={cashierAuth} onChanged={refresh}/>
   return <div className="app-shell">
     <header className="topbar">
       <div className="brand"><div className="brand-mark">Р</div><strong>Распечатка <b>OS</b></strong><span>Касса</span></div>
       <div className="point"><small>{boot.pointName}</small><b>{boot.workstationName}</b></div>
-      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={()=>setScreen('settings')}>{boot.cashierName}</button></div>
+      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={()=>setScreen('settings')}>Кассир: {cashierAuth.employee?.name}</button><button onClick={async()=>{try{await window.raspechatkaPos.lockCashier();await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}>Заблокировать</button><button onClick={async()=>{try{await window.raspechatkaPos.logoutCashier();await refresh()}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}>Сменить</button></div>
     </header>
     <nav className="main-nav">
       <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
@@ -296,4 +299,33 @@ function Settings({boot,connection,onSaved,onSynced}:{boot:BootState;connection:
     </section>
     <section className="settings-card"><h2>Состояние</h2><dl><div><dt>Режим</dt><dd>{boot.source==='frappe'?'Данные из OS':'Демо-данные'}</dd></div><div><dt>Точка</dt><dd>{boot.pointName}</dd></div><div><dt>Последнее обновление</dt><dd>{boot.lastSyncAt?new Date(boot.lastSyncAt).toLocaleString('ru-RU'):'Ещё не было'}</dd></div><div><dt>Очередь</dt><dd>{boot.pendingSync} операций</dd></div></dl>{connection?.lastError&&<div className="error-note">{connection.lastError}</div>}</section>
   </div></Page>
+}
+
+
+function CashierAccess({employees,auth,onChanged}:{employees:PointEmployee[];auth:CashierAuthState;onChanged:()=>Promise<void>}){
+  const [selectedId,setSelectedId]=useState(auth.employee?.id||'')
+  const [mode,setMode]=useState<'choose'|'login'|'create'|'unlock'>(auth.status==='locked'?'unlock':'choose')
+  const [pin,setPin]=useState('')
+  const [confirmation,setConfirmation]=useState('')
+  const [error,setError]=useState('')
+  const selected=employees.find((employee)=>employee.id===selectedId)
+
+  const choose=async(employeeId:string)=>{
+    setError('');setSelectedId(employeeId);setPin('');setConfirmation('')
+    try{
+      const next=await window.raspechatkaPos.beginCashierLogin(employeeId)
+      setMode(next.requiresPinSetup?'create':'login')
+    }catch(e){setError(e instanceof Error?e.message:String(e))}
+  }
+  const submit=async()=>{
+    setError('')
+    try{
+      if(mode==='unlock')await window.raspechatkaPos.unlockCashier(pin)
+      else if(mode==='create')await window.raspechatkaPos.createCashierPin(selectedId,pin,confirmation)
+      else await window.raspechatkaPos.loginCashier(selectedId,pin)
+      await onChanged()
+    }catch(e){setError(e instanceof Error?e.message:String(e))}
+  }
+  if(mode==='unlock')return <main className="loading"><section className="settings-card"><small>КАССА ЗАБЛОКИРОВАНА</small><h1>{auth.employee?.name}</h1><p>Введите PIN активного кассира, чтобы продолжить работу.</p><label>PIN<input autoFocus type="password" inputMode="numeric" maxLength={4} value={pin} onChange={(event)=>setPin(event.target.value)}/></label>{error&&<div className="error-note">{error}</div>}<button className="primary" disabled={pin.length!==4} onClick={submit}>Разблокировать кассу</button></section></main>
+  return <main className="loading"><section className="settings-card"><small>КАССА</small><h1>Выберите сотрудника</h1><p>Активный кассир указывается в смене и в исходящих операциях.</p>{mode==='choose'?<div className="customer-list">{employees.map((employee)=><button key={employee.id} onClick={()=>choose(employee.id)}><div><b>{employee.name}</b><small>Сотрудник точки</small></div></button>)}{!employees.length&&<div className="error-note">Список сотрудников ещё не загружен. Настройте подключение к OS и выполните синхронизацию.</div>}</div>:<><p><b>{selected?.name}</b></p><label>PIN<input autoFocus type="password" inputMode="numeric" maxLength={4} value={pin} onChange={(event)=>setPin(event.target.value)}/></label>{mode==='create'&&<label>Повторите PIN<input type="password" inputMode="numeric" maxLength={4} value={confirmation} onChange={(event)=>setConfirmation(event.target.value)}/></label>}<div className="settings-actions"><button onClick={()=>{setMode('choose');setPin('');setConfirmation('');setError('')}}>Назад</button><button className="primary" disabled={pin.length!==4||(mode==='create'&&confirmation.length!==4)} onClick={submit}>{mode==='create'?'Создать PIN и начать смену':'Войти как кассир'}</button></div></>}{error&&<div className="error-note">{error}</div>}</section></main>
 }
