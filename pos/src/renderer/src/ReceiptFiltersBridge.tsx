@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { BootState } from '../../shared/contracts'
+import { formatPersonShortName } from './person-name'
 
 type Period='current_shift'|'today'|'yesterday'|'7d'|'30d'|'custom'|'all'
 type ReceiptFilters={
@@ -112,7 +113,7 @@ export default function ReceiptFiltersBridge(){
           <label><span>Дата с</span><input type="date" value={dateFrom} onChange={(event)=>setDateFrom(event.target.value)}/></label>
           <label><span>Дата по</span><input type="date" value={dateTo} onChange={(event)=>setDateTo(event.target.value)}/></label>
         </>}
-        <label><span>Кассир</span><select value={cashierId} onChange={(event)=>setCashierId(event.target.value)}><option value="">Все кассиры</option>{boot?.employees.map((employee)=><option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+        <label><span>Кассир</span><select value={cashierId} onChange={(event)=>setCashierId(event.target.value)}><option value="">Все кассиры</option>{boot?.employees.map((employee)=><option key={employee.id} value={employee.id}>{formatPersonShortName(employee.name)}</option>)}</select></label>
         <label><span>Сумма от, ₽</span><input inputMode="decimal" value={amountMin} onChange={(event)=>setAmountMin(event.target.value)} placeholder="0"/></label>
         <label><span>Сумма до, ₽</span><input inputMode="decimal" value={amountMax} onChange={(event)=>setAmountMax(event.target.value)} placeholder="Без ограничения"/></label>
         <label><span>Оплата</span><select value={paymentChannel} onChange={(event)=>setPaymentChannel(event.target.value as ReceiptFilters['paymentChannel'])}><option value="">Любая</option><option value="Cash">Наличные</option><option value="Card">Карта</option><option value="QR">QR / СБП</option></select></label>

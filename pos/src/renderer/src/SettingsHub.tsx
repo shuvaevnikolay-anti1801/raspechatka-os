@@ -14,6 +14,7 @@ import type {
   AtolDriverStatus,
   AtolSettings,
 } from "../../shared/contracts";
+import { formatPersonShortName } from "./person-name";
 import "./settings-hub.css";
 
 type ExtendedPosApi = typeof window.raspechatkaPos;
@@ -398,7 +399,7 @@ export default function SettingsHub() {
                   </div>
                   <div>
                     <small>СОТРУДНИК</small>
-                    <b>{boot?.cashierName || "Не выбран"}</b>
+                    <b>{boot?.cashierName ? formatPersonShortName(boot.cashierName) : "Не выбран"}</b>
                   </div>
                   <div>
                     <small>ПОСЛЕДНЯЯ СИНХРОНИЗАЦИЯ</small>
