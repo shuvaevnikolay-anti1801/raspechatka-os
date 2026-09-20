@@ -258,11 +258,27 @@ export type ShiftSummary = {
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
+export type WorkScheduleEntry = {
+  id:string; date:string; employeeId:string; employeeName?:string; shiftTemplate:string;
+  shiftCode:string; shiftName:string; startTime:string; endTime:string; plannedHours:number
+}
+export type WorkScheduleMonth = {
+  month:string; days:number; employees:Array<{id:string;name:string}>; entries:WorkScheduleEntry[]
+}
+export type UpcomingShift = Omit<WorkScheduleEntry,'employeeId'|'employeeName'>
 export type DeliveryNotice = { id:string; supplier:string; expectedDate?:string;deliveryCompany?:string; deliveryCode?:string; details?:string; status:string }
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
 export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
-export type WorkplaceData = { schedule:WorkScheduleItem[]; deliveries:DeliveryNotice[]; supplyRequests:PointSupplyRequest[]; cleaner:CleanerStatus; orders:Order[] }
+export type WorkplaceData = {
+  schedule:WorkScheduleItem[]
+  scheduleMonth:WorkScheduleMonth
+  myUpcomingShifts:UpcomingShift[]
+  deliveries:DeliveryNotice[]
+  supplyRequests:PointSupplyRequest[]
+  cleaner:CleanerStatus
+  orders:Order[]
+}
 export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'|'Другое'; comment?:string }
 export type SupplyRequestInput = { productId?:string; itemName:string; quantity:number; comment?:string }
 export type CashCountLine = { denominationMinor:number; quantity:number }
