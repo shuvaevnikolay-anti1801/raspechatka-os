@@ -197,7 +197,7 @@ def _sync_catalog(settings):
 		parent_id = _ref_id(row.get("product"))
 		name = _safe_upsert_item(
 			row,
-			"Product",
+			"Variant",
 			group_map,
 			unit_map,
 			price_type_map,
@@ -231,9 +231,15 @@ def _sync_catalog(settings):
 
 	for source_id, name in item_map.items():
 		if source_id and name:
-			frappe.db.set_value("Catalog Item", name, "has_variants", int(any(
-				_ref_id(variant.get("product")) == source_id for variant in variants
-			)), update_modified=False)
+			has_variants = bool(
+				frappe.db.exists(
+					"Catalog Item",
+					{"variant_of": name, "item_type": "Variant", "active": 1},
+				)
+			)
+			frappe.db.set_value(
+				"Catalog Item", name, "has_variants", int(has_variants), update_modified=False
+			)
 
 	stats["database_items"] = frappe.db.count("Catalog Item", {"moysklad_id": ["!=", ""]})
 	stats["database_groups"] = frappe.db.count("Catalog Group", {"moysklad_id": ["!=", ""]})
@@ -460,6 +466,23 @@ def _upsert_item(
 		value = _attribute_value(attribute.get("value"))
 		if label and value not in (None, ""):
 			doc.append("attributes", {"attribute_name": str(label)[:140], "attribute_value": str(value)[:140]})
+
+	# CatalogItem validates Variant rows strictly. Keep the source
+	# characteristics as canonical name/value pairs instead of deriving them
+	# from the human-readable item name (which is not a reliable source).
+	if item_type == "Variant":
+		doc.set("variant_values", [])
+		for characteristic in row.get("characteristics") or []:
+			attribute_name = _normalize_variant_text(characteristic.get("name") or characteristic.get("id"))
+			attribute_value = _normalize_variant_text(_attribute_value(characteristic.get("value")))
+			if attribute_name and attribute_value:
+				doc.append(
+					"variant_values",
+					{
+						"attribute_name": attribute_name[:140],
+						"attribute_value": attribute_value[:140],
+					},
+				)
 
 	if item_type == "Bundle":
 		_set_bundle_components(doc, row, component_map or {}, stats)
@@ -770,6 +793,11 @@ def _barcode(row):
 		if row.get(key):
 			return str(row[key]), kind
 	return None, "Other"
+
+
+def _normalize_variant_text(value):
+	"""Normalize source characteristic text without inferring from item names."""
+	return " ".join(str(value or "").split())
 
 
 def _attribute_value(value):
