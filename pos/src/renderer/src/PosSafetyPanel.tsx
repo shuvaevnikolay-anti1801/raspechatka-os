@@ -8,15 +8,10 @@ import type {
   UnresolvedOperation,
 } from "../../shared/contracts";
 import "./safety.css";
+import { formatMoney } from "./money";
 
 const pos = () => window.raspechatkaPos;
 
-const money = (minor: number) =>
-  new Intl.NumberFormat("ru-RU", {
-    style: "currency",
-    currency: "RUB",
-    maximumFractionDigits: 2,
-  }).format(minor / 100);
 const defaultAtol: AtolSettings = {
   version: 2,
   enabled: false,
@@ -43,14 +38,14 @@ const recoveryText = (
     operation.state === "payment_in_progress"
   )
     return {
-      title: `Результат оплаты ${money(operation.amountMinor)} неизвестен`,
+      title: `Результат оплаты ${formatMoney(operation.amountMinor)} неизвестен`,
       detail:
         "Не повторяйте оплату. Касса сначала проверит исходную операцию терминала.",
       critical: true,
     };
   if (operation.state === "payment_confirmed")
     return {
-      title: `Оплата ${money(operation.amountMinor)} получена`,
+      title: `Оплата ${formatMoney(operation.amountMinor)} получена`,
       detail:
         "Деньги подтверждены. Нужно безопасно продолжить формирование фискального чека.",
       critical: true,
