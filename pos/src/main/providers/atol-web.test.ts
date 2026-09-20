@@ -99,6 +99,17 @@ describe('AtolWebFiscalProvider', () => {
     expect(body.request[0].operator).toEqual({ name: 'Мария Иванова' })
   })
 
+  it('fails closed instead of printing the last receipt for a historical copy', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = new AtolWebFiscalProvider(settingsStore())
+    await expect(provider.reprintReceipt({ saleId: 'sale-1', receiptNumber: '777' }))
+      .rejects.toThrow('Точная копия выбранного исторического чека недоступна')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('puts the current signed-in cashier into a fiscal receipt', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({}))
