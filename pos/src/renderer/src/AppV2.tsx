@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
+import { formatPersonShortName } from './person-name'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, ManualDiscount, Order, OrderStatus, PaymentMethod, PaymentPart, Product,
@@ -188,7 +189,7 @@ export default function AppV2(){
   return <div className="app-shell">
     <header className="topbar pos-v2-topbar">
       <div className="point pos-v2-point"><b>{boot.pointName}</b></div>
-      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {boot.cashierName}</button>{!boot.shift&&<button onClick={async()=>setAuth(await window.raspechatkaPos.logoutCashier())}>Выйти</button>}</div>
+      <div className="top-status"><span className={boot.online?'online':'offline'}><i/>{boot.online?'OS на связи':'Локальный режим'}</span><button onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</button>{!boot.shift&&<button onClick={async()=>setAuth(await window.raspechatkaPos.logoutCashier())}>Выйти</button>}</div>
     </header>
     <nav className="main-nav">
       <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
@@ -240,7 +241,7 @@ export default function AppV2(){
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label="В кассе ожидается" value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
-      <section className="shift-card"><div><small>КАССИР</small><h2>{boot.cashierName}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<small>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</small>}</div>{boot.shift?<div className="shift-actions"><button onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</button><button onClick={()=>setCashOperation('deposit')}>Внести деньги</button><button onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</button><button className="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</button></div>:<button className="primary" onClick={openShift}>Открыть смену</button>}</section>
+      <section className="shift-card"><div><small>КАССИР</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<small>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</small>}</div>{boot.shift?<div className="shift-actions"><button onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</button><button onClick={()=>setCashOperation('deposit')}>Внести деньги</button><button onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</button><button className="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</button></div>:<button className="primary" onClick={openShift}>Открыть смену</button>}</section>
       {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section><h3>Движения наличных</h3>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p>Операций пока нет</p>}</section></div>}
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} 
@@ -279,9 +280,9 @@ function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAu
   const reset=async()=>{try{await window.raspechatkaPos.resetCashierPin(employeeId,adminCode,pin,confirmation);setAdminReset(false);setAdminCode('');setSetup(false);setError('PIN изменён. Теперь войдите с новым PIN.');setPin('');setConfirmation('')}catch(e){setError(e instanceof Error?e.message:String(e))}}
   const lockedEmployee=auth.employee
   return <main className="cashier-login-screen"><section className="cashier-login-card">
-    <small>{auth.status==='locked'?'КАССА ЗАБЛОКИРОВАНА':'КТО РАБОТАЕТ?'}</small><h1>{auth.status==='locked'?lockedEmployee?.name:'Выберите себя'}</h1>
-    {forced&&<p>После перезапуска открытую смену может продолжить только <b>{auth.openShiftCashierName}</b>.</p>}
-    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{employee.name}</button>)}</div>}
+    <small>{auth.status==='locked'?'КАССА ЗАБЛОКИРОВАНА':'КТО РАБОТАЕТ?'}</small><h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
+    {forced&&<p>После перезапуска открытую смену может продолжить только <b>{formatPersonShortName(auth.openShiftCashierName)}</b>.</p>}
+    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>)}</div>}
     {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
     {(selected||lockedEmployee)&&<form onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
       {adminReset&&<label><span>Код администратора</span><input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminCode} onChange={(e)=>setAdminCode(numeric(e.target.value))}/></label>}
