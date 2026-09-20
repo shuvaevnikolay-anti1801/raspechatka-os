@@ -207,6 +207,20 @@ class TestPosWarehouseIngestion(TestCase):
 		doc.insert.assert_called_once_with(ignore_permissions=True)
 		doc.submit.assert_called_once_with()
 
+	def test_foreign_purchase_order_is_rejected_by_point_lock(self):
+		with (
+			patch.object(pos_v2.frappe.db, "exists", return_value=False),
+			patch.object(pos_v2.frappe.db, "sql", return_value=[]) as sql,
+		):
+			with self.assertRaises(Exception):
+				pos_v2._ingest_stock_receipt(
+					"EVENT-FOREIGN",
+					{"purchaseOrderId": "PO-FOREIGN", "lines": [{"purchaseOrderItemId": "POI-X", "quantity": 1}]},
+					SimpleNamespace(business_point="POINT-A"),
+					"EMP-1",
+				)
+		self.assertEqual(sql.call_args.args[1], ("PO-FOREIGN", "POINT-A"))
+
 	def test_duplicate_warehouse_events_are_noops(self):
 		with (
 			patch.object(pos_v2.frappe.db, "exists", return_value=True),
