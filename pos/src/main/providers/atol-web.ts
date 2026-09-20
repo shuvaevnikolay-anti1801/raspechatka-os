@@ -203,16 +203,13 @@ export class AtolWebFiscalProvider implements FiscalProvider {
     }
   }
 
-  async reprintReceipt(request: {
+  async reprintReceipt(_request: {
     saleId: string;
     receiptNumber: string;
   }): Promise<PrintResult> {
-    await this.execute(randomUUID(), { type: "printLastReceiptCopy" }, 20000);
-    return {
-      kind: "fiscal-copy",
-      status: "printed",
-      message: `Копия последнего фискального чека отправлена на АТОЛ (${request.receiptNumber})`,
-    };
+    throw new Error(
+      "Точная копия выбранного исторического чека недоступна через legacy ATOL Web. Переключитесь на прямой Драйвер ККТ 10 или распечатайте товарный чек."
+    );
   }
 
   private buildReceipt(
