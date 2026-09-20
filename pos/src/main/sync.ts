@@ -20,7 +20,8 @@ export function buildBootState(database:PosDatabase):BootState{
     shift:database.currentShift(),rules:remote.rules??{
       allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,
       acceptsCash:true,acceptsCard:true,acceptsQr:false,acceptsRemotePayment:true
-    }
+    },
+    upsellRules:remote.upsellRules??[]
   }
 }
 
@@ -46,7 +47,8 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
     database.setState('bootstrap',JSON.stringify({
       pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
       workstationName:remote.workplace.name,employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
-      source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true}
+      source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true},
+      upsellRules:remote.upsellRules||[]
     }))
     successfulContact=true
   }
