@@ -1,5 +1,9 @@
 import { ipcMain } from 'electron'
-import type { ConnectionStore } from './connection'
+import type { ConnectionStore } from './connection'\nimport type { ReceiptSearchFilters } from '../shared/contracts'
+import { searchPointReceipts } from './frappe'
+
+mport { ipcMain } from 'electron'
+import type { ConnectionStore } from './connection'\nimport type { ReceiptSearchFilters } from '../shared/contracts'
 import { searchPointReceipts } from './frappe'
 
 type ReceiptSearchFilters={
