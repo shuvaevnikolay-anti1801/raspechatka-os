@@ -222,7 +222,7 @@ export default function AppV2(){
       </aside>
     </main>}
 
-    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} returns={returns} onPrint={printSale} onReturn={startReturn} onRestore={restoreReceipt} onRefresh={refresh} notify={setMessage}/>}
+    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>}
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label="В кассе ожидается" value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
