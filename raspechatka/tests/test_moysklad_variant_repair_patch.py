@@ -39,6 +39,11 @@ class TestMoySkladVariantRepairPatchContract(TestCase):
             "def _variant_values", 1
         )[0]
         self.assertIn('frappe.db.set_value("Catalog Item", item.name, values', apply_source)
+        self.assertIn('"catalog_group": parent.catalog_group', apply_source)
+        self.assertIn('"stock_uom": parent.stock_uom', apply_source)
+        self.assertIn('if not item.default_supplier and parent.default_supplier', apply_source)
+        self.assertNotIn('"moysklad_id"', apply_source)
+        self.assertNotIn('"moysklad_payload_json"', apply_source)
         self.assertNotIn("item.name =", apply_source)
         self.assertNotIn("frappe.delete_doc", apply_source)
         self.assertNotIn("requests.", self.patch)
