@@ -147,7 +147,9 @@ export class PosDatabase {
     this.ensureColumn('customers', 'total_spent_minor', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('customers', 'normalized_phone', "TEXT NOT NULL DEFAULT ''")
     this.ensureColumn('orders', 'origin', "TEXT NOT NULL DEFAULT 'local'")
-    this.ensureColumn('orders', 'point_id', 'TEXT')\n    this.ensureColumn('orders', 'ready_at', 'TEXT')\n    this.ensureColumn('orders', 'issued_at', 'TEXT')
+    this.ensureColumn('orders', 'point_id', 'TEXT')
+    this.ensureColumn('orders', 'ready_at', 'TEXT')
+    this.ensureColumn('orders', 'issued_at', 'TEXT')
     const legacyPhones=this.db.prepare("SELECT id,phone FROM customers WHERE normalized_phone='' AND phone IS NOT NULL").all() as Array<{id:string;phone:string}>
     const updatePhone=this.db.prepare('UPDATE customers SET normalized_phone=? WHERE id=?')
     legacyPhones.forEach((row)=>updatePhone.run(normalizeRussianPhone(row.phone),row.id))
