@@ -628,4 +628,12 @@ export class PosDatabase {
   pendingSyncCount():number{return (this.db.prepare('SELECT COUNT(*) count FROM outbox WHERE sent_at IS NULL').get() as {count:number}).count}
   setState(key:string,value:string):void{this.db.prepare('INSERT INTO app_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,value)}
   getState(key:string):string|undefined{return (this.db.prepare('SELECT value FROM app_state WHERE key=?').get(key) as {value:string}|undefined)?.value}
+  getUpsellCursor(triggerItem:string):number {
+    const raw=this.getState(`upsell_cursor:${triggerItem}`)
+    const value=raw===undefined?0:Number.parseInt(raw,10)
+    return Number.isFinite(value)&&value>=0?value:0
+  }
+  setUpsellCursor(triggerItem:string,cursor:number):void {
+    this.setState(`upsell_cursor:${triggerItem}`,String(Math.max(0,Math.trunc(cursor))))
+  }
 }
