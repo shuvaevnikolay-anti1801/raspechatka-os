@@ -150,6 +150,7 @@ const paymentLabelFromSale=(sale:SaleSummary)=>{
 }
 
 const asStatus=(value:string)=>statusNames[value]||value||'—'
+const serverPaymentLabel=(value:string)=>value.split(' + ').map((part)=>paymentNames[part]||part).join(' + ')
 
 export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}:Props){
   const [draft,setDraft]=useState<DraftFilters>(emptyDraft)
@@ -196,8 +197,14 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
   const runSearch=async(query:string,filters:ReceiptSearchFilters)=>{
     setSearching(true)
     try{
-      const found=await window.raspechatkaPos.searchPointReceipts(query,filters)
-      setRows(serverRows(found))
+      const remote=serverRows(await window.raspechatkaPos.searchPointReceipts(query,filters))
+      const representedLocalIds=new Set(
+        remote.map((row)=>row.cached?.source==='local'?row.cached.id:undefined).filter(Boolean)
+      )
+      const unsyncedLocal=localRows(query,filters).filter(
+        (row)=>row.cached?.source==='local'&&!representedLocalIds.has(row.cached.id)
+      )
+      setRows([...unsyncedLocal,...remote].sort((a,b)=>b.summary.createdAt.localeCompare(a.summary.createdAt)))
       setSource('server')
     }catch{
       setRows(localRows(query,filters))
@@ -270,10 +277,12 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
   const openDetails=async(row:DisplayRow)=>{
     setDetailLoading(true)
     try{
-      if(row.cached){
+      if(row.cached?.source==='local'){
         setDetail({kind:'cached',value:await window.raspechatkaPos.getSale(row.cached.id)})
       }else if(row.server){
         setDetail({kind:'server',value:await window.raspechatkaPos.getPointReceipt(row.server.id)})
+      }else if(row.cached){
+        setDetail({kind:'cached',value:await window.raspechatkaPos.getSale(row.cached.id)})
       }
     }catch(error){
       notify(error instanceof Error?error.message:String(error))
@@ -405,8 +414,12 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
           const local=row.cached?.source==='local'?row.cached:undefined
           const cashierName=summary.cashierName
           const customerName=summary.customerName||'Розничный покупатель'
-          const paymentLabel=isServer?summary.paymentLabel:paymentLabelFromSale(summary)
-          const copyReason=local?undefined:'Точная фискальная копия разрешена только для продажи, фискализированной этой POS на выбранной ККТ'
+          const paymentLabel=isServer?serverPaymentLabel(summary.paymentLabel):paymentLabelFromSale(summary)
+          const copyReason=!local
+            ?'Точная фискальная копия разрешена только для продажи, фискализированной этой POS на выбранной ККТ'
+            :!/^\\d+$/.test(local.receiptNumber)
+              ?'У чека нет подтверждённого числового номера фискального документа ФН'
+              :undefined
           const returnReason=!local
             ?'Межкассовый возврат требует центрального резервирования и защиты от повторного возврата'
             :!boot.shift
