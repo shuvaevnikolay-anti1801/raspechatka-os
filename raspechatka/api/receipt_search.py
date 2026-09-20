@@ -3,10 +3,9 @@ from __future__ import annotations
 import re
 
 import frappe
-from raspechatka.access_contract import access_contract
-
 from frappe.utils import add_days, cint, flt, getdate, today
 
+from raspechatka.access_contract import access_contract
 from raspechatka.api import pos_device as base_pos
 
 
