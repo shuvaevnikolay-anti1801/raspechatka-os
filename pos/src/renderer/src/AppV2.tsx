@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
-import { formatPersonShortName } from './person-name'
+import { formatPersonShortName } from './person-name'\nimport OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
@@ -180,7 +180,7 @@ export default function AppV2(){
       <nav className="pos-header-nav" aria-label="Разделы кассы">
         <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
         <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
-        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>!['issued','cancelled'].includes(x.status)).length} onClick={()=>setScreen('orders')}/>
+        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>x.status==='new'||x.status==='in_progress').length} onClick={()=>setScreen('orders')}/>
         <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
         <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
         <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
@@ -233,7 +233,7 @@ export default function AppV2(){
     {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer));setMessage('Каталог, клиенты, настройки и очередь операций синхронизированы')}}/>}
 
     {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
-    {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)} onSave={async(d)=>{try{const o=await window.raspechatkaPos.createUnpaidOrder({phone:d.phone,lines:cart,comment:d.comment,dueAt:d.dueAt});setOrderDraft(null);clear();await refresh();setMessage('Заказ '+o.orderNumber+' сохранён без оплаты')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
+    {orderDraft&&<OrderModal draft={orderDraft} total={total} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
@@ -281,10 +281,11 @@ function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAu
   </section></main>
 }
 
-function OrderModal({draft,total,onClose,onPay,onSave}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onClose:()=>void;onPay:()=>void;onSave:(draft:{phone:string;comment?:string;dueAt?:string})=>Promise<void>}){
+function OrderModal({draft,total,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onClose:()=>void;onPay:()=>void}){
   const [phone,setPhone]=useState(draft.phone);const [comment,setComment]=useState(draft.comment||'');const [dueAt,setDueAt]=useState(draft.dueAt||'')
-  const value={phone,comment,dueAt:dueAt||undefined}
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ОБЯЗАТЕЛЬСТВО КЛИЕНТУ</small><h2>Оформить заказ</h2></div><button onClick={onClose}>×</button></header><p>Сумма: <b>{formatMoney(total)}</b>. Заказ не меняет остатки — он попадёт в очередь выполнения.</p><label className="cash-input"><span>Телефон *</span><input autoFocus value={phone} onChange={(e)=>setPhone(e.target.value)} placeholder="+7 900 000-00-00"/></label><label className="cash-input"><span>Комментарий</span><textarea value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Что изготовить или выдать"/></label><label className="cash-input"><span>Готовность (необязательно)</span><input type="datetime-local" value={dueAt} onChange={(e)=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={()=>onSave(value)}>Сохранить без оплаты</button><button className="confirm" disabled={phone.replace(/\D/g,'').length<5} onClick={onPay}>Сохранить и принять оплату · {formatMoney(total)}</button></div></div>
+  useEffect(()=>{draft.phone=phone;draft.comment=comment;draft.dueAt=dueAt},[phone,comment,dueAt,draft])
+  const valid=phone.replace(/\D/g,'').length>=5&&Boolean(comment.trim())&&Boolean(dueAt)
+  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ОБЯЗАТЕЛЬСТВО КЛИЕНТУ</small><h2>Оформить заказ</h2></div><button onClick={onClose}>×</button></header><p>Сумма: <b>{formatMoney(total)}</b>. Заказ создастся после успешной оплаты.</p><label className="cash-input"><span>Телефон *</span><input autoFocus value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+7 900 000-00-00"/></label><label className="cash-input"><span>Описание заказа *</span><textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="Что изготовить или выдать"/></label><label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={dueAt} onChange={e=>setDueAt(e.target.value)}/></label><button className="primary confirm" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</button></div></div>
 }
 
 function OrdersPage({orders,onChanged,notify}:{orders:Order[];onChanged:()=>Promise<void>;notify:(text:string)=>void}){
