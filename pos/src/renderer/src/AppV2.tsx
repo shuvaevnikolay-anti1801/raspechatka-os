@@ -3,6 +3,7 @@ import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import { formatPersonShortName } from './person-name'
+import { formatMoney } from './money'
 import { resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
@@ -14,8 +15,6 @@ import type {
 } from '../../shared/contracts'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
-const money=new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2})
-const formatMoney=(minor:number)=>money.format(minor/100)
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,averageCheckBeforeDiscountMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
@@ -243,11 +242,12 @@ export default function AppV2(){
           <div className={'review-discount-row '+(!discountRules.allowDiscounts?'disabled':'')}><div><span>Отзывы</span><small>{reviewUnitMinor>0?`${formatMoney(reviewUnitMinor)} за отзыв`:'Скидка не настроена'}</small></div><div className="review-count"><button disabled={!discountRules.allowDiscounts||safeReviewCount<=0} onClick={()=>setReviewCount(Math.max(0,safeReviewCount-1))}>−</button><input type="number" min="0" max={maxReviews} step="1" value={safeReviewCount} disabled={!discountRules.allowDiscounts||reviewUnitMinor<=0} onChange={(e)=>setReviewCount(Math.max(0,Math.floor(Number(e.target.value)||0)))}/><button disabled={!discountRules.allowDiscounts} onClick={()=>setReviewCount(safeReviewCount+1)}>+</button></div><strong>{reviewDiscountMinor?`− ${formatMoney(reviewDiscountMinor)}`:'—'}</strong></div>
           <div className="review-discount-row"><div><span>Доп. скидка{manualDiscount?.type==='percent'?` ${manualDiscount.value}%`:''}</span><small>Ограничена настройками точки</small></div><button disabled={!discountRules.allowDiscounts} onClick={()=>setManualDiscountOpen(true)}>{manualDiscount?'Изменить':'Скидка'}</button><strong>{breakdown.manualDiscountMinor?`− ${formatMoney(breakdown.manualDiscountMinor)}`:'—'}</strong></div>
           {cart.some((line)=>productById.get(line.productId)?.preventDiscounts)&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}
-          {breakdown.totalDiscountMinor>0&&<div className="subtotal"><span>Без скидок</span><s>{formatMoney(subtotal)}</s></div>}
-          <div className="total"><span>Итого</span><strong>{formatMoney(total)}</strong></div>
+          {breakdown.totalDiscountMinor>0&&<>
+            <div className="subtotal"><span>Без скидок</span><strong>{formatMoney(subtotal)}</strong></div>
+            <div className="subtotal"><span>Скидка составила</span><strong>− {formatMoney(breakdown.totalDiscountMinor)}</strong></div>
+          </>}
           {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
             <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
-            <small className="training">ККТ и оборудование проверяются перед каждой оплатой</small>
           </>}
         </footer>
       </aside>
