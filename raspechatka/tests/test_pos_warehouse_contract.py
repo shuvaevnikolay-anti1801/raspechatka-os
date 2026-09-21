@@ -152,7 +152,7 @@ class TestCanonicalPurchaseOrderReceiptStatus(TestCase):
 				):
 					purchase_order_module.update_received_quantities("PO-1")
 
-				row.db_set.assert_called_once_with("received_quantity", received_quantity, update_modified=False)
+				row.db_set.assert_called_once_with(\n					"received_quantity", received_quantity, update_modified=False\n				)
 				set_value.assert_called_once_with(
 					"Purchase Order",
 					"PO-1",
