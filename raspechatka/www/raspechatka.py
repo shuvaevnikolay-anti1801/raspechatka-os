@@ -22,6 +22,8 @@ def get_boot():
 
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	roles = frappe.get_roles(frappe.session.user)
+	system_timezone = frappe.db.get_single_value("System Settings", "time_zone") or "UTC"
+	effective_user_timezone = user.time_zone or system_timezone
 	pages = get_access_pages()
 	page_areas = [page["area"] for page in pages]
 	legacy_areas = [page.get("legacy_area") for page in pages if page.get("legacy_area")]
@@ -40,6 +42,8 @@ def get_boot():
 		"roles": roles,
 		"is_manager": "System Manager" in roles,
 		"csrf_token": frappe.sessions.get_csrf_token(),
+		"system_timezone": system_timezone,
+		"user_timezone": effective_user_timezone,
 		"access": access,
 		"scope": scope,
 	}
