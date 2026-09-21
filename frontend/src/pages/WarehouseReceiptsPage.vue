@@ -8,6 +8,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate, createListReadyGate } from "../listLoading";
+import { formatDateTime, fromDateTimeLocal, toDateTimeLocal } from "../dateTime";
 
 const route = useRoute();
 const listRequests = createLatestRequestGate();
@@ -116,13 +117,7 @@ function money(value) {
 		maximumFractionDigits: 2,
 	}).format(Number(value || 0));
 }
-function dateTime(value) {
-	return value
-		? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-				new Date(value.replace(" ", "T"))
-		  )
-		: "—";
-}
+function dateTime(value) {\n\treturn formatDateTime(value);\n}
 function statusLabel(value) {
 	return value === 1 ? "Проведён" : value === 2 ? "Отменён" : "Черновик";
 }
@@ -178,7 +173,7 @@ async function openReceipt(name = null, receiptType = "Приёмка", purchase
 		Object.keys(form).forEach((key) => delete form[key]);
 		Object.assign(form, clone(result.doc));
 		if (form.posting_datetime)
-			form.posting_datetime = String(form.posting_datetime).replace(" ", "T").slice(0, 16);
+			form.posting_datetime = toDateTimeLocal(form.posting_datetime);
 		form.items ||= [];
 		for (const row of form.items) if (!row.storage_location) onItemChange(row);
 		editorOpen.value = true;
