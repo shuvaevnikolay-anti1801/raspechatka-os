@@ -182,8 +182,10 @@ async function resolveDocumentMatches(viewKey, doctype, generation = null) {
 		setDocumentFilterMatches(viewKey, names);
 		return true;
 	} catch (exception) {
-		if (generation === null || generation === preferenceGeneration)
+		if (generation === null || generation === preferenceGeneration) {
 			schemaError.value = exception.message;
+			setDocumentFilterMatches(viewKey, []);
+		}
 		return false;
 	}
 }
