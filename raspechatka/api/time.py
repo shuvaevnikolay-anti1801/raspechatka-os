@@ -73,7 +73,9 @@ def get_time_diagnostics():
     configured_site = _configured_site_timezone(warnings)
     effective_site = _effective_site_timezone(warnings)
 
-    if not configured_site:
+    if not configured_site and not any(
+        warning["code"] == "invalid_site_timezone" for warning in warnings
+    ):
         warnings.append(
             _warning(
                 "missing_site_timezone",
