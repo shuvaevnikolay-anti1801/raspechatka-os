@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -137,7 +137,7 @@ def _pos_utc_wall_clock(value: Any, target_timezone: str) -> datetime:
     naive = _as_datetime(value)
     if naive is None:
         raise TimeContractError("empty historical Datetime")
-    return naive.replace(tzinfo=UTC).astimezone(ZoneInfo(target_timezone)).replace(tzinfo=None)
+    return naive.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(target_timezone)).replace(tzinfo=None)
 
 
 def _version_history() -> tuple[list[dict[str, Any]], list[str]]:
@@ -853,7 +853,7 @@ def _marker_file():
 
 def build_repair_plan() -> dict[str, Any]:
     """Build a deterministic, non-mutating repair plan."""
-    cutoff = datetime.now(UTC)
+    cutoff = datetime.now(timezone.utc)
     evidence = _site_evidence()
     try:
         evidence["effective_before"] = validate_timezone(get_system_timezone())
