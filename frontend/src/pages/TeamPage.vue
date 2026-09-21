@@ -1,12 +1,14 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const route = useRoute();
 const loading = ref(true);
 const saving = ref(false);
@@ -255,36 +257,41 @@ function hydrateDraft() {
 }
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		data.value = await call("raspechatka.api.team.get_team_overview", {
+		const overview = await call("raspechatka.api.team.get_team_overview", {
 			business_point: point.value,
 			month: `${month.value}-01`,
 		});
-		if (!point.value && data.value.points.length === 1) {
-			point.value = data.value.points[0].name;
-			return;
-		}
+		if (!listRequests.isCurrent(requestId)) return;
+		data.value = overview;
+		if (!point.value && overview.points.length === 1) point.value = overview.points[0].name;
 		if (section.value === "schedule" && point.value) {
-			schedule.value = await call("raspechatka.api.team.get_schedule", {
+			const nextSchedule = await call("raspechatka.api.team.get_schedule", {
 				business_point: point.value,
 				month: `${month.value}-01`,
 			});
+			if (!listRequests.isCurrent(requestId)) return;
+			schedule.value = nextSchedule;
 			hydrateDraft();
 		}
 		if (section.value === "payroll") {
 			if (!payrollStart.value) setPayrollDates();
 			payroll.value = null;
 		}
-		if (section.value === "hr")
-			hr.value = await call("raspechatka.api.team.get_hr_overview", {
+		if (section.value === "hr") {
+			const nextHr = await call("raspechatka.api.team.get_hr_overview", {
 				business_point: point.value,
 			});
+			if (!listRequests.isCurrent(requestId)) return;
+			hr.value = nextHr;
+		}
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function saveSchedule() {
@@ -355,8 +362,7 @@ async function recalculate(period) {
 		recalculating.value = false;
 	}
 }
-watch([point, month, section], load);
-onMounted(load);
+
 </script>
 
 <template>
@@ -400,6 +406,7 @@ onMounted(load);
 			:view-key="`team.${section}`"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<div v-if="error" class="team-error">
 			{{ error }} <button @click="load">Повторить</button>
