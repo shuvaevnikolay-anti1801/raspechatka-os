@@ -6,10 +6,13 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate, createListReadyGate } from "../listLoading";
 
 const route = useRoute();
 const router = useRouter();
 const report = computed(() => route.meta.report);
+const listRequests = createLatestRequestGate();
+const listReady = createListReadyGate((size) => load(1, size));
 const rows = ref([]),
 	totals = ref({}),
 	totalRows = ref(0),
@@ -135,6 +138,7 @@ const filterFields = computed(() => [
 const entityFields = computed(() => mergeEntityFields(filterFields.value, columns.value));
 
 async function load(page = 1, size = pageSize.value) {
+	const requestId = listRequests.begin();
 	currentPage.value = page;
 	pageSize.value = size;
 	loading.value = true;
@@ -154,13 +158,14 @@ async function load(page = 1, size = pageSize.value) {
 			? { ...common, as_of: filters.as_of }
 			: { ...common, from_date: filters.from_date, to_date: filters.to_date };
 		const result = await call(`raspechatka.api.warehouse_reports.${method}`, params);
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totalRows.value = Number(result.total || 0);
 		totals.value = result.totals;
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -234,8 +239,17 @@ function exportCsv() {
 	link.click();
 	URL.revokeObjectURL(link.href);
 }
-watch(report, () => load(1));
-onMounted(() => Promise.all([loadOptions(), load()]));
+watch(report, () => {
+	listRequests.invalidate();
+	listReady.reset();
+	rows.value = [];
+	totals.value = {};
+	totalRows.value = 0;
+	currentPage.value = 1;
+	error.value = "";
+	loading.value = true;
+});
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -262,6 +276,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			@update:model-value="Object.assign(filters, $event)"
 			@apply="load(1)"
 			@reset="load(1)"
+			@ready="listReady.filter"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -278,7 +293,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			@retry="load(currentPage)"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
-			@ready="load(1, $event)"
+			@ready="listReady.table"
 			@open="openMovements"
 		/>
 	</section>
