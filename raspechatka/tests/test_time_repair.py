@@ -1,10 +1,13 @@
 from datetime import datetime
 from pathlib import Path
 
-import pytest
+from unittest import TestCase
 
 from raspechatka.time_contract import external_instant_to_site_naive, site_naive_to_target_date
 from raspechatka.time_repair import (
+
+_ASSERTIONS = TestCase()
+
     REPAIR_CONTRACT_VERSION,
     _ambiguous_local,
     _epoch_for,
@@ -35,7 +38,7 @@ def test_already_correct_pos_value_is_not_shifted():
 def test_imported_ambiguous_dst_wall_clock_is_rejected():
     value = datetime(2026, 11, 1, 1, 30)
     assert _ambiguous_local(value, "America/New_York")
-    with pytest.raises(ValueError):
+    with _ASSERTIONS.assertRaises(ValueError):
         _site_wall_clock(value, "America/New_York", "Europe/Moscow")
 
 
