@@ -58,6 +58,8 @@ const periodFieldPair = computed(() => {
 	const to = dateFields.find((field) => /(^|\\s)(по|до)$/i.test((field.label || "").trim()));
 	return from && to ? { from, to } : null;
 });
+let preferenceGeneration = 0;
+
 const operatorOptions = {
 	text: [
 		{ value: "contains", label: "содержит" },
@@ -182,32 +184,40 @@ async function savePreference(extra = {}) {
 		{ method: "POST" }
 	);
 }
-async function loadSchema() {
+async function loadSchema(generation, doctype) {
 	schemaFields.value = [];
 	schemaError.value = "";
-	if (!documentType.value) return;
+	if (!doctype) return true;
 	schemaLoading.value = true;
 	try {
-		schemaFields.value = await call("raspechatka.api.list_filters.get_doctype_filter_fields", {
-			doctype: documentType.value,
+		const result = await call("raspechatka.api.list_filters.get_doctype_filter_fields", {
+			doctype,
 		});
+		if (generation !== preferenceGeneration) return false;
+		schemaFields.value = result;
 	} catch (exception) {
+		if (generation !== preferenceGeneration) return false;
 		schemaError.value = exception.message;
 	} finally {
-		schemaLoading.value = false;
+		if (generation === preferenceGeneration) schemaLoading.value = false;
 	}
+	return generation === preferenceGeneration;
 }
 async function loadPreference() {
+	const generation = ++preferenceGeneration;
+	const viewKey = props.viewKey;
+	const doctype = documentType.value;
+	const key = `${viewKey}.filters`;
 	ready.value = false;
-	let restored = false;
-	await loadSchema();
+	if (!(await loadSchema(generation, doctype))) return;
 	visible.value = defaults();
 	bookmarks.value = [];
-	setDocumentFilterMatches(props.viewKey, null);
+	setDocumentFilterMatches(viewKey, null);
 	try {
 		const preference = await call("raspechatka.api.references.get_view_preference", {
-			view_key: preferenceKey.value,
+			view_key: key,
 		});
+		if (generation !== preferenceGeneration) return;
 		visible.value = reconcileVisible(
 			preference.visible,
 			fields.value,
@@ -230,15 +240,16 @@ async function loadPreference() {
 				...props.modelValue,
 				...resolvePeriodPreset(preference.lastFilters),
 			});
-			restored = true;
 		}
 	} catch (_) {
+		if (generation !== preferenceGeneration) return;
 		// The complete default field set remains available without saved preferences.
-	} finally {
-		await nextTick();
-		ready.value = true;
-		emit("ready");
 	}
+	if (generation !== preferenceGeneration) return;
+	await nextTick();
+	if (generation !== preferenceGeneration) return;
+	ready.value = true;
+	emit("ready", viewKey);
 }
 async function toggleField(key) {
 	if (visible.value.includes(key)) {
