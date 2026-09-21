@@ -7,6 +7,7 @@ from raspechatka.time_contract import external_instant_to_site_naive, site_naive
 from raspechatka.time_repair import (
     REPAIR_CONTRACT_VERSION,
     _ambiguous_local,
+    _epoch_for,
     _pos_utc_wall_clock,
     _same_datetime,
     _site_wall_clock,
@@ -62,3 +63,32 @@ def test_patch_is_registered_and_idempotent_marker_is_present():
     assert "raspechatka.patches.v1_0.repair_dev161_time" in patches
     assert "REPORT_FILE_NAME" in service
     assert "already_applied" in service
+
+
+def test_epoch_resolution_uses_each_timestamp_not_document_creation():
+    evidence = {
+        "_epochs": [
+            {
+                "start": None,
+                "end": datetime(2026, 6, 1, 0, 0),
+                "source_timezone": "Asia/Kolkata",
+            },
+            {
+                "start": datetime(2026, 6, 1, 0, 0),
+                "end": None,
+                "source_timezone": "Europe/Moscow",
+            },
+        ]
+    }
+    assert _epoch_for(datetime(2026, 5, 1, 12, 0), evidence)["source_timezone"] == "Asia/Kolkata"
+    assert _epoch_for(datetime(2026, 7, 1, 12, 0), evidence)["source_timezone"] == "Europe/Moscow"
+
+
+def test_standard_repair_resolves_creation_and_modified_independently():
+    source = (Path(__file__).parents[1] / "time_repair.py").read_text()
+    start = source.index("def _plan_standard_fields")
+    end = source.index("def _plan_client_registered_at", start)
+    function_source = source[start:end]
+    assert 'for field in ("creation", "modified")' in function_source
+    assert "_epoch_for(value, evidence)" in function_source
+    assert "_epoch_for(row.creation, evidence)" not in function_source
