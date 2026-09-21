@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildStockReceiptRequest, CashierLogin, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
+import { buildStockReceiptRequest, CashierLogin, PinInput, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -29,6 +29,13 @@ describe('cashier workplace micro-contract',()=>{
     expect(login).toContain('cashier-login-footer')
     expect(login).toContain('settings-open-trigger')
     expect(login).toContain('cashier-forgot-pin')
+  })
+  it('renders four equal visual slots while keeping one real input',()=>{
+    const markup=renderToStaticMarkup(<PinInput value="12" onChange={()=>undefined} ariaLabel="PIN"/>)
+    expect((markup.match(/pin-input-control/g)||[]).length).toBe(1)
+    expect((markup.match(/pin-input-slots/g)||[]).length).toBe(1)
+    expect((markup.match(/<span class="/g)||[]).length).toBe(4)
+    expect((markup.match(/filled/g)||[]).length).toBe(2)
   })
   it('keeps the toast timeout and shift metric label contract',()=>{
     expect(TOAST_DISMISS_MS).toBe(3000)
