@@ -1,9 +1,12 @@
 from datetime import datetime
 from pathlib import Path
 
-import pytest
+from unittest import TestCase
 
 from raspechatka.time_contract import (
+
+_ASSERTIONS = TestCase()
+
     TimeContractError,
     external_instant_to_site_naive,
     legacy_external_instant_to_site_naive,
@@ -39,7 +42,7 @@ def test_legacy_offsetless_path_is_explicit_but_v2_is_strict():
     assert legacy_external_instant_to_site_naive(
         "2026-09-21 18:00:00", "Europe/Moscow"
     ) == datetime(2026, 9, 21, 18, 0)
-    with pytest.raises(TimeContractError):
+    with _ASSERTIONS.assertRaises(TimeContractError):
         external_instant_to_site_naive("2026-09-21T18:00:00", "Europe/Moscow")
 
 
