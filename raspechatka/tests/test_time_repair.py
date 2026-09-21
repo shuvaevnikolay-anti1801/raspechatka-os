@@ -55,6 +55,7 @@ def test_repair_source_is_explicit_and_side_effect_safe():
     assert ".cancel(" not in source
     assert "subtract" not in source.lower()
 
+
 def test_patch_is_registered_and_idempotent_marker_is_present():
     patches = (Path(__file__).parents[1] / "patches.txt").read_text()
     service = (Path(__file__).parents[1] / "time_repair.py").read_text()
