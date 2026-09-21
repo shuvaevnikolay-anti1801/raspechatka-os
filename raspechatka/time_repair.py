@@ -13,7 +13,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import frappe
-from frappe.utils import get_datetime
+from frappe.utils import get_datetime, get_system_timezone
 
 from raspechatka.time_contract import (
     TimeContractError,
@@ -218,9 +218,14 @@ def _site_evidence() -> dict[str, Any]:
 
     if configured and configured != "Asia/Kolkata":
         target = configured
-    elif configured == "Asia/Kolkata" and len(unique_points) == 1 and unique_points[0] != configured:
+    elif (
+        configured == "Asia/Kolkata"
+        and not point_errors
+        and len(unique_points) == 1
+        and unique_points[0] != configured
+    ):
         target = unique_points[0]
-    elif not configured and len(unique_points) == 1:
+    elif not configured and not point_errors and len(unique_points) == 1:
         target = unique_points[0]
     else:
         target = "UTC" if not configured else configured
@@ -391,10 +396,13 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
     for doctype, field, source_field, source_value, payload_field in POS_UTC_REGISTRY:
         if not frappe.db.exists("DocType", doctype):
             continue
+        fields = ["name", field, "creation", source_field]
+        if frappe.get_meta(doctype).has_field("source_payload_json"):
+            fields.append("source_payload_json")
         rows = frappe.get_all(
             doctype,
             filters={source_field: ["is", "set"]} if source_value == "set" else {source_field: source_value},
-            fields=["name", field, "creation", source_field, "source_payload_json"],
+            fields=fields,
             order_by="name asc",
             limit_page_length=100000,
         )
@@ -467,8 +475,23 @@ def _plan_pos_site_fields(evidence, entries, unresolved):
             limit_page_length=100000,
         )
         for row in rows:
+            epoch = _epoch_for(row.creation, evidence)
+            row_source = epoch["source_timezone"] if epoch else source
+            if not epoch:
+                _add_unresolved(
+                    unresolved,
+                    doctype=doctype,
+                    name=row.name,
+                    field=field,
+                    repair_class="old_site_wall_clock",
+                    before=row.get(field),
+                    reason="creation does not fit one unambiguous System Settings timezone epoch",
+                )
+                continue
+            if row_source == target:
+                continue
             try:
-                after = _site_wall_clock(row.get(field), source, target)
+                after = _site_wall_clock(row.get(field), row_source, target)
                 _add_entry(
                     entries,
                     unresolved,
@@ -644,15 +667,18 @@ def _plan_cashier_actions(evidence, entries, unresolved):
                 reason="reference document is outside proven sales registry",
             )
             continue
+        reference_fields = (
+            ["name", "source", "opened_at", "closed_at"]
+            if action.reference_doctype == "Sales Shift"
+            else ["name", "source", "posting_datetime"]
+        )
         doc = frappe.db.get_value(
             action.reference_doctype,
             action.reference_document,
-            ["name", "source", "opened_at", "closed_at", "posting_datetime"],
+            reference_fields,
             as_dict=True,
         )
-        if not doc or (action.reference_doctype != "Sales Shift" and doc.source != "POS") and (
-            action.reference_doctype == "Sales Shift" and doc.source != "POS"
-        ):
+        if not doc or doc.source != "POS":
             _add_unresolved(
                 unresolved,
                 doctype="Cashier Action",
@@ -804,7 +830,7 @@ def build_repair_plan() -> dict[str, Any]:
     cutoff = datetime.now(UTC)
     evidence = _site_evidence()
     try:
-        evidence["effective_before"] = validate_timezone(frappe.utils.get_system_timezone())
+        evidence["effective_before"] = validate_timezone(get_system_timezone())
     except Exception as exc:
         evidence["core_blockers"].append(f"cannot read effective Frappe timezone: {exc}")
 
