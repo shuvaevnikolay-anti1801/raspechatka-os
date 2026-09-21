@@ -397,8 +397,9 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
     for doctype, field, source_field, source_value, payload_field in POS_UTC_REGISTRY:
         if not frappe.db.exists("DocType", doctype):
             continue
+        has_payload_field = frappe.get_meta(doctype).has_field("source_payload_json")
         fields = ["name", field, "creation", source_field]
-        if frappe.get_meta(doctype).has_field("source_payload_json"):
+        if has_payload_field:
             fields.append("source_payload_json")
         rows = frappe.get_all(
             doctype,
@@ -412,6 +413,17 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
             if not before:
                 continue
             raw = _payload_value(row, field, payload_field)
+            if has_payload_field and not raw:
+                _add_unresolved(
+                    unresolved,
+                    doctype=doctype,
+                    name=row.name,
+                    field=field,
+                    repair_class="pos_utc_as_naive",
+                    before=before,
+                    reason="POS payload evidence is missing for this timestamp",
+                )
+                continue
             if raw:
                 direct = _external_utc_naive(raw)
                 try:
@@ -692,6 +704,19 @@ def _plan_cashier_actions(evidence, entries, unresolved):
         field, reference_value = _reference_timestamp(action.reference_doctype, action.action_type, doc)
         key = (action.reference_doctype, action.reference_document, field)
         planned_value = planned.get(key, {}).get("after") if key in planned else None
+        if not planned_value and _same_datetime(action.action_datetime, reference_value):
+            continue
+        if not planned_value:
+            _add_unresolved(
+                unresolved,
+                doctype="Cashier Action",
+                name=action.name,
+                field="action_datetime",
+                repair_class="cashier_action_rederive",
+                before=action.action_datetime,
+                reason="referenced timestamp was not independently repaired or verified",
+            )
+            continue
         desired = planned_value or reference_value
         if not desired:
             _add_unresolved(
