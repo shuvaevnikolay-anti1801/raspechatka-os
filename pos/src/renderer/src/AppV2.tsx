@@ -294,6 +294,11 @@ export default function AppV2(){
   </div>
 }
 
+function PinInput({value,onChange,autoFocus=false,ariaLabel}:{value:string;onChange:(value:string)=>void;autoFocus?:boolean;ariaLabel:string}){
+  const numeric=(next:string)=>next.replace(/\D/g,'').slice(0,4)
+  return <div className="pin-input" data-filled={value.length>0}><input className="pin-input-control" autoFocus={autoFocus} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={value} aria-label={ariaLabel} onChange={(event)=>onChange(numeric(event.target.value))}/><div className="pin-input-slots" aria-hidden="true">{[0,1,2,3].map((slot)=><span className={slot<value.length?'filled':''} key={slot}>{slot<value.length?'•':''}</span>)}</div></div>
+}
+
 export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<void>}){
   const forced=auth.openShiftCashierId
   const [employeeId,setEmployeeId]=useState(forced||'')
@@ -304,7 +309,6 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   const [adminCode,setAdminCode]=useState('')
   const [error,setError]=useState('')
   const selected=boot.employees.find((row)=>row.id===employeeId)||(forced===employeeId?{id:employeeId,name:auth.openShiftCashierName||employeeId}:undefined)
-  const numeric=(value:string)=>value.replace(/\D/g,'').slice(0,4)
   const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setError('');if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setError(e instanceof Error?e.message:String(e))}}}
   useEffect(()=>{if(forced)void choose(forced)},[forced])
   const submit=async()=>{try{
@@ -321,14 +325,14 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
     {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>)}</div>}
     {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
     {(selected||lockedEmployee)&&<form onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
-      {adminReset&&<label><span>Код администратора</span><input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminCode} onChange={(e)=>setAdminCode(numeric(e.target.value))}/></label>}
-      <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><input className="cashier-pin-input" autoFocus={!adminReset} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={pin} placeholder="••••" onChange={(e)=>setPin(numeric(e.target.value))}/></label>
-      {(setup||adminReset)&&<label><span>Повторите PIN</span><input className="cashier-pin-input" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={confirmation} placeholder="••••" onChange={(e)=>setConfirmation(numeric(e.target.value))}/></label>}
+      {adminReset&&<label><span>Код администратора</span><PinInput autoFocus value={adminCode} onChange={setAdminCode} ariaLabel="Код администратора · 4 цифры"/></label>}
+      <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
+      {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
       {error&&<div className="cashier-login-error">{error}</div>}
       {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
-      {auth.status!=='locked'&&!setup&&!adminReset&&<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>}
+      <div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button>{auth.status!=='locked'&&!setup&&!adminReset&&<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>}</div>
     </form>}
-    {auth.status!=='locked'&&<button className="settings-open-trigger" type="button">Настройки кассы</button>}
+    {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button></div>}
   </section></main>
 }
 
