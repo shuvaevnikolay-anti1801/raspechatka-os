@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -672,7 +672,6 @@ def _plan_cashier_actions(evidence, entries, unresolved):
         order_by="name asc",
         limit_page_length=100000,
     )
-    target = evidence["target_timezone"]
     planned = {(entry["doctype"], entry["name"], entry["field"]): entry for entry in entries}
     for action in actions:
         if not action.reference_doctype or not action.reference_document:
