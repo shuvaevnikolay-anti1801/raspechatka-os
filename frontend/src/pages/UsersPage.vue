@@ -287,9 +287,9 @@ onMounted(() => {
 					<small>Настроен: {{ diagnostics.current_user.configured_timezone || "системный fallback" }}</small>
 				</div>
 				<div>
-					<span class="diagnostic-label">Сейчас</span>
-					<strong>{{ diagnostics.now.user || diagnostics.now.site || diagnostics.now.utc }}</strong>
-					<small>UTC: {{ diagnostics.now.utc }}</small>
+					<span class="diagnostic-label">Время сайта</span>
+					<strong>{{ diagnostics.now.site || "Не определено" }}</strong>
+					<small>Пользователь: {{ diagnostics.now.user || "не определено" }} · UTC: {{ diagnostics.now.utc }}</small>
 				</div>
 			</div>
 			<div v-if="diagnostics?.points?.length" class="diagnostic-points">
