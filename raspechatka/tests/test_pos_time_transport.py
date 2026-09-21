@@ -50,7 +50,11 @@ def test_pos_timestamp_maps_cover_shift_receipt_order_and_cash_count():
     assert "_normalize_v2_payload(event.get" in v2_source
     assert "_legacy_pos_site_datetime(event.get" in pos_source
     assert '"createdAt": _pos_datetime_to_utc' in pos_source
+    assert '"dueAt": _pos_datetime_to_utc' in pos_source
+    assert '"readyAt": _pos_datetime_to_utc' in pos_source
+    assert '"issuedAt": _pos_datetime_to_utc' in pos_source
     assert '"createdAt": _pos_datetime_to_utc' in v2_source
+    assert '"posting_datetime": payload.get("createdAt")' in v2_source
 
 
 def test_point_timezone_bootstrap_and_old_cached_state_are_compatible():
