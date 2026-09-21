@@ -848,13 +848,16 @@ def _plan_business_dates(evidence, entries, unresolved):
 
 
 def _plan_counts(entries, unresolved):
-    counts = {}
-    for row in entries:
-        counts[row["repair_class"]] = counts.get(row["repair_class"], 0) + 1
-    unresolved_counts = {}
-    for row in unresolved:
-        unresolved_counts[row["repair_class"]] = unresolved_counts.get(row["repair_class"], 0) + 1
-    return {"safe_changes": counts, "unresolved": unresolved_counts}
+    def count(rows):
+        by_class = {}
+        by_doctype_field = {}
+        for row in rows:
+            by_class[row["repair_class"]] = by_class.get(row["repair_class"], 0) + 1
+            key = f"{row['doctype']}::{row['field']}::{row['repair_class']}"
+            by_doctype_field[key] = by_doctype_field.get(key, 0) + 1
+        return {"by_class": by_class, "by_doctype_field_class": by_doctype_field}
+
+    return {"safe_changes": count(entries), "unresolved": count(unresolved)}
 
 
 def _marker_file():
