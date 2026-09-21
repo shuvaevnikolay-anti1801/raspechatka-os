@@ -18,10 +18,7 @@ const pageSize = ref(25);
 const loading = ref(true);
 const error = ref("");
 const options = reactive({ points: [], warehouses: [], groups: [] });
-const today = new Date().toISOString().slice(0, 10);
-const month = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-	.toISOString()
-	.slice(0, 10);
+const today = dateInTimezone();\nconst month = monthStartInTimezone();
 const filters = reactive({
 	from_date: month,
 	to_date: today,
