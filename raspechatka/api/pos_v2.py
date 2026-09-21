@@ -44,7 +44,7 @@ def _normalize_v2_payload(payload):
 			normalized[field] = external_instant_to_site_naive(
 				normalized[field], get_effective_site_timezone()
 			)
-		except TimeContractError as exc:
+		except TimeContractError:
 			frappe.throw(
 				_("POS field {0} must be an RFC3339 instant with an explicit offset").format(field),
 				frappe.ValidationError,
@@ -448,7 +448,6 @@ def _review_breakdown(payload, connection, raw_total, paid_total):
 
 
 def _sale_receipt(payload, cashier_id, connection):
-	payload = _normalize_v2_payload(payload)
 	lines = payload.get("lines") or []
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
@@ -547,7 +546,6 @@ def _trusted_event_cashier(connection, employees, event_type, payload, fallback_
 
 
 def _ingest_cash_count(event_id, payload, connection, cashier_id):
-	payload = _normalize_v2_payload(payload)
 	shift = sales_api._shift_name(payload.get("shiftId"), connection.business_point)
 	doc = frappe.get_doc("Sales Shift", shift)
 	if doc.cashier != cashier_id:
