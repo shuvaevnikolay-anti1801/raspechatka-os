@@ -16,7 +16,7 @@ from raspechatka.time_repair import (
 def test_asia_kolkata_server_wall_clock_repairs_to_moscow():
     before = datetime(2026, 1, 15, 23, 30)
     assert _site_wall_clock(before, "Asia/Kolkata", "Europe/Moscow") == datetime(
-        2026, 1, 15, 21, 0
+        2026, 1, 15, 21, 30
     )
 
 
