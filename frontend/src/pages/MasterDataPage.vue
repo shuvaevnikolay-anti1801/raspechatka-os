@@ -540,6 +540,9 @@ async function remove() {
 }
 watch(reference, () => {
 	listRequests.invalidate();
+	rows.value = [];
+	loading.value = true;
+	error.value = "";
 	detail.value = null;
 	filters.value = { search: "", active: "" };
 });
