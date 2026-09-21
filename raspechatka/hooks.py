@@ -94,7 +94,7 @@ app_include_js = "/assets/raspechatka/js/raspechatka.js"
 # ------------
 
 # before_install = "raspechatka.install.before_install"
-# after_install = "raspechatka.install.after_install"
+after_install = "raspechatka.time_contract.ensure_site_timezone_after_install"
 
 # Uninstallation
 # ------------
