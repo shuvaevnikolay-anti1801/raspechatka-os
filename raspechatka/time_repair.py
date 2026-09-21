@@ -352,7 +352,7 @@ def _payload_value(row: Any, field: str, payload_field: str) -> str | None:
     return value
 
 
-def _external_utc_naive(value: str) -> datetime | None:
+def _external_wall_clock_naive(value: str) -> datetime | None:
     from raspechatka.time_contract import parse_external_instant
 
     try:
@@ -431,7 +431,7 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
                 )
                 continue
             if raw:
-                direct = _external_utc_naive(raw)
+                direct = _external_wall_clock_naive(raw)
                 try:
                     expected = external_instant_to_site_naive(raw, target)
                 except TimeContractError:
