@@ -3,9 +3,6 @@ from datetime import date, datetime
 from unittest import TestCase
 
 from raspechatka.time_contract import (
-
-_ASSERTIONS = TestCase()
-
     TimeContractError,
     configured_site_timezone,
     effective_site_timezone,
@@ -18,6 +15,8 @@ _ASSERTIONS = TestCase()
     site_naive_to_utc_rfc3339,
     validate_timezone,
 )
+
+_ASSERTIONS = TestCase()
 
 
 def test_moscow_frappe_naive_round_trip():
