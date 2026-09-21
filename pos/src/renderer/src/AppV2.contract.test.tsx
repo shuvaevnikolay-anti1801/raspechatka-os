@@ -23,7 +23,12 @@ describe('cashier workplace micro-contract',()=>{
     expect(login).toContain('maxLength="4"')
     expect(login).toContain('pattern="[0-9]{4}"')
     expect(login).toContain('cashier-pin-input')
+    expect(login).toContain('pin-input-slots')
+    expect((login.match(/class="[^"]*pin-input-slots/g)||[]).length).toBe(1)
+    expect((login.match(/class="[^"]*pin-input-control/g)||[]).length).toBe(1)
+    expect(login).toContain('cashier-login-footer')
     expect(login).toContain('settings-open-trigger')
+    expect(login).toContain('cashier-forgot-pin')
   })
   it('keeps the toast timeout and shift metric label contract',()=>{
     expect(TOAST_DISMISS_MS).toBe(3000)
