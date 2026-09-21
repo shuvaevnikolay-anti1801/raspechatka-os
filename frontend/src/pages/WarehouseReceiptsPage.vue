@@ -218,6 +218,7 @@ async function save(closeAfter = false, throwOnError = false) {
 			...clone(form),
 			total_quantity: totalQty.value,
 			total_amount: totalAmount.value,
+			posting_datetime: fromDateTimeLocal(form.posting_datetime),
 		};
 		const result = await call(
 			"raspechatka.api.warehouse.save_receipt",
