@@ -1,3 +1,5 @@
+import { formatDateOnly, formatDateTime } from "./dateTime";
+
 const TECHNICAL_FIELDS = new Set([
 	"name",
 	"owner",
@@ -88,6 +90,8 @@ export function resolveDisplayValue(row, field) {
 	if (label !== undefined) return label;
 	if (["check", "checkbox", "boolean"].includes(field.type))
 		return value === true || value === 1 || value === "1" ? "Да" : "Нет";
+	if (["datetime", "datetime-local"].includes(field.type)) return formatDateTime(value);
+	if (field.type === "date") return formatDateOnly(value);
 	return value;
 }
 
