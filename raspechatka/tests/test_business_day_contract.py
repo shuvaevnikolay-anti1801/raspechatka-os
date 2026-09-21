@@ -2,9 +2,12 @@ from datetime import date, datetime
 import json
 from pathlib import Path
 
-import pytest
+from unittest import TestCase
 
 from raspechatka.time_contract import (
+
+_ASSERTIONS = TestCase()
+
     TimeContractError,
     external_instant_to_site_naive,
     point_local_date_bounds_to_site_naive,
@@ -45,14 +48,14 @@ def test_dst_point_day_bounds_use_zoneinfo_transitions():
 
 
 def test_point_bounds_require_date_not_datetime():
-    with pytest.raises(TypeError):
+    with _ASSERTIONS.assertRaises(TypeError):
         point_local_date_bounds_to_site_naive(
             datetime(2026, 3, 8), "America/New_York", "Europe/Moscow"
         )
 
 
 def test_invalid_iana_timezone_is_rejected():
-    with pytest.raises(TimeContractError):
+    with _ASSERTIONS.assertRaises(TimeContractError):
         validate_timezone("Mars/Phobos")
 
 
