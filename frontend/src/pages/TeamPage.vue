@@ -261,13 +261,20 @@ async function load() {
 	loading.value = true;
 	error.value = "";
 	try {
-		const overview = await call("raspechatka.api.team.get_team_overview", {
+		let overview = await call("raspechatka.api.team.get_team_overview", {
 			business_point: point.value,
 			month: `${month.value}-01`,
 		});
 		if (!listRequests.isCurrent(requestId)) return;
+		if (!point.value && overview.points.length === 1) {
+			point.value = overview.points[0].name;
+			overview = await call("raspechatka.api.team.get_team_overview", {
+				business_point: point.value,
+				month: `${month.value}-01`,
+			});
+			if (!listRequests.isCurrent(requestId)) return;
+		}
 		data.value = overview;
-		if (!point.value && overview.points.length === 1) point.value = overview.points[0].name;
 		if (section.value === "schedule" && point.value) {
 			const nextSchedule = await call("raspechatka.api.team.get_schedule", {
 				business_point: point.value,
