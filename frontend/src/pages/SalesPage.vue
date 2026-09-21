@@ -7,6 +7,8 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+const listRequests = createLatestRequestGate();
 const route = useRoute(),
 	kind = computed(() => route.meta.kind || "overview"),
 	rows = ref([]),
@@ -343,13 +345,14 @@ async function init() {
 	try {
 		const optionsMethod = kind.value === "orders" ? "get_order_options" : "get_sales_options";
 		Object.assign(options, await call(`raspechatka.api.sales.${optionsMethod}`));
-		await load();
+		if (kind.value === "integration") await load();
 	} catch (e) {
 		error.value = e.message;
 		loading.value = false;
 	}
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	selectedDoc.value = null;
@@ -414,6 +417,7 @@ async function load() {
 				call("raspechatka.api.sales.get_pos_sales_settings_api"),
 				call("raspechatka.api.sales.get_pos_upsell_config"),
 			]);
+			if (!listRequests.isCurrent(requestId)) return;
 			Object.assign(posSettings, salesSettings);
 			upsellConfig.catalog_items = upsellSettings.catalog_items || [];
 			upsellConfig.rules = (upsellSettings.rules || []).map((rule) => ({
@@ -422,12 +426,13 @@ async function load() {
 			}));
 		}
 		const result = await call(`raspechatka.api.sales.${method}`, params);
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totals.value = result.totals || {};
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function savePosSettings() {
@@ -498,7 +503,15 @@ async function provision(point, rotate = false) {
 	token.value = result;
 	await load();
 }
-watch(kind, load);
+watch(kind, (value) => {
+	listRequests.invalidate();
+	rows.value = [];
+	totals.value = {};
+	selectedDoc.value = null;
+	error.value = "";
+	loading.value = true;
+	if (value === "integration") void load();
+});
 onMounted(init);
 </script>
 <template>
@@ -513,11 +526,12 @@ onMounted(init);
 			@update:model-value="Object.assign(filters, $event)"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
-		<div v-if="loading" class="table-message">
+		<div v-if="loading && !rows.length" class="table-message">
 			<span class="loader"></span><span>Загружаем продажи…</span>
 		</div>
-		<div v-else-if="error" class="table-message error-message">
+		<div v-else-if="error && !rows.length" class="table-message error-message">
 			<strong>Не удалось загрузить данные</strong><span>{{ error }}</span
 			><button @click="load">Повторить</button>
 		</div>
@@ -856,9 +870,12 @@ onMounted(init);
 				:entity-fields="entityFields"
 				:totals="tableTotals"
 				:view-key="`sales.${kind}`"
+				:loading="loading"
+				:error="error"
 				empty-title="Данных пока нет"
 				empty-text="Они появятся после первой синхронизации кассовой программы."
 				@open="openRow"
+				@retry="load"
 		/></template>
 		<AppModal
 			v-if="selectedDoc"
