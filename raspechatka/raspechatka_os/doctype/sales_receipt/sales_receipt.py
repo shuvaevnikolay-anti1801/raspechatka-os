@@ -20,6 +20,8 @@ class SalesReceipt(Document):
 		self.posting_datetime = self.posting_datetime or now_datetime()
 
 	def validate(self):
+		from raspechatka.sales import set_business_date
+		set_business_date(self, "posting_datetime")
 		mirror_only = bool(self.mirror_only)
 		validate_warehouse_header(self.business_entity, self.business_point, self.warehouse)
 		shift = frappe.db.get_value(

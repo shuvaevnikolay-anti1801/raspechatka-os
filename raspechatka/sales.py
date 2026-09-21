@@ -1,22 +1,44 @@
 from collections import defaultdict
-from datetime import UTC
-from zoneinfo import ZoneInfo
-
 import frappe
 from frappe.utils import flt, get_datetime, now_datetime
 
+from raspechatka.time_contract import (
+	external_instant_to_site_naive,
+	get_effective_site_timezone,
+	resolve_point_timezone,
+	site_naive_to_target_date,
+)
+
+
+def point_business_date(business_point, instant):
+	"""Derive a point-local Date from a canonical site-naive Frappe instant."""
+	point_value = frappe.db.get_value("Business Point", business_point, "timezone")
+	site_timezone = get_effective_site_timezone()
+	point_timezone = resolve_point_timezone(point_value, site_timezone)
+	value = get_datetime(instant)
+	if value.tzinfo is not None and value.utcoffset() is not None:
+		value = external_instant_to_site_naive(value, site_timezone)
+	return site_naive_to_target_date(value, point_timezone, site_timezone)
+
+
+def set_business_date(document, instant_field):
+	"""Set the derived, read-only point-local Date for a new/current document."""
+	instant = getattr(document, instant_field, None)
+	point = getattr(document, "business_point", None)
+	is_new = document.is_new() if hasattr(document, "is_new") else True
+	# Do not opportunistically backfill historical rows; part (5) owns that migration.
+	if instant and point and (is_new or getattr(document, "business_date", None)):
+		document.business_date = point_business_date(point, instant)
+	return getattr(document, "business_date", None)
+
 
 def resolve_shift_type(business_point, opened_at, exclude_name=None):
-	"""Resolve the first/subsequent shift for the point's local calendar day."""
-	point_timezone = frappe.db.get_value("Business Point", business_point, "timezone") or "Europe/Moscow"
-	opened = get_datetime(opened_at)
-	if opened.tzinfo is None:
-		opened = opened.replace(tzinfo=UTC)
-	local_date = opened.astimezone(ZoneInfo(point_timezone)).date()
+	"""Resolve the first/subsequent shift for the point-local calendar day."""
+	local_date = point_business_date(business_point, opened_at)
 	filters = {
 		"business_point": business_point,
 		"status": ["!=", "Cancelled"],
-		"opened_at": ["between", [f"{local_date} 00:00:00", f"{local_date} 23:59:59"]],
+		"business_date": local_date,
 	}
 	if exclude_name:
 		filters["name"] = ["!=", exclude_name]

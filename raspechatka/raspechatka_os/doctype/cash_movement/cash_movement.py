@@ -9,6 +9,8 @@ class CashMovement(Document):
 		self.posting_datetime = self.posting_datetime or now_datetime()
 
 	def validate(self):
+		from raspechatka.sales import set_business_date
+		set_business_date(self, "posting_datetime")
 		if flt(self.amount) <= 0 or not (self.reason or "").strip():
 			frappe.throw(_("Укажите положительную сумму и основание"))
 		shift = frappe.db.get_value("Sales Shift", self.shift, ["business_entity", "business_point", "cashier", "opened_at", "closed_at"], as_dict=True)

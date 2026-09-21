@@ -46,3 +46,5 @@ raspechatka.patches.v1_0.initialize_direct_club_cutover
 raspechatka.patches.v1_0.migrate_review_discount_to_pos_settings
 raspechatka.patches.v1_0.repair_cashier_employee_links
 raspechatka.patches.v1_0.repair_moysklad_variants
+
+raspechatka.patches.v1_0.repair_dev161_time

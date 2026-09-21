@@ -48,6 +48,7 @@ def get_sales_options():
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.overview", action="read", scope="point")
 def get_points_overview(from_date=None, to_date=None, business_entity=None, business_point=None):
 	require_access("page.sales.overview", "read")
 	from_date, to_date = from_date or str(get_first_day(nowdate())), to_date or nowdate()
@@ -64,7 +65,7 @@ def get_points_overview(from_date=None, to_date=None, business_entity=None, busi
 			"Sales Shift",
 			filters={
 				"business_point": point.name,
-				"opened_at": ["between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]],
+				"business_date": ["between", [from_date, to_date]],
 				"status": ["!=", "Cancelled"],
 			},
 			pluck="name",
@@ -123,6 +124,7 @@ def get_points_overview(from_date=None, to_date=None, business_entity=None, busi
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.shifts", action="read", scope="point")
 def get_shifts(
 	from_date=None,
 	to_date=None,
@@ -134,7 +136,7 @@ def get_shifts(
 	limit_page_length=100,
 ):
 	require_access("page.sales.shifts", "read")
-	filters = _document_filters("opened_at", from_date, to_date, business_entity, business_point)
+	filters = _document_filters("business_date", from_date, to_date, business_entity, business_point)
 	if status:
 		filters["status"] = status
 	if cashier:
@@ -154,6 +156,7 @@ def get_shifts(
 			"status",
 			"shift_type",
 			"opened_at",
+			"business_date",
 			"closed_at",
 			"business_entity",
 			"business_point",
@@ -202,6 +205,7 @@ def get_shifts(
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.shifts", action="read", scope="point")
 def get_shift(name):
 	require_access("page.sales.shifts", "read")
 	doc = frappe.get_doc("Sales Shift", name)
@@ -215,6 +219,7 @@ def get_shift(name):
 			"name",
 			"movement_type",
 			"posting_datetime",
+			"business_date",
 			"amount",
 			"from_cash",
 			"to_cash",
@@ -231,6 +236,7 @@ def get_shift(name):
 		fields=[
 			"name",
 			"action_datetime",
+			"business_date",
 			"action_type",
 			"cashier",
 			"metric_value",
@@ -246,6 +252,7 @@ def get_shift(name):
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.receipts", action="read", scope="point")
 def get_receipts(
 	receipt_type="Sale",
 	from_date=None,
@@ -259,7 +266,7 @@ def get_receipts(
 	limit_page_length=100,
 ):
 	require_access("page.sales.receipts", "read")
-	filters = _document_filters("posting_datetime", from_date, to_date, business_entity, business_point)
+	filters = _document_filters("business_date", from_date, to_date, business_entity, business_point)
 	filters.update({"receipt_type": receipt_type, "docstatus": ["!=", 2]})
 	if shift:
 		filters["shift"] = shift
@@ -298,6 +305,7 @@ def get_receipt(name):
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.cash", action="read", scope="point")
 def get_cash_movements(
 	from_date=None,
 	to_date=None,
@@ -308,7 +316,7 @@ def get_cash_movements(
 	limit_page_length=100,
 ):
 	require_access("page.sales.cash", "read")
-	filters = _document_filters("posting_datetime", from_date, to_date, business_entity, business_point)
+	filters = _document_filters("business_date", from_date, to_date, business_entity, business_point)
 	filters["docstatus"] = ["!=", 2]
 	if movement_type:
 		filters["movement_type"] = movement_type
@@ -326,6 +334,7 @@ def get_cash_movements(
 			"external_id",
 			"movement_type",
 			"posting_datetime",
+			"business_date",
 			"shift",
 			"business_entity",
 			"business_point",
@@ -349,6 +358,7 @@ def get_cash_movements(
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.audit", action="read", scope="point")
 def get_cashier_actions(
 	from_date=None,
 	to_date=None,
@@ -359,7 +369,7 @@ def get_cashier_actions(
 	limit_page_length=200,
 ):
 	require_access("page.sales.audit", "read")
-	filters = _document_filters("action_datetime", from_date, to_date, business_entity, business_point)
+	filters = _document_filters("business_date", from_date, to_date, business_entity, business_point)
 	if action_type:
 		filters["action_type"] = action_type
 	if cashier:
@@ -371,6 +381,7 @@ def get_cashier_actions(
 			"name",
 			"external_id",
 			"action_datetime",
+			"business_date",
 			"action_type",
 			"business_entity",
 			"business_point",
@@ -709,6 +720,7 @@ def _receipt_rows(filters, or_filters=None, limit=10000):
 			"external_id",
 			"receipt_type",
 			"posting_datetime",
+			"business_date",
 			"shift",
 			"business_entity",
 			"business_point",
@@ -748,6 +760,14 @@ def _receipt_rows(filters, or_filters=None, limit=10000):
 
 def _document_filters(date_field, from_date=None, to_date=None, business_entity=None, business_point=None):
 	filters = _scope_point_filter(business_entity, business_point)
+	if date_field == "business_date":
+		if from_date and to_date:
+			filters[date_field] = ["between", [from_date, to_date]]
+		elif from_date:
+			filters[date_field] = [">=", from_date]
+		elif to_date:
+			filters[date_field] = ["<=", to_date]
+		return filters
 	if from_date and to_date:
 		filters[date_field] = ["between", [f"{from_date} 00:00:00", f"{to_date} 23:59:59"]]
 	elif from_date:

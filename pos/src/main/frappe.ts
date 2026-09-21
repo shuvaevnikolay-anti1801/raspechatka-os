@@ -1,7 +1,7 @@
 import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptDetails, PointReceiptSummary, Product, ReceiptMirror, ReceiptSearchFilters, WorkplaceData } from '../shared/contracts'
 
 type BootstrapResponse = {
-  point: { id:string; name:string }
+  point: { id:string; name:string; timezone?:string }
   workplace: { id:string; name:string }
   employee?: PointEmployee|null
   employees: PointEmployee[]

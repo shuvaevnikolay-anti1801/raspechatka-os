@@ -11,6 +11,7 @@
     "status",
     "shift_type",
     "opened_at",
+    "business_date",
     "closed_at",
     "business_entity",
     "business_point",
@@ -87,6 +88,15 @@
       "fieldtype": "Datetime",
       "label": "Открыта",
       "reqd": 1,
+      "in_list_view": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "business_date",
+      "fieldtype": "Date",
+      "label": "Бизнес-дата",
+      "read_only": 1,
+      "search_index": 1,
       "in_list_view": 1,
       "in_standard_filter": 1
     },

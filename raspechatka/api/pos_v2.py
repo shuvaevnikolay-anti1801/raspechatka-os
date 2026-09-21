@@ -5,7 +5,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, flt, now_datetime, nowdate
+from frappe.utils import add_days, cint, flt, get_datetime, now_datetime, nowdate
 
 from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
@@ -15,6 +15,48 @@ from raspechatka.pos_settings import get_pos_sales_rules
 from raspechatka.pos_upsell import get_pos_upsell_rules
 from raspechatka.sales import log_cashier_action, update_shift_totals
 from raspechatka.stock import get_item
+from raspechatka.time_contract import (
+	TimeContractError,
+	external_instant_to_site_naive,
+	get_effective_site_timezone,
+	resolve_point_timezone,
+	site_naive_to_utc_rfc3339,
+)
+
+_POS_INSTANT_FIELDS = (
+	"createdAt",
+	"openedAt",
+	"closedAt",
+	"postingDatetime",
+	"dueAt",
+	"readyAt",
+	"issuedAt",
+	"countedAt",
+)
+
+
+def _normalize_v2_payload(payload):
+	normalized = dict(payload or {})
+	for field in _POS_INSTANT_FIELDS:
+		if not normalized.get(field):
+			continue
+		try:
+			normalized[field] = external_instant_to_site_naive(
+				normalized[field], get_effective_site_timezone()
+			)
+		except TimeContractError:
+			frappe.throw(
+				_("POS field {0} must be an RFC3339 instant with an explicit offset").format(field),
+				frappe.ValidationError,
+			)
+	return normalized
+
+
+def _pos_datetime_to_utc(value):
+	if not value:
+		return None
+	return site_naive_to_utc_rfc3339(get_datetime(value), get_effective_site_timezone())
+
 
 POS_MIRROR_RETENTION_DAYS = 60
 
@@ -232,7 +274,7 @@ def _receipt_mirror(point_name):
 						" ".join(item["name"] or "" for item in row_items),
 					]
 				),
-				"createdAt": str(row.posting_datetime),
+				"createdAt": _pos_datetime_to_utc(row.posting_datetime),
 				"status": status,
 				"lines": row_items,
 				"payments": row_payments,
@@ -292,7 +334,11 @@ def get_bootstrap(device_id, token, cashier_id=None):
 		)
 		products = _products(point.name)
 		result = {
-			"point": {"id": point.name, "name": point.point_name},
+			"point": {
+				"id": point.name,
+				"name": point.point_name,
+				"timezone": resolve_point_timezone(point.timezone, get_effective_site_timezone()),
+			},
 			"workplace": {"id": workplace.name, "name": workplace.workplace_name},
 			"employee": selected,
 			"employees": employees,
@@ -515,11 +561,15 @@ def _ingest_cash_count(event_id, payload, connection, cashier_id):
 	elif count_type != "control":
 		frappe.throw(_("Неизвестный тип пересчёта наличных"))
 	doc.save(ignore_permissions=True)
+	count_details = {"count_type": count_type, "amount": amount}
+	counted_value = payload.get("countedAt") or payload.get("createdAt")
+	if counted_value:
+		count_details["counted_at"] = _pos_datetime_to_utc(counted_value)
 	log_cashier_action(
 		doc,
 		"CASH_COUNT",
 		external_id=event_id,
-		details=frappe.as_json({"count_type": count_type, "amount": amount}),
+		details=frappe.as_json(count_details),
 	)
 	update_shift_totals(shift)
 
@@ -757,7 +807,9 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 		for event in events:
 			event_id = str(event.get("id") or "").strip()
 			event_type = str(event.get("eventType") or "").strip()
-			payload = event.get("payload") or {}
+			payload = _normalize_v2_payload(event.get("payload") or {})
+			if event.get("createdAt"):
+				_normalize_v2_payload({"createdAt": event.get("createdAt")})
 			selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)
 			if not event_id or not event_type:
 				frappe.throw(_("В событии отсутствует id или eventType"))
@@ -822,6 +874,7 @@ def _fiscal_number(comment, fallback):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def search_receipts(device_id, token, query=None, limit=100):
 	"""Search sale receipts across the whole current business point, never another point."""
 	connection = base_pos._authenticate(device_id, token)
@@ -938,7 +991,7 @@ def search_receipts(device_id, token, query=None, limit=100):
 				"id": row.name,
 				"externalId": row.external_id,
 				"receiptNumber": _fiscal_number(row.comment, row.name),
-				"createdAt": str(row.posting_datetime),
+				"createdAt": _pos_datetime_to_utc(row.posting_datetime),
 				"customerName": client.client_name if client else "Розничный покупатель",
 				"customerPhone": client.phone if client else None,
 				"cashierName": cashier_names.get(row.cashier) or row.cashier,

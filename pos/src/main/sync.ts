@@ -3,6 +3,8 @@ import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
 import { loadBootstrap, pushEvents } from './frappe'
 
+const LEGACY_POINT_TIMEZONE = 'Europe/Moscow'
+
 export function buildBootState(database:PosDatabase):BootState{
   const cached=database.getState('bootstrap')
   const remote=cached?JSON.parse(cached) as Partial<BootState>:{}
@@ -15,6 +17,7 @@ export function buildBootState(database:PosDatabase):BootState{
   const upsellCursors=Object.fromEntries(upsellRules.map((rule)=>[rule.triggerItem,database.getUpsellCursor(rule.triggerItem)]))
   return {
     pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
+    pointTimezone:remote.pointTimezone??LEGACY_POINT_TIMEZONE,
     workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
     cashierId:undefined,cashierName:'Выберите сотрудника',employees,
     accessRevoked:false,
@@ -46,8 +49,9 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
     database.replaceReceiptMirror(remote.point.id,remote.receiptMirror||[],remote.retentionDays||60)
     database.replaceServerOrders(remote.point.id,remote.workplaceData.orders||[],remote.retentionDays||60)
     database.setWorkplaceData(remote.workplaceData)
+    const pointTimezone=remote.point.timezone||LEGACY_POINT_TIMEZONE
     database.setState('bootstrap',JSON.stringify({
-      pointId:remote.point.id,pointName:remote.point.name,workplaceId:remote.workplace.id,
+      pointId:remote.point.id,pointName:remote.point.name,pointTimezone,workplaceId:remote.workplace.id,
       workstationName:remote.workplace.name,employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
       source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true},
       upsellRules:remote.upsellRules||[]

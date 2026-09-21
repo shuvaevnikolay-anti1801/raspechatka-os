@@ -12,6 +12,7 @@
   "receipt_type",
   "status",
   "posting_datetime",
+  "business_date",
   "shift",
   "business_entity",
   "business_point",
@@ -85,6 +86,15 @@
    "fieldtype": "Datetime",
    "label": "Дата и время",
    "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "business_date",
+   "fieldtype": "Date",
+   "label": "Бизнес-дата",
+   "read_only": 1,
+   "search_index": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
   },

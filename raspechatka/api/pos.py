@@ -8,6 +8,42 @@ from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime
 from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
 from raspechatka.pricing import resolve_point_price
+from raspechatka.time_contract import (
+	get_effective_site_timezone,
+	legacy_external_instant_to_site_naive,
+	resolve_point_timezone,
+	site_naive_to_utc_rfc3339,
+)
+
+
+_POS_INSTANT_FIELDS = (
+	"createdAt",
+	"openedAt",
+	"closedAt",
+	"postingDatetime",
+	"dueAt",
+	"readyAt",
+	"issuedAt",
+	"countedAt",
+)
+
+
+def _legacy_pos_site_datetime(value):
+	return legacy_external_instant_to_site_naive(value, get_effective_site_timezone())
+
+
+def _normalize_legacy_payload(payload):
+	normalized = dict(payload or {})
+	for field in _POS_INSTANT_FIELDS:
+		if normalized.get(field):
+			normalized[field] = _legacy_pos_site_datetime(normalized[field])
+	return normalized
+
+
+def _pos_datetime_to_utc(value):
+	if not value:
+		return None
+	return site_naive_to_utc_rfc3339(get_datetime(value), get_effective_site_timezone())
 
 
 @frappe.whitelist()
@@ -27,7 +63,11 @@ def get_bootstrap(workplace_code=None):
 			"id": employee.get("name"),
 			"name": employee.get("employee_name") or frappe.session.user,
 		},
-		"point": {"id": point.name, "name": point.point_name},
+		"point": {
+			"id": point.name,
+			"name": point.point_name,
+			"timezone": resolve_point_timezone(point.timezone, get_effective_site_timezone()),
+		},
 		"workplace": {"id": workplace.name, "name": workplace.workplace_name},
 		"rules": get_pos_sales_rules(),
 		"products": _get_products(point.name),
@@ -37,6 +77,7 @@ def get_bootstrap(workplace_code=None):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(auth="current_user", action="create", scope="point")
 def push_events(workplace_code=None, events=None):
 	"""Accept the local POS outbox idempotently.
 
@@ -58,6 +99,7 @@ def push_events(workplace_code=None, events=None):
 	for event in events:
 		event_id = str(event.get("id") or "").strip()
 		event_type = str(event.get("eventType") or "").strip()
+		event_payload = _normalize_legacy_payload(event.get("payload") or {})
 		if not event_id or not event_type:
 			frappe.throw("В событии отсутствует id или eventType")  # noqa: RUF001
 		if not frappe.db.exists("POS Event", event_id):
@@ -69,12 +111,12 @@ def push_events(workplace_code=None, events=None):
 					"business_point": workplace.business_point,
 					"pos_workplace": workplace.name,
 					"cashier_user": frappe.session.user,
-					"occurred_at": get_datetime(event.get("createdAt")) if event.get("createdAt") else now(),
-					"payload_json": frappe.as_json(event.get("payload"), indent=2),
+					"occurred_at": _legacy_pos_site_datetime(event.get("createdAt")) if event.get("createdAt") else now(),
+					"payload_json": frappe.as_json(event_payload, indent=2),
 					"received_at": now(),
 				}
 			).insert(ignore_permissions=True)
-			_apply_pos_event(event_type, event_id, workplace, event.get("payload") or {})
+			_apply_pos_event(event_type, event_id, workplace, event_payload)
 		accepted.append(event_id)
 
 	return {"accepted": accepted}
@@ -342,6 +384,7 @@ def _get_customers():
 
 
 def _apply_pos_event(event_type, event_id, workplace, payload):
+	payload = _normalize_legacy_payload(payload)
 	if event_type == "sale.completed":
 		_apply_sale(event_id, workplace, payload)
 	elif event_type == "sale.returned":
@@ -471,7 +514,7 @@ def _apply_sale(event_id, workplace, payload):
 		return
 
 	posting_datetime = (
-		get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+		_legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
 	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
@@ -511,7 +554,7 @@ def _apply_return(event_id, workplace, payload):
 		frappe.throw(f"Исходная продажа {sale_id or 'не указана'} не найдена")
 
 	posting_datetime = (
-		get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+		_legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
 	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
@@ -758,10 +801,10 @@ def _get_orders(point_name):
 			else ("partial" if flt(x.paid_amount) else "unpaid"),
 			"status": status.get(x.status, "new"),
 			"comment": x.comment,
-			"createdAt": str(x.created_at or x.creation),
-			"dueAt": x.due_at,
-			"readyAt": x.ready_at,
-			"issuedAt": x.issued_at,
+			"createdAt": _pos_datetime_to_utc(x.created_at or x.creation),
+			"dueAt": _pos_datetime_to_utc(x.due_at),
+			"readyAt": _pos_datetime_to_utc(x.ready_at),
+			"issuedAt": _pos_datetime_to_utc(x.issued_at),
 			"sourceSaleId": x.source_sale_id,
 			"fiscalNumber": x.fiscal_number,
 			"sourceReceipt": x.source_receipt,
@@ -1007,7 +1050,7 @@ def _get_supply_requests(point_name):
 	return [
 		{
 			"id": row.name,
-			"createdAt": str(row.creation),
+			"createdAt": _pos_datetime_to_utc(row.creation),
 			"itemName": row.item_name,
 			"quantity": flt(row.quantity),
 			"status": row.status,
@@ -1147,7 +1190,7 @@ def _apply_cash_count(event_id, workplace, payload):
 			"doctype": "POS Cash Count",
 			"business_point": workplace.business_point,
 			"pos_workplace": workplace.name,
-			"counted_at": get_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
+			"counted_at": _legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
 			"count_type": payload.get("countType"),
 			"cashier_user": frappe.session.user,
 			"expected_amount": flt(payload.get("expectedMinor")) / 100,
