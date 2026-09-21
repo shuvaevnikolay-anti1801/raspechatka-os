@@ -110,7 +110,7 @@ def _require_site_naive_datetime(value: datetime) -> datetime:
 
 
 _LEGACY_NAIVE_INSTANT: Final = re.compile(
-    r"^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$"
+    r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$"
 )
 
 
