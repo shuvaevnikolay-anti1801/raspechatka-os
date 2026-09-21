@@ -196,12 +196,14 @@ async function endResize() {
 	await savePreference();
 }
 function setPageSize(event) {
+	if (!ready.value) return;
 	pageSize.value = Number(event.target.value);
 	page.value = 1;
 	savePreference();
 	if (props.serverPagination) emit("page-size-change", pageSize.value);
 }
 function changePage(nextPage) {
+	if (!ready.value) return;
 	page.value = nextPage;
 	if (props.serverPagination) emit("page-change", nextPage, pageSize.value);
 }
@@ -433,12 +435,12 @@ onBeforeUnmount(() => {
 		<footer class="table-footer">
 			<span>{{ from }}–{{ to }} из {{ rowCount }}</span>
 			<div class="table-pages">
-				<button :disabled="page === 1" @click="changePage(page - 1)">←</button
+				<button :disabled="!ready || page === 1" @click="changePage(page - 1)">←</button
 				><span>{{ page }} / {{ pageCount }}</span
-				><button :disabled="page === pageCount" @click="changePage(page + 1)">→</button>
+				><button :disabled="!ready || page === pageCount" @click="changePage(page + 1)">→</button>
 			</div>
 			<label
-				>Строк на странице<select :value="pageSize" @change="setPageSize">
+				>Строк на странице<select :value="pageSize" :disabled="!ready" @change="setPageSize">
 					<option v-for="size in pageSizes" :key="size" :value="size">{{ size }}</option>
 				</select></label
 			>
