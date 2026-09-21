@@ -9,3 +9,5 @@ def test_web_boot_exposes_explicit_timezone_contract():
 	assert "user.time_zone or system_timezone" in source
 	# Boot must not expose a second/private user timezone model.
 	assert "user.settings" not in source
+	assert "get_effective_site_timezone" in source
+	assert 'or "UTC"' not in source
