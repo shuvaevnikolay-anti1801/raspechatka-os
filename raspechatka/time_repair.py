@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -119,8 +119,8 @@ def _ambiguous_local(value: datetime, timezone_name: str) -> bool:
     second = value.replace(tzinfo=zone, fold=1)
     if first.utcoffset() == second.utcoffset():
         return False
-    first_back = first.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
-    second_back = second.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
+    first_back = first.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
+    second_back = second.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
     return first_back != value or second_back != value or first_back == second_back
 
 
@@ -141,7 +141,7 @@ def _pos_utc_wall_clock(value: Any, target_timezone: str) -> datetime:
     naive = _as_datetime(value)
     if naive is None:
         raise TimeContractError("empty historical Datetime")
-    return naive.replace(tzinfo=timezone.utc).astimezone(ZoneInfo(target_timezone)).replace(tzinfo=None)
+    return naive.replace(tzinfo=UTC).astimezone(ZoneInfo(target_timezone)).replace(tzinfo=None)
 
 
 def _version_history() -> tuple[list[dict[str, Any]], list[str]]:
@@ -360,7 +360,7 @@ def _external_wall_clock_naive(value: str) -> datetime | None:
     from raspechatka.time_contract import parse_external_instant
 
     try:
-        return parse_external_instant(value).astimezone(timezone.utc).replace(tzinfo=None)
+        return parse_external_instant(value).astimezone(UTC).replace(tzinfo=None)
     except (TypeError, TimeContractError, ValueError):
         return None
 
@@ -900,9 +900,9 @@ def _marker_file():
 
 def build_repair_plan(cutoff: datetime | None = None) -> dict[str, Any]:
     """Build a deterministic, non-mutating repair plan for the captured cutoff."""
-    cutoff = cutoff or datetime.now(timezone.utc)
+    cutoff = cutoff or datetime.now(UTC)
     if cutoff.tzinfo is None:
-        cutoff = cutoff.replace(tzinfo=timezone.utc)
+        cutoff = cutoff.replace(tzinfo=UTC)
     evidence = _site_evidence()
     try:
         evidence["effective_before"] = validate_timezone(get_system_timezone())
