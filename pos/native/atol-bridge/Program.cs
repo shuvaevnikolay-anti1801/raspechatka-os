@@ -44,6 +44,10 @@ internal sealed class BridgeHost(StaDispatcher dispatcher, AtolSession session) 
     public bool StopRequested { get; private set; }
 
     public async Task<BridgeResponse> HandleAsync(BridgeRequest request) {
+        if (request.ProtocolVersion is null) {
+            return BridgeResponse.Failure(request.Id, "invalid_request",
+                "protocolVersion is required.");
+        }
         if (request.ProtocolVersion != BridgeProtocol.Version) {
             return BridgeResponse.Failure(request.Id, "unsupported_protocol",
                 $"Expected protocolVersion {BridgeProtocol.Version}.");
@@ -780,7 +784,7 @@ internal sealed class StaDispatcher : IDisposable {
     private sealed record WorkItem(string Command, Func<object> Action, TaskCompletionSource<object> Completion);
 }
 
-internal sealed record BridgeRequest(int ProtocolVersion, string? Id, string Command, JsonElement? Args);
+internal sealed record BridgeRequest(int? ProtocolVersion, string? Id, string Command, JsonElement? Args);
 
 internal sealed record BridgeResponse(
     int ProtocolVersion,

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { DeviceHealth } from './contracts';
@@ -8,6 +8,7 @@ import type {
   AtolDriverDevice,
   AtolDriverInfo,
   AtolDriverDiagnostics,
+  AtolBridgeClientDiagnostics,
   AtolRecoveryProbe,
   AtolDriverStatus,
 } from './atol-driver';
@@ -17,7 +18,15 @@ const PROTOCOL_VERSION = 1;
 // watchdogs that give the helper time to return its stage-aware error.
 const READ_ONLY_TIMEOUT_MS = 12_000;
 const FISCAL_OPERATION_TIMEOUT_MS = 60_000;
+const TRANSPORT_HISTORY_LIMIT = 200;
 export const ATOL_BRIDGE_EXECUTABLE = 'Raspechatka.AtolBridge.exe';
+
+export function resolveAtolBridgeLogPath(): string | undefined {
+  const appData = process.env.APPDATA;
+  return appData
+    ? join(appData, 'Kassa-Raspechatka', 'logs', 'atol-bridge.log')
+    : undefined;
+}
 
 export class AtolBridgeError extends Error {
   constructor(
@@ -104,10 +113,27 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       resolve: (value: unknown) => void;
       reject: (reason: Error) => void;
       timeout?: NodeJS.Timeout;
+      command: BridgeCommand;
+      startedAt: number;
     }
   >();
   private nextId = 1;
   private stopped = false;
+  private readonly stdoutHistory: string[] = [];
+  private readonly stderrHistory: string[] = [];
+  private lastRequest: AtolBridgeClientDiagnostics['lastRequest'] = {
+    command: '',
+    id: '',
+    timestamp: '',
+  };
+  private lastResponse: AtolBridgeClientDiagnostics['lastResponse'] = {
+    received: false,
+    raw: '',
+    parsed: false,
+  };
+  private lastDurationMs = 0;
+  private lastError?: string;
+  private diagnosticsFileUnavailable = false;
 
   constructor(private readonly options: NativeAtolDriverBridgeOptions) {}
 
@@ -131,6 +157,26 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       );
     }
     return result;
+  }
+
+  getDiagnostics(): AtolBridgeClientDiagnostics {
+    const child = this.child;
+    const running = Boolean(child && child.exitCode === null && !child.killed);
+    return {
+      bridgePath: this.options.executablePath,
+      process: {
+        running,
+        ...(running && child?.pid ? { pid: child.pid } : {}),
+      },
+      lastRequest: { ...this.lastRequest },
+      lastResponse: { ...this.lastResponse },
+      transport: {
+        stdout: [...this.stdoutHistory],
+        stderr: [...this.stderrHistory],
+      },
+      timing: { durationMs: this.lastDurationMs },
+      ...(this.lastError ? { lastError: this.lastError } : {}),
+    };
   }
 
   async getStatus(): Promise<AtolDriverStatus> {
@@ -247,13 +293,29 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       command,
       args,
     };
+    const startedAt = Date.now();
+    this.lastRequest = {
+      command,
+      id,
+      timestamp: new Date(startedAt).toISOString(),
+    };
+    this.lastResponse = { received: false, raw: '', parsed: false };
+    this.lastDurationMs = 0;
+    this.lastError = undefined;
 
     return new Promise<T>((resolve, reject) => {
       const entry: {
         resolve: (value: unknown) => void;
         reject: (reason: Error) => void;
         timeout?: NodeJS.Timeout;
-      } = { resolve: (value) => resolve(value as T), reject };
+        command: BridgeCommand;
+        startedAt: number;
+      } = {
+        resolve: (value) => resolve(value as T),
+        reject,
+        command,
+        startedAt,
+      };
 
       const timeoutMs =
         command === 'executeJson' || command === 'reprintDocument'
@@ -263,20 +325,50 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
             : undefined;
       if (timeoutMs !== undefined) {
         entry.timeout = setTimeout(() => {
+          const durationMs = Date.now() - startedAt;
+          const lastStdout = this.lastResponse.raw || '(none)';
+          const lastStderr = this.stderrHistory.slice(-20).join('\n') || '(none)';
           const error = new AtolBridgeError(
-            `ATOL bridge did not return a response while running ${command}; operation result is unknown`,
+            [
+              'ATOL bridge timeout',
+              '',
+              'command:',
+              command,
+              '',
+              'requestId:',
+              id,
+              '',
+              'duration:',
+              `${durationMs}ms`,
+              '',
+              'last stdout:',
+              lastStdout,
+              '',
+              'last stderr:',
+              lastStderr,
+              '',
+              'operation result is unknown',
+            ].join('\n'),
             'bridge_timeout',
             undefined,
             undefined,
             command
           );
-          this.pending.delete(id);
+          const pending = this.pending.get(id);
+          if (pending) {
+            this.pending.delete(id);
+            this.finishPending(id, pending, 'timeout', error);
+          }
           reject(error);
           this.resetTimedOutChild(child, error);
         }, timeoutMs);
       }
 
       this.pending.set(id, entry);
+      this.logDiagnostics('request sent', {
+        ...this.requestForDiagnostics(request),
+        startedAt: this.lastRequest.timestamp,
+      });
       child.stdin.write(`${JSON.stringify(request)}\\n`, (error) => {
         if (!error) {
           return;
@@ -294,8 +386,12 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       throw new Error('ATOL bridge has been stopped');
     }
 
+    this.logDiagnostics('executable path', this.options.executablePath);
     if (!isAtolBridgeExecutableAvailable(this.options.executablePath)) {
-      throw new AtolBridgeNotConfiguredError(this.options.executablePath);
+      const error = new AtolBridgeNotConfiguredError(this.options.executablePath);
+      this.lastError = error.message;
+      this.logDiagnostics('executable not found', this.options.executablePath);
+      throw error;
     }
 
     const child = spawn(this.options.executablePath, this.options.args ?? [], {
@@ -303,19 +399,27 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       windowsHide: true,
     });
     this.child = child;
+    this.logDiagnostics('process spawned', { pid: child.pid });
 
     createInterface({ input: child.stdout }).on('line', (line) => {
+      this.pushTransport(this.stdoutHistory, line);
+      this.lastResponse = { received: true, raw: line, parsed: false };
+      this.logDiagnostics('stdout received', line);
       this.handleResponse(line);
     });
     createInterface({ input: child.stderr }).on('line', (line) => {
-      console.error(`[atol-bridge] ${line}`);
+      this.pushTransport(this.stderrHistory, line);
+      this.logBridgeStderr(line);
     });
     child.on('error', (error) => {
+      this.lastError = error.message;
+      this.logDiagnostics('process error', error.message);
       if (this.child !== child) return;
       this.child = undefined;
       this.failAll(error);
     });
     child.on('exit', (code, signal) => {
+      this.logDiagnostics('bridge exit', { code, signal });
       if (this.child !== child) return;
       this.child = undefined;
       this.failAll(
@@ -326,6 +430,9 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
         )
       );
     });
+    child.on('close', (code, signal) => {
+      this.logDiagnostics('bridge close', { code, signal });
+    });
 
     return child;
   }
@@ -334,13 +441,17 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     let response: BridgeResponse<unknown>;
     try {
       response = JSON.parse(line) as BridgeResponse<unknown>;
-    } catch {
-      console.error(`[atol-bridge] invalid protocol line: ${line}`);
+      this.lastResponse = { received: true, raw: line, parsed: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastError = `invalid JSON response: ${message}`;
+      this.logDiagnostics('invalid JSON response', { raw: line, error: message });
       return;
     }
 
     if (response.protocolVersion !== PROTOCOL_VERSION || !response.id) {
-      console.error('[atol-bridge] invalid protocol response');
+      this.lastError = 'invalid protocol response';
+      this.logDiagnostics('invalid protocol response', response);
       return;
     }
 
@@ -354,6 +465,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     }
 
     if (response.ok) {
+      this.finishPending(response.id, pending, 'ok');
       pending.resolve(response.result);
       return;
     }
@@ -373,6 +485,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       detail,
       stage
     );
+    this.finishPending(response.id, pending, 'error', error);
     pending.reject(error);
 
     if (code === 'driver_timeout' && this.child) {
@@ -452,7 +565,89 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     if (pending.timeout) {
       clearTimeout(pending.timeout);
     }
+    this.finishPending(id, pending, 'error', error);
     pending.reject(error);
+  }
+
+  private finishPending(
+    id: string,
+    pending: { command: BridgeCommand; startedAt: number },
+    status: 'ok' | 'error' | 'timeout',
+    error?: Error
+  ): void {
+    const finishedAt = Date.now();
+    const durationMs = finishedAt - pending.startedAt;
+    this.lastDurationMs = durationMs;
+    if (error) {
+      this.lastError = error.message;
+    }
+    this.logDiagnostics('request finished', {
+      command: pending.command,
+      requestId: id,
+      startedAt: new Date(pending.startedAt).toISOString(),
+      finishedAt: new Date(finishedAt).toISOString(),
+      durationMs,
+      status,
+    });
+  }
+
+  private requestForDiagnostics(request: BridgeRequest): Record<string, unknown> {
+    if (request.command !== 'executeJson') {
+      return request as unknown as Record<string, unknown>;
+    }
+    const rawJson = typeof request.args?.json === 'string' ? request.args.json : '';
+    return {
+      protocolVersion: request.protocolVersion,
+      id: request.id,
+      command: request.command,
+      args: {
+        json: `[redacted fiscal JSON; length=${rawJson.length}]`,
+      },
+    };
+  }
+
+  private pushTransport(target: string[], line: string): void {
+    target.push(line);
+    if (target.length > TRANSPORT_HISTORY_LIMIT) {
+      target.splice(0, target.length - TRANSPORT_HISTORY_LIMIT);
+    }
+  }
+
+  private logDiagnostics(message: string, data?: unknown): void {
+    const suffix =
+      data === undefined
+        ? ''
+        : `\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
+    const entry = `[ATOL CLIENT] ${message}${suffix}`;
+    console.log(entry);
+    this.appendDiagnosticEntry(entry);
+  }
+
+  private logBridgeStderr(line: string): void {
+    const entry = `[ATOL BRIDGE STDERR]\n${line}`;
+    console.error(entry);
+    this.appendDiagnosticEntry(entry);
+  }
+
+  private appendDiagnosticEntry(entry: string): void {
+    if (this.diagnosticsFileUnavailable) {
+      return;
+    }
+    const logPath = resolveAtolBridgeLogPath();
+    if (!logPath) {
+      return;
+    }
+    try {
+      mkdirSync(join(logPath, '..'), { recursive: true });
+      appendFileSync(logPath, `${new Date().toISOString()} ${entry}\n`, 'utf8');
+    } catch (error) {
+      this.diagnosticsFileUnavailable = true;
+      console.error(
+        `[ATOL CLIENT] diagnostics file write failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   private failAll(error: Error): void {
