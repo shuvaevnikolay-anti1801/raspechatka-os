@@ -351,7 +351,7 @@ async function save(rethrow = false) {
 	try {
 		const result = await call(
 			"raspechatka.api.warehouse_documents.save_document",
-			{ kind: kind.value, data: JSON.stringify(clone(form)) },
+			{ kind: kind.value, data: JSON.stringify({ ...clone(form), posting_datetime: fromDateTimeLocal(form.posting_datetime) }) },
 			{ method: "POST" }
 		);
 		await load();
