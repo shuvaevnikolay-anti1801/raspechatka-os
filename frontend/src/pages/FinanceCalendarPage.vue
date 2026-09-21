@@ -29,10 +29,7 @@ const money = (value) =>
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number(value || 0))} ₽`;
-const date = (value) =>
-	new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short" }).format(
-		new Date(`${value}T00:00:00`)
-	);
+const date = (value) => formatDateOnly(value);
 const pointsFor = (entity) =>
 	options.points.filter((item) => !entity || item.business_entity === entity);
 const articlesFor = (direction) =>
