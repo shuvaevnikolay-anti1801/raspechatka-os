@@ -6,8 +6,11 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate, createListReadyGate } from "../listLoading";
 
 const route = useRoute();
+const listRequests = createLatestRequestGate();
+const listReady = createListReadyGate((size) => load(1, size));
 const rows = ref([]);
 const totalRows = ref(0);
 const currentPage = ref(1);
@@ -110,6 +113,7 @@ function sourceUrl(row) {
 	return slug && row.voucher_no ? `/app/${slug}/${encodeURIComponent(row.voucher_no)}` : "";
 }
 async function load(page = 1, size = pageSize.value) {
+	const requestId = listRequests.begin();
 	currentPage.value = page;
 	pageSize.value = size;
 	loading.value = true;
@@ -121,18 +125,18 @@ async function load(page = 1, size = pageSize.value) {
 			limit_start: (page - 1) * size,
 			limit_page_length: size,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totalRows.value = Number(result.total || 0);
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function init() {
 	try {
 		Object.assign(options, await call("raspechatka.api.warehouse_reports.get_report_options"));
-		await load();
 	} catch (exception) {
 		error.value = exception.message;
 		loading.value = false;
@@ -154,6 +158,7 @@ onMounted(init);
 			"
 			@apply="load(1)"
 			@reset="load(1)"
+			@ready="listReady.filter"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -170,7 +175,7 @@ onMounted(init);
 			@retry="load(currentPage)"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
-			@ready="load(1, $event)"
+			@ready="listReady.table"
 		>
 			<template #cell-voucher_no="{ row }">
 				<a
