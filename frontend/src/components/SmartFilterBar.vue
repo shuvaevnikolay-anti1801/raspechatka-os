@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { call } from "../api";
 import { deriveFilterFields, reconcileVisible } from "../entityListSchema";
 import { setDocumentFilterMatches, viewDoctypes } from "../listDocumentFilters";
@@ -187,8 +187,8 @@ async function savePreference(extra = {}) {
 async function loadSchema(generation, doctype) {
 	schemaFields.value = [];
 	schemaError.value = "";
+	schemaLoading.value = Boolean(doctype);
 	if (!doctype) return true;
-	schemaLoading.value = true;
 	try {
 		const result = await call("raspechatka.api.list_filters.get_doctype_filter_fields", {
 			doctype,
@@ -323,6 +323,9 @@ async function removeBookmark(id) {
 
 watch(() => [props.viewKey, documentType.value], loadPreference);
 onMounted(loadPreference);
+onBeforeUnmount(() => {
+	preferenceGeneration += 1;
+});
 </script>
 
 <template>
