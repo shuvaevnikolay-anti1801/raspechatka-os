@@ -48,6 +48,7 @@ def get_sales_options():
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.overview", action="read", scope="point")
 def get_points_overview(from_date=None, to_date=None, business_entity=None, business_point=None):
 	require_access("page.sales.overview", "read")
 	from_date, to_date = from_date or str(get_first_day(nowdate())), to_date or nowdate()
@@ -123,6 +124,7 @@ def get_points_overview(from_date=None, to_date=None, business_entity=None, busi
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.shifts", action="read", scope="point")
 def get_shifts(
 	from_date=None,
 	to_date=None,
@@ -203,6 +205,7 @@ def get_shifts(
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.shifts", action="read", scope="point")
 def get_shift(name):
 	require_access("page.sales.shifts", "read")
 	doc = frappe.get_doc("Sales Shift", name)
@@ -249,6 +252,7 @@ def get_shift(name):
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.receipts", action="read", scope="point")
 def get_receipts(
 	receipt_type="Sale",
 	from_date=None,
@@ -301,6 +305,7 @@ def get_receipt(name):
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.cash", action="read", scope="point")
 def get_cash_movements(
 	from_date=None,
 	to_date=None,
@@ -353,6 +358,7 @@ def get_cash_movements(
 
 
 @frappe.whitelist()
+@access_contract(area="page.sales.audit", action="read", scope="point")
 def get_cashier_actions(
 	from_date=None,
 	to_date=None,
