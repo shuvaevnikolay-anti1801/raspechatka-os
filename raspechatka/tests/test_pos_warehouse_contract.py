@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from raspechatka.api import pos as pos_api
 from raspechatka.api import pos_v2
+from raspechatka.raspechatka_os.doctype.purchase_order import purchase_order as purchase_order_module
 
 
 class TestPosOperationalWarehouseContract(TestCase):
@@ -127,6 +128,37 @@ class TestPosOperationalWarehouseContract(TestCase):
 				}
 			],
 		)
+
+
+class TestCanonicalPurchaseOrderReceiptStatus(TestCase):
+	def test_received_quantities_keep_partial_open_and_close_only_when_full(self):
+		for received_quantity, expected_status in ((2, "Частично принято"), (5, "Принято")):
+			with self.subTest(received_quantity=received_quantity):
+				row = SimpleNamespace(name="POI-1", db_set=MagicMock())
+				order = SimpleNamespace(items=[row], total_quantity=5)
+
+				def get_all(doctype, **kwargs):
+					if doctype == "Stock Receipt":
+						return ["REC-1"]
+					if doctype == "Stock Receipt Item":
+						return [SimpleNamespace(purchase_order_item="POI-1", quantity=received_quantity)]
+					raise AssertionError(f"Unexpected doctype: {doctype}")
+
+				with (
+					patch.object(purchase_order_module.frappe.db, "exists", return_value=True),
+					patch.object(purchase_order_module.frappe, "get_doc", return_value=order),
+					patch.object(purchase_order_module.frappe, "get_all", side_effect=get_all),
+					patch.object(purchase_order_module.frappe.db, "set_value") as set_value,
+				):
+					purchase_order_module.update_received_quantities("PO-1")
+
+				row.db_set.assert_called_once_with("received_quantity", received_quantity, update_modified=False)
+				set_value.assert_called_once_with(
+					"Purchase Order",
+					"PO-1",
+					{"received_quantity": received_quantity, "order_status": expected_status},
+					update_modified=False,
+				)
 
 
 class TestPosWarehouseIngestion(TestCase):
