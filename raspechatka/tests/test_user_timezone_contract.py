@@ -1,9 +1,12 @@
 from pathlib import Path
 
-import pytest
+from unittest import TestCase
 
 from raspechatka.time_contract import TimeContractError, validate_timezone
 
+
+
+_ASSERTIONS = TestCase()
 
 ROOT = Path(__file__).parents[1]
 
@@ -17,7 +20,7 @@ def test_user_timezone_save_uses_linked_frappe_user_without_profile_field():
 
 def test_invalid_user_timezone_is_rejected_before_save():
     source = (ROOT / "api" / "users.py").read_text()
-    with pytest.raises(TimeContractError):
+    with _ASSERTIONS.assertRaises(TimeContractError):
         validate_timezone("Not/IANA")
     assert "_validated_user_timezone" in source
     assert "Недопустимый IANA-часовой пояс" in source
