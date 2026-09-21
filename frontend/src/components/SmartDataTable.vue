@@ -59,6 +59,7 @@ const filteredRows = computed(() => {
 	const allowed = new Set(names);
 	return props.rows.filter((row) => allowed.has(row[props.rowKey]));
 });
+const hasRows = computed(() => filteredRows.value.length > 0);
 const rowCount = computed(() =>
 	props.serverPagination ? props.totalRows : filteredRows.value.length
 );
@@ -101,7 +102,8 @@ const effectiveTotals = computed(() => {
 	);
 });
 let resizing = null,
-	draggingKey = null;
+	draggingKey = null,
+	preferenceGeneration = 0;
 
 function display(row, column) {
 	return resolveDisplayValue(row, column);
@@ -124,6 +126,8 @@ async function savePreference() {
 	);
 }
 async function loadPreference() {
+	const generation = ++preferenceGeneration;
+	const key = preferenceKey.value;
 	ready.value = false;
 	selected.value = availableColumns.value
 		.filter((column) => column.default !== false)
@@ -134,8 +138,9 @@ async function loadPreference() {
 	page.value = 1;
 	try {
 		const preference = await call("raspechatka.api.references.get_view_preference", {
-			view_key: preferenceKey.value,
+			view_key: key,
 		});
+		if (generation !== preferenceGeneration) return;
 		selected.value = reconcileVisible(
 			preference.columns,
 			availableColumns.value,
@@ -154,10 +159,11 @@ async function loadPreference() {
 		if (pageSizes.includes(Number(preference.pageSize)))
 			pageSize.value = Number(preference.pageSize);
 	} catch (_) {
-	} finally {
-		ready.value = true;
-		emit("ready", pageSize.value);
+		if (generation !== preferenceGeneration) return;
 	}
+	if (generation !== preferenceGeneration) return;
+	ready.value = true;
+	emit("ready", pageSize.value);
 }
 async function toggleColumn(key) {
 	selected.value = selected.value.includes(key)
@@ -266,9 +272,22 @@ onBeforeUnmount(() => window.removeEventListener("pointermove", resize));
 <template>
 	<div class="smart-table">
 		<div class="table-meta">
-			<strong>{{
-				selectedRows.length ? `Выбрано: ${selectedRows.length}` : `${rowCount} записей`
-			}}</strong>
+			<div class="table-meta-summary">
+				<strong>{{
+					selectedRows.length ? `Выбрано: ${selectedRows.length}` : `${rowCount} записей`
+				}}</strong>
+				<span v-if="loading && hasRows" class="table-refresh-state"
+					><i class="loader"></i>Обновляем…</span
+				>
+				<button
+					v-else-if="error && hasRows"
+					class="table-refresh-error"
+					type="button"
+					@click="$emit('retry')"
+				>
+					Не обновилось · Повторить
+				</button>
+			</div>
 			<div class="column-settings">
 				<button class="text-button" type="button" @click="settingsOpen = !settingsOpen">
 					Настроить столбцы
@@ -285,14 +304,14 @@ onBeforeUnmount(() => window.removeEventListener("pointermove", resize));
 			</div>
 		</div>
 		<div class="table-shell">
-			<div v-if="error" class="table-message error-message">
+			<div v-if="error && !hasRows" class="table-message error-message">
 				<strong>Не удалось загрузить данные</strong><span>{{ error }}</span
 				><button @click="$emit('retry')">Повторить</button>
 			</div>
-			<div v-else-if="loading" class="table-message">
+			<div v-else-if="loading && !hasRows" class="table-message">
 				<span class="loader"></span><span>Загружаем данные…</span>
 			</div>
-			<div v-else-if="!filteredRows.length" class="table-message">
+			<div v-else-if="!hasRows" class="table-message">
 				<strong>{{ emptyTitle }}</strong
 				><span>{{ emptyText }}</span>
 			</div>
@@ -423,3 +442,33 @@ onBeforeUnmount(() => window.removeEventListener("pointermove", resize));
 		</footer>
 	</div>
 </template>
+
+<style scoped>
+.table-meta-summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+}
+.table-refresh-state,
+.table-refresh-error {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: #7a8078;
+	font-size: 10px;
+	font-weight: 500;
+}
+.table-refresh-state .loader {
+	width: 12px;
+	height: 12px;
+}
+.table-refresh-error {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #9a5a43;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+</style>
