@@ -7,12 +7,15 @@ import type {
   AtolDriverBridge,
   AtolDriverDevice,
   AtolDriverInfo,
+  AtolDriverDiagnostics,
   AtolRecoveryProbe,
   AtolDriverStatus,
 } from './atol-driver';
 
 const PROTOCOL_VERSION = 1;
-const READ_ONLY_TIMEOUT_MS = 10_000;
+// Native driver calls time out first (8s / 55s). These are transport
+// watchdogs that give the helper time to return its stage-aware error.
+const READ_ONLY_TIMEOUT_MS = 12_000;
 const FISCAL_OPERATION_TIMEOUT_MS = 60_000;
 export const ATOL_BRIDGE_EXECUTABLE = 'Raspechatka.AtolBridge.exe';
 
@@ -21,7 +24,8 @@ export class AtolBridgeError extends Error {
     message: string,
     readonly code?: string,
     readonly driverErrorCode?: number,
-    readonly driverErrorDescription?: string
+    readonly driverErrorDescription?: string,
+    readonly stage?: string
   ) {
     super(message);
     this.name = 'AtolBridgeError';
@@ -54,6 +58,7 @@ export function isAtolBridgeExecutableAvailable(executablePath: string): boolean
 
 type BridgeCommand =
   | 'driverInfo'
+  | 'diagnostics'
   | 'discover'
   | 'connect'
   | 'disconnect'
@@ -80,6 +85,7 @@ type BridgeResponse<T> = {
     message: string;
     driverErrorCode?: number;
     driverErrorDescription?: string;
+    stage?: string;
   };
 };
 
@@ -107,6 +113,24 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
 
   async getDriverInfo(): Promise<AtolDriverInfo> {
     return this.request<AtolDriverInfo>('driverInfo');
+  }
+
+  async diagnostics(): Promise<AtolDriverDiagnostics> {
+    const result = await this.request<AtolDriverDiagnostics>('diagnostics');
+    const timedOut = result.steps.some((step) => step.error === 'timeout');
+    if (timedOut && this.child) {
+      this.resetTimedOutChild(
+        this.child,
+        new AtolBridgeError(
+          'ATOL Driver diagnostic call exceeded timeout',
+          'driver_timeout',
+          undefined,
+          undefined,
+          result.stage
+        )
+      );
+    }
+    return result;
   }
 
   async getStatus(): Promise<AtolDriverStatus> {
@@ -234,14 +258,17 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
       const timeoutMs =
         command === 'executeJson' || command === 'reprintDocument'
           ? this.options.fiscalOperationTimeoutMs ?? FISCAL_OPERATION_TIMEOUT_MS
-          : command === 'driverInfo' || command === 'discover' || command === 'status' || command === 'recoveryProbe'
+          : command !== 'shutdown'
             ? this.options.readOnlyTimeoutMs ?? READ_ONLY_TIMEOUT_MS
             : undefined;
       if (timeoutMs !== undefined) {
         entry.timeout = setTimeout(() => {
           const error = new AtolBridgeError(
-            `ATOL bridge timed out while running ${command}; operation result is unknown`,
-            'timeout'
+            `ATOL bridge did not return a response while running ${command}; operation result is unknown`,
+            'bridge_timeout',
+            undefined,
+            undefined,
+            command
           );
           this.pending.delete(id);
           reject(error);
@@ -332,16 +359,74 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
     }
 
     const detail = response.error?.driverErrorDescription;
-    pending.reject(
-      new AtolBridgeError(
-        [response.error?.message ?? 'ATOL bridge request failed', detail]
-          .filter(Boolean)
-          .join(': '),
-        response.error?.code,
-        response.error?.driverErrorCode,
+    const code = response.error?.code;
+    const stage = response.error?.stage;
+    const error = new AtolBridgeError(
+      this.describeFailure(
+        code,
+        stage,
+        response.error?.message ?? 'ATOL bridge request failed',
         detail
-      )
+      ),
+      code,
+      response.error?.driverErrorCode,
+      detail,
+      stage
     );
+    pending.reject(error);
+
+    if (code === 'driver_timeout' && this.child) {
+      // The native helper intentionally terminates after a timed-out COM call.
+      // Detach/kill it immediately so a fast retry cannot reuse the blocked STA.
+      this.resetTimedOutChild(this.child, error);
+    }
+  }
+
+  private describeFailure(
+    code: string | undefined,
+    stage: string | undefined,
+    message: string,
+    detail?: string
+  ): string {
+    if (code === 'driver_timeout') {
+      switch (stage) {
+        case 'com_lookup':
+          return 'ATOL: не удалось завершить поиск COM-класса AddIn.Fptr10 — операция зависла.';
+        case 'com_create':
+          return 'ATOL: COM найден, но создание объекта Driver 10 не отвечает. Проверьте версию Driver 10 и зависшие процессы АТОЛ.';
+        case 'driver_call':
+          return 'ATOL: COM найден. Создание объекта Driver 10 успешно. Ответ драйвера отсутствует. Проверьте версию Driver 10 или зависший процесс АТОЛ.';
+        case 'configure':
+          return 'ATOL: COM OK. Driver 10 зависает на настройке USB auto.';
+        case 'open':
+          return 'ATOL: COM OK. Driver 10 зависает на open() ККТ.';
+        case 'query':
+          return 'ATOL: COM OK. ККТ открыта, но Driver 10 зависает на queryData().';
+        case 'read':
+          return 'ATOL: COM OK. ККТ отвечает, но Driver 10 зависает при чтении параметров.';
+        case 'open_state':
+          return 'ATOL: COM OK. Driver 10 зависает при проверке состояния подключения ККТ.';
+        case 'close':
+          return 'ATOL: операция выполнена, но Driver 10 зависает при закрытии соединения.';
+        default:
+          return `ATOL: Driver 10 не ответил на этапе ${stage ?? 'unknown'}.`;
+      }
+    }
+
+    const stagePrefix =
+      code === 'open_failed'
+        ? 'ATOL: не удалось открыть ККТ'
+        : code === 'query_failed'
+          ? 'ATOL: ошибка чтения статуса ККТ'
+          : code === 'read_failed'
+            ? 'ATOL: ошибка чтения параметров ККТ'
+            : code === 'configure_failed'
+              ? 'ATOL: ошибка настройки USB auto'
+              : undefined;
+    if (stagePrefix) {
+      return [stagePrefix, detail ?? message].filter(Boolean).join(': ');
+    }
+    return [message, detail].filter(Boolean).join(': ');
   }
 
   private resetTimedOutChild(
