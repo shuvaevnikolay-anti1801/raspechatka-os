@@ -4,6 +4,8 @@ const boot = window.raspechatkaBoot || {
   roles: ["System Manager"],
   is_manager: true,
   csrf_token: "",
+  system_timezone: "UTC",
+  user_timezone: "UTC",
 };
 
 export { boot };
