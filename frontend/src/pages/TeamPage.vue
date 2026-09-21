@@ -53,7 +53,11 @@ const days = computed(() =>
 		{
 			length:
 				schedule.value.days ||
-				new Date(Date.UTC(\n\t\t\t\t\tNumber(month.value.slice(0, 4)),\n\t\t\t\t\tNumber(month.value.slice(5, 7)),\n\t\t\t\t\t0\n\t\t\t\t)).getUTCDate(),
+				new Date(Date.UTC(
+					Number(month.value.slice(0, 4)),
+					Number(month.value.slice(5, 7)),
+					0
+				)).getUTCDate(),
 		},
 		(_, i) => i + 1
 	)
