@@ -217,7 +217,6 @@ describe('PosDatabase',()=>{
       status:'Частично принято',
       items:[expect.objectContaining({purchaseOrderItemId:'POI-PART',receivedQuantity:3,remainingQuantity:2})],
     })])
-    database.close()
   })
 
   it('removes a fully received purchase order from the optimistic workplace snapshot',()=>{
