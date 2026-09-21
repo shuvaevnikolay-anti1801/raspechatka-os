@@ -50,6 +50,10 @@ POS_SITE_REGISTRY = (
     ("Stock Receipt", "posting_datetime", "source", "POS"),
 )
 
+# These DocTypes historically defaulted source to POS, so source alone is not
+# sufficient provenance for an automatic UTC-wall-clock repair.
+POS_EXTERNAL_ID_PROOF_DOCTYPES = {"Sales Shift", "Sales Receipt", "Cash Movement"}
+
 # This is intentionally explicit rather than a repository-wide Datetime loop.
 APP_OWNED_CREATION_MODIFIED_DOCTYPES = (
     "Business Point",
@@ -405,6 +409,8 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
             continue
         has_payload_field = frappe.get_meta(doctype).has_field("source_payload_json")
         fields = ["name", field, "creation", source_field]
+        if doctype in POS_EXTERNAL_ID_PROOF_DOCTYPES:
+            fields.append("external_id")
         if has_payload_field:
             fields.append("source_payload_json")
         rows = frappe.get_all(
@@ -417,6 +423,17 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
         for row in rows:
             before = row.get(field)
             if not before:
+                continue
+            if doctype in POS_EXTERNAL_ID_PROOF_DOCTYPES and not row.get("external_id"):
+                _add_unresolved(
+                    unresolved,
+                    doctype=doctype,
+                    name=row.name,
+                    field=field,
+                    repair_class="pos_utc_as_naive",
+                    before=before,
+                    reason="source=POS is not sufficient provenance without external_id",
+                )
                 continue
             raw = _payload_value(row, field, payload_field)
             if has_payload_field and not raw:
