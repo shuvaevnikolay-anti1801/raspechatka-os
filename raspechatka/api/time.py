@@ -89,23 +89,24 @@ def get_time_diagnostics():
         )
 
     user = frappe.get_cached_doc("User", frappe.session.user)
-    configured_user = user.time_zone or None
-    if configured_user:
+    raw_user_timezone = user.time_zone or None
+    configured_user = raw_user_timezone
+    valid_user_timezone = None
+    if raw_user_timezone:
         try:
-            configured_user = validate_timezone(configured_user)
+            valid_user_timezone = validate_timezone(raw_user_timezone)
         except TimeContractError:
             warnings.append(
                 _warning(
                     "invalid_user_timezone",
                     _("У текущего пользователя указана недопустимая IANA-зона: {0}").format(
-                        user.time_zone
+                        raw_user_timezone
                     ),
                     frappe.session.user,
                 )
             )
-            configured_user = None
-    effective_user = configured_user or effective_site
-    if not configured_user:
+    effective_user = valid_user_timezone or effective_site
+    if not valid_user_timezone:
         warnings.append(
             _warning(
                 "user_timezone_fallback",
