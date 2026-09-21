@@ -3,6 +3,8 @@ import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
 import { loadBootstrap, pushEvents } from './frappe'
 
+const LEGACY_POINT_TIMEZONE = 'Europe/Moscow'
+
 export function buildBootState(database:PosDatabase):BootState{
   const cached=database.getState('bootstrap')
   const remote=cached?JSON.parse(cached) as Partial<BootState>:{}
