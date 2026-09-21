@@ -7,6 +7,7 @@ import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, monthInTimezone } from "../dateTime";
 
 const listRequests = createLatestRequestGate();
 const route = useRoute();
@@ -15,7 +16,7 @@ const saving = ref(false);
 const allowPastEditing = ref(false);
 const error = ref("");
 const point = ref("");
-const month = ref(new Date().toISOString().slice(0, 7));
+const month = ref(monthInTimezone());
 const data = ref({
 	counters: {},
 	employees: [],
@@ -212,7 +213,7 @@ function isPastDay(day) {
 }
 function dayOfWeek(day) {
 	const [year, mon] = month.value.split("-").map(Number);
-	return new Date(year, mon - 1, day).getDay();
+	return new Date(Date.UTC(year, mon - 1, day)).getUTCDay();
 }
 function weekdayLabel(day) {
 	return ["вс", "пн", "вт", "ср", "чт", "пт", "сб"][dayOfWeek(day)];
@@ -238,9 +239,9 @@ function shiftCode(name) {
 	return data.value.shift_templates.find((x) => x.name === name)?.shift_code || "—";
 }
 function setPayrollDates() {
-	const now = new Date();
+	const today = dateInTimezone();
 	const [year, mon] = month.value.split("-").map(Number);
-	const current = now.getFullYear() === year && now.getMonth() + 1 === mon ? now.getDate() : 16;
+	const current = today.startsWith(month.value) ? Number(today.slice(-2)) : 16;
 	payrollStart.value = `${month.value}-${current <= 15 ? "01" : "16"}`;
 	payrollEnd.value = `${month.value}-${
 		current <= 15 ? "15" : String(new Date(year, mon, 0).getDate()).padStart(2, "0")
