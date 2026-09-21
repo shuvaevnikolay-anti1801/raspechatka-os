@@ -1,6 +1,7 @@
 import frappe
 
 from raspechatka.security import is_cashier_pos_only
+from raspechatka.time_contract import get_effective_site_timezone
 
 no_cache = 1
 
@@ -22,7 +23,7 @@ def get_boot():
 
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	roles = frappe.get_roles(frappe.session.user)
-	system_timezone = frappe.db.get_single_value("System Settings", "time_zone") or "UTC"
+	system_timezone = get_effective_site_timezone()
 	# Frappe's user preference is authoritative when set; otherwise use the
 	# site/system timezone. Keep the effective value explicit for Web OS clients.
 	effective_user_timezone = user.time_zone or system_timezone
