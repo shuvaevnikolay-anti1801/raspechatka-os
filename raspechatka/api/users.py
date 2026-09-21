@@ -4,10 +4,27 @@ from frappe.utils import cint, get_url, now_datetime
 
 from raspechatka.access import get_matrix_role_rows, get_scope, require_access
 from raspechatka.access_contract import access_contract
+from raspechatka.api.time import get_timezone_options
+from raspechatka.time_contract import TimeContractError, get_effective_site_timezone, validate_timezone
 
 
 def _require_admin():
 	require_access("page.references.users", "admin")
+
+
+def _linked_user_timezone(profile):
+	if not profile.system_user:
+		return None
+	return frappe.db.get_value("User", profile.system_user, "time_zone") or None
+
+
+def _validated_user_timezone(value):
+	if value in (None, ""):
+		return ""
+	try:
+		return validate_timezone(str(value))
+	except TimeContractError:
+		frappe.throw(_("Недопустимый IANA-часовой пояс: {0}").format(value))
 
 
 def _assigned_points(profile):
@@ -172,12 +189,17 @@ def get_users(search=None, active=None):
 
 
 @frappe.whitelist()
+@access_contract(area="page.references.users", action="admin", scope="user")
 def get_user_profile(name):
 	_require_admin()
-	return _get_manageable_profile(name).as_dict(no_nulls=False)
+	doc = _get_manageable_profile(name)
+	result = doc.as_dict(no_nulls=False)
+	result["time_zone"] = _linked_user_timezone(doc)
+	return result
 
 
 @frappe.whitelist()
+@access_contract(area="page.references.users", action="admin", scope="user")
 def get_user_options():
 	_require_admin()
 	scope = get_scope()
@@ -210,8 +232,14 @@ def get_user_options():
 				)
 			).issubset(allowed_points)
 		]
+	try:
+		system_timezone = get_effective_site_timezone()
+	except TimeContractError:
+		system_timezone = ""
 	return {
 		"access_roles": [{"name": role["name"], "label": role["label"]} for role in get_matrix_role_rows()],
+		"system_timezone": system_timezone,
+		"timezones": get_timezone_options(),
 		"organizations": frappe.get_all(
 			"Organization",
 			filters=organization_filters,
@@ -243,6 +271,7 @@ def save_user_profile(data):
 	_require_admin()
 	data = frappe.parse_json(data)
 	name = data.get("name")
+	time_zone = _validated_user_timezone(data.get("time_zone")) if "time_zone" in data else None
 	doc = _get_manageable_profile(name) if name else frappe.new_doc("Raspechatka User Profile")
 	old_employee = doc.linked_employee if name else None
 	for fieldname in (
@@ -270,6 +299,14 @@ def save_user_profile(data):
 	_require_profile_in_admin_scope(doc)
 	_require_employee_in_admin_scope(doc.linked_employee)
 	doc.save(ignore_permissions=True)
+	if "time_zone" in data and doc.system_user:
+		frappe.db.set_value(
+			"User",
+			doc.system_user,
+			"time_zone",
+			time_zone,
+			update_modified=False,
+		)
 	_sync_employee_link(doc, old_employee)
 	return {"name": doc.name}
 
