@@ -33,9 +33,9 @@ class SalesShift(Document):
 				frappe.throw(_("Кассир не имеет доступа к выбранной точке"))
 		if self.closed_at and get_datetime(self.closed_at) < get_datetime(self.opened_at):
 			frappe.throw(_("Смена не может закрыться раньше открытия"))
+		from raspechatka.sales import resolve_shift_type, set_business_date
+		set_business_date(self, "opened_at")
 		if not self.shift_type:
-			from raspechatka.sales import resolve_shift_type
-
 			self.shift_type = resolve_shift_type(self.business_point, self.opened_at, self.name)
 		if self.status == "Closed" and not self.closed_at:
 			frappe.throw(_("Для закрытой смены укажите время закрытия"))
