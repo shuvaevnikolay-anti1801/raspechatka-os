@@ -7,6 +7,7 @@ import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, formatDateOnly, monthInTimezone } from "../dateTime";
 
 const listRequests = createLatestRequestGate();
 const rows = ref([]),
@@ -17,7 +18,7 @@ const rows = ref([]),
 const totals = reactive({ planned: 0, paid: 0, remaining: 0 });
 const options = reactive({ entities: [], points: [], accounts: [], articles: [] });
 const filters = ref({
-	month: new Date().toISOString().slice(0, 7),
+	month: monthInTimezone(),
 	business_entity: "",
 	business_point: "",
 });
