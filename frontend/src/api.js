@@ -1,4 +1,4 @@
-const boot = window.raspechatkaBoot || {
+const boot = (typeof window !== "undefined" && window.raspechatkaBoot) || {
   user: "Administrator",
   full_name: "Administrator",
   roles: ["System Manager"],
