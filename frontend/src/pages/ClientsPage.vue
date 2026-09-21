@@ -6,7 +6,9 @@ import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]),
 	loading = ref(true),
 	error = ref(""),
@@ -82,19 +84,22 @@ function reset(values = {}) {
 	});
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.clients.get_clients", {
+		const result = await call("raspechatka.api.clients.get_clients", {
 			search: filters.value.search,
 			club_status: filters.value.status,
 			business_point: filters.value.point,
 			channel: filters.value.channel,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -162,7 +167,7 @@ function money(value) {
 		" ₽"
 	);
 }
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -180,6 +185,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			view-key="clients.base"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<ReferenceTable
 			:rows="rows"
