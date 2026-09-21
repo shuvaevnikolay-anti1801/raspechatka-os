@@ -3,6 +3,7 @@ import frappe
 from frappe.utils import flt, get_datetime, now_datetime
 
 from raspechatka.time_contract import (
+	external_instant_to_site_naive,
 	get_effective_site_timezone,
 	resolve_point_timezone,
 	site_naive_to_target_date,
@@ -14,7 +15,10 @@ def point_business_date(business_point, instant):
 	point_value = frappe.db.get_value("Business Point", business_point, "timezone")
 	site_timezone = get_effective_site_timezone()
 	point_timezone = resolve_point_timezone(point_value, site_timezone)
-	return site_naive_to_target_date(get_datetime(instant), point_timezone, site_timezone)
+	value = get_datetime(instant)
+	if value.tzinfo is not None and value.utcoffset() is not None:
+		value = external_instant_to_site_naive(value, site_timezone)
+	return site_naive_to_target_date(value, point_timezone, site_timezone)
 
 
 def set_business_date(document, instant_field):
