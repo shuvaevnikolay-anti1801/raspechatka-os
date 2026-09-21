@@ -7,8 +7,11 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate, createListReadyGate } from "../listLoading";
 
 const route = useRoute();
+const listRequests = createLatestRequestGate();
+const listReady = createListReadyGate((size) => load(1, size));
 const rows = ref([]),
 	totalRows = ref(0),
 	currentPage = ref(1),
@@ -131,6 +134,7 @@ function supplierLabel(name) {
 }
 
 async function load(page = 1, size = pageSize.value) {
+	const requestId = listRequests.begin();
 	currentPage.value = page;
 	pageSize.value = size;
 	loading.value = true;
@@ -141,12 +145,13 @@ async function load(page = 1, size = pageSize.value) {
 			limit_start: (page - 1) * size,
 			limit_page_length: size,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totalRows.value = Number(result.total || 0);
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 
@@ -271,7 +276,7 @@ async function cancel() {
 }
 
 onMounted(async () => {
-	await Promise.all([load(), loadOptions()]);
+	await loadOptions();
 	if (route.query.receipt) await openReceipt(route.query.receipt);
 	else if (route.query.purchase_order)
 		await openReceipt(null, "Приёмка", route.query.purchase_order);
@@ -301,6 +306,7 @@ onMounted(async () => {
 			view-key="warehouse.receipts"
 			@apply="load(1)"
 			@reset="load(1)"
+			@ready="listReady.filter"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -314,7 +320,7 @@ onMounted(async () => {
 			:current-page="currentPage"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
-			@ready="load(1, $event)"
+			@ready="listReady.table"
 			empty-title="Документов пока нет"
 			empty-text="Создайте первую приёмку или оприходование"
 			@open="openReceipt($event.name)"
