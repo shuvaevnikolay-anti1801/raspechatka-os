@@ -11,7 +11,7 @@ const props = defineProps({
 	viewKey: { type: String, required: true },
 	doctype: { type: String, default: "" },
 });
-const emit = defineEmits(["update:modelValue", "apply", "reset"]);
+const emit = defineEmits(["update:modelValue", "apply", "reset", "ready"]);
 const settingsOpen = ref(false),
 	visible = ref([]),
 	bookmarks = ref([]),
@@ -235,11 +235,9 @@ async function loadPreference() {
 	} catch (_) {
 		// The complete default field set remains available without saved preferences.
 	} finally {
+		await nextTick();
 		ready.value = true;
-		if (restored) {
-			await nextTick();
-			await apply();
-		}
+		emit("ready");
 	}
 }
 async function toggleField(key) {
