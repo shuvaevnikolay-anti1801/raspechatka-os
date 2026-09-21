@@ -115,8 +115,8 @@ def _ambiguous_local(value: datetime, timezone_name: str) -> bool:
     second = value.replace(tzinfo=zone, fold=1)
     if first.utcoffset() == second.utcoffset():
         return False
-    first_back = first.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
-    second_back = second.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
+    first_back = first.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
+    second_back = second.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
     return first_back != value or second_back != value or first_back == second_back
 
 
@@ -356,7 +356,7 @@ def _external_wall_clock_naive(value: str) -> datetime | None:
     from raspechatka.time_contract import parse_external_instant
 
     try:
-        return parse_external_instant(value).astimezone(UTC).replace(tzinfo=None)
+        return parse_external_instant(value).astimezone(timezone.utc).replace(tzinfo=None)
     except (TypeError, TimeContractError, ValueError):
         return None
 
@@ -546,26 +546,26 @@ def _plan_standard_fields(evidence, entries, unresolved):
             limit_page_length=100000,
         )
         for row in rows:
-            epoch = _epoch_for(row.creation, evidence)
-            if not epoch:
-                if not source_target_same:
-                    for field in ("creation", "modified"):
+            for field in ("creation", "modified"):
+                value = row.get(field)
+                epoch = _epoch_for(value, evidence)
+                if not epoch:
+                    if not source_target_same:
                         _add_unresolved(
                             unresolved,
                             doctype=doctype,
                             name=row.name,
                             field=field,
                             repair_class="old_site_wall_clock",
-                            before=row.get(field),
-                            reason="creation does not fit one unambiguous System Settings timezone epoch",
+                            before=value,
+                            reason=f"{field} does not fit one unambiguous System Settings timezone epoch",
                         )
-                continue
-            source = epoch["source_timezone"]
-            if source == target:
-                continue
-            for field in ("creation", "modified"):
+                    continue
+                source = epoch["source_timezone"]
+                if source == target:
+                    continue
                 try:
-                    after = _site_wall_clock(row.get(field), source, target)
+                    after = _site_wall_clock(value, source, target)
                     _add_entry(
                         entries,
                         unresolved,
@@ -573,7 +573,7 @@ def _plan_standard_fields(evidence, entries, unresolved):
                         name=row.name,
                         field=field,
                         repair_class="old_site_wall_clock",
-                        before=row.get(field),
+                        before=value,
                         after=after,
                         reason=f"server-generated {field} in proven site timezone epoch",
                     )
@@ -584,7 +584,7 @@ def _plan_standard_fields(evidence, entries, unresolved):
                         name=row.name,
                         field=field,
                         repair_class="old_site_wall_clock",
-                        before=row.get(field),
+                        before=value,
                         reason=str(exc),
                     )
 
