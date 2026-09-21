@@ -266,7 +266,10 @@ watch(
 	}
 );
 onMounted(loadPreference);
-onBeforeUnmount(() => window.removeEventListener("pointermove", resize));
+onBeforeUnmount(() => {
+	preferenceGeneration += 1;
+	window.removeEventListener("pointermove", resize);
+});
 </script>
 
 <template>
