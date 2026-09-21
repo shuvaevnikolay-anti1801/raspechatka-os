@@ -808,6 +808,8 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 			event_id = str(event.get("id") or "").strip()
 			event_type = str(event.get("eventType") or "").strip()
 			payload = _normalize_v2_payload(event.get("payload") or {})
+			if event.get("createdAt"):
+				_normalize_v2_payload({"createdAt": event.get("createdAt")})
 			selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)
 			if not event_id or not event_type:
 				frappe.throw(_("В событии отсутствует id или eventType"))
