@@ -117,7 +117,9 @@ function money(value) {
 		maximumFractionDigits: 2,
 	}).format(Number(value || 0));
 }
-function dateTime(value) {\n\treturn formatDateTime(value);\n}
+function dateTime(value) {
+	return formatDateTime(value);
+}
 function statusLabel(value) {
 	return value === 1 ? "Проведён" : value === 2 ? "Отменён" : "Черновик";
 }
