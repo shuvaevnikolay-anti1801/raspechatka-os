@@ -7,6 +7,7 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
+import { formatDateOnly, formatDateTime } from "../dateTime";
 
 const listRequests = createLatestRequestGate();
 const rows = ref([]),
@@ -31,7 +32,7 @@ const columns = [
 	{ key: "club_status", label: "Статус клуба" },
 	{ key: "discount_percent", label: "Скидка, %" },
 	{ key: "active_channels", label: "Каналов" },
-	{ key: "registered_at", label: "Регистрация" },
+	{ key: "registered_at", label: "Регистрация", type: "datetime" },
 ];
 const filterFields = computed(() => [
 	{
@@ -154,12 +155,8 @@ async function save() {
 	}
 }
 function formatDate(value) {
-	return value
-		? new Intl.DateTimeFormat("ru-RU", {
-				dateStyle: "short",
-				timeStyle: value.includes?.(":") ? "short" : undefined,
-		  }).format(new Date(value))
-		: "—";
+	if (!value) return "—";
+	return String(value).includes(":") ? formatDateTime(value) : formatDateOnly(value);
 }
 function money(value) {
 	return (
