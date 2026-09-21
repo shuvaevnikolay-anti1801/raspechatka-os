@@ -874,6 +874,7 @@ def _fiscal_number(comment, fallback):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@access_contract(auth="pos_token", action="read", scope="pos_point")
 def search_receipts(device_id, token, query=None, limit=100):
 	"""Search sale receipts across the whole current business point, never another point."""
 	connection = base_pos._authenticate(device_id, token)
