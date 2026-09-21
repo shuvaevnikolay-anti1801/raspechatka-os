@@ -88,6 +88,32 @@ test("standard list consumers initialize from filter readiness", () => {
 	}
 });
 
+test("list consumers ignore stale row responses", () => {
+	for (const path of [
+		"pages/ClientMarketingPage.vue",
+		"pages/ClientsPage.vue",
+		"pages/EmployeesPage.vue",
+		"pages/FinanceBankPage.vue",
+		"pages/FinanceCalendarPage.vue",
+		"pages/FinancePaymentsPage.vue",
+		"pages/FinanceReportPage.vue",
+		"pages/MasterDataPage.vue",
+		"pages/ReferencesPage.vue",
+		"pages/SalesPage.vue",
+		"pages/TeamPage.vue",
+		"pages/UsersPage.vue",
+		"pages/WarehouseDocumentsPage.vue",
+		"pages/WarehouseMovementsPage.vue",
+		"pages/WarehouseReceiptsPage.vue",
+		"pages/WarehouseReportPage.vue",
+	]) {
+		const page = source(path);
+		assert.match(page, /createLatestRequestGate/, path);
+		assert.match(page, /listRequests\.begin\(\)/, path);
+		assert.match(page, /listRequests\.isCurrent\(requestId\)/, path);
+	}
+});
+
 test("legacy parallel initial row loads are removed from list consumers", () => {
 	for (const path of [
 		"pages/ClientMarketingPage.vue",
