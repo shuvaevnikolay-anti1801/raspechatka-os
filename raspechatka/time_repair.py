@@ -17,7 +17,7 @@ from frappe.utils import get_datetime, get_system_timezone
 
 from raspechatka.time_contract import (
     TimeContractError,
-    point_local_date_bounds_to_site_naive,
+    external_instant_to_site_naive,
     resolve_point_timezone,
     site_naive_to_target_date,
     validate_timezone,
@@ -249,28 +249,29 @@ def _site_evidence() -> dict[str, Any]:
                 new_zone = validate_timezone(str(new_value))
             except TimeContractError:
                 continue
-            if expected is not None and old_zone != expected:
+            if expected is None:
+                epochs.append(
+                    {
+                        "start": None,
+                        "source_timezone": old_zone,
+                        "version": f"{change['version']}:before",
+                    }
+                )
+            elif old_zone != expected:
                 core_blockers.append(
                     f"contradictory System Settings.time_zone history at {change['version']}"
                 )
-            epochs.append(
-                {
-                    "start": change["at"],
-                    "source_timezone": old_zone,
-                    "version": change["version"],
-                }
-            )
+            if new_zone != old_zone:
+                epochs.append(
+                    {
+                        "start": change["at"],
+                        "source_timezone": new_zone,
+                        "version": change["version"],
+                    }
+                )
             expected = new_zone
         if expected and configured and expected != configured:
             core_blockers.append("System Settings current timezone disagrees with Version history")
-        if expected:
-            epochs.append(
-                {
-                    "start": history[-1]["at"],
-                    "source_timezone": expected,
-                    "version": "current",
-                }
-            )
         # Collapse duplicate consecutive values while preserving evidence.
         collapsed = []
         for epoch in epochs:
@@ -413,12 +414,11 @@ def _plan_pos_fields(evidence, entries, unresolved, already_correct):
             raw = _payload_value(row, field, payload_field)
             if raw:
                 direct = _external_utc_naive(raw)
-                expected = None
                 try:
-                    expected = _pos_utc_wall_clock(before, target)
+                    expected = external_instant_to_site_naive(raw, target)
                 except TimeContractError:
-                    pass
-                if expected is not None and _same_datetime(before, _pos_utc_wall_clock(raw, target)):
+                    expected = None
+                if expected is not None and _same_datetime(before, expected):
                     already_correct.append(
                         {"doctype": doctype, "name": row.name, "field": field, "reason": "stored value matches RFC3339 source"}
                     )
