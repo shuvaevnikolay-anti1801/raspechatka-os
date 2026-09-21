@@ -60,3 +60,54 @@
 .upsell-card-actions{display:flex;align-items:center;gap:8px;margin-top:10px}
 .upsell-card-actions button{min-height:38px;padding:0 12px;border:1px solid #a9c86d;background:#fff;color:#536c12;font-size:10px;font-weight:700}
 .upsell-card-actions button.primary{border-color:var(--rp-green);background:var(--rp-green);color:#fff}
+
+.cashier-login-card{position:relative;min-height:390px;display:flex;flex-direction:column}
+.cashier-login-card .cashier-list{margin-bottom:28px}
+.cashier-login-card .cashier-pin-input{width:12.5rem;min-height:56px;padding:12px 16px;letter-spacing:.56em;text-align:center;background:linear-gradient(90deg,#fff 0,#fff 23%,#d6dfd8 23%,#d6dfd8 24%,#fff 24%,#fff 49%,#d6dfd8 49%,#d6dfd8 50%,#fff 50%,#fff 75%,#d6dfd8 75%,#d6dfd8 76%,#fff 76%)}
+.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:auto;padding:3px 0;border:0;background:transparent;color:#657f0d;font-size:10px;text-decoration:underline;text-underline-offset:3px}
+.cashier-login-card .cashier-forgot-pin{justify-self:end;margin-top:2px}
+.cashier-login-card .settings-open-trigger{align-self:flex-start;margin-top:auto;color:#7d837b}
+
+.work-schedule{display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:12px;align-items:start}
+.schedule-upcoming,.schedule-month{min-width:0}
+.schedule-upcoming h3,.schedule-month h3{font-size:13px}
+.schedule-upcoming>article{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid #eceeea;font-size:10px}
+.schedule-upcoming>article:last-child{border-bottom:0}
+.schedule-upcoming article div{display:flex;flex-direction:column;gap:3px}
+.schedule-upcoming article small,.schedule-month header p{color:var(--rp-muted);font-size:9px}
+.schedule-upcoming article strong{font-size:9px;text-align:right}
+.schedule-month>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.schedule-month>header>small{color:var(--rp-muted);font-size:9px}
+.schedule-grid{min-width:760px;overflow:auto;border:1px solid var(--rp-line)}
+.schedule-grid-row{display:grid;align-items:stretch;min-height:44px;border-bottom:1px solid #eceeea}
+.schedule-grid-row:last-child{border-bottom:0}
+.schedule-grid-row>*{display:flex;align-items:center;justify-content:center;min-width:0;padding:5px 3px;border-right:1px solid #eceeea;font-size:9px;text-align:center}
+.schedule-grid-row>*:first-child{justify-content:flex-start;padding-left:10px;text-align:left}
+.schedule-grid-row>*:last-child{border-right:0}
+.schedule-grid-header{min-height:50px;background:#f4f6f2;color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase}
+.schedule-grid-header span{flex-direction:column;gap:2px}
+.schedule-grid-header span b{color:var(--rp-ink);font-size:9px}
+.schedule-mark{background:var(--rp-green-soft);color:#56720a;font-weight:800}
+@media(max-width:1180px){
+  .work-schedule{grid-template-columns:1fr}
+  .schedule-grid{min-width:760px}
+}
+
+.warehouse-workspace{display:grid;gap:14px}
+.warehouse-actions{align-items:center}
+.warehouse-actions>div{margin-right:auto}
+.delivery-list>header{display:flex;align-items:center;justify-content:space-between}
+.delivery-list>header small{color:var(--rp-muted)}
+.delivery-card{border:1px solid var(--rp-line);border-radius:10px;margin-top:8px;overflow:hidden}
+.delivery-summary{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(180px,1.2fr);gap:12px;width:100%;padding:12px;background:#fff;border:0;text-align:left;cursor:pointer}
+.delivery-summary div{display:grid;gap:3px}
+.delivery-summary small,.delivery-summary span{color:var(--rp-muted);font-size:11px}
+.delivery-detail{display:grid;gap:8px;padding:10px 12px;background:#f8faf7;border-top:1px solid var(--rp-line)}
+.delivery-detail>div{display:flex;justify-content:space-between;gap:12px}
+.delivery-detail>button{justify-self:start}
+.warehouse-search{display:flex;align-items:center;gap:8px;margin:10px 0}
+.warehouse-search input{flex:1;min-height:38px}
+.receive-line{display:grid;grid-template-columns:1fr 100px 36px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--rp-line)}
+.receive-line div{display:grid;gap:3px}
+.receive-line small{color:var(--rp-muted)}
+.receive-line button{min-height:36px}

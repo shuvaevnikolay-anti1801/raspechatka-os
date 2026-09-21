@@ -138,23 +138,109 @@ describe('PosDatabase',()=>{
     expect(database.getCustomer('removed-client')).toBeNull()
   })
 
-  it('records the employee workplace actions offline',()=>{
+  it('records trusted warehouse actions offline outside the sale assortment',()=>{
     const database=createDatabase()
-    database.replaceProducts([{id:'paper',name:'Бумага',sku:'PAPER',category:'Товары',type:'product',uom:'пачка',priceMinor:50000,stock:5,trackInventory:true,storageAddress:'Шкаф 3 · верхняя полка'}])
-    database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierName:'Николай'})
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[{
+        id:'paper-hidden',name:'Бумага служебная',itemCode:'PAPER-HIDDEN',itemType:'Product',uom:'пачка',
+        trackInventory:true,stock:5,storageAddress:'Шкаф 3 · верхняя полка'
+      }],
+      deliveries:[{
+        id:'PO-1',supplier:'Поставщик',status:'Ожидается',items:[{
+          purchaseOrderItemId:'POI-1',itemId:'paper-hidden',itemName:'Бумага служебная',itemCode:'PAPER-HIDDEN',
+          uom:'пачка',orderedQuantity:4,receivedQuantity:0,remainingQuantity:4
+        }]
+      }],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+    expect(database.listProducts().some((x)=>x.id==='paper-hidden')).toBe(false)
+    database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierId:'SHIFT-EMP',cashierName:'Николай'})
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
     expect(count).toMatchObject({totalMinor:200000,differenceMinor:0})
     expect(database.getShiftSummary().expectedCashMinor).toBe(200000)
-    database.reportStockWriteOff({productId:'paper',quantity:1,reason:'Брак',comment:'Замята упаковка'})
-    database.createSupplyRequest({productId:'paper',itemName:'Бумага',quantity:10})
+    database.reportStockWriteOff({productId:'paper-hidden',quantity:1,reason:'Брак',comment:'Замята упаковка'},'EMP-1')
+    database.createSupplyRequest({productId:'paper-hidden',itemName:'Клиент не должен переименовать',quantity:10},'EMP-1')
+    database.createStockReceipt({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]},'EMP-1')
     for(let index=0;index<4;index+=1)database.recordCleanerVisit('Николай')
     expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(200000)
+    expect(database.getWorkplaceData().deliveries[0].items[0].remainingQuantity).toBe(2)
     database.payCleaner(200000)
     expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(0)
-    expect(database.pendingEvents().map((x)=>x.eventType)).toEqual(expect.arrayContaining([
-      'cash.counted','stock.write_off.requested','point.supply.requested','cleaner.visit.recorded','cleaner.paid'
+
+    const events=database.pendingEvents()
+    expect(events.map((x)=>x.eventType)).toEqual(expect.arrayContaining([
+      'cash.counted','stock.write_off.requested','point.supply.requested','stock.receipt.requested','cleaner.visit.recorded','cleaner.paid'
     ]))
+    const writeOff=events.find((x)=>x.eventType==='stock.write_off.requested')?.payload as Record<string,unknown>
+    const need=events.find((x)=>x.eventType==='point.supply.requested')?.payload as Record<string,unknown>
+    const receipt=events.find((x)=>x.eventType==='stock.receipt.requested')?.payload as Record<string,unknown>
+    expect(writeOff.cashierId).toBe('EMP-1')
+    expect(need).toMatchObject({cashierId:'EMP-1',productId:'paper-hidden',itemName:'Бумага служебная'})
+    expect(receipt).toEqual({
+      cashierId:'EMP-1',
+      purchaseOrderId:'PO-1',
+      lines:[{purchaseOrderItemId:'POI-1',quantity:2}],
+    })
+    expect(JSON.stringify(receipt)).not.toContain('rate')
+    expect(receipt.cashierId).not.toBe('SHIFT-EMP')
     expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
+  })
+
+  it('keeps a partially received purchase order with reduced remaining quantity',()=>{
+    const database=createDatabase()
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[],
+      deliveries:[{
+        id:'PO-PART',supplier:'Поставщик',status:'Ожидается',items:[{
+          purchaseOrderItemId:'POI-PART',itemId:'item',itemName:'Товар',itemCode:'ITEM',
+          uom:'шт',orderedQuantity:5,receivedQuantity:1,remainingQuantity:4,
+        }],
+      }],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+    database.createStockReceipt({
+      purchaseOrderId:'PO-PART',
+      lines:[{purchaseOrderItemId:'POI-PART',quantity:2}],
+    },'EMP-1')
+    expect(database.getWorkplaceData().deliveries).toEqual([expect.objectContaining({
+      id:'PO-PART',
+      status:'Частично принято',
+      items:[expect.objectContaining({purchaseOrderItemId:'POI-PART',receivedQuantity:3,remainingQuantity:2})],
+    })])
+  })
+
+  it('removes a fully received purchase order from the optimistic workplace snapshot',()=>{
+    const database=createDatabase()
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[],
+      deliveries:[{
+        id:'PO-FULL',supplier:'Поставщик',status:'Ожидается',items:[{
+          purchaseOrderItemId:'POI-FULL',itemId:'item',itemName:'Товар',itemCode:'ITEM',
+          uom:'шт',orderedQuantity:2,receivedQuantity:0,remainingQuantity:2
+        }]
+      }],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+    database.createStockReceipt({
+      purchaseOrderId:'PO-FULL',
+      lines:[{purchaseOrderItemId:'POI-FULL',quantity:2}],
+    },'EMP-1')
+    expect(database.getWorkplaceData().deliveries).toEqual([])
   })
 
   it('assigns morning and evening explicitly and preserves them after restart',()=>{

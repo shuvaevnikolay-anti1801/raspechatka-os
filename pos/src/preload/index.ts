@@ -12,6 +12,7 @@ import type {
   InpasSettings,
   PosApi,
   PrintKind,
+  StockReceiptRequest,
   StockWriteOffRequest,
   SupplyRequestInput,
   UpdateOrderRequest,
@@ -141,6 +142,8 @@ const api: ExtendedPosApi = {
     ipcRenderer.invoke("pos:report-stock-write-off", request),
   createSupplyRequest: (request: SupplyRequestInput) =>
     ipcRenderer.invoke("pos:create-supply-request", request),
+  createStockReceipt: (request: StockReceiptRequest) =>
+    ipcRenderer.invoke("pos:create-stock-receipt", request),
   recordCleanerVisit: () => ipcRenderer.invoke("pos:record-cleaner-visit"),
   payCleaner: (amountMinor: number) =>
     ipcRenderer.invoke("pos:pay-cleaner", amountMinor),

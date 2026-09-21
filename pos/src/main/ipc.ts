@@ -3,7 +3,7 @@ import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, SaleDetails, Shift, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest
+  ReturnResult, SaleDetails, Shift, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -200,8 +200,9 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:list-cash-operations',()=>database.listCashOperations())
   ipcMain.handle('pos:add-cash-operation',(_event,type:CashOperationType,amountMinor:number,reason:string)=>{assertCashierAccess();return database.addCashOperation(type,amountMinor,reason)})
   ipcMain.handle('pos:get-workplace-data',()=>database.getWorkplaceData())
-  ipcMain.handle('pos:report-stock-write-off',(_event,request:StockWriteOffRequest)=>{assertCashierAccess();return database.reportStockWriteOff(request)})
-  ipcMain.handle('pos:create-supply-request',(_event,request:SupplyRequestInput)=>{assertCashierAccess();return database.createSupplyRequest(request)})
+  ipcMain.handle('pos:report-stock-write-off',(_event,request:StockWriteOffRequest)=>{const cashier=assertCashierAccess();return database.reportStockWriteOff(request,cashier.id)})
+  ipcMain.handle('pos:create-supply-request',(_event,request:SupplyRequestInput)=>{const cashier=assertCashierAccess();return database.createSupplyRequest(request,cashier.id)})
+  ipcMain.handle('pos:create-stock-receipt',(_event,request:StockReceiptRequest)=>{const cashier=assertCashierAccess();return database.createStockReceipt(request,cashier.id)})
   ipcMain.handle('pos:record-cleaner-visit',()=>database.recordCleanerVisit(assertCashierAccess().name))
   ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>{assertCashierAccess();return database.payCleaner(amountMinor)})
   ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>{assertCashierAccess();return database.saveCashCount(countType,lines)})

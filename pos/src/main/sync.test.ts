@@ -27,11 +27,29 @@ describe('performSync single flight',()=>{
     mocks.deferred.resolve?.({
       products:[],customers:[],employees:[],receiptMirror:[],retentionDays:60,
       point:{id:'point',name:'Point'},workplace:{id:'workplace',name:'POS'},
-      workplaceData:{orders:[{
-        id:'ORDER-1',orderNumber:'ORD-1',phone:'+79001234567',lines:[],totalMinor:2000,paidMinor:2000,
-        paymentStatus:'paid',status:'ready',createdAt:'2026-09-20T09:00:00.000Z',dueAt:'2026-09-20T10:00:00.000Z',
-        readyAt:'2026-09-20T09:45:00.000Z',issuedAt:undefined,sourceSaleId:'SALE-1',fiscalNumber:'777'
-      }]},upsellRules:[{triggerItem:'trigger',enabled:true,candidates:[{item:'candidate',cashierPhrase:'Попробуйте'}]}],
+      workplaceData:{
+        schedule:[],
+        scheduleMonth:{
+          month:'2026-09',days:30,
+          employees:[{id:'cashier',name:'Кассир'}],
+          entries:[{
+            id:'shift-1',date:'2026-09-20',employeeId:'cashier',
+            shiftTemplate:'Morning',shiftCode:'M',shiftName:'Утро',
+            startTime:'09:00',endTime:'18:00',plannedHours:8,
+          }],
+        },
+        myUpcomingShifts:[{
+          id:'shift-1',date:'2026-09-20',
+          shiftTemplate:'Morning',shiftCode:'M',shiftName:'Утро',
+          startTime:'09:00',endTime:'18:00',plannedHours:8,
+        }],
+        orders:[{
+          id:'ORDER-1',orderNumber:'ORD-1',phone:'+79001234567',lines:[],totalMinor:2000,paidMinor:2000,
+          paymentStatus:'paid',status:'ready',createdAt:'2026-09-20T09:00:00.000Z',dueAt:'2026-09-20T10:00:00.000Z',
+          readyAt:'2026-09-20T09:45:00.000Z',issuedAt:undefined,sourceSaleId:'SALE-1',fiscalNumber:'777'
+        }],
+      },
+      upsellRules:[{triggerItem:'trigger',enabled:true,candidates:[{item:'candidate',cashierPhrase:'Попробуйте'}]}],
       rules:{allowDiscounts:true,maxDiscountPercent:20},
     })
     await expect(first).resolves.toMatchObject({online:true,pendingSync:0})
@@ -41,6 +59,10 @@ describe('performSync single flight',()=>{
       60,
     )
     expect(database.setState).toHaveBeenCalledWith('bootstrap',expect.stringContaining('"upsellRules"'))
+    expect(database.setWorkplaceData).toHaveBeenCalledWith(expect.objectContaining({
+      scheduleMonth:expect.objectContaining({month:'2026-09',entries:expect.arrayContaining([expect.objectContaining({id:'shift-1'})])}),
+      myUpcomingShifts:expect.arrayContaining([expect.objectContaining({id:'shift-1'})]),
+    }))
     expect((await first).upsellRules).toEqual([
       {triggerItem:'trigger',enabled:true,candidates:[{item:'candidate',cashierPhrase:'Попробуйте'}]},
     ])
