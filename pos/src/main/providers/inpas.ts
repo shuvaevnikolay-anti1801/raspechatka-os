@@ -396,16 +396,53 @@ export class InpasPaymentProvider implements PaymentProvider {
             `call "${launcher.path}" ${args.join(" ")}`,
           ]
         : [...launcher.prefixArgs, ...args];
+    const timeoutMs = settings.timeoutMs + 5000;
+    const startedAt = Date.now();
+    let cwdWritable = true;
+    try {
+      accessSync(cwd, constants.W_OK);
+    } catch {
+      cwdWritable = false;
+    }
+
+    this.logDiagnostics("command start", {
+      kind,
+      operationCode,
+      launcherType: launcher.type,
+      launcherPath: launcher.path,
+      command: launcher.command,
+      launchArgs,
+      cwd,
+      cwdWritable,
+      resultPath,
+      receiptPath,
+      timeoutMs,
+      terminalId: settings.terminalId,
+      currencyCode: settings.currencyCode,
+      amountMinor,
+      startedAt: new Date(startedAt).toISOString(),
+    });
 
     this.running = true;
     try {
       rmSync(resultPath, { force: true });
       rmSync(receiptPath, { force: true });
+      this.logDiagnostics("stale files cleared", { resultPath, receiptPath });
 
-      const processResult = await this.executor(launcher.command, launchArgs, {
-        cwd,
-        timeoutMs: settings.timeoutMs + 5000,
-      });
+      let processResult: CommandResult;
+      try {
+        processResult = await this.executor(launcher.command, launchArgs, {
+          cwd,
+          timeoutMs,
+        });
+      } catch (error) {
+        this.logDiagnostics("process launch failed", {
+          kind,
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
       const resultFileFound = existsSync(resultPath);
       const fields = resultFileFound
         ? parseInpasResult(decode(readFileSync(resultPath)))
