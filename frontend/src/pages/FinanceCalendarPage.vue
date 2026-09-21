@@ -82,6 +82,7 @@ const entityFields = computed(() => mergeEntityFields(filterFields.value, column
 const tableTotals = computed(() => ({ amount: totals.planned }));
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
@@ -90,12 +91,13 @@ async function load() {
 			business_entity: filters.value.business_entity,
 			business_point: filters.value.business_point,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		Object.assign(totals, result.totals || {});
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function init() {
