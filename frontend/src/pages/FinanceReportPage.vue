@@ -7,7 +7,12 @@ import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
-import { dateInTimezone, formatDateOnly, monthInTimezone, monthStartInTimezone } from "../dateTime";
+import {
+	dateInTimezone,
+	formatDateOnly,
+	monthInTimezone,
+	monthStartInTimezone,
+} from "../dateTime";
 
 const listRequests = createLatestRequestGate();
 const route = useRoute(),

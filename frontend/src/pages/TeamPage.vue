@@ -53,11 +53,9 @@ const days = computed(() =>
 		{
 			length:
 				schedule.value.days ||
-				new Date(Date.UTC(
-					Number(month.value.slice(0, 4)),
-					Number(month.value.slice(5, 7)),
-					0
-				)).getUTCDate(),
+				new Date(
+					Date.UTC(Number(month.value.slice(0, 4)), Number(month.value.slice(5, 7)), 0)
+				).getUTCDate(),
 		},
 		(_, i) => i + 1
 	)
@@ -244,7 +242,9 @@ function setPayrollDates() {
 	const current = today.startsWith(month.value) ? Number(today.slice(-2)) : 16;
 	payrollStart.value = `${month.value}-${current <= 15 ? "01" : "16"}`;
 	payrollEnd.value = `${month.value}-${
-		current <= 15 ? "15" : String(new Date(Date.UTC(year, mon, 0)).getUTCDate()).padStart(2, "0")
+		current <= 15
+			? "15"
+			: String(new Date(Date.UTC(year, mon, 0)).getUTCDate()).padStart(2, "0")
 	}`;
 }
 function hydrateDraft() {
@@ -375,7 +375,6 @@ watch(section, () => {
 	loading.value = true;
 	error.value = "";
 });
-
 </script>
 
 <template>

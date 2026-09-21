@@ -174,8 +174,7 @@ async function openReceipt(name = null, receiptType = "Приёмка", purchase
 		Object.assign(options, result.options);
 		Object.keys(form).forEach((key) => delete form[key]);
 		Object.assign(form, clone(result.doc));
-		if (form.posting_datetime)
-			form.posting_datetime = toDateTimeLocal(form.posting_datetime);
+		if (form.posting_datetime) form.posting_datetime = toDateTimeLocal(form.posting_datetime);
 		form.items ||= [];
 		for (const row of form.items) if (!row.storage_location) onItemChange(row);
 		editorOpen.value = true;

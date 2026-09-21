@@ -282,8 +282,7 @@ async function openDocument(name = null) {
 		Object.assign(options, result.options);
 		Object.keys(form).forEach((key) => delete form[key]);
 		Object.assign(form, clone(result.doc));
-		if (form.posting_datetime)
-			form.posting_datetime = toDateTimeLocal(form.posting_datetime);
+		if (form.posting_datetime) form.posting_datetime = toDateTimeLocal(form.posting_datetime);
 		form.items ||= [];
 		paymentName.value = "";
 		paymentAmount.value = 0;
@@ -351,7 +350,13 @@ async function save(rethrow = false) {
 	try {
 		const result = await call(
 			"raspechatka.api.warehouse_documents.save_document",
-			{ kind: kind.value, data: JSON.stringify({ ...clone(form), posting_datetime: fromDateTimeLocal(form.posting_datetime) }) },
+			{
+				kind: kind.value,
+				data: JSON.stringify({
+					...clone(form),
+					posting_datetime: fromDateTimeLocal(form.posting_datetime),
+				}),
+			},
 			{ method: "POST" }
 		);
 		await load();
