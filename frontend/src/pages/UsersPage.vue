@@ -16,6 +16,8 @@ const detail = ref(null);
 const saving = ref(false);
 const formError = ref("");
 const invitation = ref("");
+const diagnostics = ref(null);
+const diagnosticsError = ref("");
 const filters = ref({ search: "", active: "" });
 const options = reactive({
 	organizations: [],
@@ -23,6 +25,8 @@ const options = reactive({
 	points: [],
 	employees: [],
 	access_roles: [],
+	system_timezone: "",
+	timezones: [],
 });
 const form = reactive({});
 
@@ -152,8 +156,15 @@ async function loadOptions() {
 		error.value = exception.message;
 	}
 }
+async function loadDiagnostics() {
+	try {
+		diagnostics.value = await call("raspechatka.api.time.get_time_diagnostics");
+	} catch (exception) {
+		diagnosticsError.value = exception.message;
+	}
+}
 function create() {
-	reset();
+	reset({ time_zone: "" });
 	detail.value = {};
 }
 async function open(row) {
@@ -244,7 +255,10 @@ async function closeSessions() {
 	}
 }
 
-onMounted(loadOptions);
+onMounted(() => {
+	loadOptions();
+	loadDiagnostics();
+});
 </script>
 
 <template>
@@ -256,6 +270,40 @@ onMounted(loadOptions);
 				</button>
 			</template>
 		</ListPageHeader>
+		<section v-if="diagnostics || diagnosticsError" class="time-diagnostics">
+			<div class="time-diagnostics-header">
+				<h3>Время системы</h3>
+				<span v-if="diagnosticsError" class="form-error">{{ diagnosticsError }}</span>
+			</div>
+			<div v-if="diagnostics" class="time-diagnostics-grid">
+				<div>
+					<span class="diagnostic-label">Сайт</span>
+					<strong>{{ diagnostics.effective_site_timezone || "Не определён" }}</strong>
+					<small>Настроен: {{ diagnostics.configured_site_timezone || "не задан" }}</small>
+				</div>
+				<div>
+					<span class="diagnostic-label">Текущий пользователь</span>
+					<strong>{{ diagnostics.current_user.effective_timezone || "Не определён" }}</strong>
+					<small>Настроен: {{ diagnostics.current_user.configured_timezone || "системный fallback" }}</small>
+				</div>
+				<div>
+					<span class="diagnostic-label">Сейчас</span>
+					<strong>{{ diagnostics.now.user || diagnostics.now.site || diagnostics.now.utc }}</strong>
+					<small>UTC: {{ diagnostics.now.utc }}</small>
+				</div>
+			</div>
+			<div v-if="diagnostics?.points?.length" class="diagnostic-points">
+				<span class="diagnostic-label">Активные точки</span>
+				<span v-for="point in diagnostics.points" :key="point.name" class="diagnostic-point">
+					{{ point.label }} — {{ point.timezone || "не задан" }}
+				</span>
+			</div>
+			<ul v-if="diagnostics?.warnings?.length" class="diagnostic-warnings">
+				<li v-for="warning in diagnostics.warnings" :key="warning.code + (warning.subject || '')">
+					{{ warning.message }}
+				</li>
+			</ul>
+		</section>
 		<SmartFilterBar
 			v-model="filters"
 			:entity-fields="entityFields"
@@ -340,6 +388,15 @@ onMounted(loadOptions);
 							</select>
 						</label>
 						<label
+							>Часовой пояс
+							<select v-model="form.time_zone">
+								<option value="">Системный — {{ options.system_timezone || "определяется Frappe" }}</option>
+								<option v-for="zone in options.timezones" :key="zone" :value="zone">
+									{{ zone }}
+								</option>
+							</select>
+						</label>
+						<label
 							>Связанный сотрудник
 							<select v-model="form.linked_employee">
 								<option value="">Не связан</option>
@@ -419,6 +476,54 @@ onMounted(loadOptions);
 </template>
 
 <style scoped>
+.time-diagnostics {
+	margin: 0 0 18px;
+	padding: 14px 16px;
+	border: 1px solid var(--border-color, #d9dee7);
+	border-radius: 10px;
+	background: var(--surface-muted, #f8fafc);
+}
+.time-diagnostics-header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+}
+.time-diagnostics-header h3 {
+	margin: 0 0 10px;
+}
+.time-diagnostics-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+}
+.time-diagnostics-grid > div {
+	display: grid;
+	gap: 3px;
+}
+.diagnostic-label {
+	color: var(--text-muted, #667085);
+	font-size: 12px;
+}
+.time-diagnostics small {
+	color: var(--text-muted, #667085);
+}
+.diagnostic-points {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin-top: 12px;
+}
+.diagnostic-point {
+	font-size: 13px;
+}
+.diagnostic-warnings {
+	margin: 10px 0 0;
+	padding-left: 18px;
+	color: var(--danger, #b42318);
+	font-size: 13px;
+}
 .security-actions {
 	display: flex;
 	flex-wrap: wrap;
