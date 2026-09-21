@@ -54,7 +54,7 @@ describe('cashier workplace micro-contract',()=>{
     expect((markup.match(/pin-input-control/g)||[]).length).toBe(1)
     expect((markup.match(/pin-input-slots/g)||[]).length).toBe(1)
     expect((markup.match(/<span class="/g)||[]).length).toBe(4)
-    expect((markup.match(/filled/g)||[]).length).toBe(2)
+    expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
   })
   it('keeps the toast timeout and shift metric label contract',()=>{
     expect(TOAST_DISMISS_MS).toBe(3000)
