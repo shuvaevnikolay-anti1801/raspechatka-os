@@ -4,12 +4,21 @@ import { buildAtolReceiptJson, buildAtolShiftJson, pickAtolString } from "./atol
 import type { AtolSettingsStore } from "./atol-settings";
 import type { PosDiagnostics } from "../diagnostics";
 
-export type AtolDriverInfo = { installed:boolean; version?:string; architecture?:"x64"|"x86"; error?:string; code?:string };
+export type AtolDriverInfo = { installed:boolean; comCreated?:boolean; version?:string; architecture?:"x64"|"x86"; error?:string; code?:string; stage?:string };
+export type AtolDriverDiagnosticsStep = { name:string; success:boolean; error?:string|null };
+export type AtolDriverDiagnostics = {
+  progIdRegistered:boolean;
+  comCreated:boolean;
+  driverResponded:boolean;
+  stage?:string;
+  steps:AtolDriverDiagnosticsStep[];
+};
 export type AtolDriverDevice = { id:string; modelName:string; serialNumber:string; firmwareVersion?:string; connection:"usb"|"com"|"tcp"|"unknown"; settingsJson:string };
 export type AtolRecoveryProbe = FiscalRecoverySnapshot & { amount?:number };
 export type AtolDriverStatus = { connected:boolean; driverVersion?:string; serialNumber?:string; modelName?:string; firmwareVersion?:string; shiftState?:string|number; paperPresent?:boolean; coverOpened?:boolean; printerConnectionLost?:boolean; printerError?:boolean; fnPresent?:boolean; invalidFn?:boolean; deviceBlocked?:boolean; errorCode?:number; errorDescription?:string };
 export interface AtolDriverBridge {
   getDriverInfo():Promise<AtolDriverInfo>;
+  diagnostics?():Promise<AtolDriverDiagnostics>;
   findDevices():Promise<AtolDriverDevice[]>;
   connect(device:AtolDriverDevice):Promise<void>;
   disconnect():Promise<void>;

@@ -53,15 +53,33 @@ internal sealed class BridgeHost(StaDispatcher dispatcher, AtolSession session) 
         }
 
         try {
-            var result = await dispatcher.InvokeAsync(() => session.Execute(request));
+            var timeout = TimeoutFor(request.Command);
+            var operation = dispatcher.InvokeAsync(request.Command, () => session.Execute(request));
+            if (timeout is not null && !operation.IsCompleted) {
+                var completed = await Task.WhenAny(operation, Task.Delay(timeout.Value));
+                if (completed != operation) {
+                    var stage = session.CurrentStage ?? request.Command;
+                    Console.Error.WriteLine(
+                        $"[ATOL] {request.Command} timed out at stage {stage} after {timeout.Value.TotalMilliseconds:0} ms");
+                    // A blocked in-proc COM call cannot be cancelled safely. Return a bounded
+                    // response, then terminate this helper so the next request gets a fresh STA.
+                    StopRequested = true;
+                    if (request.Command == "diagnostics") {
+                        return BridgeResponse.Success(request.Id, session.DiagnosticsTimeoutResult(stage));
+                    }
+                    return BridgeResponse.Failure(request.Id, "driver_timeout",
+                        "ATOL Driver operation exceeded timeout", stage: stage);
+                }
+            }
+            var result = await operation;
             if (request.Command == "shutdown") {
                 StopRequested = true;
             }
             return BridgeResponse.Success(request.Id, result);
         } catch (DriverFailure error) {
             Console.Error.WriteLine($"ATOL {error.Code}: {error.Description}");
-            return BridgeResponse.Failure(request.Id, "driver_error", error.Message,
-                error.Code, error.Description);
+            return BridgeResponse.Failure(request.Id, error.OperationCode ?? "driver_error", error.Message,
+                error.Code, error.Description, error.Stage);
         } catch (ProtocolException error) {
             return BridgeResponse.Failure(request.Id, error.Code, error.Message);
         } catch (Exception error) {
@@ -69,87 +87,228 @@ internal sealed class BridgeHost(StaDispatcher dispatcher, AtolSession session) 
             return BridgeResponse.Failure(request.Id, "bridge_error", error.Message);
         }
     }
+
+    private static TimeSpan? TimeoutFor(string command) => command switch {
+        // Keep the native timeout below the TypeScript transport timeout so the
+        // bridge can return a stage-aware error before the parent kills it.
+        "driverInfo" or "diagnostics" or "discover" or "connect" or "disconnect" or "status" or "recoveryProbe"
+            => TimeSpan.FromSeconds(8),
+        "executeJson" or "reprintDocument" => TimeSpan.FromSeconds(55),
+        _ => null,
+    };
 }
 
 internal sealed class AtolSession {
     private dynamic? driver;
+    private volatile string? currentStage;
+    private volatile bool diagnosticRegistered;
+    private volatile bool diagnosticComCreated;
 
-    public object Execute(BridgeRequest request) => request.Command switch {
-        "driverInfo" => DriverInfo(),
-        "discover" => Discover(),
-        "connect" => Connect(request.Args),
-        "disconnect" => Disconnect(),
-        "status" => Status(),
-        "recoveryProbe" => RecoveryProbe(),
-        "executeJson" => ExecuteJson(request.Args),
-        "reprintDocument" => ReprintDocument(request.Args),
-        "shutdown" => Shutdown(),
-        _ => throw new ProtocolException("unknown_command", $"Unsupported command: {request.Command}"),
-    };
+    public string? CurrentStage => currentStage;
+
+    public object Execute(BridgeRequest request) {
+        currentStage = request.Command;
+        return request.Command switch {
+            "driverInfo" => DriverInfo(),
+            "diagnostics" => Diagnostics(),
+            "discover" => Discover(),
+            "connect" => Connect(request.Args),
+            "disconnect" => Disconnect(),
+            "status" => Status(),
+            "recoveryProbe" => RecoveryProbe(),
+            "executeJson" => ExecuteJson(request.Args),
+            "shutdown" => Shutdown(),
+            _ => throw new ProtocolException("unknown_command", $"Unsupported command: {request.Command}"),
+        };
+    }
+
+    public object DiagnosticsTimeoutResult(string stage) {
+        var steps = new List<object>();
+        if (stage == "com_lookup" && !diagnosticRegistered) {
+            steps.Add(new { name = "GetTypeFromProgID", success = false, error = "timeout" });
+        } else {
+            steps.Add(new { name = "GetTypeFromProgID", success = diagnosticRegistered,
+                error = diagnosticRegistered ? null : "not_registered" });
+        }
+
+        if (diagnosticRegistered) {
+            steps.Add(new { name = "CreateInstance", success = diagnosticComCreated,
+                error = diagnosticComCreated ? null : (stage == "com_create" ? "timeout" : "create_failed") });
+        }
+        if (diagnosticComCreated) {
+            steps.Add(new { name = "DriverCall", success = false, error = "timeout" });
+        }
+
+        return new {
+            progIdRegistered = diagnosticRegistered,
+            comCreated = diagnosticComCreated,
+            driverResponded = false,
+            stage,
+            steps,
+        };
+    }
+
+    private void StageStarted(string stage, string label) {
+        currentStage = stage;
+        Console.Error.WriteLine($"[ATOL] {label} started");
+    }
+
+    private static void StageFinished(string label) {
+        Console.Error.WriteLine($"[ATOL] {label} finished");
+    }
 
     private object DriverInfo() {
+        var registered = false;
         try {
-            var fptr = EnsureDriver();
-            return new {
-                installed = true,
-                version = TryInvoke(fptr, "version")?.ToString(),
-                architecture = "x64",
-            };
-        } catch (COMException error) {
-            return new {
-                installed = false,
-                architecture = "x64",
-                error = error.Message,
-                code = "driver_missing",
-            };
+            StageStarted("com_lookup", "COM lookup");
+            var type = Type.GetTypeFromProgID("AddIn.Fptr10", throwOnError: false);
+            StageFinished("COM lookup");
+            if (type is null) {
+                return new { installed = false, comCreated = false, architecture = "x64", code = "driver_missing" };
+            }
+
+            registered = true;
+            Console.Error.WriteLine("[ATOL] COM class found");
+            StageStarted("com_create", "COM object creation");
+            var fptr = EnsureDriver(type);
+            StageFinished("COM object creation");
+            // Intentionally do not call version/open/queryData/status here. DriverInfo
+            // only proves registration + COM activation and therefore stays bounded.
+            return new { installed = true, comCreated = fptr is not null, architecture = "x64" };
         } catch (DriverFailure error) {
-            return new {
-                installed = false,
-                architecture = "x64",
-                error = error.Message,
-                code = "driver_missing",
-            };
+            return new { installed = registered, comCreated = false, architecture = "x64", error = error.Message,
+                code = error.OperationCode ?? (registered ? "com_create_failed" : "com_lookup_failed"),
+                stage = error.Stage ?? CurrentStage };
+        } catch (Exception error) {
+            return new { installed = registered, comCreated = false, architecture = "x64", error = error.Message,
+                code = registered ? "com_create_failed" : "com_lookup_failed", stage = CurrentStage };
         }
     }
 
-    private object Discover() {
-        var fptr = EnsureDriver();
-        try {
-            fptr.setSingleSetting(
-                Constant(fptr, "LIBFPTR_SETTING_MODEL"),
-                Constant(fptr, "LIBFPTR_MODEL_ATOL_AUTO").ToString());
-            fptr.setSingleSetting(
-                Constant(fptr, "LIBFPTR_SETTING_PORT"),
-                Constant(fptr, "LIBFPTR_PORT_USB").ToString());
-            Check(fptr.applySingleSettings(), fptr);
-            Check(fptr.open(), fptr);
+    private object Diagnostics() {
+        diagnosticRegistered = false;
+        diagnosticComCreated = false;
+        var steps = new List<object>();
+        Console.Error.WriteLine("[ATOL] diagnostics started");
 
-            QueryStatus(fptr);
-            var serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER");
-            var modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME");
-            var firmwareVersion = ReadStringParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION");
-            var settingsJson = fptr.getSettings()?.ToString();
-
-            if (string.IsNullOrWhiteSpace(serialNumber)) {
-                throw new DriverFailure(null, "Connected ATOL KKT did not return a serial number.");
-            }
-            if (string.IsNullOrWhiteSpace(settingsJson)) {
-                throw new DriverFailure(null, "ATOL Driver did not return connection settings.");
-            }
-
-            return new[] {
-                new {
-                    id = $"atol:{serialNumber}",
-                    modelName = modelName ?? "",
-                    serialNumber,
-                    firmwareVersion,
-                    connection = "usb",
-                    settingsJson,
-                },
-            };
-        } finally {
-            Close(fptr);
+        StageStarted("com_lookup", "COM lookup");
+        var type = Type.GetTypeFromProgID("AddIn.Fptr10", throwOnError: false);
+        diagnosticRegistered = type is not null;
+        StageFinished("COM lookup");
+        steps.Add(new { name = "GetTypeFromProgID", success = diagnosticRegistered,
+            error = diagnosticRegistered ? null : "not_registered" });
+        if (!diagnosticRegistered) {
+            return new { progIdRegistered = false, comCreated = false, driverResponded = false, steps };
         }
+
+        dynamic fptr;
+        try {
+            StageStarted("com_create", "COM object creation");
+            fptr = EnsureDriver(type!);
+            diagnosticComCreated = true;
+            StageFinished("COM object creation");
+            steps.Add(new { name = "CreateInstance", success = true, error = (string?)null });
+        } catch (Exception error) {
+            steps.Add(new { name = "CreateInstance", success = false, error = error.Message });
+            return new { progIdRegistered = true, comCreated = false, driverResponded = false, steps };
+        }
+
+        StageStarted("driver_call", "DriverCall");
+        var value = TryInvoke(fptr, "version");
+        var responded = value is not null;
+        StageFinished("DriverCall");
+        steps.Add(new { name = "DriverCall", success = responded,
+            error = responded ? null : "driver_error" });
+        return new { progIdRegistered = true, comCreated = true, driverResponded = responded, steps };
+    }
+
+    private object Discover() {
+        StageStarted("com_create", "COM object creation");
+        dynamic fptr;
+        try {
+            fptr = EnsureDriver();
+            StageFinished("COM object creation");
+        } catch (Exception error) {
+            throw StageFailure("com_create", "com_create_failed", error);
+        }
+        try {
+            StageStarted("configure", "configure USB auto");
+            try {
+                fptr.setSingleSetting(
+                    Constant(fptr, "LIBFPTR_SETTING_MODEL"),
+                    Constant(fptr, "LIBFPTR_MODEL_ATOL_AUTO").ToString());
+                fptr.setSingleSetting(
+                    Constant(fptr, "LIBFPTR_SETTING_PORT"),
+                    Constant(fptr, "LIBFPTR_PORT_USB").ToString());
+                Check(fptr.applySingleSettings(), fptr);
+                StageFinished("configure USB auto");
+            } catch (Exception error) {
+                throw StageFailure("configure", "configure_failed", error);
+            }
+
+            StageStarted("open", "open");
+            try {
+                Check(fptr.open(), fptr);
+                StageFinished("open");
+            } catch (Exception error) {
+                throw StageFailure("open", "open_failed", error);
+            }
+
+            StageStarted("query", "query status");
+            try {
+                QueryStatus(fptr);
+                StageFinished("query status");
+            } catch (Exception error) {
+                throw StageFailure("query", "query_failed", error);
+            }
+
+            StageStarted("read", "read KKT parameters");
+            try {
+                var serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER");
+                var modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME");
+                var firmwareVersion = ReadStringParam(fptr, "LIBFPTR_PARAM_UNIT_VERSION");
+                var settingsJson = fptr.getSettings()?.ToString();
+                if (string.IsNullOrWhiteSpace(serialNumber)) {
+                    throw new DriverFailure(null, "Connected ATOL KKT did not return a serial number.");
+                }
+                if (string.IsNullOrWhiteSpace(settingsJson)) {
+                    throw new DriverFailure(null, "ATOL Driver did not return connection settings.");
+                }
+                var result = new[] {
+                    new {
+                        id = $"atol:{serialNumber}",
+                        modelName = modelName ?? "",
+                        serialNumber,
+                        firmwareVersion,
+                        connection = "usb",
+                        settingsJson,
+                    },
+                };
+                StageFinished("read KKT parameters");
+                return result;
+            } catch (Exception error) {
+                throw StageFailure("read", "read_failed", error);
+            }
+        } finally {
+            StageStarted("close", "close");
+            Close(fptr);
+            StageFinished("close");
+        }
+    }
+
+    private static DriverFailure StageFailure(string stage, string code, Exception error) {
+        var summary = code switch {
+            "com_create_failed" => "ATOL Driver COM object creation failed",
+            "configure_failed" => "ATOL KKT configuration failed",
+            "open_failed" => "ATOL KKT open failed",
+            "query_failed" => "ATOL KKT status query failed",
+            "read_failed" => "ATOL KKT parameter read failed",
+            _ => "ATOL Driver operation failed",
+        };
+        return error is DriverFailure driverError
+            ? new DriverFailure(driverError.Code, $"{summary}: {driverError.Description}",
+                driverError.OperationCode ?? code, driverError.Stage ?? stage)
+            : new DriverFailure(null, $"{summary}: {error.Message}", code, stage);
     }
 
     private object Connect(JsonElement? args) {
@@ -158,12 +317,44 @@ internal sealed class AtolSession {
             throw new ProtocolException("invalid_request", "settingsJson is required.");
         }
 
-        var fptr = EnsureDriver();
-        Close(fptr);
-        fptr.setSettings(settingsJson);
-        Check(fptr.open(), fptr);
-        QueryStatus(fptr);
+        StageStarted("com_create", "COM object creation");
+        dynamic fptr;
+        try {
+            fptr = EnsureDriver();
+            StageFinished("COM object creation");
+        } catch (Exception error) {
+            throw StageFailure("com_create", "com_create_failed", error);
+        }
 
+        StageStarted("close", "close existing connection");
+        Close(fptr);
+        StageFinished("close existing connection");
+
+        StageStarted("configure", "apply saved settings");
+        try {
+            fptr.setSettings(settingsJson);
+            StageFinished("apply saved settings");
+        } catch (Exception error) {
+            throw StageFailure("configure", "configure_failed", error);
+        }
+
+        StageStarted("open", "open");
+        try {
+            Check(fptr.open(), fptr);
+            StageFinished("open");
+        } catch (Exception error) {
+            throw StageFailure("open", "open_failed", error);
+        }
+
+        StageStarted("query", "query status");
+        try {
+            QueryStatus(fptr);
+            StageFinished("query status");
+        } catch (Exception error) {
+            throw StageFailure("query", "query_failed", error);
+        }
+
+        StageStarted("read", "read selected KKT");
         var expectedSerial = ArgumentString(args, "expectedSerialNumber");
         var actualSerial = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER");
         if (!string.IsNullOrWhiteSpace(expectedSerial) &&
@@ -173,28 +364,47 @@ internal sealed class AtolSession {
                 $"Connected KKT serial {actualSerial ?? "unknown"} does not match selected device.");
         }
 
+        var modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME");
+        StageFinished("read selected KKT");
         return new {
             connected = true,
             serialNumber = actualSerial,
-            modelName = ReadStringParam(fptr, "LIBFPTR_PARAM_MODEL_NAME"),
+            modelName,
         };
     }
 
     private object Disconnect() {
         if (driver is not null) {
+            StageStarted("close", "close");
             Close(driver);
+            StageFinished("close");
         }
         return new { connected = false };
     }
 
     private object Status() {
-        var fptr = EnsureDriver();
-        if (!IsOpened(fptr)) {
+        StageStarted("com_create", "COM object creation");
+        dynamic fptr;
+        try {
+            fptr = EnsureDriver();
+            StageFinished("COM object creation");
+        } catch (Exception error) {
+            throw StageFailure("com_create", "com_create_failed", error);
+        }
+
+        StageStarted("open_state", "read open state");
+        var opened = IsOpened(fptr);
+        StageFinished("read open state");
+        if (!opened) {
             return new { connected = false, errorDescription = "KKT is not connected." };
         }
 
+        StageStarted("query", "query status");
         QueryStatus(fptr);
-        return new {
+        StageFinished("query status");
+
+        StageStarted("read", "read status parameters");
+        var result = new {
             connected = true,
             driverVersion = TryInvoke(fptr, "version")?.ToString(),
             serialNumber = ReadStringParam(fptr, "LIBFPTR_PARAM_SERIAL_NUMBER"),
@@ -209,6 +419,8 @@ internal sealed class AtolSession {
             invalidFn = ReadBoolParam(fptr, "LIBFPTR_PARAM_INVALID_FN"),
             deviceBlocked = ReadBoolParam(fptr, "LIBFPTR_PARAM_BLOCKED"),
         };
+        StageFinished("read status parameters");
+        return result;
     }
 
     private object RecoveryProbe() {
@@ -356,25 +568,29 @@ internal sealed class AtolSession {
     }
 
     private dynamic EnsureDriver() {
-        if (driver is not null) {
-            return driver;
-        }
-
         var type = Type.GetTypeFromProgID("AddIn.Fptr10", throwOnError: false);
         if (type is null) {
-            throw new DriverFailure(null, "ATOL Driver 10 x64 COM component AddIn.Fptr10 is not registered.");
+            throw new DriverFailure(null, "ATOL Driver 10 x64 COM component AddIn.Fptr10 is not registered.", "driver_missing", "com_lookup");
         }
+        return EnsureDriver(type);
+    }
 
+    private dynamic EnsureDriver(Type type) {
+        if (driver is not null) return driver;
+        Console.Error.WriteLine("[ATOL] COM object creation started");
         driver = Activator.CreateInstance(type)
-            ?? throw new DriverFailure(null, "Could not create ATOL Driver 10 COM object.");
+            ?? throw new DriverFailure(null, "Could not create ATOL Driver 10 COM object.", "com_create_failed", "com_create");
+        Console.Error.WriteLine("[ATOL] COM object created");
         return driver;
     }
 
     private static void QueryStatus(dynamic fptr) {
+        Console.Error.WriteLine("[ATOL] query status started");
         fptr.setParam(
             Constant(fptr, "LIBFPTR_PARAM_DATA_TYPE"),
             Constant(fptr, "LIBFPTR_DT_STATUS"));
         Check(fptr.queryData(), fptr);
+        Console.Error.WriteLine("[ATOL] query status finished");
     }
 
     private static void QueryFnData(dynamic fptr, object fnDataType) {
@@ -533,17 +749,21 @@ internal sealed class StaDispatcher : IDisposable {
         thread.Start();
     }
 
-    public Task<object> InvokeAsync(Func<object> action) {
+    public Task<object> InvokeAsync(string command, Func<object> action) {
         var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-        queue.Add(new WorkItem(action, completion));
+        queue.Add(new WorkItem(command, action, completion));
         return completion.Task;
     }
 
     private void Run() {
+        Console.Error.WriteLine("[ATOL] STA thread started");
         foreach (var work in queue.GetConsumingEnumerable()) {
+            Console.Error.WriteLine($"[ATOL] STA executing {work.Command}");
             try {
                 work.Completion.SetResult(work.Action());
+                Console.Error.WriteLine($"[ATOL] STA finished {work.Command}");
             } catch (Exception error) {
+                Console.Error.WriteLine($"[ATOL] STA failed {work.Command}: {error.Message}");
                 work.Completion.SetException(error);
             }
         }
@@ -551,11 +771,13 @@ internal sealed class StaDispatcher : IDisposable {
 
     public void Dispose() {
         queue.CompleteAdding();
-        thread.Join();
+        if (!thread.Join(TimeSpan.FromMilliseconds(250))) {
+            Console.Error.WriteLine("[ATOL] STA thread did not stop within 250 ms");
+        }
         queue.Dispose();
     }
 
-    private sealed record WorkItem(Func<object> Action, TaskCompletionSource<object> Completion);
+    private sealed record WorkItem(string Command, Func<object> Action, TaskCompletionSource<object> Completion);
 }
 
 internal sealed record BridgeRequest(int ProtocolVersion, string? Id, string Command, JsonElement? Args);
@@ -571,25 +793,28 @@ internal sealed record BridgeResponse(
         new(BridgeProtocol.Version, id, true, result, null);
 
     public static BridgeResponse Failure(string? id, string code, string message,
-        int? driverErrorCode = null, string? driverErrorDescription = null) =>
+        int? driverErrorCode = null, string? driverErrorDescription = null, string? stage = null) =>
         new(BridgeProtocol.Version, id, false, null,
-            new BridgeError(code, message, driverErrorCode, driverErrorDescription));
+            new BridgeError(code, message, driverErrorCode, driverErrorDescription, stage));
 }
 
 internal sealed record BridgeError(
     string Code,
     string Message,
     int? DriverErrorCode,
-    string? DriverErrorDescription
+    string? DriverErrorDescription,
+    string? Stage = null
 );
 
 internal sealed class ProtocolException(string code, string message) : Exception(message) {
     public string Code { get; } = code;
 }
 
-internal sealed class DriverFailure(int? code, string description) : Exception(description) {
+internal sealed class DriverFailure(int? code, string description, string? operationCode = null, string? stage = null) : Exception(description) {
     public int? Code { get; } = code;
     public string Description { get; } = description;
+    public string? OperationCode { get; } = operationCode;
+    public string? Stage { get; } = stage;
 }
 
 internal static class BridgeProtocol {
