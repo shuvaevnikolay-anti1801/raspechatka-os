@@ -865,7 +865,18 @@ def _marker_file():
         order_by="creation desc",
         limit_page_length=1,
     )
-    return files[0] if files else None
+    if not files:
+        return None
+    marker = frappe.get_doc("File", files[0].name)
+    try:
+        payload = marker.get_content()
+        payload = payload.decode("utf-8") if isinstance(payload, bytes) else payload
+        report = json.loads(payload or "{}")
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise frappe.ValidationError("DEV-161 repair marker is unreadable") from exc
+    if report.get("contract_version") != REPAIR_CONTRACT_VERSION:
+        raise frappe.ValidationError("DEV-161 repair marker has an unexpected contract version")
+    return files[0]
 
 
 def build_repair_plan() -> dict[str, Any]:
