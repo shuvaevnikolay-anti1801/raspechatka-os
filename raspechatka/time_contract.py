@@ -8,7 +8,7 @@ remain calendar dates and are never passed through instant conversion.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -145,7 +145,7 @@ def external_instant_to_site_naive(
 def site_naive_to_utc_rfc3339(value: datetime, site_timezone: str) -> str:
     """Serialize a naive Frappe site-local datetime as a UTC RFC3339 instant."""
     naive = _require_site_naive_datetime(value)
-    utc_value = naive.replace(tzinfo=_site_zone(site_timezone)).astimezone(timezone.utc)
+    utc_value = naive.replace(tzinfo=_site_zone(site_timezone)).astimezone(UTC)
     return utc_value.isoformat().replace("+00:00", "Z")
 
 
