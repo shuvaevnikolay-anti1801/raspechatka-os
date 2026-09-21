@@ -320,7 +320,10 @@ def _site_evidence() -> dict[str, Any]:
 
 
 def _epoch_for(creation: Any, evidence: dict[str, Any]) -> dict[str, Any] | None:
-    parsed = _as_datetime(creation)
+    try:
+        parsed = _as_datetime(creation)
+    except (TypeError, TimeContractError, ValueError):
+        return None
     if parsed is None:
         return None
     matches = []
