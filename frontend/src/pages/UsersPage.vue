@@ -6,7 +6,9 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]);
 const loading = ref(true);
 const error = ref("");
@@ -130,14 +132,17 @@ function reset(values = {}) {
 	formError.value = "";
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.users.get_users", filters.value);
+		const result = await call("raspechatka.api.users.get_users", filters.value);
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -239,7 +244,7 @@ async function closeSessions() {
 	}
 }
 
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -257,6 +262,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			view-key="references.users"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<ReferenceTable
 			:rows="rows"

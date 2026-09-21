@@ -8,6 +8,7 @@ import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { pageLabel } from "../pageRegistry";
+import { createListReadyGate } from "../listLoading";
 
 const items = ref([]);
 const groups = ref([]);
@@ -18,6 +19,7 @@ const catalogPage = ref(1);
 const catalogPageSize = ref(25);
 const totalItems = ref(0);
 const catalogReady = ref(false);
+const catalogReadyGate = createListReadyGate((size) => initializeCatalog(size));
 let itemsRequestId = 0;
 const filters = reactive({
 	search: "",
@@ -350,7 +352,8 @@ function componentLabel(id) {
 			.flat()
 			.find((item) => item.name === id)?.item_name ||
 		itemOptions.items.find((item) => item.name === id)?.item_name ||
-		id || ""
+		id ||
+		""
 	);
 }
 
@@ -385,9 +388,8 @@ function searchBundleComponents(index, value = "") {
 			} finally {
 				componentLoading[index] = false;
 			}
-		},
-		250
-	));
+		}, 250)
+	);
 }
 
 function removeRow(table, index) {
@@ -449,6 +451,7 @@ async function initializeCatalog(size) {
 					@update:model-value="Object.assign(filters, $event)"
 					@apply="applyCatalogFilters"
 					@reset="applyCatalogFilters"
+					@ready="catalogReadyGate.filter"
 				/>
 				<SmartDataTable
 					:rows="items"
@@ -463,7 +466,7 @@ async function initializeCatalog(size) {
 					empty-text="Измените фильтры или создайте новую позицию."
 					@open="(row) => loadEditor(row.name)"
 					@retry="loadWorkspace"
-					@ready="initializeCatalog"
+					@ready="catalogReadyGate.table"
 					@page-change="changeCatalogPage"
 					@page-size-change="changeCatalogPageSize"
 				>
@@ -561,7 +564,9 @@ async function initializeCatalog(size) {
 						</label>
 						<div v-else class="type-readonly">
 							<span>Тип</span>
-							<strong class="type-chip" :class="itemForm.item_type.toLowerCase()">{{ typeLabels[itemForm.item_type] }}</strong>
+							<strong class="type-chip" :class="itemForm.item_type.toLowerCase()">{{
+								typeLabels[itemForm.item_type]
+							}}</strong>
 						</div>
 						<label class="span-2"
 							>Наименование<input v-model="itemForm.item_name" required
@@ -606,7 +611,12 @@ async function initializeCatalog(size) {
 						</label>
 						<label v-if="['Product', 'Variant'].includes(itemForm.item_type)"
 							>Стартовый минимальный остаток
-							<input v-model.number="itemForm.starting_minimum_stock" type="number" min="0" step="any" />
+							<input
+								v-model.number="itemForm.starting_minimum_stock"
+								type="number"
+								min="0"
+								step="any"
+							/>
 						</label>
 						<label v-if="itemForm.item_type === 'Variant'" class="span-2"
 							>Основной товар
@@ -702,7 +712,12 @@ async function initializeCatalog(size) {
 								<input
 									:value="componentSearches[index] ?? componentLabel(row.item)"
 									placeholder="Введите 2–3 символа"
-									@focus="searchBundleComponents(index, componentSearches[index] || '')"
+									@focus="
+										searchBundleComponents(
+											index,
+											componentSearches[index] || ''
+										)
+									"
 									@input="searchBundleComponents(index, $event.target.value)"
 								/>
 								<select
@@ -720,7 +735,10 @@ async function initializeCatalog(size) {
 										{{ item.item_name }}
 									</option>
 									<option
-										v-if="!componentLoading[index] && !componentOptions(index, row).length"
+										v-if="
+											!componentLoading[index] &&
+											!componentOptions(index, row).length
+										"
 										disabled
 									>
 										Ничего не найдено
@@ -810,10 +828,23 @@ async function initializeCatalog(size) {
 .bundle-rows > div {
 	grid-template-columns: 2fr 0.65fr 0.8fr 34px;
 }
-.component-picker { display: grid; gap: 4px; }
-.component-picker select { min-height: 90px; }
-.type-readonly { display: grid; align-content: start; gap: 7px; color: var(--muted); font-size: 12px; }
-.type-readonly .type-chip { width: fit-content; }
+.component-picker {
+	display: grid;
+	gap: 4px;
+}
+.component-picker select {
+	min-height: 90px;
+}
+.type-readonly {
+	display: grid;
+	align-content: start;
+	gap: 7px;
+	color: var(--muted);
+	font-size: 12px;
+}
+.type-readonly .type-chip {
+	width: fit-content;
+}
 .point-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));

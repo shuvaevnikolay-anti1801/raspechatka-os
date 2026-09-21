@@ -7,6 +7,8 @@ import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+const listRequests = createLatestRequestGate();
 const route = useRoute(),
 	kind = computed(() => route.meta.kind),
 	rows = ref([]),
@@ -177,17 +179,20 @@ function fieldOptions(field) {
 	}));
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.clients.get_marketing_records", {
+		const result = await call("raspechatka.api.clients.get_marketing_records", {
 			kind: kind.value,
 			search: filters.value.search,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -238,11 +243,14 @@ function generateCode() {
 	form.code = `RP${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 watch(kind, () => {
+	listRequests.invalidate();
+	rows.value = [];
+	loading.value = true;
+	error.value = "";
 	detail.value = null;
 	filters.value = { search: "" };
-	load();
 });
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 <template>
 	<section class="page marketing-page">
@@ -259,6 +267,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:view-key="`clients.${kind}`"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/><ReferenceTable
 			:key="kind"
 			:rows="rows"

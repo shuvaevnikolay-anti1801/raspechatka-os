@@ -7,10 +7,14 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate, createListReadyGate } from "../listLoading";
+import { formatDateOnly, formatDateTime, fromDateTimeLocal, toDateTimeLocal } from "../dateTime";
 
 const route = useRoute(),
 	router = useRouter();
 const kind = computed(() => route.meta.kind);
+const listRequests = createLatestRequestGate();
+const listReady = createListReadyGate((size) => load(1, size));
 const configs = {
 	"write-offs": {
 		title: "Списания",
@@ -223,12 +227,8 @@ function money(value) {
 	}).format(Number(value || 0));
 }
 function dateText(value) {
-	return value
-		? new Intl.DateTimeFormat("ru-RU", {
-				dateStyle: "short",
-				...(String(value).includes(":") ? { timeStyle: "short" } : {}),
-		  }).format(new Date(String(value).replace(" ", "T")))
-		: "—";
+	if (!value) return "—";
+	return String(value).includes(":") ? formatDateTime(value) : formatDateOnly(value);
 }
 function statusLabel(value) {
 	return value === 1 ? "Проведён" : value === 2 ? "Отменён" : "Черновик";
@@ -241,6 +241,7 @@ function supplierLabel(name) {
 }
 
 async function load(page = 1, size = pageSize.value) {
+	const requestId = listRequests.begin();
 	currentPage.value = page;
 	pageSize.value = size;
 	loading.value = true;
@@ -252,12 +253,13 @@ async function load(page = 1, size = pageSize.value) {
 			limit_start: (page - 1) * size,
 			limit_page_length: size,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totalRows.value = Number(result.total || 0);
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -280,8 +282,7 @@ async function openDocument(name = null) {
 		Object.assign(options, result.options);
 		Object.keys(form).forEach((key) => delete form[key]);
 		Object.assign(form, clone(result.doc));
-		if (form.posting_datetime)
-			form.posting_datetime = String(form.posting_datetime).replace(" ", "T").slice(0, 16);
+		if (form.posting_datetime) form.posting_datetime = toDateTimeLocal(form.posting_datetime);
 		form.items ||= [];
 		paymentName.value = "";
 		paymentAmount.value = 0;
@@ -336,7 +337,7 @@ async function fillInventory() {
 	try {
 		form.items = await call("raspechatka.api.warehouse_documents.fill_inventory", {
 			warehouse: form.warehouse,
-			posting_datetime: form.posting_datetime,
+			posting_datetime: fromDateTimeLocal(form.posting_datetime),
 		});
 		if (!form.items.length) formError.value = "На складе пока нет учётных остатков.";
 	} catch (e) {
@@ -349,7 +350,13 @@ async function save(rethrow = false) {
 	try {
 		const result = await call(
 			"raspechatka.api.warehouse_documents.save_document",
-			{ kind: kind.value, data: JSON.stringify(clone(form)) },
+			{
+				kind: kind.value,
+				data: JSON.stringify({
+					...clone(form),
+					posting_datetime: fromDateTimeLocal(form.posting_datetime),
+				}),
+			},
 			{ method: "POST" }
 		);
 		await load();
@@ -465,13 +472,18 @@ async function unlinkPayment(allocation) {
 	}
 }
 function resetPage() {
+	listRequests.invalidate();
+	listReady.reset();
 	editorOpen.value = false;
 	filters.value = { search: "", status: "", business_point: "" };
+	rows.value = [];
+	totalRows.value = 0;
 	currentPage.value = 1;
-	Promise.all([load(1), loadOptions()]);
+	loading.value = true;
+	void loadOptions();
 }
 watch(kind, resetPage);
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -490,6 +502,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:view-key="`warehouse.${kind}`"
 			@apply="load(1)"
 			@reset="load(1)"
+			@ready="listReady.filter"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -503,7 +516,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:current-page="currentPage"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
-			@ready="load(1, $event)"
+			@ready="listReady.table"
 			empty-title="Документов пока нет"
 			:empty-text="config.create"
 			@open="openDocument($event.name)"

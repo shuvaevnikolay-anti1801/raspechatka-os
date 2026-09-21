@@ -1,19 +1,22 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, monthInTimezone } from "../dateTime";
 
+const listRequests = createLatestRequestGate();
 const route = useRoute();
 const loading = ref(true);
 const saving = ref(false);
 const allowPastEditing = ref(false);
 const error = ref("");
 const point = ref("");
-const month = ref(new Date().toISOString().slice(0, 7));
+const month = ref(monthInTimezone());
 const data = ref({
 	counters: {},
 	employees: [],
@@ -51,10 +54,8 @@ const days = computed(() =>
 			length:
 				schedule.value.days ||
 				new Date(
-					Number(month.value.slice(0, 4)),
-					Number(month.value.slice(5, 7)),
-					0
-				).getDate(),
+					Date.UTC(Number(month.value.slice(0, 4)), Number(month.value.slice(5, 7)), 0)
+				).getUTCDate(),
 		},
 		(_, i) => i + 1
 	)
@@ -210,7 +211,7 @@ function isPastDay(day) {
 }
 function dayOfWeek(day) {
 	const [year, mon] = month.value.split("-").map(Number);
-	return new Date(year, mon - 1, day).getDay();
+	return new Date(Date.UTC(year, mon - 1, day)).getUTCDay();
 }
 function weekdayLabel(day) {
 	return ["вс", "пн", "вт", "ср", "чт", "пт", "сб"][dayOfWeek(day)];
@@ -236,12 +237,14 @@ function shiftCode(name) {
 	return data.value.shift_templates.find((x) => x.name === name)?.shift_code || "—";
 }
 function setPayrollDates() {
-	const now = new Date();
+	const today = dateInTimezone();
 	const [year, mon] = month.value.split("-").map(Number);
-	const current = now.getFullYear() === year && now.getMonth() + 1 === mon ? now.getDate() : 16;
+	const current = today.startsWith(month.value) ? Number(today.slice(-2)) : 16;
 	payrollStart.value = `${month.value}-${current <= 15 ? "01" : "16"}`;
 	payrollEnd.value = `${month.value}-${
-		current <= 15 ? "15" : String(new Date(year, mon, 0).getDate()).padStart(2, "0")
+		current <= 15
+			? "15"
+			: String(new Date(Date.UTC(year, mon, 0)).getUTCDate()).padStart(2, "0")
 	}`;
 }
 function hydrateDraft() {
@@ -255,36 +258,48 @@ function hydrateDraft() {
 }
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		data.value = await call("raspechatka.api.team.get_team_overview", {
+		let overview = await call("raspechatka.api.team.get_team_overview", {
 			business_point: point.value,
 			month: `${month.value}-01`,
 		});
-		if (!point.value && data.value.points.length === 1) {
-			point.value = data.value.points[0].name;
-			return;
-		}
-		if (section.value === "schedule" && point.value) {
-			schedule.value = await call("raspechatka.api.team.get_schedule", {
+		if (!listRequests.isCurrent(requestId)) return;
+		if (!point.value && overview.points.length === 1) {
+			point.value = overview.points[0].name;
+			overview = await call("raspechatka.api.team.get_team_overview", {
 				business_point: point.value,
 				month: `${month.value}-01`,
 			});
+			if (!listRequests.isCurrent(requestId)) return;
+		}
+		data.value = overview;
+		if (section.value === "schedule" && point.value) {
+			const nextSchedule = await call("raspechatka.api.team.get_schedule", {
+				business_point: point.value,
+				month: `${month.value}-01`,
+			});
+			if (!listRequests.isCurrent(requestId)) return;
+			schedule.value = nextSchedule;
 			hydrateDraft();
 		}
 		if (section.value === "payroll") {
 			if (!payrollStart.value) setPayrollDates();
 			payroll.value = null;
 		}
-		if (section.value === "hr")
-			hr.value = await call("raspechatka.api.team.get_hr_overview", {
+		if (section.value === "hr") {
+			const nextHr = await call("raspechatka.api.team.get_hr_overview", {
 				business_point: point.value,
 			});
+			if (!listRequests.isCurrent(requestId)) return;
+			hr.value = nextHr;
+		}
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function saveSchedule() {
@@ -355,8 +370,11 @@ async function recalculate(period) {
 		recalculating.value = false;
 	}
 }
-watch([point, month, section], load);
-onMounted(load);
+watch(section, () => {
+	listRequests.invalidate();
+	loading.value = true;
+	error.value = "";
+});
 </script>
 
 <template>
@@ -400,6 +418,7 @@ onMounted(load);
 			:view-key="`team.${section}`"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<div v-if="error" class="team-error">
 			{{ error }} <button @click="load">Повторить</button>

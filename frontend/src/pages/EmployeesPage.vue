@@ -1,12 +1,14 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { call } from "../api";
 import AppModal from "../components/AppModal.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { defineEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]),
 	loading = ref(true),
 	error = ref(""),
@@ -98,14 +100,17 @@ function reset(values = {}) {
 	formError.value = "";
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.team.get_employee_registry", filters.value);
+		const result = await call("raspechatka.api.team.get_employee_registry", filters.value);
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function create() {
@@ -312,7 +317,6 @@ async function generateDocuments() {
 async function copyInvitation() {
 	await navigator.clipboard.writeText(invitation.value);
 }
-onMounted(load);
 </script>
 
 <template>
@@ -330,6 +334,7 @@ onMounted(load);
 			view-key="team.employees"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<ReferenceTable
 			:rows="rows"

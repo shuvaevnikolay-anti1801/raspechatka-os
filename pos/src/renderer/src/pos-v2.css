@@ -50,7 +50,7 @@
   .receipt-search>div{align-items:flex-start}
   .receipt-filter-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}
 }
-.cashier-login-screen{min-height:100vh;display:grid;place-items:center;background:#f3f5f1;padding:32px}.cashier-login-card{width:min(560px,100%);background:#fff;border-radius:24px;padding:36px;box-shadow:0 18px 60px #1832251a}.cashier-login-card>small{color:#3f7459;font-weight:800;letter-spacing:.12em}.cashier-login-card h1{font-size:36px;margin:8px 0 12px}.cashier-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:24px 0}.cashier-list button{padding:18px;text-align:left;border:1px solid #dce4de;border-radius:14px;background:#fff}.cashier-list button.active{border-color:#397455;background:#eef7f1}.cashier-login-card form{display:grid;gap:12px;margin-top:24px}.cashier-login-card label{display:grid;gap:6px}.cashier-login-card input{font-size:28px;letter-spacing:.3em;padding:12px;border:1px solid #cad6ce;border-radius:12px}.cashier-login-card form>button{padding:14px;border-radius:12px}.cashier-login-error{color:#a62d2d;background:#fff0f0;padding:12px;border-radius:10px}
+.cashier-login-screen{min-height:100vh;display:grid;place-items:center;background:#f3f5f1;padding:32px}.cashier-login-card{width:min(560px,100%);background:#fff;border-radius:24px;padding:36px;box-shadow:0 18px 60px #1832251a}.cashier-login-card>small{color:#3f7459;font-weight:800;letter-spacing:.12em}.cashier-login-card h1{font-size:36px;margin:8px 0 12px}.cashier-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:24px 0}.cashier-list button{padding:18px;text-align:left;border:1px solid #dce4de;border-radius:14px;background:#fff}.cashier-list button.active{border-color:#397455;background:#eef7f1}.cashier-login-card form{display:grid;gap:12px;margin-top:24px}.cashier-login-card label{display:grid;gap:6px}.cashier-login-card input{font-size:28px;padding:12px;border:1px solid #cad6ce;border-radius:12px}.cashier-login-card form>button{padding:14px;border-radius:12px}.cashier-login-error{color:#a62d2d;background:#fff0f0;padding:12px;border-radius:10px}
 
 .upsell-card{margin:10px 12px 0;padding:11px 12px;border:1px solid #b9d983;border-left:4px solid var(--rp-green);border-radius:8px;background:#f1f8df;color:var(--rp-ink)}
 .upsell-card>small{color:#5a7406;font-size:9px;font-weight:800;letter-spacing:.08em}
@@ -63,10 +63,15 @@
 
 .cashier-login-card{position:relative;min-height:390px;display:flex;flex-direction:column}
 .cashier-login-card .cashier-list{margin-bottom:28px}
-.cashier-login-card .cashier-pin-input{width:12.5rem;min-height:56px;padding:12px 16px;letter-spacing:.56em;text-align:center;background:linear-gradient(90deg,#fff 0,#fff 23%,#d6dfd8 23%,#d6dfd8 24%,#fff 24%,#fff 49%,#d6dfd8 49%,#d6dfd8 50%,#fff 50%,#fff 75%,#d6dfd8 75%,#d6dfd8 76%,#fff 76%)}
-.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:auto;padding:3px 0;border:0;background:transparent;color:#657f0d;font-size:10px;text-decoration:underline;text-underline-offset:3px}
-.cashier-login-card .cashier-forgot-pin{justify-self:end;margin-top:2px}
-.cashier-login-card .settings-open-trigger{align-self:flex-start;margin-top:auto;color:#7d837b}
+.cashier-login-card .pin-input{position:relative;width:100%;max-width:12.5rem;min-height:56px}
+.cashier-login-card .pin-input-control{position:absolute;inset:0;width:100%;height:100%;z-index:2;opacity:0;cursor:text;letter-spacing:normal;padding:0;border:0;background:transparent}
+.cashier-login-card .pin-input:focus-within{outline:3px solid #b9d8c1;outline-offset:3px;border-radius:12px}
+.cashier-login-card .pin-input-slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%;height:56px}
+.cashier-login-card .pin-input-slots span{display:grid;place-items:center;border:1px solid #cad6ce;border-radius:12px;background:#fff;color:#183225;font-size:28px;line-height:1}
+.cashier-login-card .pin-input-slots span.filled{border-color:#397455;background:#eef7f1}
+.cashier-login-card .cashier-login-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;min-height:28px}
+.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:28px;padding:3px 0;border:0;background:transparent;color:#657f0d;font-size:10px;text-decoration:underline;text-underline-offset:3px}
+.cashier-login-card .settings-open-trigger{color:#7d837b}
 
 .work-schedule{display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:12px;align-items:start}
 .schedule-upcoming,.schedule-month{min-width:0}

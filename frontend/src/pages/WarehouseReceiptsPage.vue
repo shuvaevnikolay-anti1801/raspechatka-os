@@ -7,8 +7,12 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate, createListReadyGate } from "../listLoading";
+import { formatDateTime, fromDateTimeLocal, toDateTimeLocal } from "../dateTime";
 
 const route = useRoute();
+const listRequests = createLatestRequestGate();
+const listReady = createListReadyGate((size) => load(1, size));
 const rows = ref([]),
 	totalRows = ref(0),
 	currentPage = ref(1),
@@ -114,11 +118,7 @@ function money(value) {
 	}).format(Number(value || 0));
 }
 function dateTime(value) {
-	return value
-		? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-				new Date(value.replace(" ", "T"))
-		  )
-		: "—";
+	return formatDateTime(value);
 }
 function statusLabel(value) {
 	return value === 1 ? "Проведён" : value === 2 ? "Отменён" : "Черновик";
@@ -131,6 +131,7 @@ function supplierLabel(name) {
 }
 
 async function load(page = 1, size = pageSize.value) {
+	const requestId = listRequests.begin();
 	currentPage.value = page;
 	pageSize.value = size;
 	loading.value = true;
@@ -141,12 +142,13 @@ async function load(page = 1, size = pageSize.value) {
 			limit_start: (page - 1) * size,
 			limit_page_length: size,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totalRows.value = Number(result.total || 0);
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 
@@ -172,8 +174,7 @@ async function openReceipt(name = null, receiptType = "Приёмка", purchase
 		Object.assign(options, result.options);
 		Object.keys(form).forEach((key) => delete form[key]);
 		Object.assign(form, clone(result.doc));
-		if (form.posting_datetime)
-			form.posting_datetime = String(form.posting_datetime).replace(" ", "T").slice(0, 16);
+		if (form.posting_datetime) form.posting_datetime = toDateTimeLocal(form.posting_datetime);
 		form.items ||= [];
 		for (const row of form.items) if (!row.storage_location) onItemChange(row);
 		editorOpen.value = true;
@@ -218,6 +219,7 @@ async function save(closeAfter = false, throwOnError = false) {
 			...clone(form),
 			total_quantity: totalQty.value,
 			total_amount: totalAmount.value,
+			posting_datetime: fromDateTimeLocal(form.posting_datetime),
 		};
 		const result = await call(
 			"raspechatka.api.warehouse.save_receipt",
@@ -271,7 +273,7 @@ async function cancel() {
 }
 
 onMounted(async () => {
-	await Promise.all([load(), loadOptions()]);
+	await loadOptions();
 	if (route.query.receipt) await openReceipt(route.query.receipt);
 	else if (route.query.purchase_order)
 		await openReceipt(null, "Приёмка", route.query.purchase_order);
@@ -301,6 +303,7 @@ onMounted(async () => {
 			view-key="warehouse.receipts"
 			@apply="load(1)"
 			@reset="load(1)"
+			@ready="listReady.filter"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -314,7 +317,7 @@ onMounted(async () => {
 			:current-page="currentPage"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
-			@ready="load(1, $event)"
+			@ready="listReady.table"
 			empty-title="Документов пока нет"
 			empty-text="Создайте первую приёмку или оприходование"
 			@open="openReceipt($event.name)"

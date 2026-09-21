@@ -6,7 +6,10 @@ import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+import { formatDateOnly, formatDateTime } from "../dateTime";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]),
 	loading = ref(true),
 	error = ref(""),
@@ -29,7 +32,7 @@ const columns = [
 	{ key: "club_status", label: "Статус клуба" },
 	{ key: "discount_percent", label: "Скидка, %" },
 	{ key: "active_channels", label: "Каналов" },
-	{ key: "registered_at", label: "Регистрация" },
+	{ key: "registered_at", label: "Регистрация", type: "datetime" },
 ];
 const filterFields = computed(() => [
 	{
@@ -82,19 +85,22 @@ function reset(values = {}) {
 	});
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.clients.get_clients", {
+		const result = await call("raspechatka.api.clients.get_clients", {
 			search: filters.value.search,
 			club_status: filters.value.status,
 			business_point: filters.value.point,
 			channel: filters.value.channel,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -149,12 +155,8 @@ async function save() {
 	}
 }
 function formatDate(value) {
-	return value
-		? new Intl.DateTimeFormat("ru-RU", {
-				dateStyle: "short",
-				timeStyle: value.includes?.(":") ? "short" : undefined,
-		  }).format(new Date(value))
-		: "—";
+	if (!value) return "—";
+	return String(value).includes(":") ? formatDateTime(value) : formatDateOnly(value);
 }
 function money(value) {
 	return (
@@ -162,7 +164,7 @@ function money(value) {
 		" ₽"
 	);
 }
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -180,6 +182,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			view-key="clients.base"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<ReferenceTable
 			:rows="rows"

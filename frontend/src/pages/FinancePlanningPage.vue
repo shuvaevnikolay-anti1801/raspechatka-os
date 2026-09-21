@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
-const month = ref(new Date().toISOString().slice(0, 7)),
+import { monthInTimezone } from "../dateTime";
+const month = ref(monthInTimezone()),
 	entity = ref(""),
 	point = ref(""),
 	form = reactive({ lines: [] }),

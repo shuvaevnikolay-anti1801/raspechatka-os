@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { call } from "../api";
 import { deriveFilterFields, reconcileVisible } from "../entityListSchema";
 import { setDocumentFilterMatches, viewDoctypes } from "../listDocumentFilters";
@@ -11,7 +11,7 @@ const props = defineProps({
 	viewKey: { type: String, required: true },
 	doctype: { type: String, default: "" },
 });
-const emit = defineEmits(["update:modelValue", "apply", "reset"]);
+const emit = defineEmits(["update:modelValue", "apply", "reset", "ready"]);
 const settingsOpen = ref(false),
 	visible = ref([]),
 	bookmarks = ref([]),
@@ -58,6 +58,8 @@ const periodFieldPair = computed(() => {
 	const to = dateFields.find((field) => /(^|\\s)(по|до)$/i.test((field.label || "").trim()));
 	return from && to ? { from, to } : null;
 });
+let preferenceGeneration = 0;
+
 const operatorOptions = {
 	text: [
 		{ value: "contains", label: "содержит" },
@@ -165,6 +167,28 @@ function dynamicCriteria() {
 			return [{ fieldname: field.key, operator, value }];
 		});
 }
+async function resolveDocumentMatches(viewKey, doctype, generation = null) {
+	const criteria = dynamicCriteria();
+	if (!doctype || !criteria.length) {
+		setDocumentFilterMatches(viewKey, null);
+		return true;
+	}
+	try {
+		const names = await call("raspechatka.api.list_filters.filter_document_names", {
+			doctype,
+			filters: JSON.stringify(criteria),
+		});
+		if (generation !== null && generation !== preferenceGeneration) return false;
+		setDocumentFilterMatches(viewKey, names);
+		return true;
+	} catch (exception) {
+		if (generation === null || generation === preferenceGeneration) {
+			schemaError.value = exception.message;
+			setDocumentFilterMatches(viewKey, []);
+		}
+		return false;
+	}
+}
 async function savePreference(extra = {}) {
 	if (!ready.value) return;
 	await call(
@@ -182,32 +206,40 @@ async function savePreference(extra = {}) {
 		{ method: "POST" }
 	);
 }
-async function loadSchema() {
+async function loadSchema(generation, doctype) {
 	schemaFields.value = [];
 	schemaError.value = "";
-	if (!documentType.value) return;
-	schemaLoading.value = true;
+	schemaLoading.value = Boolean(doctype);
+	if (!doctype) return true;
 	try {
-		schemaFields.value = await call("raspechatka.api.list_filters.get_doctype_filter_fields", {
-			doctype: documentType.value,
+		const result = await call("raspechatka.api.list_filters.get_doctype_filter_fields", {
+			doctype,
 		});
+		if (generation !== preferenceGeneration) return false;
+		schemaFields.value = result;
 	} catch (exception) {
+		if (generation !== preferenceGeneration) return false;
 		schemaError.value = exception.message;
 	} finally {
-		schemaLoading.value = false;
+		if (generation === preferenceGeneration) schemaLoading.value = false;
 	}
+	return generation === preferenceGeneration;
 }
 async function loadPreference() {
+	const generation = ++preferenceGeneration;
+	const viewKey = props.viewKey;
+	const doctype = documentType.value;
+	const key = `${viewKey}.filters`;
 	ready.value = false;
-	let restored = false;
-	await loadSchema();
+	if (!(await loadSchema(generation, doctype))) return;
 	visible.value = defaults();
 	bookmarks.value = [];
-	setDocumentFilterMatches(props.viewKey, null);
+	setDocumentFilterMatches(viewKey, null);
 	try {
 		const preference = await call("raspechatka.api.references.get_view_preference", {
-			view_key: preferenceKey.value,
+			view_key: key,
 		});
+		if (generation !== preferenceGeneration) return;
 		visible.value = reconcileVisible(
 			preference.visible,
 			fields.value,
@@ -230,17 +262,18 @@ async function loadPreference() {
 				...props.modelValue,
 				...resolvePeriodPreset(preference.lastFilters),
 			});
-			restored = true;
 		}
 	} catch (_) {
+		if (generation !== preferenceGeneration) return;
 		// The complete default field set remains available without saved preferences.
-	} finally {
-		ready.value = true;
-		if (restored) {
-			await nextTick();
-			await apply();
-		}
 	}
+	if (generation !== preferenceGeneration) return;
+	await nextTick();
+	if (generation !== preferenceGeneration) return;
+	await resolveDocumentMatches(viewKey, doctype, generation);
+	if (generation !== preferenceGeneration) return;
+	ready.value = true;
+	emit("ready", viewKey);
 }
 async function toggleField(key) {
 	if (visible.value.includes(key)) {
@@ -250,23 +283,14 @@ async function toggleField(key) {
 	await savePreference();
 }
 async function apply() {
+	if (!ready.value || schemaLoading.value) return;
 	schemaError.value = "";
-	if (documentType.value) {
-		try {
-			const names = await call("raspechatka.api.list_filters.filter_document_names", {
-				doctype: documentType.value,
-				filters: JSON.stringify(dynamicCriteria()),
-			});
-			setDocumentFilterMatches(props.viewKey, names);
-		} catch (exception) {
-			schemaError.value = exception.message;
-			return;
-		}
-	}
+	if (!(await resolveDocumentMatches(props.viewKey, documentType.value))) return;
 	await savePreference();
 	emit("apply");
 }
 async function reset() {
+	if (!ready.value || schemaLoading.value) return;
 	const empty = {
 		search: "",
 		...Object.fromEntries(
@@ -314,6 +338,9 @@ async function removeBookmark(id) {
 
 watch(() => [props.viewKey, documentType.value], loadPreference);
 onMounted(loadPreference);
+onBeforeUnmount(() => {
+	preferenceGeneration += 1;
+});
 </script>
 
 <template>
@@ -448,8 +475,19 @@ onMounted(loadPreference);
 				</div>
 			</label>
 			<div class="smart-filter-submit">
-				<button class="button button-primary" type="button" @click="apply">Найти</button
-				><button class="button button-secondary" type="button" @click="reset">
+				<button
+					class="button button-primary"
+					type="button"
+					:disabled="!ready || schemaLoading"
+					@click="apply"
+				>
+					Найти</button
+				><button
+					class="button button-secondary"
+					type="button"
+					:disabled="!ready || schemaLoading"
+					@click="reset"
+				>
 					Очистить
 				</button>
 			</div>

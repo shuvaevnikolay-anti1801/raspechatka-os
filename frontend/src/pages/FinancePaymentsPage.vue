@@ -6,7 +6,10 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, formatDateOnly, monthStartInTimezone } from "../dateTime";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]);
 const loading = ref(true);
 const error = ref("");
@@ -24,10 +27,8 @@ const options = reactive({
 	suppliers: [],
 });
 const filters = reactive({
-	from_date: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-		.toISOString()
-		.slice(0, 10),
-	to_date: new Date().toISOString().slice(0, 10),
+	from_date: monthStartInTimezone(),
+	to_date: dateInTimezone(),
 	business_entity: "",
 	business_point: "",
 	direction: "",
@@ -48,8 +49,7 @@ const money = (value) =>
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number(value || 0))} ₽`;
-const date = (value) =>
-	value ? new Intl.DateTimeFormat("ru-RU").format(new Date(`${value}T00:00:00`)) : "—";
+const date = (value) => (value ? formatDateOnly(value) : "—");
 const directionLabel = (value) =>
 	value === "Income" ? "Приход" : value === "Expense" ? "Расход" : "Перемещение";
 const sourceLabel = (value) =>
@@ -141,16 +141,18 @@ const listColumns = [
 const entityFields = computed(() => mergeEntityFields(filterFields.value, listColumns));
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
 		const result = await call("raspechatka.api.finance.get_payments", filters);
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows;
 		Object.assign(totals, result.totals);
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -222,7 +224,7 @@ async function cancelPayment() {
 	}
 }
 
-onMounted(() => Promise.all([loadOptions(), load()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -256,6 +258,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			@update:model-value="Object.assign(filters, $event)"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<SmartDataTable
 			:rows="rows"

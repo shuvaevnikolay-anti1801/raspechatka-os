@@ -7,6 +7,9 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, formatDateTime, monthStartInTimezone } from "../dateTime";
+const listRequests = createLatestRequestGate();
 const route = useRoute(),
 	kind = computed(() => route.meta.kind || "overview"),
 	rows = ref([]),
@@ -34,10 +37,8 @@ const upsellConfig = reactive({ rules: [], catalog_items: [] });
 const upsellSaving = ref(false);
 const upsellMessage = ref("");
 const options = reactive({ entities: [], points: [], cashiers: [] });
-const today = new Date().toISOString().slice(0, 10),
-	month = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-		.toISOString()
-		.slice(0, 10);
+const today = dateInTimezone(),
+	month = monthStartInTimezone();
 const filters = reactive({
 	from_date: month,
 	to_date: today,
@@ -89,12 +90,7 @@ const money = (v) =>
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number(v || 0))} ₽`;
-const date = (v) =>
-	v
-		? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-				new Date(v)
-		  )
-		: "—";
+const date = (value) => formatDateTime(value);
 const actionLabel = (v) =>
 	({
 		OPEN_SHIFT: "Открытие смены",
@@ -205,10 +201,22 @@ function fmt(v, col) {
 	if (col.format === "movement") return v === "Deposit" ? "Внесение" : "Выплата";
 	if (col.format === "action") return actionLabel(v);
 	if (col.format === "order_status")
-		return ({ New: "В работе", "In Progress": "В работе", Ready: "Готов к выдаче", Issued: "Выдан", Cancelled: "Отменён" }[v] || v || "—");
+		return (
+			{
+				New: "В работе",
+				"In Progress": "В работе",
+				Ready: "Готов к выдаче",
+				Issued: "Выдан",
+				Cancelled: "Отменён",
+			}[v] ||
+			v ||
+			"—"
+		);
 	if (col.format === "duration") {
 		if (v === null || v === undefined || v === "") return "—";
-		const minutes = Math.max(0, Number(v) || 0), hours = Math.floor(minutes / 60), rest = minutes % 60;
+		const minutes = Math.max(0, Number(v) || 0),
+			hours = Math.floor(minutes / 60),
+			rest = minutes % 60;
 		return hours ? `${hours} ч ${rest} мин` : `${rest} мин`;
 	}
 	if (col.format === "overdue") return v ? "Просрочен" : "—";
@@ -225,7 +233,15 @@ function fmt(v, col) {
 }
 const filterFields = computed(() => {
 	const result = [
-		{ key: "search", label: "Поиск", placeholder: kind.value === "orders" ? "Телефон, заказ, описание или чек" : "Номер или комментарий", wide: true },
+		{
+			key: "search",
+			label: "Поиск",
+			placeholder:
+				kind.value === "orders"
+					? "Телефон, заказ, описание или чек"
+					: "Номер или комментарий",
+			wide: true,
+		},
 		{ key: "from_date", label: "Период с", type: "date" },
 		{ key: "to_date", label: "Период по", type: "date" },
 		{
@@ -254,7 +270,10 @@ const filterFields = computed(() => {
 	if (kind.value === "orders") {
 		result.push(
 			{
-				key: "status", label: "Статус", type: "select", allLabel: "Все статусы",
+				key: "status",
+				label: "Статус",
+				type: "select",
+				allLabel: "Все статусы",
 				options: [
 					{ value: "New", label: "В работе (legacy)" },
 					{ value: "In Progress", label: "В работе" },
@@ -263,7 +282,13 @@ const filterFields = computed(() => {
 					{ value: "Cancelled", label: "Отменён" },
 				],
 			},
-			{ key: "overdue", label: "Просрочка", type: "select", allLabel: "Все", options: [{ value: "1", label: "Только просроченные" }] },
+			{
+				key: "overdue",
+				label: "Просрочка",
+				type: "select",
+				allLabel: "Все",
+				options: [{ value: "1", label: "Только просроченные" }],
+			},
 			{ key: "due_from", label: "Срок с", type: "date" },
 			{ key: "due_to", label: "Срок по", type: "date" },
 			{ key: "ready_from", label: "Готов с", type: "date" },
@@ -343,13 +368,14 @@ async function init() {
 	try {
 		const optionsMethod = kind.value === "orders" ? "get_order_options" : "get_sales_options";
 		Object.assign(options, await call(`raspechatka.api.sales.${optionsMethod}`));
-		await load();
+		if (kind.value === "integration") await load();
 	} catch (e) {
 		error.value = e.message;
 		loading.value = false;
 	}
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	selectedDoc.value = null;
@@ -414,6 +440,7 @@ async function load() {
 				call("raspechatka.api.sales.get_pos_sales_settings_api"),
 				call("raspechatka.api.sales.get_pos_upsell_config"),
 			]);
+			if (!listRequests.isCurrent(requestId)) return;
 			Object.assign(posSettings, salesSettings);
 			upsellConfig.catalog_items = upsellSettings.catalog_items || [];
 			upsellConfig.rules = (upsellSettings.rules || []).map((rule) => ({
@@ -422,12 +449,13 @@ async function load() {
 			}));
 		}
 		const result = await call(`raspechatka.api.sales.${method}`, params);
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totals.value = result.totals || {};
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function savePosSettings() {
@@ -498,7 +526,15 @@ async function provision(point, rotate = false) {
 	token.value = result;
 	await load();
 }
-watch(kind, load);
+watch(kind, (value) => {
+	listRequests.invalidate();
+	rows.value = [];
+	totals.value = {};
+	selectedDoc.value = null;
+	error.value = "";
+	loading.value = true;
+	if (value === "integration") void load();
+});
 onMounted(init);
 </script>
 <template>
@@ -513,11 +549,12 @@ onMounted(init);
 			@update:model-value="Object.assign(filters, $event)"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
-		<div v-if="loading" class="table-message">
+		<div v-if="loading && !rows.length" class="table-message">
 			<span class="loader"></span><span>Загружаем продажи…</span>
 		</div>
-		<div v-else-if="error" class="table-message error-message">
+		<div v-else-if="error && !rows.length" class="table-message error-message">
 			<strong>Не удалось загрузить данные</strong><span>{{ error }}</span
 			><button @click="load">Повторить</button>
 		</div>
@@ -688,13 +725,18 @@ onMounted(init);
 			<div class="form-section upsell-settings">
 				<h2>Дополнительные продажи</h2>
 				<p class="form-help">
-					Правила общие для всех касс сети. На кассе одновременно показывается одно предложение.
+					Правила общие для всех касс сети. На кассе одновременно показывается одно
+					предложение.
 				</p>
 				<div class="upsell-rules">
 					<div v-if="!upsellConfig.rules.length" class="table-message">
 						Правила ещё не настроены.
 					</div>
-					<article v-for="(rule, ruleIndex) in upsellConfig.rules" :key="rule.name || `new-${ruleIndex}`" class="upsell-rule">
+					<article
+						v-for="(rule, ruleIndex) in upsellConfig.rules"
+						:key="rule.name || `new-${ruleIndex}`"
+						class="upsell-rule"
+					>
 						<div class="upsell-rule__header">
 							<label class="check-field">
 								<input
@@ -724,8 +766,9 @@ onMounted(init);
 									v-for="item in upsellConfig.catalog_items"
 									:key="item.name"
 									:value="item.name"
-									>{{ item.item_name }} · {{ item.item_type }}</option
 								>
+									{{ item.item_name }} · {{ item.item_type }}
+								</option>
 							</select></label
 						>
 						<div class="upsell-candidates">
@@ -744,8 +787,9 @@ onMounted(init);
 											v-for="item in upsellConfig.catalog_items"
 											:key="item.name"
 											:value="item.name"
-											>{{ item.item_name }} · {{ item.item_type }}</option
 										>
+											{{ item.item_name }} · {{ item.item_type }}
+										</option>
 									</select></label
 								>
 								<label
@@ -754,8 +798,8 @@ onMounted(init);
 										rows="2"
 										placeholder="Оставьте пустым для стандартной фразы"
 										:disabled="!canEditIntegration"
-									></textarea></label
-								>
+									></textarea>
+								</label>
 								<button
 									v-if="canEditIntegration"
 									class="text-button"
@@ -774,7 +818,7 @@ onMounted(init);
 						>
 							＋ Добавить кандидата
 						</button>
-				</article>
+					</article>
 				</div>
 				<div class="upsell-actions">
 					<button
@@ -856,9 +900,12 @@ onMounted(init);
 				:entity-fields="entityFields"
 				:totals="tableTotals"
 				:view-key="`sales.${kind}`"
+				:loading="loading"
+				:error="error"
 				empty-title="Данных пока нет"
 				empty-text="Они появятся после первой синхронизации кассовой программы."
 				@open="openRow"
+				@retry="load"
 		/></template>
 		<AppModal
 			v-if="selectedDoc"
@@ -906,37 +953,83 @@ onMounted(init);
 				</table></template
 			><template v-else
 				><div class="document-summary">
-					<span>Точка <b>{{ pointMap[selectedDoc.business_point] || selectedDoc.business_point }}</b></span>
-					<span>Кассир <b>{{ employeeMap[selectedDoc.cashier] || selectedDoc.cashier || "—" }}</b></span>
-					<span>Тип <b>{{ selectedDoc.shift_type || "—" }}</b></span>
-					<span>Статус <b>{{ selectedDoc.status }}</b></span>
-					<span>Открыта <b>{{ date(selectedDoc.opened_at) }}</b></span>
-					<span>Закрыта <b>{{ date(selectedDoc.closed_at) }}</b></span>
+					<span
+						>Точка
+						<b>{{
+							pointMap[selectedDoc.business_point] || selectedDoc.business_point
+						}}</b></span
+					>
+					<span
+						>Кассир
+						<b>{{
+							employeeMap[selectedDoc.cashier] || selectedDoc.cashier || "—"
+						}}</b></span
+					>
+					<span
+						>Тип <b>{{ selectedDoc.shift_type || "—" }}</b></span
+					>
+					<span
+						>Статус <b>{{ selectedDoc.status }}</b></span
+					>
+					<span
+						>Открыта <b>{{ date(selectedDoc.opened_at) }}</b></span
+					>
+					<span
+						>Закрыта <b>{{ date(selectedDoc.closed_at) }}</b></span
+					>
 				</div>
 				<div class="shift-detail-kpis">
 					<span
-						>Продажи до скидок <b>{{ money(selectedDoc.sales_before_discount) }}</b></span
+						>Продажи до скидок
+						<b>{{ money(selectedDoc.sales_before_discount) }}</b></span
 					><span
 						>Скидки <b>{{ money(selectedDoc.discounts_total) }}</b></span
-					><span>Скидки за отзывы <b>{{ money(selectedDoc.review_discounts) }}</b></span
-					><span>Прочие скидки <b>{{ money(selectedDoc.other_discounts) }}</b></span
-					><span>Чеков со скидкой <b>{{ selectedDoc.discounted_receipt_count || 0 }} ({{ Number(selectedDoc.discount_conversion || 0).toFixed(1) }}%)</b></span
+					><span
+						>Скидки за отзывы <b>{{ money(selectedDoc.review_discounts) }}</b></span
+					><span
+						>Прочие скидки <b>{{ money(selectedDoc.other_discounts) }}</b></span
+					><span
+						>Чеков со скидкой
+						<b
+							>{{ selectedDoc.discounted_receipt_count || 0 }} ({{
+								Number(selectedDoc.discount_conversion || 0).toFixed(1)
+							}}%)</b
+						></span
 					><span
 						>Продажи после скидок <b>{{ money(selectedDoc.gross_sales) }}</b></span
 					><span
 						>Возвраты <b>{{ money(selectedDoc.returns_total) }}</b></span
-					><span>Чистая выручка <b>{{ money(selectedDoc.net_sales) }}</b></span
-					><span>Чеков <b>{{ selectedDoc.receipt_count }}</b></span
-					><span>Средний чек <b>{{ money(selectedDoc.average_check) }}</b></span
-					><span>Отзывы <b>{{ selectedDoc.reviews_count || 0 }}</b></span
-					><span>Клуб <b>{{ selectedDoc.club_registrations || 0 }}</b></span
-					><span>Подарки <b>{{ selectedDoc.gift_orders || 0 }} ({{ selectedDoc.gift_orders_1 || 0 }}/{{ selectedDoc.gift_orders_2 || 0 }}/{{ selectedDoc.gift_orders_3 || 0 }})</b></span
-					><span>Наличные <b>{{ money(selectedDoc.cash_sales) }}</b></span
-					><span>Карта <b>{{ money(selectedDoc.card_sales) }}</b></span
-					><span>QR <b>{{ money(selectedDoc.qr_sales) }}</b></span
-					><span>При открытии <b>{{ money(selectedDoc.opening_cash) }}</b></span
-					><span>Ожидается <b>{{ money(selectedDoc.expected_cash) }}</b></span
-					><span>При закрытии <b>{{ money(selectedDoc.closing_cash) }}</b></span
+					><span
+						>Чистая выручка <b>{{ money(selectedDoc.net_sales) }}</b></span
+					><span
+						>Чеков <b>{{ selectedDoc.receipt_count }}</b></span
+					><span
+						>Средний чек <b>{{ money(selectedDoc.average_check) }}</b></span
+					><span
+						>Отзывы <b>{{ selectedDoc.reviews_count || 0 }}</b></span
+					><span
+						>Клуб <b>{{ selectedDoc.club_registrations || 0 }}</b></span
+					><span
+						>Подарки
+						<b
+							>{{ selectedDoc.gift_orders || 0 }} ({{
+								selectedDoc.gift_orders_1 || 0
+							}}/{{ selectedDoc.gift_orders_2 || 0 }}/{{
+								selectedDoc.gift_orders_3 || 0
+							}})</b
+						></span
+					><span
+						>Наличные <b>{{ money(selectedDoc.cash_sales) }}</b></span
+					><span
+						>Карта <b>{{ money(selectedDoc.card_sales) }}</b></span
+					><span
+						>QR <b>{{ money(selectedDoc.qr_sales) }}</b></span
+					><span
+						>При открытии <b>{{ money(selectedDoc.opening_cash) }}</b></span
+					><span
+						>Ожидается <b>{{ money(selectedDoc.expected_cash) }}</b></span
+					><span
+						>При закрытии <b>{{ money(selectedDoc.closing_cash) }}</b></span
 					>
 				</div>
 				<h3>Документы смены</h3>
@@ -962,30 +1055,104 @@ onMounted(init);
 				</table>
 				<h3>Движение наличных</h3>
 				<table>
-					<thead><tr><th>Время</th><th>Операция</th><th>Сумма</th><th>Причина</th></tr></thead>
-					<tbody><tr v-for="x in selectedDoc.cash_movements" :key="x.name"><td>{{ date(x.posting_datetime) }}</td><td>{{ x.movement_type === "Deposit" ? "Внесение" : "Выплата" }}</td><td>{{ money(x.amount) }}</td><td>{{ x.reason || "—" }}</td></tr></tbody>
+					<thead>
+						<tr>
+							<th>Время</th>
+							<th>Операция</th>
+							<th>Сумма</th>
+							<th>Причина</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="x in selectedDoc.cash_movements" :key="x.name">
+							<td>{{ date(x.posting_datetime) }}</td>
+							<td>{{ x.movement_type === "Deposit" ? "Внесение" : "Выплата" }}</td>
+							<td>{{ money(x.amount) }}</td>
+							<td>{{ x.reason || "—" }}</td>
+						</tr>
+					</tbody>
 				</table>
 				<h3>Действия кассира</h3>
 				<table>
-					<thead><tr><th>Время</th><th>Действие</th><th>Количество</th><th>Подробности</th></tr></thead>
-					<tbody><tr v-for="x in selectedDoc.actions" :key="x.name"><td>{{ date(x.action_datetime) }}</td><td>{{ actionLabel(x.action_type) }}</td><td>{{ x.metric_value || 0 }}</td><td>{{ x.details || x.reference_document || "—" }}</td></tr></tbody>
+					<thead>
+						<tr>
+							<th>Время</th>
+							<th>Действие</th>
+							<th>Количество</th>
+							<th>Подробности</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="x in selectedDoc.actions" :key="x.name">
+							<td>{{ date(x.action_datetime) }}</td>
+							<td>{{ actionLabel(x.action_type) }}</td>
+							<td>{{ x.metric_value || 0 }}</td>
+							<td>{{ x.details || x.reference_document || "—" }}</td>
+						</tr>
+					</tbody>
 				</table></template
 			></AppModal
 		>
 	</section>
 </template>
 <style scoped>
-.upsell-settings { display: grid; gap: 12px; }
-.upsell-settings .form-help { margin: -4px 0 4px; color: var(--muted); }
-.upsell-rules { display: grid; gap: 12px; }
-.upsell-rule { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
-.upsell-rule__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.upsell-candidates { display: grid; gap: 8px; }
-.upsell-candidate { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) auto; gap: 10px; align-items: end; }
-.upsell-candidate label, .upsell-rule > label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
-.upsell-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.upsell-settings {
+	display: grid;
+	gap: 12px;
+}
+.upsell-settings .form-help {
+	margin: -4px 0 4px;
+	color: var(--muted);
+}
+.upsell-rules {
+	display: grid;
+	gap: 12px;
+}
+.upsell-rule {
+	display: grid;
+	gap: 10px;
+	padding: 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: #fff;
+}
+.upsell-rule__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+.upsell-candidates {
+	display: grid;
+	gap: 8px;
+}
+.upsell-candidate {
+	display: grid;
+	grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) auto;
+	gap: 10px;
+	align-items: end;
+}
+.upsell-candidate label,
+.upsell-rule > label {
+	display: grid;
+	gap: 5px;
+	color: var(--muted);
+	font-size: 12px;
+}
+.upsell-actions {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
 @media (max-width: 760px) {
-	.upsell-candidate { grid-template-columns: 1fr; }
-	.upsell-actions { align-items: stretch; flex-direction: column; }
+	.upsell-candidate {
+		grid-template-columns: 1fr;
+	}
+	.upsell-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
 }
 </style>

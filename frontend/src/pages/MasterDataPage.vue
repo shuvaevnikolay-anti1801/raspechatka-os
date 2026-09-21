@@ -7,7 +7,9 @@ import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { defineEntityFields, deriveFormFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const route = useRoute();
 const reference = computed(() => route.meta.reference || route.params.reference);
 const rows = ref([]),
@@ -403,17 +405,20 @@ function fieldOptions(field) {
 		: (options[field.values] || []).map((v) => ({ value: v.name, label: v[field.labelKey] }));
 }
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.references.get_reference_list", {
+		const result = await call("raspechatka.api.references.get_reference_list", {
 			reference: reference.value,
 			...filters.value,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -534,11 +539,14 @@ async function remove() {
 	}
 }
 watch(reference, () => {
+	listRequests.invalidate();
+	rows.value = [];
+	loading.value = true;
+	error.value = "";
 	detail.value = null;
 	filters.value = { search: "", active: "" };
-	load();
 });
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -561,6 +569,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:view-key="`references.${reference}`"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<ReferenceTable
 			:key="reference"

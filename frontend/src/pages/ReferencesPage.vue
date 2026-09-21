@@ -7,7 +7,9 @@ import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const route = useRoute();
 const reference = computed(() => route.meta.reference || route.params.reference || "entities");
 const rows = ref([]);
@@ -158,17 +160,20 @@ function defaultFilters() {
 }
 
 async function loadRows() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
-		rows.value = await call("raspechatka.api.references.get_reference_list", {
+		const result = await call("raspechatka.api.references.get_reference_list", {
 			reference: reference.value,
 			...filters.value,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
+		rows.value = result;
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 
@@ -397,11 +402,14 @@ async function saveStorage() {
 }
 
 watch(reference, () => {
+	listRequests.invalidate();
+	rows.value = [];
+	loading.value = true;
+	error.value = "";
 	filters.value = defaultFilters();
 	detail.value = null;
-	loadRows();
 });
-onMounted(() => Promise.all([loadRows(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -424,6 +432,7 @@ onMounted(() => Promise.all([loadRows(), loadOptions()]));
 			:view-key="`references.${reference}`"
 			@apply="loadRows"
 			@reset="loadRows"
+			@ready="loadRows"
 		/>
 
 		<ReferenceTable

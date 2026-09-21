@@ -6,7 +6,10 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { defineEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
+import { formatDateTime } from "../dateTime";
 
+const listRequests = createLatestRequestGate();
 const data = reactive({ connections: [], operations: [], rules: [], review_count: 0 });
 const options = reactive({ entities: [], points: [], articles: [] });
 const loading = ref(true),
@@ -20,12 +23,7 @@ const connectionForm = reactive({}),
 const canEdit = computed(() => canAccess("finance.bank", "Edit"));
 const money = (value) =>
 	`${new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2 }).format(Number(value || 0))} ₽`;
-const dt = (value) =>
-	value
-		? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-				new Date(String(value).replace(" ", "T"))
-		  )
-		: "—";
+const dt = (value) => formatDateTime(value);
 const entityFields = defineEntityFields([
 	{
 		key: "search",
@@ -76,18 +74,21 @@ const operations = computed(() =>
 );
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
+	error.value = "";
 	try {
-		Object.assign(data, await call("raspechatka.api.tochka.get_bank_workspace"));
+		const result = await call("raspechatka.api.tochka.get_bank_workspace");
+		if (!listRequests.isCurrent(requestId)) return;
+		Object.assign(data, result);
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function init() {
 	Object.assign(options, await call("raspechatka.api.finance.get_finance_options"));
-	await load();
 }
 function openConnection() {
 	Object.assign(connectionForm, {
@@ -252,6 +253,7 @@ onMounted(init);
 			v-model="filters"
 			:entity-fields="entityFields"
 			view-key="finance.bank.operations"
+			@ready="load"
 		/>
 		<SmartDataTable
 			:rows="operations"

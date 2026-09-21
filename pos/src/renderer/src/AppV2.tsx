@@ -21,6 +21,9 @@ const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,a
 const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
+export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
+export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer})
+export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
 export type ReceiveLineDraft={purchaseOrderItemId:string;itemName:string;uom:string;remainingQuantity:number;quantity:number}
 export const operationalStockItems=(catalog:OperationalCatalogItem[])=>catalog.filter((item)=>item.trackInventory&&['Product','Variant'].includes(item.itemType))
 export const warehouseItemMatches=(item:OperationalCatalogItem,query:string)=>{
@@ -138,7 +141,7 @@ export default function AppV2(){
   }
   const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{setCart([]);setCustomer(null);setReviewCount(0);setManualDiscount(null);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
+  const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
   const dismissUpsell=()=>setUpsellCycle({state:'resolved'})
   const acceptUpsell=()=>{
     const target=upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)
@@ -214,7 +217,7 @@ export default function AppV2(){
     if(!boot?.shift){setMessage('Для возврата сначала откройте смену');return}
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
-  const chooseCustomer=(value:Customer|null)=>{setCustomer(value);setReviewCount(0);setCustomerOpen(false)}
+  const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setCustomerOpen(false)}
 
 
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
@@ -294,6 +297,11 @@ export default function AppV2(){
   </div>
 }
 
+export function PinInput({value,onChange,autoFocus=false,ariaLabel}:{value:string;onChange:(value:string)=>void;autoFocus?:boolean;ariaLabel:string}){
+  const numeric=(next:string)=>next.replace(/\D/g,'').slice(0,4)
+  return <div className="pin-input" data-filled={value.length>0}><input className="cashier-pin-input pin-input-control" autoFocus={autoFocus} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={value} aria-label={ariaLabel} onChange={(event)=>onChange(numeric(event.target.value))}/><div className="pin-input-slots" aria-hidden="true">{[0,1,2,3].map((slot)=><span className={slot<value.length?'filled':''} key={slot}>{slot<value.length?'•':''}</span>)}</div></div>
+}
+
 export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<void>}){
   const forced=auth.openShiftCashierId
   const [employeeId,setEmployeeId]=useState(forced||'')
@@ -304,7 +312,6 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   const [adminCode,setAdminCode]=useState('')
   const [error,setError]=useState('')
   const selected=boot.employees.find((row)=>row.id===employeeId)||(forced===employeeId?{id:employeeId,name:auth.openShiftCashierName||employeeId}:undefined)
-  const numeric=(value:string)=>value.replace(/\D/g,'').slice(0,4)
   const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setError('');if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setError(e instanceof Error?e.message:String(e))}}}
   useEffect(()=>{if(forced)void choose(forced)},[forced])
   const submit=async()=>{try{
@@ -321,14 +328,14 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
     {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>)}</div>}
     {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
     {(selected||lockedEmployee)&&<form onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
-      {adminReset&&<label><span>Код администратора</span><input autoFocus type="password" inputMode="numeric" maxLength={4} value={adminCode} onChange={(e)=>setAdminCode(numeric(e.target.value))}/></label>}
-      <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><input className="cashier-pin-input" autoFocus={!adminReset} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={pin} placeholder="••••" onChange={(e)=>setPin(numeric(e.target.value))}/></label>
-      {(setup||adminReset)&&<label><span>Повторите PIN</span><input className="cashier-pin-input" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={confirmation} placeholder="••••" onChange={(e)=>setConfirmation(numeric(e.target.value))}/></label>}
+      {adminReset&&<label><span>Код администратора</span><PinInput autoFocus value={adminCode} onChange={setAdminCode} ariaLabel="Код администратора · 4 цифры"/></label>}
+      <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
+      {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
       {error&&<div className="cashier-login-error">{error}</div>}
       {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
-      {auth.status!=='locked'&&!setup&&!adminReset&&<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>}
+      <div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button>{auth.status!=='locked'&&!setup&&!adminReset&&<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>}</div>
     </form>}
-    {auth.status!=='locked'&&<button className="settings-open-trigger" type="button">Настройки кассы</button>}
+    {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button></div>}
   </section></main>
 }
 

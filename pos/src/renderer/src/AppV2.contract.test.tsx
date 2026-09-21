@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildStockReceiptRequest, CashierLogin, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
+import { buildStockReceiptRequest, CashierLogin, emptyReceiptDiscountInputs, PinInput, replaceReceiptCustomer, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -13,6 +13,25 @@ const boot:BootState={
 const auth:CashierAuthState={status:'signed_out'}
 const selectedAuth:CashierAuthState={status:'signed_out',openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
 
+describe('receipt discount input ownership',()=>{
+  const firstCustomer={id:'customer-1',name:'Первый клиент',phone:'+7 900 000-00-01',discountPercent:10}
+  const replacementCustomer={id:'customer-2',name:'Другой клиент',phone:'+7 900 000-00-02',discountPercent:20}
+  const initial={customer:null,reviewCount:1,manualDiscount:{type:'amount' as const,value:1000}}
+
+  it('preserves cashier review and manual inputs on attach, replace and remove customer',()=>{
+    const attached=replaceReceiptCustomer(initial,firstCustomer)
+    const replaced=replaceReceiptCustomer(attached,replacementCustomer)
+    const removed=replaceReceiptCustomer(replaced,null)
+    expect(attached).toMatchObject({customer:firstCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+    expect(replaced).toMatchObject({customer:replacementCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+    expect(removed).toMatchObject({customer:null,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+  })
+
+  it('resets receipt discount inputs only for explicit clear/new receipt',()=>{
+    expect(emptyReceiptDiscountInputs()).toEqual({customer:null,reviewCount:0,manualDiscount:null})
+  })
+})
+
 describe('cashier workplace micro-contract',()=>{
   it('keeps normal selection calm and PIN as one four-digit form field',()=>{
     const selector=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
@@ -23,7 +42,19 @@ describe('cashier workplace micro-contract',()=>{
     expect(login).toContain('maxLength="4"')
     expect(login).toContain('pattern="[0-9]{4}"')
     expect(login).toContain('cashier-pin-input')
+    expect(login).toContain('pin-input-slots')
+    expect((login.match(/class="[^"]*pin-input-slots/g)||[]).length).toBe(1)
+    expect((login.match(/class="[^"]*pin-input-control/g)||[]).length).toBe(1)
+    expect(login).toContain('cashier-login-footer')
     expect(login).toContain('settings-open-trigger')
+    expect(login).toContain('cashier-forgot-pin')
+  })
+  it('renders four equal visual slots while keeping one real input',()=>{
+    const markup=renderToStaticMarkup(<PinInput value="12" onChange={()=>undefined} ariaLabel="PIN"/>)
+    expect((markup.match(/pin-input-control/g)||[]).length).toBe(1)
+    expect((markup.match(/pin-input-slots/g)||[]).length).toBe(1)
+    expect((markup.match(/<span class="/g)||[]).length).toBe(4)
+    expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
   })
   it('keeps the toast timeout and shift metric label contract',()=>{
     expect(TOAST_DISMISS_MS).toBe(3000)
