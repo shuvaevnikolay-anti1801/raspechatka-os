@@ -5,9 +5,6 @@ from pathlib import Path
 from unittest import TestCase
 
 from raspechatka.time_contract import (
-
-_ASSERTIONS = TestCase()
-
     TimeContractError,
     external_instant_to_site_naive,
     point_local_date_bounds_to_site_naive,
@@ -16,6 +13,8 @@ _ASSERTIONS = TestCase()
     site_naive_to_utc_rfc3339,
     validate_timezone,
 )
+
+_ASSERTIONS = TestCase()
 
 
 def test_moscow_site_naive_round_trip_is_utc_identity():
