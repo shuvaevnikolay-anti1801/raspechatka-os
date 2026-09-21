@@ -5,9 +5,6 @@ from unittest import TestCase
 
 from raspechatka.time_contract import external_instant_to_site_naive, site_naive_to_target_date
 from raspechatka.time_repair import (
-
-_ASSERTIONS = TestCase()
-
     REPAIR_CONTRACT_VERSION,
     _ambiguous_local,
     _epoch_for,
@@ -15,6 +12,8 @@ _ASSERTIONS = TestCase()
     _same_datetime,
     _site_wall_clock,
 )
+
+_ASSERTIONS = TestCase()
 
 
 def test_asia_kolkata_server_wall_clock_repairs_to_moscow():
