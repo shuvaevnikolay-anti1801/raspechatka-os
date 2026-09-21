@@ -7,6 +7,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate, createListReadyGate } from "../listLoading";
+import { dateInTimezone, monthInTimezone } from "../dateTime";
 
 const route = useRoute();
 const router = useRouter();
@@ -23,9 +24,9 @@ const rows = ref([]),
 	proposalLoading = ref(false);
 const options = reactive({ points: [], warehouses: [], groups: [] });
 const filters = reactive({
-	as_of: new Date().toISOString().slice(0, 10),
-	from_date: new Date().toISOString().slice(0, 10),
-	to_date: new Date().toISOString().slice(0, 10),
+	as_of: dateInTimezone(),
+	from_date: monthInTimezone() + "-01",
+	to_date: dateInTimezone(),
 	business_point: "",
 	warehouse: "",
 	catalog_group: "",
@@ -235,7 +236,7 @@ function exportCsv() {
 	const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
 	const link = document.createElement("a");
 	link.href = URL.createObjectURL(blob);
-	link.download = `${report.value}-${new Date().toISOString().slice(0, 10)}.csv`;
+	link.download = `${report.value}-${dateInTimezone()}.csv`;
 	link.click();
 	URL.revokeObjectURL(link.href);
 }
