@@ -12,7 +12,8 @@ from raspechatka.time_contract import (
 )
 
 
-APP_ROOT = Path(__file__).parents[1]\nREPO_ROOT = Path(__file__).parents[2]
+APP_ROOT = Path(__file__).parents[1]
+REPO_ROOT = Path(__file__).parents[2]
 
 
 def test_moscow_storage_conversion_is_independent_of_point_timezone():
@@ -58,7 +59,7 @@ def test_pos_timestamp_maps_cover_shift_receipt_order_and_cash_count():
 
 
 def test_point_timezone_bootstrap_and_old_cached_state_are_compatible():
-    pos_v2_source = (ROOT / "api" / "pos_v2.py").read_text(encoding="utf-8")
+    pos_v2_source = (APP_ROOT / "api" / "pos_v2.py").read_text(encoding="utf-8")
     sync_source = (REPO_ROOT / "pos" / "src" / "main" / "sync.ts").read_text(encoding="utf-8")
     contracts_source = (REPO_ROOT / "pos" / "src" / "shared" / "contracts.ts").read_text(encoding="utf-8")
     assert '"timezone": resolve_point_timezone' in pos_v2_source
