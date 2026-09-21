@@ -8,6 +8,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, formatDateTime, monthStartInTimezone } from "../dateTime";
 const listRequests = createLatestRequestGate();
 const route = useRoute(),
 	kind = computed(() => route.meta.kind || "overview"),
@@ -91,12 +92,7 @@ const money = (v) =>
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number(v || 0))} ₽`;
-const date = (v) =>
-	v
-		? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-				new Date(v)
-		  )
-		: "—";
+const date = (value) => formatDateTime(value);
 const actionLabel = (v) =>
 	({
 		OPEN_SHIFT: "Открытие смены",
