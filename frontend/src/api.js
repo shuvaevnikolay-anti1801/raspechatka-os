@@ -5,6 +5,7 @@ const boot = window.raspechatkaBoot || {
   is_manager: true,
   csrf_token: "",
   system_timezone: "UTC",
+  effective_user_timezone: "UTC",
   user_timezone: "UTC",
 };
 
