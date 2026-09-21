@@ -467,6 +467,20 @@ export class InpasPaymentProvider implements PaymentProvider {
         stderr: stderr || undefined,
       };
 
+      this.logDiagnostics("command finished", {
+        kind,
+        durationMs: Date.now() - startedAt,
+        exitCode: processResult.code,
+        signal: processResult.signal,
+        timedOut: processResult.timedOut,
+        resultFileFound,
+        receiptFileFound: existsSync(receiptPath),
+        statusCode: fields["39"],
+        fields: this.safeFields(fields),
+        stdout: stdout ? sanitizeDiagnosticText(stdout) : undefined,
+        stderr: stderr ? sanitizeDiagnosticText(stderr) : undefined,
+      });
+
       let paymentResult: PaymentResult;
       if (processResult.timedOut || processResult.signal) {
         paymentResult = {
@@ -493,6 +507,16 @@ export class InpasPaymentProvider implements PaymentProvider {
         };
       } else if (!resultFileFound) {
         const detail = stderr || stdout;
+        this.logDiagnostics("result.txt missing", {
+          kind,
+          cwd,
+          cwdWritable,
+          resultPath,
+          exitCode: processResult.code,
+          signal: processResult.signal,
+          stdout: stdout ? sanitizeDiagnosticText(stdout) : undefined,
+          stderr: stderr ? sanitizeDiagnosticText(stderr) : undefined,
+        });
         paymentResult = {
           status: "unknown",
           message: detail
