@@ -99,12 +99,7 @@ const columns = computed(() =>
 				{
 					key: "nearest_due_date",
 					label: "Ближайший срок",
-					format: (value) =>
-						value
-							? new Intl.DateTimeFormat("ru-RU").format(
-									new Date(`${value}T00:00:00`)
-							  )
-							: "—",
+					format: (value) => (value ? formatDateOnly(value) : "—"),
 				},
 		  ]
 		: [
