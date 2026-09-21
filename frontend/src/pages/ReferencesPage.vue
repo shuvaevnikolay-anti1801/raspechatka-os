@@ -403,6 +403,9 @@ async function saveStorage() {
 
 watch(reference, () => {
 	listRequests.invalidate();
+	rows.value = [];
+	loading.value = true;
+	error.value = "";
 	filters.value = defaultFilters();
 	detail.value = null;
 });
