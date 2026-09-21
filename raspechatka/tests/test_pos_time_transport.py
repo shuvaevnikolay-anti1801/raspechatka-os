@@ -4,9 +4,6 @@ from pathlib import Path
 from unittest import TestCase
 
 from raspechatka.time_contract import (
-
-_ASSERTIONS = TestCase()
-
     TimeContractError,
     external_instant_to_site_naive,
     legacy_external_instant_to_site_naive,
@@ -14,6 +11,8 @@ _ASSERTIONS = TestCase()
     site_naive_to_utc_rfc3339,
 )
 
+
+_ASSERTIONS = TestCase()
 
 APP_ROOT = Path(__file__).parents[1]
 REPO_ROOT = Path(__file__).parents[2]
