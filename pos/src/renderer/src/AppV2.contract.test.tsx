@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildStockReceiptRequest, CashierLogin, PinInput, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
+import { buildStockReceiptRequest, CashierLogin, emptyReceiptDiscountInputs, PinInput, replaceReceiptCustomer, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -12,6 +12,25 @@ const boot:BootState={
 }
 const auth:CashierAuthState={status:'signed_out'}
 const selectedAuth:CashierAuthState={status:'signed_out',openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
+
+describe('receipt discount input ownership',()=>{
+  const firstCustomer={id:'customer-1',name:'Первый клиент',discountPercent:10}
+  const replacementCustomer={id:'customer-2',name:'Другой клиент',discountPercent:20}
+  const initial={customer:null,reviewCount:1,manualDiscount:{type:'amount' as const,value:1000}}
+
+  it('preserves cashier review and manual inputs on attach, replace and remove customer',()=>{
+    const attached=replaceReceiptCustomer(initial,firstCustomer)
+    const replaced=replaceReceiptCustomer(attached,replacementCustomer)
+    const removed=replaceReceiptCustomer(replaced,null)
+    expect(attached).toMatchObject({customer:firstCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+    expect(replaced).toMatchObject({customer:replacementCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+    expect(removed).toMatchObject({customer:null,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+  })
+
+  it('resets receipt discount inputs only for explicit clear/new receipt',()=>{
+    expect(emptyReceiptDiscountInputs()).toEqual({customer:null,reviewCount:0,manualDiscount:null})
+  })
+})
 
 describe('cashier workplace micro-contract',()=>{
   it('keeps normal selection calm and PIN as one four-digit form field',()=>{
