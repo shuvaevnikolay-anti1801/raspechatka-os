@@ -8,6 +8,7 @@ import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { pageLabel } from "../pageRegistry";
+import { createListReadyGate } from "../listLoading";
 
 const items = ref([]);
 const groups = ref([]);
@@ -18,6 +19,7 @@ const catalogPage = ref(1);
 const catalogPageSize = ref(25);
 const totalItems = ref(0);
 const catalogReady = ref(false);
+const catalogReadyGate = createListReadyGate((size) => initializeCatalog(size));
 let itemsRequestId = 0;
 const filters = reactive({
 	search: "",
@@ -449,6 +451,7 @@ async function initializeCatalog(size) {
 					@update:model-value="Object.assign(filters, $event)"
 					@apply="applyCatalogFilters"
 					@reset="applyCatalogFilters"
+					@ready="catalogReadyGate.filter"
 				/>
 				<SmartDataTable
 					:rows="items"
@@ -463,7 +466,7 @@ async function initializeCatalog(size) {
 					empty-text="Измените фильтры или создайте новую позицию."
 					@open="(row) => loadEditor(row.name)"
 					@retry="loadWorkspace"
-					@ready="initializeCatalog"
+					@ready="catalogReadyGate.table"
 					@page-change="changeCatalogPage"
 					@page-size-change="changeCatalogPageSize"
 				>
