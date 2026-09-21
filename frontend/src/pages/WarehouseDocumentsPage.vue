@@ -8,6 +8,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate, createListReadyGate } from "../listLoading";
+import { formatDateOnly, formatDateTime, fromDateTimeLocal, toDateTimeLocal } from "../dateTime";
 
 const route = useRoute(),
 	router = useRouter();
@@ -226,12 +227,8 @@ function money(value) {
 	}).format(Number(value || 0));
 }
 function dateText(value) {
-	return value
-		? new Intl.DateTimeFormat("ru-RU", {
-				dateStyle: "short",
-				...(String(value).includes(":") ? { timeStyle: "short" } : {}),
-		  }).format(new Date(String(value).replace(" ", "T")))
-		: "—";
+	if (!value) return "—";
+	return String(value).includes(":") ? formatDateTime(value) : formatDateOnly(value);
 }
 function statusLabel(value) {
 	return value === 1 ? "Проведён" : value === 2 ? "Отменён" : "Черновик";
@@ -286,7 +283,7 @@ async function openDocument(name = null) {
 		Object.keys(form).forEach((key) => delete form[key]);
 		Object.assign(form, clone(result.doc));
 		if (form.posting_datetime)
-			form.posting_datetime = String(form.posting_datetime).replace(" ", "T").slice(0, 16);
+			form.posting_datetime = toDateTimeLocal(form.posting_datetime);
 		form.items ||= [];
 		paymentName.value = "";
 		paymentAmount.value = 0;
@@ -341,7 +338,7 @@ async function fillInventory() {
 	try {
 		form.items = await call("raspechatka.api.warehouse_documents.fill_inventory", {
 			warehouse: form.warehouse,
-			posting_datetime: form.posting_datetime,
+			posting_datetime: fromDateTimeLocal(form.posting_datetime),
 		});
 		if (!form.items.length) formError.value = "На складе пока нет учётных остатков.";
 	} catch (e) {
