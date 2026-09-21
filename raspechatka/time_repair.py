@@ -362,7 +362,7 @@ def _external_wall_clock_naive(value: str) -> datetime | None:
 
 
 def _add_entry(entries, unresolved, *, doctype, name, field, repair_class, before, after, reason):
-    unchanged = before == after if field == "business_date" else _same_datetime(before, after)
+    unchanged = (str(before or "") == str(after or "")) if field == "business_date" else _same_datetime(before, after)
     if unchanged:
         return
     entries.append(
