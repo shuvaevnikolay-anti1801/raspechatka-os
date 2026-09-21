@@ -600,8 +600,20 @@ def _plan_client_registered_at(evidence, entries, unresolved):
         limit_page_length=100000,
     )
     for row in rows:
-        registered = _as_datetime(row.registered_at)
-        creation = _as_datetime(row.creation)
+        try:
+            registered = _as_datetime(row.registered_at)
+            creation = _as_datetime(row.creation)
+        except (TypeError, TimeContractError, ValueError) as exc:
+            _add_unresolved(
+                unresolved,
+                doctype="Client",
+                name=row.name,
+                field="registered_at",
+                repair_class="old_site_wall_clock",
+                before=row.registered_at,
+                reason=f"invalid Client timestamp: {exc}",
+            )
+            continue
         if not registered or not creation:
             continue
         if abs(registered - creation) > CLIENT_REGISTERED_TOLERANCE:
