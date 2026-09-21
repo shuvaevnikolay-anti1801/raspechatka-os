@@ -21,6 +21,9 @@ const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,a
 const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
+export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
+export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer})
+export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
 export type ReceiveLineDraft={purchaseOrderItemId:string;itemName:string;uom:string;remainingQuantity:number;quantity:number}
 export const operationalStockItems=(catalog:OperationalCatalogItem[])=>catalog.filter((item)=>item.trackInventory&&['Product','Variant'].includes(item.itemType))
 export const warehouseItemMatches=(item:OperationalCatalogItem,query:string)=>{
@@ -138,7 +141,7 @@ export default function AppV2(){
   }
   const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{setCart([]);setCustomer(null);setReviewCount(0);setManualDiscount(null);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
+  const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
   const dismissUpsell=()=>setUpsellCycle({state:'resolved'})
   const acceptUpsell=()=>{
     const target=upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)
@@ -214,7 +217,7 @@ export default function AppV2(){
     if(!boot?.shift){setMessage('Для возврата сначала откройте смену');return}
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
-  const chooseCustomer=(value:Customer|null)=>{setCustomer(value);setReviewCount(0);setCustomerOpen(false)}
+  const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setCustomerOpen(false)}
 
 
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
