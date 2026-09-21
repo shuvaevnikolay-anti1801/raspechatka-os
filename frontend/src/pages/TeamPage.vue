@@ -53,11 +53,7 @@ const days = computed(() =>
 		{
 			length:
 				schedule.value.days ||
-				new Date(
-					Number(month.value.slice(0, 4)),
-					Number(month.value.slice(5, 7)),
-					0
-				).getDate(),
+				new Date(Date.UTC(\n\t\t\t\t\tNumber(month.value.slice(0, 4)),\n\t\t\t\t\tNumber(month.value.slice(5, 7)),\n\t\t\t\t\t0\n\t\t\t\t)).getUTCDate(),
 		},
 		(_, i) => i + 1
 	)
@@ -244,7 +240,7 @@ function setPayrollDates() {
 	const current = today.startsWith(month.value) ? Number(today.slice(-2)) : 16;
 	payrollStart.value = `${month.value}-${current <= 15 ? "01" : "16"}`;
 	payrollEnd.value = `${month.value}-${
-		current <= 15 ? "15" : String(new Date(year, mon, 0).getDate()).padStart(2, "0")
+		current <= 15 ? "15" : String(new Date(Date.UTC(year, mon, 0)).getUTCDate()).padStart(2, "0")
 	}`;
 }
 function hydrateDraft() {
