@@ -44,6 +44,21 @@ test("filter preference restore emits ready without an implicit apply", () => {
 	assert.match(initialization, /emit\("ready", viewKey\)/);
 	assert.doesNotMatch(initialization, /\bapply\s*\(/);
 	assert.match(initialization, /await nextTick\(\)/);
+	const restoreMatches = initialization.indexOf(
+		"await resolveDocumentMatches(viewKey, doctype, generation)"
+	);
+	const ready = initialization.indexOf('emit("ready", viewKey)');
+	assert.ok(restoreMatches >= 0 && restoreMatches < ready);
+});
+
+test("dynamic filters fail closed instead of exposing unfiltered rows", () => {
+	const filter = source("components/SmartFilterBar.vue");
+	const start = filter.indexOf("async function resolveDocumentMatches");
+	const end = filter.indexOf("async function savePreference", start);
+	const resolver = filter.slice(start, end);
+
+	assert.match(resolver, /filter_document_names/);
+	assert.match(resolver, /setDocumentFilterMatches\(viewKey, \[\]\)/);
 });
 
 test("populated tables stay mounted while a refresh is running", () => {
