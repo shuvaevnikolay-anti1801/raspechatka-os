@@ -56,6 +56,8 @@ def test_pos_timestamp_maps_cover_shift_receipt_order_and_cash_count():
     assert '"issuedAt": _pos_datetime_to_utc' in pos_source
     assert '"createdAt": _pos_datetime_to_utc' in v2_source
     assert '"posting_datetime": payload.get("createdAt")' in v2_source
+    assert "str(row.posting_datetime)" not in v2_source
+    assert "str(x.created_at" not in pos_source
 
 
 def test_point_timezone_bootstrap_and_old_cached_state_are_compatible():
