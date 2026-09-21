@@ -64,3 +64,12 @@ def test_business_date_fields_are_additive_read_only_indexes():
         assert field["fieldtype"] == "Date"
         assert field["read_only"] == 1
         assert field["search_index"] == 1
+
+
+def test_sales_queries_and_shift_resolution_use_point_business_date():
+    sales_api = (Path(__file__).parents[1] / "api" / "sales.py").read_text()
+    sales_module = (Path(__file__).parents[1] / "sales.py").read_text()
+    assert '_document_filters("business_date"' in sales_api
+    assert '"business_date": ["between", [from_date, to_date]]' in sales_api
+    assert "replace(tzinfo=UTC)" not in sales_module
+    assert '"business_date": local_date' in sales_module
