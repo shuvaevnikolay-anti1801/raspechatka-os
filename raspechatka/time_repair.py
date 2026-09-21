@@ -993,7 +993,7 @@ def apply_repair_plan(plan: dict[str, Any] | None = None):
 
     try:
         target = plan["target_site_timezone"]
-        if target != plan["effective_site_timezone_before"]:
+        if plan["configured_site_timezone"] != target:
             frappe.db.set_single_value("System Settings", "time_zone", target)
         changes = plan["safe_changes"]
         for start in range(0, len(changes), BATCH_SIZE):
