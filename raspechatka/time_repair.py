@@ -884,6 +884,8 @@ def _marker_file():
 def build_repair_plan(cutoff: datetime | None = None) -> dict[str, Any]:
     """Build a deterministic, non-mutating repair plan for the captured cutoff."""
     cutoff = cutoff or datetime.now(timezone.utc)
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
     evidence = _site_evidence()
     try:
         evidence["effective_before"] = validate_timezone(get_system_timezone())
