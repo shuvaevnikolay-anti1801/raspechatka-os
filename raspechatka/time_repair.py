@@ -357,7 +357,8 @@ def _external_utc_naive(value: str) -> datetime | None:
 
 
 def _add_entry(entries, unresolved, *, doctype, name, field, repair_class, before, after, reason):
-    if _same_datetime(before, after) if field not in {"business_date"} else before == after:
+    unchanged = before == after if field == "business_date" else _same_datetime(before, after)
+    if unchanged:
         return
     entries.append(
         {
@@ -858,6 +859,14 @@ def build_repair_plan() -> dict[str, Any]:
         evidence["effective_before"] = validate_timezone(get_system_timezone())
     except Exception as exc:
         evidence["core_blockers"].append(f"cannot read effective Frappe timezone: {exc}")
+    if (
+        evidence["configured_timezone"]
+        and evidence["effective_before"]
+        and evidence["configured_timezone"] != evidence["effective_before"]
+    ):
+        evidence["core_blockers"].append(
+            "configured System Settings.time_zone disagrees with Frappe effective timezone"
+        )
 
     entries = []
     unresolved = []
