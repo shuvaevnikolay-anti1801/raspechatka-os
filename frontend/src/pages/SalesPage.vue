@@ -37,10 +37,8 @@ const upsellConfig = reactive({ rules: [], catalog_items: [] });
 const upsellSaving = ref(false);
 const upsellMessage = ref("");
 const options = reactive({ entities: [], points: [], cashiers: [] });
-const today = new Date().toISOString().slice(0, 10),
-	month = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-		.toISOString()
-		.slice(0, 10);
+const today = dateInTimezone(),
+	month = monthStartInTimezone();
 const filters = reactive({
 	from_date: month,
 	to_date: today,
