@@ -156,6 +156,8 @@ def _version_history() -> tuple[list[dict[str, Any]], list[str]]:
         except (TypeError, ValueError) as exc:
             errors.append(f"Version {row.name}: invalid JSON ({exc})")
             continue
+        if not _as_datetime(row.creation):
+            errors.append(f"Version {row.name}: missing creation timestamp")
         for change in payload.get("changed") or []:
             if not isinstance(change, (list, tuple)) or len(change) < 3 or change[0] != "time_zone":
                 continue
