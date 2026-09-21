@@ -562,8 +562,9 @@ def _ingest_cash_count(event_id, payload, connection, cashier_id):
 		frappe.throw(_("Неизвестный тип пересчёта наличных"))
 	doc.save(ignore_permissions=True)
 	count_details = {"count_type": count_type, "amount": amount}
-	if payload.get("countedAt"):
-		count_details["counted_at"] = _pos_datetime_to_utc(payload["countedAt"])
+	counted_value = payload.get("countedAt") or payload.get("createdAt")
+	if counted_value:
+		count_details["counted_at"] = _pos_datetime_to_utc(counted_value)
 	log_cashier_action(
 		doc,
 		"CASH_COUNT",
