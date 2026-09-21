@@ -544,6 +544,30 @@ export class InpasPaymentProvider implements PaymentProvider {
     }
   }
 
+  private logDiagnostics(message: string, data?: unknown): void {
+    const suffix =
+      data === undefined
+        ? ""
+        : `\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}`;
+    const entry = `[INPAS CONSOLE] ${message}${suffix}`;
+    console.log(entry);
+
+    if (this.diagnosticsFileUnavailable) return;
+    const logPath = resolveInpasConsoleLogPath();
+    if (!logPath) return;
+    try {
+      mkdirSync(dirname(logPath), { recursive: true });
+      appendFileSync(logPath, `${new Date().toISOString()} ${entry}\n`, "utf8");
+    } catch (error) {
+      this.diagnosticsFileUnavailable = true;
+      console.error(
+        `[INPAS CONSOLE] diagnostics file write failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
   private resultMessage(fields: Record<string, string>): string | undefined {
     return ["19", "64", "65", "70", "01"]
       .map((key) => fields[key])
@@ -657,8 +681,8 @@ function executeCommand(
               : null
             : 0,
           signal: processError?.signal ?? null,
-          stdout: decode(Buffer.from(stdout || [])),
-          stderr: decode(Buffer.from(stderr || [])),
+          stdout: decodeConsole(Buffer.from(stdout || [])),
+          stderr: decodeConsole(Buffer.from(stderr || [])),
           timedOut: Boolean(
             processError?.killed || processError?.code === "ETIMEDOUT"
           ),
