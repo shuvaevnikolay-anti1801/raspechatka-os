@@ -704,7 +704,7 @@ def _plan_cashier_actions(evidence, entries, unresolved):
         field, reference_value = _reference_timestamp(action.reference_doctype, action.action_type, doc)
         key = (action.reference_doctype, action.reference_document, field)
         planned_value = planned.get(key, {}).get("after") if key in planned else None
-        if not planned_value and _same_datetime(action.action_datetime, reference_value):
+        if reference_value and not planned_value and _same_datetime(action.action_datetime, reference_value):
             continue
         if not planned_value:
             _add_unresolved(
