@@ -72,13 +72,7 @@ const money = (value) =>
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(Number(value || 0))} ₽`;
-const date = (value) =>
-	value
-		? new Intl.DateTimeFormat("ru-RU", {
-				dateStyle: "short",
-				timeStyle: "short",
-		  }).format(new Date(String(value).replace(" ", "T")))
-		: "—";
+const date = (value) => formatDateTime(value);
 const columns = [
 	{ key: "posting_datetime", label: "Дата", format: date },
 	{ key: "item_name", label: "Товар", primary: true },
