@@ -7,6 +7,7 @@ import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { defineEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
+import { formatDateTime } from "../dateTime";
 
 const listRequests = createLatestRequestGate();
 const data = reactive({ connections: [], operations: [], rules: [], review_count: 0 });
@@ -22,12 +23,7 @@ const connectionForm = reactive({}),
 const canEdit = computed(() => canAccess("finance.bank", "Edit"));
 const money = (value) =>
 	`${new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2 }).format(Number(value || 0))} ₽`;
-const dt = (value) =>
-	value
-		? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(
-				new Date(String(value).replace(" ", "T"))
-		  )
-		: "—";
+const dt = (value) => formatDateTime(value);
 const entityFields = defineEntityFields([
 	{
 		key: "search",
