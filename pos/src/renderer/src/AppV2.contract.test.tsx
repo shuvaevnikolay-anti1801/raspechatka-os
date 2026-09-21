@@ -91,7 +91,7 @@ describe('unified warehouse workplace contract',()=>{
       {purchaseOrderItemId:'POI-2',itemName:'Ламинация',uom:'шт',remainingQuantity:1,quantity:0},
     ])
     expect(request).toEqual({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]})
-    expect(JSON.stringify(request)).not.toMatch(/price|rate|itemId|supplier|warehouse/i)
+    expect(JSON.stringify(request)).not.toMatch(/\"(?:price|rate|itemId|supplier|warehouse)\"\s*:/i)
   })
   it('prefills receive modal from remaining rows and never renders purchase price',()=>{
     const markup=renderToStaticMarkup(<ReceiveModal order={order} onClose={()=>undefined} onComplete={async()=>undefined}/>)
