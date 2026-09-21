@@ -1,10 +1,12 @@
 import { boot } from "./api";
 
+const FALLBACK_TIMEZONE = "UTC";
+
 export function resolveTimeZones(source = boot) {
-  const systemTimezone = source.system_timezone || "UTC";
+  const systemTimezone = source?.system_timezone || FALLBACK_TIMEZONE;
   return {
     systemTimezone,
-    userTimezone: source.user_timezone || systemTimezone,
+    userTimezone: source?.effective_user_timezone || source?.user_timezone || systemTimezone,
   };
 }
 
@@ -30,17 +32,25 @@ function partsInTimezone(date, timeZone) {
     timeZone, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
   }).formatToParts(date);
-  return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
+  return Object.fromEntries(
+    parts.filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)])
+  );
 }
 
 export function frappeDateTimeToInstant(value, siteTimezone = resolveTimeZones().systemTimezone) {
   const desired = dateTimeParts(value);
   if (!desired) return null;
-  const desiredUtc = Date.UTC(desired.year, desired.month - 1, desired.day, desired.hour, desired.minute, desired.second);
+  const desiredUtc = Date.UTC(
+    desired.year, desired.month - 1, desired.day, desired.hour, desired.minute, desired.second
+  );
   let instant = desiredUtc;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  // Interpret the naive Frappe value in siteTimezone, independent of the
+  // browser's local timezone. The correction converges across DST changes.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     const actual = partsInTimezone(new Date(instant), siteTimezone);
-    const actualUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
+    const actualUtc = Date.UTC(
+      actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second
+    );
     const correction = desiredUtc - actualUtc;
     instant += correction;
     if (!correction) break;
@@ -48,7 +58,11 @@ export function frappeDateTimeToInstant(value, siteTimezone = resolveTimeZones()
   return new Date(instant);
 }
 
-export function formatDateTime(value, targetTimezone = resolveTimeZones().userTimezone, siteTimezone = resolveTimeZones().systemTimezone) {
+export function formatDateTime(
+  value,
+  targetTimezone = resolveTimeZones().userTimezone,
+  siteTimezone = resolveTimeZones().systemTimezone
+) {
   if (!value) return "—";
   const instant = frappeDateTimeToInstant(value, siteTimezone);
   if (!instant) return String(value);
