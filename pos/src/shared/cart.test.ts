@@ -28,6 +28,22 @@ describe('calculateDiscountBreakdown',()=>{
     })
   })
 
+  it('recalculates canonical amounts after customer changes without changing review/manual input',()=>{
+    const reviewCount=1
+    const manualDiscount={type:'amount' as const,value:1000}
+    expect(calculateDiscountBreakdown(lines,rules,10,reviewCount,manualDiscount)).toMatchObject({
+      reviewCount:1,clubDiscountMinor:1000,reviewDiscountMinor:500,manualDiscountMinor:1000,totalMinor:7500,
+    })
+    expect(calculateDiscountBreakdown(lines,rules,20,reviewCount,manualDiscount)).toMatchObject({
+      reviewCount:1,clubDiscountMinor:2000,reviewDiscountMinor:500,manualDiscountMinor:500,totalMinor:7000,
+    })
+    expect(calculateDiscountBreakdown(lines,rules,0,reviewCount,manualDiscount)).toMatchObject({
+      reviewCount:1,clubDiscountMinor:0,reviewDiscountMinor:500,manualDiscountMinor:1000,totalMinor:8500,
+    })
+    expect(reviewCount).toBe(1)
+    expect(manualDiscount).toEqual({type:'amount',value:1000})
+  })
+
   it('caps the combined discount and keeps a fiscal amount of one kopeck',()=>{
     expect(calculateDiscountBreakdown(lines,{...rules,maxDiscountPercent:100},80,10,{type:'amount',value:50000})).toMatchObject({
       totalDiscountMinor:9999,totalMinor:1,
