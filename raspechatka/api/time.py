@@ -1,6 +1,7 @@
+# ruff: noqa: RUF001
 """Web OS timezone diagnostics for administrators."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, available_timezones
 
 import frappe
@@ -117,7 +118,7 @@ def get_time_diagnostics():
             )
         )
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     points = []
     for point in frappe.get_all(
         "Business Point",
