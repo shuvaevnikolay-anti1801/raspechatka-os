@@ -6,7 +6,9 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]);
 const loading = ref(true);
 const error = ref("");
@@ -141,16 +143,18 @@ const listColumns = [
 const entityFields = computed(() => mergeEntityFields(filterFields.value, listColumns));
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
 		const result = await call("raspechatka.api.finance.get_payments", filters);
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows;
 		Object.assign(totals, result.totals);
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -222,7 +226,7 @@ async function cancelPayment() {
 	}
 }
 
-onMounted(() => Promise.all([loadOptions(), load()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -256,6 +260,7 @@ onMounted(() => Promise.all([loadOptions(), load()]));
 			@update:model-value="Object.assign(filters, $event)"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<SmartDataTable
 			:rows="rows"
