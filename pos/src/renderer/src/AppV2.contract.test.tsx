@@ -14,8 +14,8 @@ const auth:CashierAuthState={status:'signed_out'}
 const selectedAuth:CashierAuthState={status:'signed_out',openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
 
 describe('receipt discount input ownership',()=>{
-  const firstCustomer={id:'customer-1',name:'Первый клиент',discountPercent:10}
-  const replacementCustomer={id:'customer-2',name:'Другой клиент',discountPercent:20}
+  const firstCustomer={id:'customer-1',name:'Первый клиент',phone:'+7 900 000-00-01',discountPercent:10}
+  const replacementCustomer={id:'customer-2',name:'Другой клиент',phone:'+7 900 000-00-02',discountPercent:20}
   const initial={customer:null,reviewCount:1,manualDiscount:{type:'amount' as const,value:1000}}
 
   it('preserves cashier review and manual inputs on attach, replace and remove customer',()=>{
