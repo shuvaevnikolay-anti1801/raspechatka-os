@@ -1,8 +1,11 @@
 from datetime import date, datetime
 
-import pytest
+from unittest import TestCase
 
 from raspechatka.time_contract import (
+
+_ASSERTIONS = TestCase()
+
     TimeContractError,
     configured_site_timezone,
     effective_site_timezone,
@@ -55,7 +58,7 @@ def test_point_local_bounds_handle_dst_change():
 
 
 def test_timezones_are_validated_and_point_fallback_is_explicit():
-    with pytest.raises(TimeContractError):
+    with _ASSERTIONS.assertRaises(TimeContractError):
         validate_timezone("Not/An_IANA_Zone")
     assert configured_site_timezone("") is None
     assert effective_site_timezone("UTC") == "UTC"
@@ -64,11 +67,11 @@ def test_timezones_are_validated_and_point_fallback_is_explicit():
 
 
 def test_offsetless_instants_and_date_only_values_are_rejected():
-    with pytest.raises(TimeContractError):
+    with _ASSERTIONS.assertRaises(TimeContractError):
         parse_external_instant("2026-09-21T15:00:00")
-    with pytest.raises(TypeError):
+    with _ASSERTIONS.assertRaises(TypeError):
         site_naive_to_utc_rfc3339(date(2026, 9, 21), "UTC")
-    with pytest.raises(TypeError):
+    with _ASSERTIONS.assertRaises(TypeError):
         point_local_date_bounds_to_site_naive(
             datetime(2026, 9, 21), "UTC", "UTC"
         )
