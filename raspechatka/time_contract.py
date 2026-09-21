@@ -109,6 +109,31 @@ def _require_site_naive_datetime(value: datetime) -> datetime:
     return value
 
 
+_LEGACY_NAIVE_INSTANT: Final = re.compile(
+    r"^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$"
+)
+
+
+def legacy_external_instant_to_site_naive(
+    value: str | datetime, site_timezone: str
+) -> datetime:
+    """Legacy-only parser for old POS payloads that omitted an offset.
+
+    Offset-less legacy values retain their historical site-wall-clock meaning;
+    new/v2 payloads must use external_instant_to_site_naive instead.
+    """
+    if isinstance(value, datetime) and value.tzinfo is None:
+        return value
+    if isinstance(value, str) and _LEGACY_NAIVE_INSTANT.fullmatch(value.strip()):
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace(" ", "T"))
+        except ValueError as exc:
+            raise TimeContractError("invalid legacy POS datetime") from exc
+        if parsed.tzinfo is None:
+            return parsed
+    return external_instant_to_site_naive(value, site_timezone)
+
+
 def external_instant_to_site_naive(
     value: str | datetime, site_timezone: str
 ) -> datetime:
