@@ -7,10 +7,13 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate, createListReadyGate } from "../listLoading";
 
 const route = useRoute(),
 	router = useRouter();
 const kind = computed(() => route.meta.kind);
+const listRequests = createLatestRequestGate();
+const listReady = createListReadyGate((size) => load(1, size));
 const configs = {
 	"write-offs": {
 		title: "Списания",
@@ -241,6 +244,7 @@ function supplierLabel(name) {
 }
 
 async function load(page = 1, size = pageSize.value) {
+	const requestId = listRequests.begin();
 	currentPage.value = page;
 	pageSize.value = size;
 	loading.value = true;
@@ -252,12 +256,13 @@ async function load(page = 1, size = pageSize.value) {
 			limit_start: (page - 1) * size,
 			limit_page_length: size,
 		});
+		if (!listRequests.isCurrent(requestId)) return;
 		rows.value = result.rows || [];
 		totalRows.value = Number(result.total || 0);
 	} catch (e) {
-		error.value = e.message;
+		if (listRequests.isCurrent(requestId)) error.value = e.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function loadOptions() {
@@ -465,13 +470,18 @@ async function unlinkPayment(allocation) {
 	}
 }
 function resetPage() {
+	listRequests.invalidate();
+	listReady.reset();
 	editorOpen.value = false;
 	filters.value = { search: "", status: "", business_point: "" };
+	rows.value = [];
+	totalRows.value = 0;
 	currentPage.value = 1;
-	Promise.all([load(1), loadOptions()]);
+	loading.value = true;
+	void loadOptions();
 }
 watch(kind, resetPage);
-onMounted(() => Promise.all([load(), loadOptions()]));
+onMounted(loadOptions);
 </script>
 
 <template>
@@ -490,6 +500,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:view-key="`warehouse.${kind}`"
 			@apply="load(1)"
 			@reset="load(1)"
+			@ready="listReady.filter"
 		/>
 		<SmartDataTable
 			:rows="rows"
@@ -503,7 +514,7 @@ onMounted(() => Promise.all([load(), loadOptions()]));
 			:current-page="currentPage"
 			@page-change="load"
 			@page-size-change="load(1, $event)"
-			@ready="load(1, $event)"
+			@ready="listReady.table"
 			empty-title="Документов пока нет"
 			:empty-text="config.create"
 			@open="openDocument($event.name)"
