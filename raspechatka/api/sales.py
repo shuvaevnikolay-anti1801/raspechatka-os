@@ -311,7 +311,7 @@ def get_cash_movements(
 	limit_page_length=100,
 ):
 	require_access("page.sales.cash", "read")
-	filters = _document_filters("posting_datetime", from_date, to_date, business_entity, business_point)
+	filters = _document_filters("business_date", from_date, to_date, business_entity, business_point)
 	filters["docstatus"] = ["!=", 2]
 	if movement_type:
 		filters["movement_type"] = movement_type
@@ -329,6 +329,7 @@ def get_cash_movements(
 			"external_id",
 			"movement_type",
 			"posting_datetime",
+			"business_date",
 			"shift",
 			"business_entity",
 			"business_point",
@@ -374,6 +375,7 @@ def get_cashier_actions(
 			"name",
 			"external_id",
 			"action_datetime",
+			"business_date",
 			"action_type",
 			"business_entity",
 			"business_point",
@@ -712,6 +714,7 @@ def _receipt_rows(filters, or_filters=None, limit=10000):
 			"external_id",
 			"receipt_type",
 			"posting_datetime",
+			"business_date",
 			"shift",
 			"business_entity",
 			"business_point",
