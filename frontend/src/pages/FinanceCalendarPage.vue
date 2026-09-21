@@ -6,7 +6,9 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const rows = ref([]),
 	loading = ref(true),
 	error = ref(""),
@@ -98,7 +100,6 @@ async function load() {
 }
 async function init() {
 	Object.assign(options, await call("raspechatka.api.finance.get_finance_options"));
-	await load();
 }
 function edit(row = null) {
 	Object.keys(form).forEach((key) => delete form[key]);
@@ -176,6 +177,7 @@ onMounted(init);
 			view-key="finance.calendar"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<SmartDataTable
 			:rows="rows"
