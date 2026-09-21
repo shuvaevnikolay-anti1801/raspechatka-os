@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import {
+  accessSync,
+  appendFileSync,
+  constants,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -52,6 +55,26 @@ const DEFAULT_SETTINGS: InpasSettings = {
 
 const decode = (buffer: Buffer) =>
   new TextDecoder("windows-1251").decode(buffer).replace(/^\uFEFF/, "");
+
+const decodeConsole = (buffer: Buffer) =>
+  new TextDecoder(process.platform === "win32" ? "ibm866" : "utf-8")
+    .decode(buffer)
+    .replace(/^\uFEFF/, "");
+
+export function resolveInpasConsoleLogPath(): string | undefined {
+  const appData = process.env.APPDATA;
+  return appData
+    ? join(appData, "Kassa-Raspechatka", "logs", "inpas-console.log")
+    : undefined;
+}
+
+function sanitizeDiagnosticText(value: string): string {
+  return value
+    .replace(/\b\d{12,19}\b/g, (digits) =>
+      `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`
+    )
+    .slice(0, 8000);
+}
 
 export function parseInpasResult(text: string): Record<string, string> {
   const fields: Record<string, string> = {};
@@ -208,6 +231,7 @@ export class InpasSettingsStore {
 export class InpasPaymentProvider implements PaymentProvider {
   private running = false;
   private healthCache: { at: number; value: DeviceHealth } | undefined;
+  private diagnosticsFileUnavailable = false;
 
   constructor(
     private readonly settingsStore: InpasSettingsStore,
