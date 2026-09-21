@@ -369,7 +369,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
         ...this.requestForDiagnostics(request),
         startedAt: this.lastRequest.timestamp,
       });
-      child.stdin.write(`${JSON.stringify(request)}\\n`, (error) => {
+      child.stdin.write(`${JSON.stringify(request)}\n`, (error) => {
         if (!error) {
           return;
         }
