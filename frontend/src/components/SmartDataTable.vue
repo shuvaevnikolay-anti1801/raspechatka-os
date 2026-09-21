@@ -437,10 +437,16 @@ onBeforeUnmount(() => {
 			<div class="table-pages">
 				<button :disabled="!ready || page === 1" @click="changePage(page - 1)">←</button
 				><span>{{ page }} / {{ pageCount }}</span
-				><button :disabled="!ready || page === pageCount" @click="changePage(page + 1)">→</button>
+				><button :disabled="!ready || page === pageCount" @click="changePage(page + 1)">
+					→
+				</button>
 			</div>
 			<label
-				>Строк на странице<select :value="pageSize" :disabled="!ready" @change="setPageSize">
+				>Строк на странице<select
+					:value="pageSize"
+					:disabled="!ready"
+					@change="setPageSize"
+				>
 					<option v-for="size in pageSizes" :key="size" :value="size">{{ size }}</option>
 				</select></label
 			>

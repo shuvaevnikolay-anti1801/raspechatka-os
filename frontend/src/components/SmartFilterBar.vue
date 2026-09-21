@@ -475,8 +475,19 @@ onBeforeUnmount(() => {
 				</div>
 			</label>
 			<div class="smart-filter-submit">
-				<button class="button button-primary" type="button" :disabled="!ready || schemaLoading" @click="apply">Найти</button
-				><button class="button button-secondary" type="button" :disabled="!ready || schemaLoading" @click="reset">
+				<button
+					class="button button-primary"
+					type="button"
+					:disabled="!ready || schemaLoading"
+					@click="apply"
+				>
+					Найти</button
+				><button
+					class="button button-secondary"
+					type="button"
+					:disabled="!ready || schemaLoading"
+					@click="reset"
+				>
 					Очистить
 				</button>
 			</div>

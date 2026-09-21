@@ -317,7 +317,6 @@ async function generateDocuments() {
 async function copyInvitation() {
 	await navigator.clipboard.writeText(invitation.value);
 }
-
 </script>
 
 <template>
