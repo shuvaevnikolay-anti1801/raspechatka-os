@@ -553,7 +553,7 @@ def _apply_return(event_id, workplace, payload):
 		frappe.throw(f"Исходная продажа {sale_id or 'не указана'} не найдена")
 
 	posting_datetime = (
-		get_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+		_legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
 	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
@@ -1049,7 +1049,7 @@ def _get_supply_requests(point_name):
 	return [
 		{
 			"id": row.name,
-			"createdAt": str(row.creation),
+			"createdAt": _pos_datetime_to_utc(row.creation),
 			"itemName": row.item_name,
 			"quantity": flt(row.quantity),
 			"status": row.status,
@@ -1189,7 +1189,7 @@ def _apply_cash_count(event_id, workplace, payload):
 			"doctype": "POS Cash Count",
 			"business_point": workplace.business_point,
 			"pos_workplace": workplace.name,
-			"counted_at": get_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
+			"counted_at": _legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
 			"count_type": payload.get("countType"),
 			"cashier_user": frappe.session.user,
 			"expected_amount": flt(payload.get("expectedMinor")) / 100,
