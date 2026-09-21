@@ -90,6 +90,8 @@ export type PointRules = {
 export type BootState = {
   pointId: string
   pointName: string
+  /** Business Point timezone; optional for compatibility with older cached boot state. */
+  pointTimezone?: string
   workplaceId: string
   workstationName: string
   cashierId?: string
