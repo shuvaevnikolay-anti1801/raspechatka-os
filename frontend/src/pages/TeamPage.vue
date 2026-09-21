@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call } from "../api";
 import ListPageHeader from "../components/ListPageHeader.vue";
@@ -362,6 +362,11 @@ async function recalculate(period) {
 		recalculating.value = false;
 	}
 }
+watch(section, () => {
+	listRequests.invalidate();
+	loading.value = true;
+	error.value = "";
+});
 
 </script>
 
