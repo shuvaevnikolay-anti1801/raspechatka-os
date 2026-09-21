@@ -12,12 +12,9 @@ from raspechatka.time_contract import (
 def point_business_date(business_point, instant):
 	"""Derive a point-local Date from a canonical site-naive Frappe instant."""
 	point_value = frappe.db.get_value("Business Point", business_point, "timezone")
-	point_timezone = resolve_point_timezone(point_value, get_effective_site_timezone())
-	return site_naive_to_target_date(
-		get_datetime(instant),
-		point_timezone,
-		get_effective_site_timezone(),
-	)
+	site_timezone = get_effective_site_timezone()
+	point_timezone = resolve_point_timezone(point_value, site_timezone)
+	return site_naive_to_target_date(get_datetime(instant), point_timezone, site_timezone)
 
 
 def set_business_date(document, instant_field):
