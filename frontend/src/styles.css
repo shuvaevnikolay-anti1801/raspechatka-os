@@ -214,13 +214,14 @@ a {
 }
 
 .workspace {
+	width: 100%;
+	min-width: 0;
 	min-height: calc(100vh - 108px);
 }
 .page {
 	width: 100%;
-	max-width: 1680px;
-	margin: 0 auto;
-	padding: 34px 36px 56px;
+	min-width: 0;
+	padding: 34px clamp(24px, 2.2vw, 48px) 56px;
 }
 .page-heading {
 	display: flex;
@@ -588,6 +589,11 @@ a {
 	overflow-x: auto;
 	border: 1px solid var(--line);
 	background: #fff;
+}
+.smart-filter,
+.smart-table {
+	width: 100%;
+	min-width: 0;
 }
 .smart-filter {
 	position: relative;
