@@ -3,12 +3,9 @@ from pathlib import Path
 from unittest import TestCase
 
 from raspechatka.time_contract import TimeContractError, validate_timezone
-
-
+ROOT = Path(__file__).parents[1]
 
 _ASSERTIONS = TestCase()
-
-ROOT = Path(__file__).parents[1]
 
 
 def test_user_timezone_save_uses_linked_frappe_user_without_profile_field():
