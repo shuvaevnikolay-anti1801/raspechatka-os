@@ -191,6 +191,35 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
   })
 
+  it('keeps a partially received purchase order with reduced remaining quantity',()=>{
+    const database=createDatabase()
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[],
+      deliveries:[{
+        id:'PO-PART',supplier:'Поставщик',status:'Ожидается',items:[{
+          purchaseOrderItemId:'POI-PART',itemId:'item',itemName:'Товар',itemCode:'ITEM',
+          uom:'шт',orderedQuantity:5,receivedQuantity:1,remainingQuantity:4,
+        }],
+      }],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+    database.createStockReceipt({
+      purchaseOrderId:'PO-PART',
+      lines:[{purchaseOrderItemId:'POI-PART',quantity:2}],
+    },'EMP-1')
+    expect(database.getWorkplaceData().deliveries).toEqual([expect.objectContaining({
+      id:'PO-PART',
+      status:'Частично принято',
+      items:[expect.objectContaining({purchaseOrderItemId:'POI-PART',receivedQuantity:3,remainingQuantity:2})],
+    })])
+    database.close()
+  })
+
   it('removes a fully received purchase order from the optimistic workplace snapshot',()=>{
     const database=createDatabase()
     database.setWorkplaceData({
