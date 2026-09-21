@@ -11,3 +11,8 @@ def test_web_boot_exposes_explicit_timezone_contract():
 	assert "user.settings" not in source
 	assert "get_effective_site_timezone" in source
 	assert 'or "UTC"' not in source
+
+
+def test_after_install_guard_is_narrow_and_explicit():
+\tsource = (Path(__file__).parents[1] / "hooks.py").read_text(encoding="utf-8")
+\tassert 'after_install = "raspechatka.time_contract.ensure_site_timezone_after_install"' in source
