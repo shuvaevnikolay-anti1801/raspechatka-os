@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import {
+  accessSync,
+  appendFileSync,
+  constants,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -52,6 +55,26 @@ const DEFAULT_SETTINGS: InpasSettings = {
 
 const decode = (buffer: Buffer) =>
   new TextDecoder("windows-1251").decode(buffer).replace(/^\uFEFF/, "");
+
+const decodeConsole = (buffer: Buffer) =>
+  new TextDecoder(process.platform === "win32" ? "ibm866" : "utf-8")
+    .decode(buffer)
+    .replace(/^\uFEFF/, "");
+
+export function resolveInpasConsoleLogPath(): string | undefined {
+  const appData = process.env.APPDATA;
+  return appData
+    ? join(appData, "Kassa-Raspechatka", "logs", "inpas-console.log")
+    : undefined;
+}
+
+function sanitizeDiagnosticText(value: string): string {
+  return value
+    .replace(/\b\d{12,19}\b/g, (digits) =>
+      `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`
+    )
+    .slice(0, 8000);
+}
 
 export function parseInpasResult(text: string): Record<string, string> {
   const fields: Record<string, string> = {};
@@ -208,6 +231,7 @@ export class InpasSettingsStore {
 export class InpasPaymentProvider implements PaymentProvider {
   private running = false;
   private healthCache: { at: number; value: DeviceHealth } | undefined;
+  private diagnosticsFileUnavailable = false;
 
   constructor(
     private readonly settingsStore: InpasSettingsStore,
@@ -372,16 +396,53 @@ export class InpasPaymentProvider implements PaymentProvider {
             `call "${launcher.path}" ${args.join(" ")}`,
           ]
         : [...launcher.prefixArgs, ...args];
+    const timeoutMs = settings.timeoutMs + 5000;
+    const startedAt = Date.now();
+    let cwdWritable = true;
+    try {
+      accessSync(cwd, constants.W_OK);
+    } catch {
+      cwdWritable = false;
+    }
+
+    this.logDiagnostics("command start", {
+      kind,
+      operationCode,
+      launcherType: launcher.type,
+      launcherPath: launcher.path,
+      command: launcher.command,
+      launchArgs,
+      cwd,
+      cwdWritable,
+      resultPath,
+      receiptPath,
+      timeoutMs,
+      terminalId: settings.terminalId,
+      currencyCode: settings.currencyCode,
+      amountMinor,
+      startedAt: new Date(startedAt).toISOString(),
+    });
 
     this.running = true;
     try {
       rmSync(resultPath, { force: true });
       rmSync(receiptPath, { force: true });
+      this.logDiagnostics("stale files cleared", { resultPath, receiptPath });
 
-      const processResult = await this.executor(launcher.command, launchArgs, {
-        cwd,
-        timeoutMs: settings.timeoutMs + 5000,
-      });
+      let processResult: CommandResult;
+      try {
+        processResult = await this.executor(launcher.command, launchArgs, {
+          cwd,
+          timeoutMs,
+        });
+      } catch (error) {
+        this.logDiagnostics("process launch failed", {
+          kind,
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
       const resultFileFound = existsSync(resultPath);
       const fields = resultFileFound
         ? parseInpasResult(decode(readFileSync(resultPath)))
@@ -405,6 +466,20 @@ export class InpasPaymentProvider implements PaymentProvider {
         stdout: stdout || undefined,
         stderr: stderr || undefined,
       };
+
+      this.logDiagnostics("command finished", {
+        kind,
+        durationMs: Date.now() - startedAt,
+        exitCode: processResult.code,
+        signal: processResult.signal,
+        timedOut: processResult.timedOut,
+        resultFileFound,
+        receiptFileFound: existsSync(receiptPath),
+        statusCode: fields["39"],
+        fields: this.safeFields(fields),
+        stdout: stdout ? sanitizeDiagnosticText(stdout) : undefined,
+        stderr: stderr ? sanitizeDiagnosticText(stderr) : undefined,
+      });
 
       let paymentResult: PaymentResult;
       if (processResult.timedOut || processResult.signal) {
@@ -432,6 +507,16 @@ export class InpasPaymentProvider implements PaymentProvider {
         };
       } else if (!resultFileFound) {
         const detail = stderr || stdout;
+        this.logDiagnostics("result.txt missing", {
+          kind,
+          cwd,
+          cwdWritable,
+          resultPath,
+          exitCode: processResult.code,
+          signal: processResult.signal,
+          stdout: stdout ? sanitizeDiagnosticText(stdout) : undefined,
+          stderr: stderr ? sanitizeDiagnosticText(stderr) : undefined,
+        });
         paymentResult = {
           status: "unknown",
           message: detail
@@ -456,6 +541,30 @@ export class InpasPaymentProvider implements PaymentProvider {
       return paymentResult;
     } finally {
       this.running = false;
+    }
+  }
+
+  private logDiagnostics(message: string, data?: unknown): void {
+    const suffix =
+      data === undefined
+        ? ""
+        : `\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}`;
+    const entry = `[INPAS CONSOLE] ${message}${suffix}`;
+    console.log(entry);
+
+    if (this.diagnosticsFileUnavailable) return;
+    const logPath = resolveInpasConsoleLogPath();
+    if (!logPath) return;
+    try {
+      mkdirSync(dirname(logPath), { recursive: true });
+      appendFileSync(logPath, `${new Date().toISOString()} ${entry}\n`, "utf8");
+    } catch (error) {
+      this.diagnosticsFileUnavailable = true;
+      console.error(
+        `[INPAS CONSOLE] diagnostics file write failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
@@ -572,8 +681,8 @@ function executeCommand(
               : null
             : 0,
           signal: processError?.signal ?? null,
-          stdout: decode(Buffer.from(stdout || [])),
-          stderr: decode(Buffer.from(stderr || [])),
+          stdout: decodeConsole(Buffer.from(stdout || [])),
+          stderr: decodeConsole(Buffer.from(stderr || [])),
           timedOut: Boolean(
             processError?.killed || processError?.code === "ETIMEDOUT"
           ),
