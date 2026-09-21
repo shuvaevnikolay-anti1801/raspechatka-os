@@ -259,6 +259,7 @@ async function toggleField(key) {
 	await savePreference();
 }
 async function apply() {
+	if (!ready.value || schemaLoading.value) return;
 	schemaError.value = "";
 	if (documentType.value) {
 		try {
@@ -276,6 +277,7 @@ async function apply() {
 	emit("apply");
 }
 async function reset() {
+	if (!ready.value || schemaLoading.value) return;
 	const empty = {
 		search: "",
 		...Object.fromEntries(
@@ -460,8 +462,8 @@ onBeforeUnmount(() => {
 				</div>
 			</label>
 			<div class="smart-filter-submit">
-				<button class="button button-primary" type="button" @click="apply">Найти</button
-				><button class="button button-secondary" type="button" @click="reset">
+				<button class="button button-primary" type="button" :disabled="!ready || schemaLoading" @click="apply">Найти</button
+				><button class="button button-secondary" type="button" :disabled="!ready || schemaLoading" @click="reset">
 					Очистить
 				</button>
 			</div>
