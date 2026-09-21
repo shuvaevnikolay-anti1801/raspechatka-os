@@ -7,6 +7,7 @@ import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
 import { createLatestRequestGate } from "../listLoading";
+import { dateInTimezone, formatDateOnly, monthInTimezone, monthStartInTimezone } from "../dateTime";
 
 const listRequests = createLatestRequestGate();
 const route = useRoute(),
@@ -15,11 +16,9 @@ const route = useRoute(),
 	data = reactive({}),
 	options = reactive({ entities: [], points: [], groups: [] });
 const filters = ref({
-	month: new Date().toISOString().slice(0, 7),
-	from_date: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-		.toISOString()
-		.slice(0, 10),
-	to_date: new Date().toISOString().slice(0, 10),
+	month: monthInTimezone(),
+	from_date: monthStartInTimezone(),
+	to_date: dateInTimezone(),
 	business_entity: "",
 	business_point: "",
 	catalog_group: "",
