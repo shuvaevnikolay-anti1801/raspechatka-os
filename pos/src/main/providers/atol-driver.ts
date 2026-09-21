@@ -13,12 +13,38 @@ export type AtolDriverDiagnostics = {
   stage?:string;
   steps:AtolDriverDiagnosticsStep[];
 };
+export type AtolBridgeClientDiagnostics = {
+  bridgePath:string;
+  process:{
+    running:boolean;
+    pid?:number;
+  };
+  lastRequest:{
+    command:string;
+    id:string;
+    timestamp:string;
+  };
+  lastResponse:{
+    received:boolean;
+    raw:string;
+    parsed:boolean;
+  };
+  transport:{
+    stdout:string[];
+    stderr:string[];
+  };
+  timing:{
+    durationMs:number;
+  };
+  lastError?:string;
+};
 export type AtolDriverDevice = { id:string; modelName:string; serialNumber:string; firmwareVersion?:string; connection:"usb"|"com"|"tcp"|"unknown"; settingsJson:string };
 export type AtolRecoveryProbe = FiscalRecoverySnapshot & { amount?:number };
 export type AtolDriverStatus = { connected:boolean; driverVersion?:string; serialNumber?:string; modelName?:string; firmwareVersion?:string; shiftState?:string|number; paperPresent?:boolean; coverOpened?:boolean; printerConnectionLost?:boolean; printerError?:boolean; fnPresent?:boolean; invalidFn?:boolean; deviceBlocked?:boolean; errorCode?:number; errorDescription?:string };
 export interface AtolDriverBridge {
   getDriverInfo():Promise<AtolDriverInfo>;
   diagnostics?():Promise<AtolDriverDiagnostics>;
+  getDiagnostics():AtolBridgeClientDiagnostics;
   findDevices():Promise<AtolDriverDevice[]>;
   connect(device:AtolDriverDevice):Promise<void>;
   disconnect():Promise<void>;
