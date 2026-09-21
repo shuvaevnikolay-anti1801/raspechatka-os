@@ -6,7 +6,9 @@ import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import { mergeEntityFields } from "../entityListSchema";
+import { createLatestRequestGate } from "../listLoading";
 
+const listRequests = createLatestRequestGate();
 const route = useRoute(),
 	loading = ref(true),
 	error = ref(""),
@@ -121,6 +123,7 @@ const columns = computed(() =>
 const entityFields = computed(() => mergeEntityFields(filterFields.value, columns.value));
 
 async function load() {
+	const requestId = listRequests.begin();
 	loading.value = true;
 	error.value = "";
 	try {
@@ -152,11 +155,13 @@ async function load() {
 				search: filters.value.search,
 			};
 		}
-		Object.assign(data, await call(`raspechatka.api.finance.${method}`, params));
+		const result = await call(`raspechatka.api.finance.${method}`, params);
+		if (!listRequests.isCurrent(requestId)) return;
+		Object.assign(data, result);
 	} catch (exception) {
-		error.value = exception.message;
+		if (listRequests.isCurrent(requestId)) error.value = exception.message;
 	} finally {
-		loading.value = false;
+		if (listRequests.isCurrent(requestId)) loading.value = false;
 	}
 }
 async function init() {
@@ -164,9 +169,13 @@ async function init() {
 	options.groups = await call("raspechatka.api.frontend.get_catalog_filters").then(
 		(result) => result.groups
 	);
-	await load();
 }
-watch(kind, load);
+watch(kind, () => {
+	listRequests.invalidate();
+	Object.keys(data).forEach((key) => delete data[key]);
+	error.value = "";
+	loading.value = true;
+});
 onMounted(init);
 </script>
 
@@ -180,6 +189,7 @@ onMounted(init);
 			:view-key="`finance.${kind}`"
 			@apply="load"
 			@reset="load"
+			@ready="load"
 		/>
 		<div v-if="loading && (kind === 'report' || kind === 'overview')" class="table-message">
 			<span class="loader"></span><span>Рассчитываем показатели…</span>
