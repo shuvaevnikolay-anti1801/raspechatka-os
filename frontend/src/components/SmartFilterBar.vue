@@ -167,6 +167,26 @@ function dynamicCriteria() {
 			return [{ fieldname: field.key, operator, value }];
 		});
 }
+async function resolveDocumentMatches(viewKey, doctype, generation = null) {
+	const criteria = dynamicCriteria();
+	if (!doctype || !criteria.length) {
+		setDocumentFilterMatches(viewKey, null);
+		return true;
+	}
+	try {
+		const names = await call("raspechatka.api.list_filters.filter_document_names", {
+			doctype,
+			filters: JSON.stringify(criteria),
+		});
+		if (generation !== null && generation !== preferenceGeneration) return false;
+		setDocumentFilterMatches(viewKey, names);
+		return true;
+	} catch (exception) {
+		if (generation === null || generation === preferenceGeneration)
+			schemaError.value = exception.message;
+		return false;
+	}
+}
 async function savePreference(extra = {}) {
 	if (!ready.value) return;
 	await call(
@@ -248,6 +268,8 @@ async function loadPreference() {
 	if (generation !== preferenceGeneration) return;
 	await nextTick();
 	if (generation !== preferenceGeneration) return;
+	await resolveDocumentMatches(viewKey, doctype, generation);
+	if (generation !== preferenceGeneration) return;
 	ready.value = true;
 	emit("ready", viewKey);
 }
@@ -261,18 +283,7 @@ async function toggleField(key) {
 async function apply() {
 	if (!ready.value || schemaLoading.value) return;
 	schemaError.value = "";
-	if (documentType.value) {
-		try {
-			const names = await call("raspechatka.api.list_filters.filter_document_names", {
-				doctype: documentType.value,
-				filters: JSON.stringify(dynamicCriteria()),
-			});
-			setDocumentFilterMatches(props.viewKey, names);
-		} catch (exception) {
-			schemaError.value = exception.message;
-			return;
-		}
-	}
+	if (!(await resolveDocumentMatches(props.viewKey, documentType.value))) return;
 	await savePreference();
 	emit("apply");
 }
