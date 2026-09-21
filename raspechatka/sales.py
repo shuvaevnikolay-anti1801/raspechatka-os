@@ -24,7 +24,9 @@ def set_business_date(document, instant_field):
 	"""Set the derived, read-only point-local Date for a new/current document."""
 	instant = getattr(document, instant_field, None)
 	point = getattr(document, "business_point", None)
-	if instant and point:
+	is_new = document.is_new() if hasattr(document, "is_new") else True
+	# Do not opportunistically backfill historical rows; part (5) owns that migration.
+	if instant and point and (is_new or getattr(document, "business_date", None)):
 		document.business_date = point_business_date(point, instant)
 	return getattr(document, "business_date", None)
 
