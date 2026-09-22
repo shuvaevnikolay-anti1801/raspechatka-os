@@ -88,17 +88,12 @@ describe("InpasPaymentProvider", () => {
     ).toBe("approved");
   });
 
-  it("uses operation 4 for a refund and treats a normal non-zero exit as a decline", async () => {
+  it("never maps legacy operation 4 to refund", async () => {
     const provider = new InpasPaymentProvider(
       settings,
       join(directory, "results"),
       async (_file, args) => {
         calls.push({ args, cwd: directory });
-        writeFileSync(
-          join(directory, "result.txt"),
-          "[39] = '5'\r\n[19] = 'ОТКАЗ'",
-          "latin1"
-        );
         return {
           code: 0,
           signal: null,
@@ -114,8 +109,9 @@ describe("InpasPaymentProvider", () => {
       amountMinor: 500,
       method: "card",
     });
-    expect(calls[0].args[0]).toBe("-o4");
     expect(result.status).toBe("declined");
+    expect(result.message).toMatch(/operation 4.*void/i);
+    expect(calls).toHaveLength(0);
   });
 
   it("keeps an interrupted operation unknown", async () => {
@@ -178,7 +174,13 @@ describe("InpasPaymentProvider", () => {
       "-m22",
       "-l1",
     ]);
-    expect(calls[1].args).toEqual(["-o59", "-z40000037", "-s60"]);
+    expect(calls[1].args).toEqual([
+      "-p5",
+      "-z40000037",
+      "-o59",
+      "-m22",
+      "-l1",
+    ]);
   });
 
   it("does not approve exit code zero without SA field 39", async () => {
