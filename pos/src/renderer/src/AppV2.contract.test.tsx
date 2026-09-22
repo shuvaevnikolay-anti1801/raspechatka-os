@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
@@ -34,6 +34,25 @@ describe('receipt discount input ownership',()=>{
   })
 })
 
+describe('cash count contract',()=>{
+  it('keeps denomination payload order and exact integer arithmetic',()=>{
+    expect(CASH_COUNT_DENOMINATIONS).toEqual([500000,100000,50000,10000,5000,1000,500,200,100])
+    const lines=buildCashCountLines({500000:2,1000:3,100:4})
+    expect(lines).toEqual([
+      {denominationMinor:500000,quantity:2},
+      {denominationMinor:100000,quantity:0},
+      {denominationMinor:50000,quantity:0},
+      {denominationMinor:10000,quantity:0},
+      {denominationMinor:5000,quantity:0},
+      {denominationMinor:1000,quantity:3},
+      {denominationMinor:500,quantity:0},
+      {denominationMinor:200,quantity:0},
+      {denominationMinor:100,quantity:4},
+    ])
+    expect(cashCountTotal(lines)).toBe(1003400)
+  })
+})
+
 describe('cashier workplace micro-contract',()=>{
   const lockedAuth:CashierAuthState={status:'locked',employee:{id:'e1',name:'Иван Иванов'}}
   const lockedOpenShiftAuth:CashierAuthState={...lockedAuth,openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
@@ -63,6 +82,11 @@ describe('cashier workplace micro-contract',()=>{
     expect(markup).toContain('maxLength="4"')
   })
 
+  it('keeps success green and wrong PIN failures red through explicit notice severity',()=>{
+    expect(cashierPinNoticeClass('success')).toBe('cashier-login-notice cashier-login-success')
+    expect(cashierPinNoticeClass('error')).toBe('cashier-login-notice cashier-login-error')
+  })
+
   it('routes pre-login and authenticated Settings through the same explicit trigger class',()=>{
     const preLogin=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
     const authenticated=renderToStaticMarkup(<SettingsNavTrigger/>)
@@ -75,6 +99,7 @@ describe('cashier workplace micro-contract',()=>{
     const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
     expect(markup).toContain('pin-entry-layout')
     expect(markup).toContain('pin-entry-main')
+    expect(markup).toContain('pin-entry-content')
     expect(markup).toContain('pin-entry-footer')
     const left=markup.indexOf('pin-entry-footer-left')
     const right=markup.indexOf('pin-entry-footer-right')

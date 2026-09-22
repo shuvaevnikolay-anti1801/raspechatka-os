@@ -13,6 +13,7 @@ import WarehouseReceiptsPage from "./pages/WarehouseReceiptsPage.vue";
 import WarehouseDocumentsPage from "./pages/WarehouseDocumentsPage.vue";
 import WarehouseReportPage from "./pages/WarehouseReportPage.vue";
 import WarehouseMovementsPage from "./pages/WarehouseMovementsPage.vue";
+import InternalOrdersPage from "./pages/InternalOrdersPage.vue";
 import WarehouseSettingsPage from "./pages/WarehouseSettingsPage.vue";
 import ClientsPage from "./pages/ClientsPage.vue";
 import ClientClubPage from "./pages/ClientClubPage.vue";
@@ -54,6 +55,7 @@ const routes = [
   { path: "/warehouse/write-offs", name: "warehouse-write-offs", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "write-offs" } },
   { path: "/warehouse/inventories", name: "warehouse-inventories", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "inventories" } },
   { path: "/warehouse/purchase-orders", name: "warehouse-purchase-orders", component: WarehouseDocumentsPage, meta: { module: "warehouse", kind: "purchase-orders" } },
+  { path: "/warehouse/internal-orders", name: "warehouse-internal-orders", component: InternalOrdersPage, meta: { module: "warehouse" } },
   { path: "/warehouse/balances", name: "warehouse-balances", component: WarehouseReportPage, meta: { module: "warehouse", report: "balances" } },
   { path: "/warehouse/turnover", name: "warehouse-turnover", component: WarehouseReportPage, meta: { module: "warehouse", report: "turnover" } },
   { path: "/warehouse/movements", name: "warehouse-movements", component: WarehouseMovementsPage, meta: { module: "warehouse" } },

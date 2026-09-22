@@ -26,7 +26,7 @@ export function PinEntryLayout({
   footerRight,
 }:{children:ReactNode;footerLeft:ReactNode;footerRight?:ReactNode}){
   return <div className="pin-entry-layout">
-    <div className="pin-entry-main">{children}</div>
+    <div className="pin-entry-main"><div className="pin-entry-content">{children}</div></div>
     <div className="pin-entry-footer">
       <div className="pin-entry-footer-left">{footerLeft}</div>
       <div className="pin-entry-footer-right">{footerRight}</div>

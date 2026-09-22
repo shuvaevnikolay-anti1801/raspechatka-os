@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const source=readFileSync(new URL('./PaymentModalV2.tsx',import.meta.url),'utf8')
+const css=readFileSync(new URL('./checkout.css',import.meta.url),'utf8')
 
 describe('PaymentModalV2 safety and visibility contracts',()=>{
   it('shows only the existing methods enabled by point rules',()=>{
@@ -51,6 +52,18 @@ describe('PaymentModalV2 safety and visibility contracts',()=>{
     expect(source).toContain('(!mixedUsesTerminal||terminalReady)')
     expect(source).toContain("if(mixedRemainder&&rules.acceptsQr)parts.push({method:'qr',amountMinor:mixedRemainder})")
     expect(source).toContain('return onComplete(parts,cashMinor)')
+  })
+
+  it('uses responsive method tiles and keeps long-flow confirmation reachable',()=>{
+    expect(css).toContain('grid-template-columns:repeat(3,minmax(0,1fr))')
+    expect(css).toContain('@media(max-width:680px)')
+    expect(css).toContain('grid-template-columns:repeat(2,minmax(0,1fr))')
+    expect(css).not.toContain('repeat(5')
+    expect(css).toContain('grid-template-columns:minmax(0,1.25fr) minmax(220px,.75fr)')
+    expect(css).toContain('@media(max-width:620px)')
+    expect(css).toContain('.cash-payment-context{grid-template-columns:1fr}')
+    expect(css).toContain('position:sticky')
+    expect(source).toContain('className="payment-actions"')
   })
 
   it('blocks duplicate busy submission and preserves safe keyboard behavior',()=>{

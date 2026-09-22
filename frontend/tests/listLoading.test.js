@@ -90,6 +90,7 @@ test("standard list consumers initialize from filter readiness", () => {
 
 	const serverConsumers = [
 		"pages/CatalogPage.vue",
+		"pages/InternalOrdersPage.vue",
 		"pages/WarehouseDocumentsPage.vue",
 		"pages/WarehouseMovementsPage.vue",
 		"pages/WarehouseReceiptsPage.vue",
@@ -117,6 +118,7 @@ test("list consumers ignore stale row responses", () => {
 		"pages/SalesPage.vue",
 		"pages/TeamPage.vue",
 		"pages/UsersPage.vue",
+		"pages/InternalOrdersPage.vue",
 		"pages/WarehouseDocumentsPage.vue",
 		"pages/WarehouseMovementsPage.vue",
 		"pages/WarehouseReceiptsPage.vue",
@@ -137,6 +139,7 @@ test("legacy parallel initial row loads are removed from list consumers", () => 
 		"pages/MasterDataPage.vue",
 		"pages/ReferencesPage.vue",
 		"pages/UsersPage.vue",
+		"pages/InternalOrdersPage.vue",
 		"pages/WarehouseDocumentsPage.vue",
 		"pages/WarehouseReceiptsPage.vue",
 		"pages/WarehouseReportPage.vue",

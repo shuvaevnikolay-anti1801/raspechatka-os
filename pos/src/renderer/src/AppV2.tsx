@@ -311,6 +311,9 @@ export async function runLockedCashierSwitch(
   await refresh()
 }
 
+export type CashierPinNoticeSeverity='error'|'success'
+export const cashierPinNoticeClass=(severity:CashierPinNoticeSeverity)=>`cashier-login-notice cashier-login-${severity}`
+
 export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<void>}){
   const forced=auth.openShiftCashierId
   const [employeeId,setEmployeeId]=useState(forced||'')
@@ -319,37 +322,37 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   const [setup,setSetup]=useState(false)
   const [adminReset,setAdminReset]=useState(false)
   const [adminCode,setAdminCode]=useState('')
-  const [error,setError]=useState('')
+  const [notice,setNotice]=useState<{severity:CashierPinNoticeSeverity;message:string}|null>(null)
   const selected=boot.employees.find((row)=>row.id===employeeId)||(forced===employeeId?{id:employeeId,name:auth.openShiftCashierName||employeeId}:undefined)
   const lockedEmployee=auth.employee
   const resetEmployeeId=cashierResetEmployeeId(auth,employeeId)
   const openWorkShift=Boolean(auth.openShiftCashierId||auth.openShiftCashierName)
   const canSwitchCashier=lockedCashierCanSwitch(auth)
-  const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setError('');if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setError(e instanceof Error?e.message:String(e))}}}
+  const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setNotice(null);if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}}
   useEffect(()=>{if(forced)void choose(forced)},[forced])
   const submit=async()=>{try{
     if(auth.status==='locked')await window.raspechatkaPos.unlockCashier(pin)
     else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)
     else await window.raspechatkaPos.loginCashier(employeeId,pin)
     await onAuthenticated()
-  }catch(e){setError(e instanceof Error?e.message:String(e));setPin('');setConfirmation('')}}
+  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)});setPin('');setConfirmation('')}}
   const reset=async()=>{try{
     if(!resetEmployeeId)throw new Error('Не удалось определить кассира для сброса PIN')
     await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)
-    setAdminReset(false);setAdminCode('');setSetup(false);setError('PIN изменён. Теперь войдите с новым PIN.');setPin('');setConfirmation('')
-  }catch(e){setError(e instanceof Error?e.message:String(e))}}
+    setAdminReset(false);setAdminCode('');setSetup(false);setNotice({severity:'success',message:'PIN изменён. Теперь войдите с новым PIN.'});setPin('');setConfirmation('')
+  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
   const switchCashier=async()=>{try{
     await runLockedCashierSwitch(
       ()=>window.raspechatkaPos.logoutCashier(),
       async()=>{
-        setEmployeeId('');setPin('');setConfirmation('');setAdminReset(false);setAdminCode('');setSetup(false);setError('')
+        setEmployeeId('');setPin('');setConfirmation('');setAdminReset(false);setAdminCode('');setSetup(false);setNotice(null)
         await onAuthenticated()
       },
     )
-  }catch(e){setError(e instanceof Error?e.message:String(e))}}
+  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
   const footerLeft=<button className="settings-open-trigger" type="button">Настройки кассы</button>
   const footerRight=!setup&&!adminReset
-    ?<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>
+    ?<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</button>
     :undefined
   return <main className="cashier-login-screen"><section className="cashier-login-card">
     {auth.status==='locked'&&<small>КАССА ЗАБЛОКИРОВАНА</small>}<h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
@@ -362,7 +365,7 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
           {adminReset&&<label><span>Код администратора</span><PinInput autoFocus value={adminCode} onChange={setAdminCode} ariaLabel="Код администратора · 4 цифры"/></label>}
           <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
           {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
-          {error&&<div className="cashier-login-error">{error}</div>}
+          {notice&&<div className={cashierPinNoticeClass(notice.severity)} role={notice.severity==='error'?'alert':'status'}>{notice.message}</div>}
           {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
           {auth.status==='locked'&&canSwitchCashier&&<button className="cashier-switch-cashier" type="button" onClick={()=>void switchCashier()}>Сменить кассира</button>}
           {auth.status==='locked'&&openWorkShift&&<p className="cashier-switch-blocked">Чтобы сменить кассира, разблокируйте текущего кассира и закройте смену.</p>}
@@ -427,9 +430,18 @@ function PriceOverrideModal({line,minimumMinor,onClose,onApply}:{line:CartLine;m
   return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ПОЗИЦИЯ ЧЕКА</small><h2>Изменить цену</h2></div><button onClick={onClose}>×</button></header><p>{line.name}</p><label className="cash-input"><span>Цена за единицу, ₽</span><input autoFocus type="number" min={minimumMinor/100} step="0.01" value={input} onChange={(event)=>setInput(event.target.value)}/></label>{!valid&&<div className="error-note">Минимальная цена: {formatMoney(minimumMinor)}</div>}<button className="primary confirm" disabled={!valid} onClick={()=>onApply(price)}>Применить · {formatMoney(price)}</button></div></div>
 }
 
+export const CASH_COUNT_DENOMINATIONS=[500000,100000,50000,10000,5000,1000,500,200,100] as const
+export const buildCashCountLines=(quantities:Record<number,number>):CashCountLine[]=>
+  CASH_COUNT_DENOMINATIONS.map((denominationMinor)=>({denominationMinor,quantity:quantities[denominationMinor]||0}))
+export const cashCountTotal=(lines:CashCountLine[]):number=>
+  lines.reduce((sum,line)=>sum+line.denominationMinor*line.quantity,0)
+
 function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount['countType'];expectedMinor:number;onClose:()=>void;onComplete:(lines:CashCountLine[])=>Promise<void>}){
-  const denominations=[500000,100000,50000,10000,5000,1000,500,200,100];const [quantities,setQuantities]=useState<Record<number,number>>({});const lines=denominations.map((denominationMinor)=>({denominationMinor,quantity:quantities[denominationMinor]||0}));const total=lines.reduce((sum,x)=>sum+x.denominationMinor*x.quantity,0);const expected=type==='opening'?total:expectedMinor
-  return <div className="modal-backdrop"><div className="payment-modal cash-count-modal"><header><div><small>ПЕРЕСЧЁТ НАЛИЧНЫХ</small><h2>{type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'}</h2></div><button onClick={onClose}>×</button></header><div className="denominations">{denominations.map((x)=><label key={x}><span>{formatMoney(x)}</span><input type="number" min="0" step="1" value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/><b>{formatMoney(x*(quantities[x]||0))}</b></label>)}</div><div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={total-expected===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(total-expected)}</strong></div></div><button className="primary confirm" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</button></div></div>
+  const [quantities,setQuantities]=useState<Record<number,number>>({})
+  const lines=buildCashCountLines(quantities)
+  const total=cashCountTotal(lines)
+  const expected=type==='opening'?total:expectedMinor
+  return <div className="modal-backdrop"><div className="payment-modal cash-count-modal"><header><div><small>ПЕРЕСЧЁТ НАЛИЧНЫХ</small><h2>{type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'}</h2></div><button onClick={onClose}>×</button></header><div className="denominations">{CASH_COUNT_DENOMINATIONS.map((x)=><label key={x}><span>{formatMoney(x)}</span><input type="number" min="0" step="1" inputMode="numeric" aria-label={`Количество купюр или монет ${formatMoney(x)}`} value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/><b>{formatMoney(x*(quantities[x]||0))}</b></label>)}</div><div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={total-expected===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(total-expected)}</strong></div></div><button className="primary confirm" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</button></div></div>
 }
 
 function Nav({active,icon,label,badge,className='',onClick}:{active:boolean;icon:string;label:string;badge?:number;className?:string;onClick:()=>void}){return <button className={[active?'active':'',className].filter(Boolean).join(' ')} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}

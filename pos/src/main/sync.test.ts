@@ -43,9 +43,11 @@ const bootstrapPayload=(orders:any[]=[canonicalOrder])=>({
   rules:{allowDiscounts:true,maxDiscountPercent:20},
 })
 
-const createDatabase=(initialPending=0)=>{
+const createDatabase=(initialPending=0,initialEvents?:any[])=>{
   const state=new Map<string,string>()
-  let pending=initialPending
+  let queuedEvents=initialEvents?[...initialEvents]:Array.from({length:initialPending},(_,index)=>({
+    id:`event-${index+1}`,eventType:'order.created',payload:{orderNumber:'ORD-1'}
+  }))
   const database:any={
     getState:(key:string)=>state.get(key),
     setState:vi.fn((key:string,value:string)=>state.set(key,value)),
@@ -56,13 +58,20 @@ const createDatabase=(initialPending=0)=>{
     replaceServerOrders:vi.fn(),
     setWorkplaceData:vi.fn(),
     listPointEmployees:()=>[],
-    pendingSyncCount:()=>pending,
+    pendingSyncCount:()=>queuedEvents.length,
     currentShift:()=>null,
-    pendingEvents:vi.fn(()=>pending?[{id:'event-1',eventType:'order.created',payload:{orderNumber:'ORD-1'}}]:[]),
-    markEventsSent:vi.fn((ids:string[])=>{if(ids.includes('event-1'))pending=0}),
+    pendingEvents:vi.fn((limit=100)=>queuedEvents.slice(0,limit)),
+    markEventsSent:vi.fn((ids:string[])=>{
+      const accepted=new Set(ids)
+      queuedEvents=queuedEvents.filter((event)=>!accepted.has(event.id))
+    }),
     getUpsellCursor:(triggerItem:string)=>triggerItem==='trigger'?2:0,
   }
-  return {database,state,pending:()=>pending}
+  return {
+    database,state,
+    pending:()=>queuedEvents.length,
+    pendingIds:()=>queuedEvents.map((event)=>event.id),
+  }
 }
 
 beforeEach(()=>{
@@ -76,7 +85,7 @@ describe('performSync single flight',()=>{
   it('coalesces a manual and background request for the same database',async()=>{
     const {database}=createDatabase()
     mocks.loadBootstrap.mockImplementation(()=>new Promise((resolve)=>{mocks.deferred.resolve=resolve}))
-    mocks.pushEvents.mockResolvedValue([])
+    mocks.pushEvents.mockResolvedValue({accepted:[],errors:[]})
     const first=performSync(database,connectionStore,'cashier')
     const second=performSync(database,connectionStore,'cashier')
     expect(second).toBe(first)
@@ -120,7 +129,7 @@ describe('configuration versus business sync boundary',()=>{
     mocks.loadBootstrap
       .mockResolvedValueOnce(bootstrapPayload([]))
       .mockResolvedValueOnce(bootstrapPayload([canonicalOrder]))
-    mocks.pushEvents.mockResolvedValueOnce(['event-1'])
+    mocks.pushEvents.mockResolvedValueOnce({accepted:['event-1'],errors:[]})
 
     const result=await performSync(database,connectionStore,'cashier-a')
 
@@ -138,7 +147,7 @@ describe('read-after-write and truthful queue state',()=>{
     mocks.loadBootstrap
       .mockResolvedValueOnce(bootstrapPayload([]))
       .mockResolvedValueOnce(bootstrapPayload([canonicalOrder]))
-    mocks.pushEvents.mockResolvedValueOnce(['event-1'])
+    mocks.pushEvents.mockResolvedValueOnce({accepted:['event-1'],errors:[]})
 
     const result=await performSync(database,connectionStore,'cashier')
 
@@ -166,10 +175,64 @@ describe('read-after-write and truthful queue state',()=>{
     })
   })
 
+  it('marks only accepted ids, keeps rejected ids pending, and reads back after partial success',async()=>{
+    const events=[
+      {id:'event-1',eventType:'order.updated',payload:{orderNumber:'ORD-MISSING'}},
+      {id:'event-2',eventType:'order.created',payload:{orderNumber:'ORD-2'}},
+    ]
+    const {database,pending,pendingIds}=createDatabase(0,events)
+    mocks.loadBootstrap
+      .mockResolvedValueOnce(bootstrapPayload([]))
+      .mockResolvedValueOnce(bootstrapPayload([canonicalOrder]))
+    mocks.pushEvents.mockResolvedValueOnce({
+      accepted:['event-2'],
+      errors:[{id:'event-1',eventType:'order.updated',message:'Заказ не найден'}],
+    })
+
+    const result=await performSync(database,connectionStore,'cashier')
+
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
+    expect(database.markEventsSent).toHaveBeenCalledWith(['event-2'])
+    expect(pending()).toBe(1)
+    expect(pendingIds()).toEqual(['event-1'])
+    expect(mocks.loadBootstrap).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({
+      online:true,
+      pendingSync:1,
+      documentQueueSynced:false,
+      documentQueueError:'order.updated (event-1): Заказ не найден',
+    })
+  })
+
+  it('keeps an unsupported event pending with its server error',async()=>{
+    const events=[{id:'event-unsupported',eventType:'future.event',payload:{}}]
+    const {database,pendingIds}=createDatabase(0,events)
+    mocks.loadBootstrap.mockResolvedValueOnce(bootstrapPayload([]))
+    mocks.pushEvents.mockResolvedValueOnce({
+      accepted:[],
+      errors:[{
+        id:'event-unsupported',
+        eventType:'future.event',
+        message:'Неподдерживаемый тип события: future.event',
+      }],
+    })
+
+    const result=await performSync(database,connectionStore,'cashier')
+
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
+    expect(database.markEventsSent).not.toHaveBeenCalled()
+    expect(pendingIds()).toEqual(['event-unsupported'])
+    expect(result).toMatchObject({
+      pendingSync:1,
+      documentQueueSynced:false,
+      documentQueueError:'future.event (event-unsupported): Неподдерживаемый тип события: future.event',
+    })
+  })
+
   it('does not report queue success when the server accepts nothing',async()=>{
     const {database,pending}=createDatabase(1)
     mocks.loadBootstrap.mockResolvedValueOnce(bootstrapPayload([]))
-    mocks.pushEvents.mockResolvedValueOnce([])
+    mocks.pushEvents.mockResolvedValueOnce({accepted:[],errors:[]})
 
     const result=await performSync(database,connectionStore,'cashier')
 
@@ -182,7 +245,7 @@ describe('read-after-write and truthful queue state',()=>{
   it('does not replay an accepted event on the next full sync',async()=>{
     const {database}=createDatabase(1)
     mocks.loadBootstrap.mockResolvedValue(bootstrapPayload([canonicalOrder]))
-    mocks.pushEvents.mockResolvedValueOnce(['event-1'])
+    mocks.pushEvents.mockResolvedValueOnce({accepted:['event-1'],errors:[]})
 
     await performSync(database,connectionStore,'cashier')
     await performSync(database,connectionStore,'cashier')

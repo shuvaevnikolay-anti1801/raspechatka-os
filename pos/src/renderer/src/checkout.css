@@ -1,11 +1,11 @@
 .payment-backdrop{
-  padding:clamp(18px,4vw,56px);
+  padding:clamp(12px,2vw,24px);
   background:rgba(24,27,23,.62);
 }
 .payment-modal-v2{
-  width:min(980px,calc(100vw - 36px));
-  max-width:980px;
-  max-height:calc(100vh - 36px);
+  width:min(920px,calc(100vw - 24px));
+  max-width:920px;
+  max-height:calc(100vh - 24px);
   padding:0;
   overflow:auto;
   border:1px solid #cfd4cc;
@@ -18,8 +18,8 @@
   border-radius:0;
 }
 .payment-modal-v2 .payment-heading{
-  min-height:86px;
-  padding:18px clamp(20px,4vw,38px);
+  min-height:72px;
+  padding:14px clamp(18px,3vw,30px);
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -27,11 +27,11 @@
   border-bottom:1px solid #d8dcd5;
 }
 .payment-heading small{display:block;color:#687067;font-size:.72rem;letter-spacing:.1em}
-.payment-heading h2{margin:4px 0 0;font-size:clamp(1.55rem,3vw,2.15rem);line-height:1.1}
+.payment-heading h2{margin:4px 0 0;font-size:clamp(1.65rem,3vw,2.25rem);line-height:1.05}
 .payment-close{
-  flex:0 0 52px;
-  width:52px;
-  height:52px;
+  flex:0 0 46px;
+  width:46px;
+  height:46px;
   padding:0;
   border:1px solid #c7ccc4;
   background:#fff;
@@ -39,24 +39,24 @@
 }
 .payment-close:disabled{opacity:.42}
 .payment-amount-due{
-  padding:20px clamp(20px,4vw,38px) 16px;
+  padding:14px clamp(18px,3vw,30px) 12px;
   display:flex;
   align-items:baseline;
   justify-content:space-between;
   gap:20px;
 }
 .payment-amount-due span{font-size:1rem;color:#687067}
-.payment-amount-due strong{font-size:clamp(2rem,5vw,3.25rem);line-height:1;color:var(--rp-ink,#272727)}
+.payment-amount-due strong{font-size:clamp(2.25rem,5vw,3.4rem);line-height:1;color:var(--rp-ink,#272727)}
 .checkout-methods{
   margin:0;
-  padding:0 clamp(20px,4vw,38px) 22px;
+  padding:0 clamp(18px,3vw,30px) 16px;
   display:grid;
-  grid-template-columns:repeat(5,minmax(120px,1fr));
+  grid-template-columns:repeat(3,minmax(0,1fr));
   gap:10px;
 }
 .checkout-methods button{
-  min-height:96px;
-  padding:14px;
+  min-height:82px;
+  padding:13px 15px;
   display:flex;
   flex-direction:column;
   align-items:flex-start;
@@ -67,7 +67,7 @@
   color:var(--rp-ink,#272727);
   text-align:left;
 }
-.checkout-methods button>span{font-size:clamp(.92rem,1.7vw,1.12rem);font-weight:750}
+.checkout-methods button>span{font-size:clamp(1rem,1.8vw,1.18rem);font-weight:750;line-height:1.2}
 .checkout-methods button small{font-size:.75rem;font-weight:500;color:#687067}
 .checkout-methods button.active{
   border-color:#7eaa00;
@@ -78,9 +78,9 @@
 .checkout-methods button.active small{color:#344300}
 .checkout-methods button:disabled{opacity:.48;cursor:not-allowed}
 .payment-context{
-  min-height:210px;
-  margin:0 clamp(20px,4vw,38px);
-  padding:22px;
+  min-height:120px;
+  margin:0 clamp(18px,3vw,30px);
+  padding:16px;
   border:1px solid #d8dcd5;
   background:#f5f6f4;
 }
@@ -96,7 +96,7 @@
 .payment-warning strong{font-size:1rem}
 .payment-warning span{font-size:.9rem;color:#6d5140;line-height:1.45}
 .cash-payment-context{
-  min-height:164px;
+  min-height:128px;
   display:grid;
   grid-template-columns:minmax(0,1.25fr) minmax(220px,.75fr);
   align-items:stretch;
@@ -112,8 +112,8 @@
 .payment-received span{font-size:1rem;font-weight:700}
 .payment-received input{
   width:100%;
-  min-height:72px;
-  padding:12px 16px;
+  min-height:60px;
+  padding:10px 14px;
   border:1px solid #aeb5aa;
   background:#fff;
   font-size:clamp(1.55rem,4vw,2.25rem);
@@ -180,24 +180,34 @@
   border-top:1px solid #cfd4cc;
 }
 .split-payment>footer b{font-size:1.35rem}
+.payment-actions{
+  position:sticky;
+  bottom:0;
+  z-index:3;
+  padding:14px clamp(18px,3vw,30px) 12px;
+  border-top:1px solid #d8dcd5;
+  background:#fff;
+}
 .payment-modal-v2 .payment-confirm{
-  width:calc(100% - clamp(40px,8vw,76px));
-  min-height:72px;
-  margin:20px clamp(20px,4vw,38px) 0;
-  font-size:clamp(1.1rem,2.6vw,1.45rem);
+  width:100%;
+  min-height:64px;
+  margin:0;
+  font-size:clamp(1.15rem,2.6vw,1.5rem);
 }
 .payment-modal-v2 .payment-confirm:disabled{opacity:.48}
 .checkout-footnote{
-  margin:12px clamp(20px,4vw,38px) 20px;
+  margin:9px 0 0;
   color:#697064;
   font-size:.76rem;
   line-height:1.45;
   text-align:center;
 }
-@media(max-width:840px){
+@media(max-width:680px){
   .checkout-methods{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .checkout-methods button{min-height:78px}
-  .cash-payment-context{grid-template-columns:1fr}
+  .checkout-methods button{min-height:76px}
   .split-payment-fields{grid-template-columns:1fr}
   .payment-context{min-height:0}
+}
+@media(max-width:620px){
+  .cash-payment-context{grid-template-columns:1fr}
 }

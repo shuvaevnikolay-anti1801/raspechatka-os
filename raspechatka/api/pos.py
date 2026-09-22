@@ -424,7 +424,9 @@ def _order_source_receipt(point_name, source_sale_id):
 
 
 def _apply_order_created(event_id, workplace, payload):
-	if not _doctype_exists("POS Order") or frappe.db.exists("POS Order", {"source_pos_event": event_id}):
+	if not _doctype_exists("POS Order"):
+		frappe.throw("POS Order недоступен для синхронизации")
+	if frappe.db.exists("POS Order", {"source_pos_event": event_id}):
 		return
 	status = {
 		"new": "New",
@@ -473,7 +475,7 @@ def _apply_order_created(event_id, workplace, payload):
 
 def _apply_order_updated(event_id, workplace, payload):
 	if not _doctype_exists("POS Order"):
-		return
+		frappe.throw("POS Order недоступен для синхронизации")
 	name = frappe.db.get_value(
 		"POS Order",
 		{
@@ -483,7 +485,9 @@ def _apply_order_updated(event_id, workplace, payload):
 		"name",
 	)
 	if not name:
-		return
+		frappe.throw(
+			f"Заказ {payload.get('orderNumber') or 'без номера'} не найден на текущей точке"
+		)
 	doc = frappe.get_doc("POS Order", name)
 	if "phone" in payload:
 		doc.phone = payload.get("phone")
