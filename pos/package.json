@@ -1,6 +1,6 @@
 {
   "name": "raspechatka-pos",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Windows-касса и рабочее место менеджера Распечатки",
   "main": "out/main/index.js",
