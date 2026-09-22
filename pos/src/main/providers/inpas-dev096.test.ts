@@ -127,7 +127,7 @@ describe("DEV-096 INPAS BAT launcher", () => {
             "/d",
             "/s",
             "/c",
-            `call "${bat}" -o26 -z40000037 -a10 -c643 -s360`,
+            `call "${bat}" -o26 -z40000037 -s360`,
           ],
           cwd: root,
           windowsVerbatimArguments: true,
