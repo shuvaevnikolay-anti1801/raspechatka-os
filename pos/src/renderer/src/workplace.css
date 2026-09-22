@@ -51,6 +51,8 @@
 .delivery-status{display:grid;justify-items:end;gap:5px;flex:none;text-align:right}
 .delivery-status span{font-size:13px;font-weight:700}
 .delivery-status b{padding:4px 8px;background:#f0f3ed;font-size:11px}
+.delivery-meta{grid-column:1;display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--rp-muted);font-size:12px}
+.delivery-meta span{font-weight:700}
 .delivery-note{grid-column:1;margin:0;padding:9px 11px;border-left:3px solid #b8c4ad;background:#f7f9f5;color:var(--rp-muted);font-size:13px;line-height:1.35}
 .delivery-lines{grid-column:1;display:grid;gap:0;border-top:1px solid var(--rp-line)}
 .delivery-lines>strong{padding:10px 0 7px;font-size:12px}
