@@ -26,9 +26,9 @@ test("warehouse registry exposes the internal orders route and label", () => {
 	const internalOrders = submenuForSection("warehouse").find(
 		({ route }) => route === "/warehouse/internal-orders"
 	);
-	assert.deepEqual(
-		internalOrders && [internalOrders.route, internalOrders.label],
-		["/warehouse/internal-orders", "Внутренние заказы"]
-	);
+	assert.deepEqual(internalOrders && [internalOrders.route, internalOrders.label], [
+		"/warehouse/internal-orders",
+		"Внутренние заказы",
+	]);
 	assert.equal(pageLabel("/warehouse/internal-orders"), "Внутренние заказы");
 });
