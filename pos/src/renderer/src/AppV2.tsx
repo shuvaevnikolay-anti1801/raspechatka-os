@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { calculateDiscountBreakdown } from '../../shared/cart'
 import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
+import SaleWorkspace from './SaleWorkspace'
 import { formatPersonShortName } from './person-name'
 import { formatMoney } from './money'
 import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
@@ -240,13 +241,13 @@ export default function AppV2(){
     </header>
     {message&&<div className="toast" onClick={()=>setMessage('')}>{message}<button>×</button></div>}
 
-    {screen==='sale'&&<main className="sale-layout">
-      <aside className="categories"><strong>Категории</strong>{categories.map((name)=><button key={name} className={category===name?'active':''} onClick={()=>setCategory(name)}>{name}<span>{name==='Все'?products.length:products.filter((p)=>p.category===name).length}</span></button>)}</aside>
-      <section className="catalog">
+    {screen==='sale'&&<SaleWorkspace
+      categories={<aside className="categories"><strong>Категории</strong>{categories.map((name)=><button key={name} className={category===name?'active':''} onClick={()=>setCategory(name)}>{name}<span>{name==='Все'?products.length:products.filter((p)=>p.category===name).length}</span></button>)}</aside>}
+      catalog={<section className="catalog">
         <div className="catalog-toolbar"><label className="search"><span>⌕</span><input autoFocus value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label></div>
         <div className="product-grid">{visible.map((p)=><button className="product-card pos-v2-product" key={p.id} onClick={()=>add(p)}><strong>{p.name}</strong><footer><b>{formatMoney(p.priceMinor)}</b>{p.stock!=null&&<span>Остаток {p.stock}</span>}</footer></button>)}</div>
-      </section>
-      <aside className="receipt">
+      </section>}
+      receipt={<aside className="receipt">
         <header><div><small>ТЕКУЩАЯ ПРОДАЖА</small></div><button disabled={!cart.length} onClick={clear}>Очистить</button></header>
         <div className="customer-row"><button onClick={()=>setCustomerOpen(true)}>◎ {customer?.name||'Найти покупателя по телефону'}</button>{customer&&<span>Скидка клуба {clubPercent}% · <button onClick={()=>chooseCustomer(null)}>убрать</button></span>}</div>
         <div className="receipt-lines">{!cart.length?<div className="empty"><i>＋</i><b>Чек пока пуст</b><span>Выберите услугу или найдите её по названию</span></div>:cart.map((line)=><div className="receipt-line" key={line.productId}>
@@ -273,8 +274,8 @@ export default function AppV2(){
             <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
           </>}
         </footer>
-      </aside>
-    </main>}
+      </aside>}
+    />}
 
     {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>}
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
