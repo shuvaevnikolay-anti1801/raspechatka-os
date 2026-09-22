@@ -35,7 +35,7 @@ class FakeFrappe:
 				item_name="Скотч",
 				quantity=2.0,
 				comment="Чужая точка",
-				status="В работе",
+				status="В работе",  # noqa: RUF001
 			),
 		]
 		self.points = {
