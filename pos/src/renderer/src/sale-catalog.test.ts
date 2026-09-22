@@ -12,7 +12,7 @@ import {
 const products=[
   {id:'p-1',category:'Печать',name:'Фото',sku:'PHOTO',barcode:'100'},
   {id:'p-2',category:'Копии',name:'Ксерокопия',sku:'COPY',barcode:'200'},
-  {id:'p-3',category:'Печать',name:'Плакат',sku:'POSTER',barcode:null},
+  {id:'p-3',category:'Печать',name:'Плакат',sku:'POSTER',barcode:''},
 ]
 
 describe('sale categories',()=>{
