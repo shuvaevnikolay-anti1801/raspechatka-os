@@ -567,19 +567,6 @@ export class PosDatabase {
     })
     this.queue('stock.receipt.requested',{cashierId,purchaseOrderId:request.purchaseOrderId,lines},undefined,cashierId)
 
-    const receivedByRow=new Map(lines.map((line)=>[line.purchaseOrderItemId,line.quantity]))
-    const nextItems=delivery.items
-      .map((item)=>{
-        const accepted=receivedByRow.get(item.purchaseOrderItemId)||0
-        const receivedQuantity=item.receivedQuantity+accepted
-        const remainingQuantity=Math.max(0,item.remainingQuantity-accepted)
-        return {...item,receivedQuantity,remainingQuantity}
-      })
-      .filter((item)=>item.remainingQuantity>0.000001)
-    data.deliveries=data.deliveries
-      .map((row)=>row.id===delivery.id?{...row,items:nextItems,status:nextItems.length?'Частично принято':'Принято'}:row)
-      .filter((row)=>row.items.length>0)
-    this.setWorkplaceData(data)
   }
   recordCleanerVisit(cashierName:string):CleanerVisitResult {
     const data=this.getWorkplaceData();const createdAt=new Date().toISOString()
