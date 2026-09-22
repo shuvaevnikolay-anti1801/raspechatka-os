@@ -1,11 +1,11 @@
-import type { SVGProps } from 'react'
+import type { ReactElement, SVGProps } from 'react'
 
 export type PosIconName=
   |'sale'|'receipts'|'orders'|'shift'|'work'|'settings'
   |'search'|'refresh'|'lock'|'trash'|'hold'|'order'|'close'
   |'star'|'inventory'|'plus'|'minus'|'check'
 
-const paths:Record<PosIconName,JSX.Element>={
+const paths:Record<PosIconName,ReactElement>={
   sale:<><path d="M4 7h16l-1 13H5L4 7Z"/><path d="M8 7a4 4 0 0 1 8 0"/></>,
   receipts:<><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></>,
   orders:<><path d="M6 4h12v16H6z"/><path d="M9 4V2h6v2M9 9h6M9 13h6M9 17h4"/></>,
