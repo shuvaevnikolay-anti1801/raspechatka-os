@@ -74,8 +74,7 @@ class FakeFrappe:
 					for row in rows
 					if needle
 					in " ".join(
-						str(getattr(row, field, "") or "")
-						for field in ("name", "item_name", "comment")
+						str(getattr(row, field, "") or "") for field in ("name", "item_name", "comment")
 					).lower()
 				]
 			start = kwargs.get("limit_start", 0)
@@ -262,7 +261,9 @@ class TestInternalOrdersApi(TestCase):
 	def test_endpoint_denies_before_read_when_page_view_is_missing(self):
 		denied = PermissionError("Нет доступа")
 		with patch.object(internal_orders, "require_access", Mock(side_effect=denied)):
-			endpoint = getattr(internal_orders.get_internal_orders, "__wrapped__", internal_orders.get_internal_orders)
+			endpoint = getattr(
+				internal_orders.get_internal_orders, "__wrapped__", internal_orders.get_internal_orders
+			)
 			with self.assertRaises(PermissionError):
 				endpoint()
 		self.assertFalse(any(call[0] == "Point Supply Request" for call in self.fake.calls))
