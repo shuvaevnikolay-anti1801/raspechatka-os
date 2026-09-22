@@ -188,8 +188,8 @@ describe('unified warehouse workplace contract',()=>{
   })
   it('keeps write-off fields vertical and independent from sale products',()=>{
     const markup=renderToStaticMarkup(<WriteOffModal products={operationalStockItems(catalog)} onClose={()=>undefined} onComplete={async()=>undefined}/>)
-    const labels=['Товар','Количество','Причина','Комментарий']
-    const positions=labels.map((label)=>markup.indexOf('>'+label+'<'))
+    const labels=['>Товар<','>Количество<','>Причина<','>Комментарий ']
+    const positions=labels.map((label)=>markup.indexOf(label))
     expect(positions.every((position)=>position>=0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a,b)=>a-b))
     expect(markup).toContain('Служебная бумага')
@@ -205,7 +205,7 @@ describe('unified warehouse workplace contract',()=>{
   it('prefills receive modal from remaining rows and never renders purchase price',()=>{
     const markup=renderToStaticMarkup(<ReceiveModal order={order} onClose={()=>undefined} onComplete={async()=>undefined}/>)
     expect(markup).toContain('Служебная бумага')
-    expect(markup).toContain('Остаток: 4 пачка')
+    expect(markup).toContain('Осталось по заказу: 4 пачка')
     expect(markup).not.toContain('Цена')
     expect(markup).not.toContain('rate')
   })
