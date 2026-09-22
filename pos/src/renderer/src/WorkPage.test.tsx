@@ -97,7 +97,7 @@ describe('WarehouseWorkspace stacked layout',()=>{
       {id:'paper-a4',name:'Бумага А4',itemCode:'PAPER-A4',itemType:'Product',uom:'пачка',trackInventory:true,stock:7,storageAddress:'Стеллаж 2'},
     ],
     deliveries:[{
-      id:'PO-17',supplier:'Поставщик бумаги',status:'Ожидается',comment:'Доставка утром',
+      id:'PO-17',supplier:'Поставщик бумаги',status:'Ожидается',expectedDate:'2026-09-25',comment:'Доставка утром',
       items:[{
         purchaseOrderItemId:'POI-1',itemId:'paper-a4',itemName:'Бумага А4',itemCode:'PAPER-A4',
         uom:'пачка',orderedQuantity:10,receivedQuantity:2,remainingQuantity:8,
@@ -114,10 +114,13 @@ describe('WarehouseWorkspace stacked layout',()=>{
     const stock=markup.indexOf('data-workplace-block="stock"')
 
     expect(actions).toBeGreaterThanOrEqual(0)
+    expect(actions).toBe(35)
     expect(actions).toBeLessThan(deliveries)
     expect(deliveries).toBeLessThan(stock)
     expect(markup).toContain('class="warehouse-workspace"')
     expect(markup).not.toContain('work-grid')
+    expect(markup).not.toContain('Товары и склад')
+    expect(markup).not.toContain('Остатки и поставки текущей точки')
   })
 
   it('preserves action buttons, delivery summary, search and stock/storage content',()=>{
@@ -130,11 +133,26 @@ describe('WarehouseWorkspace stacked layout',()=>{
     expect(markup).toContain('№ PO-17')
     expect(markup).toContain('Поставщик бумаги')
     expect(markup).toContain('Доставка утром')
+    expect(markup).toContain('25.09.2026')
+    expect(markup).toContain('Ожидается')
+    expect(markup).toContain('Осталось принять: 1 поз.')
+    expect(markup).toContain('8 пачка')
+    expect(markup).toContain('>Создать приёмку<')
     expect(markup).toContain('placeholder="Название, ID или код"')
     expect(markup).toContain('Бумага А4')
     expect(markup).toContain('PAPER-A4')
     expect(markup).toContain('7 пачка')
     expect(markup).toContain('Стеллаж 2')
+  })
+
+  it('keeps the existing warehouse callbacks wired without new transport semantics',()=>{
+    const source=readFileSync(new URL('./WorkPage.tsx',import.meta.url),'utf8')
+    expect(source).toContain('onClick={()=>setWriteOff(true)}')
+    expect(source).toContain('onClick={()=>setNeed(true)}')
+    expect(source).toContain('onReceive={()=>setReceiveOrder(order)}')
+    expect(source).toContain('window.raspechatkaPos.reportStockWriteOff(request)')
+    expect(source).toContain('window.raspechatkaPos.createSupplyRequest(request)')
+    expect(source).toContain('window.raspechatkaPos.createStockReceipt(request)')
   })
 
   it('keeps page width fluid and limits horizontal overflow to the stock table',()=>{
@@ -143,6 +161,12 @@ describe('WarehouseWorkspace stacked layout',()=>{
     expect(css).toContain('.warehouse-deliveries,.warehouse-stock{width:100%;min-width:0;margin:0}')
     expect(css).toContain('.stock-table-scroll{width:100%;overflow-x:auto}')
     expect(css).not.toContain('.warehouse-workspace{display:grid')
+    expect(css).toContain('.warehouse-action{min-height:50px;')
+    expect(css).toContain('.warehouse-action-writeoff{border-color:#cf7770;background:#fff1ef;color:#8f2923}')
+    expect(css).toContain('.warehouse-action-need{border-color:#789c13;background:var(--rp-green);color:#fff}')
+    expect(css).toContain('.warehouse-workspace .work-card{border-radius:0}')
+    expect(css).toContain('.delivery-card{display:grid;')
+    expect(css).toContain('border-radius:0;background:#fff')
   })
 })
 
