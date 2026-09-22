@@ -1,6 +1,6 @@
 .settings-gate-backdrop{position:fixed;inset:0;z-index:300;background:rgba(20,25,22,.48);display:grid;place-items:center;padding:20px}
 .settings-gate{width:min(480px,92vw);min-height:min(520px,calc(100vh - 40px));box-sizing:border-box;background:#fff;border-radius:18px;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.28);display:flex}
-.settings-gate .pin-entry-layout{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:24px;width:100%;min-height:100%}
+.settings-gate .pin-entry-layout{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:24px;width:100%;min-height:100%;flex:1}
 .settings-gate .pin-entry-main{display:grid;align-content:center;justify-items:center;min-height:0}
 .settings-gate-content{display:grid;justify-items:center;gap:8px;width:min(100%,360px);text-align:center}
 .settings-gate small{font-size:10px;font-weight:800;color:#68716b}.settings-gate h2{margin:5px 0 0}.settings-gate p{margin:0 0 12px;color:#68716b}
