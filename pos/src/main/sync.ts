@@ -1,4 +1,4 @@
-import type { BootState } from '../shared/contracts'
+import type { BootState, ConnectionConfig } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
 import { loadBootstrap, pushEvents } from './frappe'
@@ -30,6 +30,82 @@ export function buildBootState(database:PosDatabase):BootState{
   }
 }
 
+async function applyBootstrap(
+  database:PosDatabase,
+  config:ConnectionConfig,
+  cashierId?:string
+):Promise<void>{
+  const remote=await loadBootstrap(config,cashierId)
+  database.replaceProducts(remote.products)
+  database.replaceCustomers(remote.customers)
+  database.replacePointEmployees(remote.employees||[])
+  database.setState('point_employees_initialized','1')
+  database.replaceReceiptMirror(remote.point.id,remote.receiptMirror||[],remote.retentionDays||60)
+  database.replaceServerOrders(remote.point.id,remote.workplaceData.orders||[],remote.retentionDays||60)
+  database.setWorkplaceData(remote.workplaceData)
+  const pointTimezone=remote.point.timezone||LEGACY_POINT_TIMEZONE
+  database.setState('bootstrap',JSON.stringify({
+    pointId:remote.point.id,pointName:remote.point.name,pointTimezone,workplaceId:remote.workplace.id,
+    workstationName:remote.workplace.name,employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
+    source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true},
+    upsellRules:remote.upsellRules||[]
+  }))
+}
+
+function syncErrorText(bootstrapError:string,outboxError:string):string{
+  return [
+    bootstrapError&&`Справочники: ${bootstrapError}`,
+    outboxError&&`Очередь документов: ${outboxError}`
+  ].filter(Boolean).join(' · ')
+}
+
+function finishContact(database:PosDatabase,successfulContact:boolean):BootState{
+  const current=buildBootState(database)
+  const lastSyncAt=successfulContact?new Date().toISOString():current.lastSyncAt
+  database.setState('bootstrap',JSON.stringify({...current,online:successfulContact,lastSyncAt}))
+  return buildBootState(database)
+}
+
+const configurationFlights=new WeakMap<PosDatabase,Promise<BootState>>()
+
+async function runConfigurationSync(
+  database:PosDatabase,
+  connectionStore:ConnectionStore,
+  cashierId?:string
+):Promise<BootState>{
+  const config=connectionStore.load()
+  if(!config)throw new Error('Сначала подключите кассу к Распечатка OS по Device ID и Token')
+
+  try{
+    await applyBootstrap(database,config,cashierId)
+    database.setState('master_data_error','')
+    const outboxError=database.getState('outbox_error')||''
+    database.setState('sync_error',syncErrorText('',outboxError))
+    return finishContact(database,true)
+  }catch(error){
+    const bootstrapError=error instanceof Error?error.message:String(error)
+    database.setState('master_data_error',bootstrapError)
+    const outboxError=database.getState('outbox_error')||''
+    database.setState('sync_error',syncErrorText(bootstrapError,outboxError))
+    finishContact(database,false)
+    throw error
+  }
+}
+
+export function performConfigurationSync(
+  database:PosDatabase,
+  connectionStore:ConnectionStore,
+  cashierId?:string
+):Promise<BootState>{
+  const active=configurationFlights.get(database)
+  if(active)return active
+  const flight=runConfigurationSync(database,connectionStore,cashierId).finally(()=>{
+    if(configurationFlights.get(database)===flight)configurationFlights.delete(database)
+  })
+  configurationFlights.set(database,flight)
+  return flight
+}
+
 const syncFlights=new WeakMap<PosDatabase,Promise<BootState>>()
 
 async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
@@ -40,29 +116,11 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
   let outboxError=''
   let successfulContact=false
 
-  const applyBootstrap=async()=>{
-    const remote=await loadBootstrap(config,cashierId)
-    database.replaceProducts(remote.products)
-    database.replaceCustomers(remote.customers)
-    database.replacePointEmployees(remote.employees||[])
-    database.setState('point_employees_initialized','1')
-    database.replaceReceiptMirror(remote.point.id,remote.receiptMirror||[],remote.retentionDays||60)
-    database.replaceServerOrders(remote.point.id,remote.workplaceData.orders||[],remote.retentionDays||60)
-    database.setWorkplaceData(remote.workplaceData)
-    const pointTimezone=remote.point.timezone||LEGACY_POINT_TIMEZONE
-    database.setState('bootstrap',JSON.stringify({
-      pointId:remote.point.id,pointName:remote.point.name,pointTimezone,workplaceId:remote.workplace.id,
-      workstationName:remote.workplace.name,employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
-      source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true},
-      upsellRules:remote.upsellRules||[]
-    }))
-    successfulContact=true
-  }
-
   // Справочники и очередь денежных документов синхронизируются независимо.
   // Ошибка каталога/клиентов не должна блокировать уже созданные чеки и смены.
   try{
-    await applyBootstrap()
+    await applyBootstrap(database,config,cashierId)
+    successfulContact=true
   }catch(error){
     bootstrapError=error instanceof Error?error.message:String(error)
     database.setState('master_data_error',bootstrapError)
@@ -89,18 +147,14 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
     }
   }
 
-  const errors=[bootstrapError&&`Справочники: ${bootstrapError}`,outboxError&&`Очередь документов: ${outboxError}`].filter(Boolean)
-  const syncError=errors.join(' · ')
+  const syncError=syncErrorText(bootstrapError,outboxError)
   database.setState('sync_error',syncError)
 
-  const current=buildBootState(database)
-  const lastSyncAt=successfulContact?new Date().toISOString():current.lastSyncAt
-  database.setState('bootstrap',JSON.stringify({...current,online:successfulContact,lastSyncAt}))
-
+  const result=finishContact(database,successfulContact)
   if(!successfulContact){
     throw new Error(syncError||'Не удалось связаться с Распечатка OS')
   }
-  return buildBootState(database)
+  return result
 }
 
 export function performSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
