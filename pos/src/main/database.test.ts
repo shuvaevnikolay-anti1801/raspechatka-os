@@ -71,7 +71,8 @@ describe('PosDatabase',()=>{
     const order=database.createUnpaidOrder({
       phone:'+7 900 000-00-02',
       lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
-      comment:'После закрытия смены'
+      comment:'После закрытия смены',
+      cashierId:'cashier-from-renderer'
     } as CreateUnpaidOrderRequest & {cashierId:string},'cashier-authenticated')
     database.updateOrder({
       id:order.id,status:'ready',cashierId:'cashier-from-renderer'
