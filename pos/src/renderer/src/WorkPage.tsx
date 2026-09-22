@@ -121,20 +121,20 @@ export default function WorkPage({products:_products,data,shiftOpen,onChanged,no
         <small>УБОРОК ДО ВЫПЛАТЫ</small>
         <h2>{Math.min(data.cleaner.visitsSincePayment,4)} из 4</h2>
         <p>Каждое посещение отмечается один раз.</p>
-        <button className="primary" onClick={async()=>{
+        <PosButton variant="primary" size="touch" onClick={async()=>{
           try{
             const r=await window.raspechatkaPos.recordCleanerVisit()
             await onChanged()
             notify(r.paymentDueMinor?'Четыре уборки отмечены — можно выплатить 2 000 ₽':'Посещение уборщицы отмечено')
           }catch(e){notify(String(e))}
-        }}>Отметить сегодняшнюю уборку</button>
-        {data.cleaner.paymentDueMinor>0&&<button className="pay-cleaner" disabled={!shiftOpen} onClick={async()=>{
+        }}>Отметить сегодняшнюю уборку</PosButton>
+        {data.cleaner.paymentDueMinor>0&&<PosButton className="pay-cleaner" variant="secondary" size="touch" disabled={!shiftOpen} onClick={async()=>{
           try{
             await window.raspechatkaPos.payCleaner(data.cleaner.paymentDueMinor)
             await onChanged()
             notify('Выплата уборщице проведена как изъятие из кассы')
           }catch(e){notify(e instanceof Error?e.message:String(e))}
-        }}>Выплатить {formatMoney(data.cleaner.paymentDueMinor)} из кассы</button>}
+        }}>Выплатить {formatMoney(data.cleaner.paymentDueMinor)} из кассы</PosButton>}
       </section>
       <section className="work-card">
         <h3>Последние посещения</h3>
