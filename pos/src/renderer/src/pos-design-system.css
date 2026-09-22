@@ -1,5 +1,6 @@
 :root{
   --pos-brand:#BAFF32;
+  --pos-brand-hover:#AEF52B;
   --pos-brand-soft:#efffcf;
   --pos-ink:#11130F;
   --pos-graphite:#1E201C;
@@ -31,7 +32,7 @@
   --pos-type-kpi:32px;
   --pos-weight-regular:400;
   --pos-weight-medium:600;
-  --pos-weight-strong:750;
+  --pos-weight-strong:700;
   --pos-control-compact:40px;
   --pos-control:44px;
   --pos-control-touch:48px;
@@ -66,7 +67,7 @@
 .pos-button--touch{min-height:var(--pos-control-touch)}
 .pos-button--icon{width:var(--pos-control-compact);min-width:var(--pos-control-compact);min-height:var(--pos-control-compact);padding:0}
 .pos-button:hover:not(:disabled){border-color:var(--pos-ink)}
-.pos-button--primary:hover:not(:disabled){background:#aef52b}
+.pos-button--primary:hover:not(:disabled){background:var(--pos-brand-hover)}
 .pos-button:disabled{opacity:.45;cursor:default}
 
 .pos-modal-backdrop{position:fixed;z-index:160;inset:0;display:grid;place-items:center;padding:var(--pos-space-6);background:rgba(17,19,15,.5)}
