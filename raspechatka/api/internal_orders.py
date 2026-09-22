@@ -51,7 +51,9 @@ def _batch_labels(rows):
 	)
 
 
-def _get_internal_orders(search=None, status=None, business_point=None, start=0, page_length=DEFAULT_PAGE_LENGTH):
+def _get_internal_orders(
+	search=None, status=None, business_point=None, start=0, page_length=DEFAULT_PAGE_LENGTH
+):
 	start, page_length = _page_args(start, page_length)
 	filters = point_filter(requested=business_point)
 	status = str(status or "").strip()
@@ -122,7 +124,9 @@ def _get_internal_orders(search=None, status=None, business_point=None, start=0,
 
 @frappe.whitelist()
 @access_contract(area="page.warehouse.internal_orders", action="read", scope="point")
-def get_internal_orders(search=None, status=None, business_point=None, start=0, page_length=DEFAULT_PAGE_LENGTH):
+def get_internal_orders(
+	search=None, status=None, business_point=None, start=0, page_length=DEFAULT_PAGE_LENGTH
+):
 	"""Read point-scoped internal orders backed by Point Supply Request."""
 	require_access(AREA, "read")
 	return _get_internal_orders(search, status, business_point, start, page_length)
@@ -137,10 +141,7 @@ def _get_internal_order_options():
 		limit_page_length=0,
 	)
 	return {
-		"points": [
-			{"value": row.name, "label": row.point_name or row.name}
-			for row in points
-		],
+		"points": [{"value": row.name, "label": row.point_name or row.name} for row in points],
 		"statuses": [{"value": value, "label": value} for value in STATUS_OPTIONS],
 	}
 
