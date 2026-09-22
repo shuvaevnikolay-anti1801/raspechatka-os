@@ -138,12 +138,11 @@ export class InpasSettingsStore {
         throw new Error("ID терминала содержит недопустимые символы");
       if (!/^\d{3}$/.test(next.currencyCode))
         throw new Error("Код валюты должен состоять из трёх цифр");
+      // Production uses the registered DualConnector COM bridge and does not
+      // require DC Console to be installed. Preserve a discovered console path
+      // only for the explicit hidden legacy fallback.
       const launcher = this.resolveLauncher(next);
-      if (!launcher)
-        throw new Error(
-          "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0"
-        );
-      next.executablePath = launcher.path;
+      next.executablePath = launcher?.path ?? "";
     }
     writeFileSync(this.filePath, JSON.stringify(next, null, 2), "utf-8");
     return next;
