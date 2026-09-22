@@ -240,7 +240,7 @@ export default function AppV2(){
 
     {screen==='sale'&&<SaleWorkspace
       productIds={saleProductIds}
-      categories={(favoriteProductIds)=><SaleCategories products={products} selected={category} onSelect={setCategory}/>}
+      categories={()=><SaleCategories products={products} selected={category} onSelect={setCategory}/>}
       catalog={(favoriteProductIds,onToggleFavorite)=><SaleCatalog products={products} query={query} category={category} favoriteProductIds={favoriteProductIds} onQueryChange={setQuery} onAdd={add} onToggleFavorite={onToggleFavorite}/>} 
       receipt={<aside className="receipt">
         <header><div><small>ТЕКУЩАЯ ПРОДАЖА</small></div><button disabled={!cart.length} onClick={clear}>Очистить</button></header>
