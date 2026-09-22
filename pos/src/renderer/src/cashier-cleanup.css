@@ -1,9 +1,1 @@
-.topbar .brand{display:none!important}
-.topbar{grid-template-columns:minmax(0,1fr) auto!important}
-.topbar .point{justify-self:start;align-items:flex-start!important;min-width:0}
-.topbar .point b{display:none!important}
-.topbar .point small{display:block;color:var(--rp-ink)!important;font-size:13px!important;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70vw}
-
-.page-heading small{display:none!important}
-.page-heading h1{margin-top:0!important}
-
+/* Retired in DEV-169: mounted shell no longer uses the legacy topbar/page-heading overrides. */
