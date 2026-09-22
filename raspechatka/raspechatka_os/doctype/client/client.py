@@ -45,7 +45,7 @@ def next_client_id():
 		if not frappe.db.exists("Client", {"client_id": candidate}):
 			return candidate
 		sync_client_id_series(_client_id_number(candidate))
-	frappe.throw(_("Не удалось сформировать уникальный ID клиента. Повторите регистрацию."))
+	frappe.throw(_("Не удалось сформировать уникальный ID клиента. Повторите регистрацию."))  # noqa: RUF001
 
 
 def normalize_phone(value):
