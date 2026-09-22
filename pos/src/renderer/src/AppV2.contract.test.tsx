@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildStockReceiptRequest, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
+import { cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
