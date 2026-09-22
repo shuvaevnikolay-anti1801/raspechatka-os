@@ -1,3 +1,6 @@
+import { PosButton } from './ui/PosButton'
+import { PosModal } from './ui/PosModal'
+import { PosIcon } from './ui/PosIcon'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   BootState,
@@ -316,13 +319,13 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
     await onReturn(row.cached)
   }
 
-  return <main className="page receipts-page">
+  return <main className="page records-page receipts-page">
     <div className="page-heading"><h1>Чеки</h1></div>
 
     <section className="receipt-search-page">
       <form onSubmit={(event)=>{event.preventDefault();apply()}}>
         <label className="receipt-search-input">
-          <span>⌕</span>
+          <span aria-hidden="true"><PosIcon name="search"/></span>
           <input
             value={draft.text}
             onChange={(event)=>setDraft({...draft,text:event.target.value})}
@@ -367,8 +370,8 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             <input inputMode="decimal" value={draft.amountMax} onChange={(event)=>setDraft({...draft,amountMax:event.target.value})}/>
           </label>
           <div className="receipt-filter-actions">
-            <button type="button" disabled={searching} onClick={clear}>Очистить</button>
-            <button type="submit" className="primary" disabled={searching}>{searching?'Ищем…':'Найти'}</button>
+            <PosButton type="button" variant="secondary" disabled={searching} onClick={clear}>Очистить</PosButton>
+            <PosButton type="submit" variant="primary" disabled={searching}>{searching?'Ищем…':'Найти'}</PosButton>
           </div>
         </div>
       </form>
@@ -394,7 +397,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             {receipt.lines.slice(0,4).map((line)=><span key={line.productId}>{line.name} × {line.quantity}</span>)}
             {receipt.lines.length>4&&<span>+ ещё {receipt.lines.length-4}</span>}
           </div>
-          <button onClick={()=>void onRestore(receipt)}>Продолжить</button>
+          <PosButton variant="secondary" onClick={()=>void onRestore(receipt)}>Продолжить</PosButton>
         </article>)}
       </div>
     </section>}
@@ -434,9 +437,9 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             <span>{paymentLabel||'—'}</span>
             <strong>{formatMoney(summary.totalMinor)}<small>{asStatus(summary.status)}</small></strong>
             <div className="sale-actions" onClick={(event)=>event.stopPropagation()}>
-              <button onClick={()=>void printCommodity(row)}>Товарный чек</button>
-              <button disabled={Boolean(copyReason)} title={copyReason||'Печать точной копии выбранного фискального документа'} onClick={()=>void printFiscalCopy(row)}>Копия чека</button>
-              <button className="danger" disabled={Boolean(returnReason)} title={returnReason||'Оформить возврат по этому чеку'} onClick={()=>void returnReceipt(row)}>Возврат</button>
+              <PosButton variant="secondary" onClick={()=>void printCommodity(row)}>Товарный чек</PosButton>
+              <PosButton variant="secondary" disabled={Boolean(copyReason)} title={copyReason||'Печать точной копии выбранного фискального документа'} onClick={()=>void printFiscalCopy(row)}>Копия чека</PosButton>
+              <PosButton variant="danger" disabled={Boolean(returnReason)} title={returnReason||'Оформить возврат по этому чеку'} onClick={()=>void returnReceipt(row)}>Возврат</PosButton>
             </div>
           </div>
         }):<div className="page-empty">{searching?'Ищем чеки…':'Чеки не найдены'}</div>}
@@ -470,12 +473,7 @@ function ReceiptDetailModal({detail,onClose}:{detail:ReceiptDetail;onClose:()=>v
   const gross=lines.reduce((sum,line)=>sum+Math.round(line.quantity*line.unitPriceMinor),0)
   const discount=Math.max(0,gross-value.totalMinor)
 
-  return <div className="modal-backdrop" onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose()}}>
-    <section className="payment-modal receipt-detail-modal">
-      <header>
-        <div><small>ЧЕК</small><h2>{value.receiptNumber}</h2></div>
-        <button onClick={onClose}>×</button>
-      </header>
+  return <PosModal open title={`Чек ${value.receiptNumber}`} onClose={onClose} layout="matrix" className="receipt-detail-modal">
       <div className="receipt-detail-summary">
         <DetailField label="Дата и время">{new Date(value.createdAt).toLocaleString('ru-RU')}</DetailField>
         <DetailField label="Кассир">{cashier?formatPersonShortName(cashier):'—'}</DetailField>
@@ -507,8 +505,7 @@ function ReceiptDetailModal({detail,onClose}:{detail:ReceiptDetail;onClose:()=>v
           <div className="receipt-detail-total"><span>Итого</span><strong>{formatMoney(value.totalMinor)}</strong></div>
         </section>
       </div>
-    </section>
-  </div>
+  </PosModal>
 }
 
 function DetailField({label,children}:{label:string;children:ReactNode}){

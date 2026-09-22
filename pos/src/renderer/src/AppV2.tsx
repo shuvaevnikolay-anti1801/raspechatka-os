@@ -11,6 +11,10 @@ import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import { PinEntryLayout, PinInput } from './PinEntry'
+import { PosButton } from './ui/PosButton'
+import { PosField } from './ui/PosField'
+import { PosModal } from './ui/PosModal'
+import { PosIcon, type PosIconName } from './ui/PosIcon'
 import WorkPage from './WorkPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
@@ -220,20 +224,20 @@ export default function AppV2(){
   return <div className="app-shell">
     <header className="pos-header">
       <nav className="pos-header-nav" aria-label="Разделы кассы">
-        <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
-        <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
-        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
-        <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
-        <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
+        <Nav active={screen==='sale'} icon={NAV_ICON_MAP.sale} label="Продажа" onClick={()=>setScreen('sale')}/>
+        <Nav active={screen==='receipts'} icon={NAV_ICON_MAP.receipts} label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
+        <Nav active={screen==='orders'} icon={NAV_ICON_MAP.orders} label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
+        <Nav active={screen==='shift'} icon={NAV_ICON_MAP.shift} label="Смена" onClick={()=>setScreen('shift')}/>
+        <Nav active={screen==='work'} icon={NAV_ICON_MAP.work} label="Работа" onClick={()=>setScreen('work')}/>
         <SettingsNavTrigger/>
       </nav>
       <div className="pos-header-actions">
         <span className={`pos-header-status ${boot.online?'online':'offline'}`} title={boot.lastSyncAt?'Последняя синхронизация: '+new Date(boot.lastSyncAt).toLocaleString('ru-RU')+' · К отправке: '+boot.pendingSync:'Успешной синхронизации ещё не было · К отправке: '+boot.pendingSync}><i/>{boot.online?'ОС на связи':'Локальный режим'}</span>
-        <button className="pos-header-lock" onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</button>
-        <button className="pos-header-refresh secondary" disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</button>
+        <PosButton className="pos-header-lock" variant="quiet" size="compact" icon={<PosIcon name="lock"/>} onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</PosButton>
+        <PosButton className="pos-header-refresh" variant="secondary" size="compact" icon={<PosIcon name="refresh"/>} disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</PosButton>
       </div>
     </header>
-    {message&&<div className="toast" onClick={()=>setMessage('')}>{message}<button>×</button></div>}
+    {message&&<div className="toast" role="status" onClick={()=>setMessage('')}>{message}<PosButton variant="quiet" size="icon" aria-label="Закрыть уведомление"><PosIcon name="close"/></PosButton></div>}
 
     {screen==='sale'&&<SaleWorkspace
       productIds={saleProductIds}
@@ -283,8 +287,9 @@ export default function AppV2(){
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label={EXPECTED_CASH_LABEL} value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
-      <section className="shift-card"><div><small>КАССИР</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<small>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</small>}</div>{boot.shift?<div className="shift-actions"><button onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</button><button onClick={()=>setCashOperation('deposit')}>Внести деньги</button><button onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</button><button className="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</button></div>:<button className="primary" onClick={openShift}>Открыть смену</button>}</section>
-      {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section><h3>Движения наличных</h3>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p>Операций пока нет</p>}</section></div>}
+      <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}</div>{!boot.shift&&<PosButton variant="primary" onClick={openShift}>Открыть смену</PosButton>}</section>
+      {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section className="shift-cash"><div className="shift-cash-heading"><h3>Движения наличных</h3><div className="shift-actions"><PosButton variant="secondary" onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('deposit')}>Внести деньги</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</PosButton></div></div>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p className="shift-empty">Операций пока нет</p>}</section></div>}
+    {boot.shift&&<div className="shift-close"><PosButton variant="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</PosButton></div>}
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
@@ -350,9 +355,9 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
       },
     )
   }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
-  const footerLeft=<button className="settings-open-trigger" type="button">Настройки кассы</button>
+  const footerLeft=<PosButton className="settings-open-trigger" variant="quiet" type="button" icon={<PosIcon name="settings"/>}>Настройки кассы</PosButton>
   const footerRight=!setup&&!adminReset
-    ?<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</button>
+    ?<PosButton className="cashier-forgot-pin" variant="quiet" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</PosButton>
     :undefined
   return <main className="cashier-login-screen"><section className="cashier-login-card">
     {auth.status==='locked'&&<small>КАССА ЗАБЛОКИРОВАНА</small>}<h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
@@ -366,38 +371,47 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
           <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
           {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
           {notice&&<div className={cashierPinNoticeClass(notice.severity)} role={notice.severity==='error'?'alert':'status'}>{notice.message}</div>}
-          {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
-          {auth.status==='locked'&&canSwitchCashier&&<button className="cashier-switch-cashier" type="button" onClick={()=>void switchCashier()}>Сменить кассира</button>}
+          {(setup||adminReset)&&<PosButton className="cashier-pin-submit" variant="primary" size="touch" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</PosButton>}
+          {auth.status==='locked'&&canSwitchCashier&&<PosButton className="cashier-switch-cashier" variant="secondary" size="touch" type="button" onClick={()=>void switchCashier()}>Сменить кассира</PosButton>}
           {auth.status==='locked'&&openWorkShift&&<p className="cashier-switch-blocked">Чтобы сменить кассира, разблокируйте текущего кассира и закройте смену.</p>}
         </div>
       </PinEntryLayout>
     </form>}
-    {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button></div>}
+    {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><PosButton className="settings-open-trigger" variant="quiet" type="button" icon={<PosIcon name="settings"/>}>Настройки кассы</PosButton></div>}
   </section></main>
 }
 
+export const isCompleteOrderPhone=(value:string)=>value.replace(/\D/g,'').length===11
+
 function OrderModal({draft,total,onChange,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onChange:(draft:{phone:string;comment?:string;dueAt?:string})=>void;onClose:()=>void;onPay:()=>void}){
-  const valid=draft.phone.replace(/\D/g,'').length>=5&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ОБЯЗАТЕЛЬСТВО КЛИЕНТУ</small><h2>Оформить заказ</h2></div><button onClick={onClose}>×</button></header>
-    <p>Сумма: <b>{formatMoney(total)}</b>. Заказ появится в работе только после успешной оплаты и фискализации.</p>
-    <label className="cash-input"><span>Телефон *</span><input autoFocus value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></label>
-    <label className="cash-input"><span>Описание заказа *</span><textarea value={draft.comment||''} onChange={(e)=>onChange({...draft,comment:e.target.value})} placeholder="Что нужно изготовить"/></label>
-    <label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></label>
-    <button className="primary confirm" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</button>
-  </div></div>
+  const valid=isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
+  return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
+    <div className="order-form-compact">
+      <PosField label="Телефон *" error={draft.phone&&!isCompleteOrderPhone(draft.phone)?'Введите полный номер из 11 цифр':undefined}><input autoFocus inputMode="tel" value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></PosField>
+      <PosField label="Срок готовности *"><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></PosField>
+      <PosField label="Описание заказа *" size="textarea" className="order-description-field"><textarea value={draft.comment||''} onChange={(e)=>onChange({...draft,comment:e.target.value})} placeholder="Что нужно изготовить"/></PosField>
+    </div>
+  </PosModal>
 }
+
 function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boolean;onClose:()=>void;onComplete:(lines:Array<{saleItemId:number;quantity:number}>,payments:PaymentPart[])=>Promise<void>}){
   const [quantities,setQuantities]=useState<Record<number,number>>({})
   const [method,setMethod]=useState<PaymentMethod>(sale.payments[0]?.method??'cash')
   const raw=sale.lines.reduce((sum,x)=>sum+Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent??0)/100)),0)||1
   const total=sale.lines.reduce((sum,x)=>{const paid=Math.round(sale.totalMinor*Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent??0)/100))/raw);return sum+Math.round(paid*(quantities[x.id]??0)/x.quantity)},0)
   const lines=Object.entries(quantities).filter(([,q])=>q>0).map(([id,quantity])=>({saleItemId:Number(id),quantity}))
-  return <div className="modal-backdrop"><div className="payment-modal return-modal"><header><div><small>ВОЗВРАТ ПО ЧЕКУ</small><h2>{sale.receiptNumber}</h2></div><button onClick={onClose}>×</button></header><div className="return-lines">{sale.lines.map((x)=>{const available=x.quantity-x.returnedQuantity;return <article key={x.id}><div><b>{x.name}</b><small>Куплено {x.quantity}, ранее возвращено {x.returnedQuantity}</small></div><label>Вернуть <input type="number" min="0" max={available} step="1" value={quantities[x.id]??0} onChange={(e)=>setQuantities({...quantities,[x.id]:Math.min(available,Math.max(0,Number(e.target.value)))})}/></label></article>})}</div><div className="refund-footer"><div><span>Вернуть клиенту</span><strong>{formatMoney(total)}</strong></div><label>Способ возврата<select value={method} onChange={(e)=>setMethod(e.target.value as PaymentMethod)}>{sale.payments.map((x)=><option key={x.method} value={x.method}>{paymentNames[x.method]||x.method}</option>)}</select></label></div>{method==='remote_payment'&&<div className="error-note">Автоматический возврат удалённой оплаты пока не подключён. Выберите другой согласованный способ возврата.</div>}<button className="primary confirm" disabled={busy||!lines.length||!total||method==='remote_payment'} onClick={()=>onComplete(lines,[{method,amountMinor:total}])}>{busy?'Оформляем…':'Оформить возврат · '+formatMoney(total)}</button></div></div>
+  return <PosModal open title={'Возврат по чеку '+sale.receiptNumber} className="return-modal" layout="matrix" closeDisabled={busy} onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={busy||!lines.length||!total||method==='remote_payment'} onClick={()=>onComplete(lines,[{method,amountMinor:total}])}>{busy?'Оформляем…':'Оформить возврат · '+formatMoney(total)}</PosButton>}>
+    <div className="return-lines">{sale.lines.map((x)=>{const available=x.quantity-x.returnedQuantity;return <article key={x.id}><div><b>{x.name}</b><small>Куплено {x.quantity}, ранее возвращено {x.returnedQuantity}</small></div><PosField label="Вернуть"><input type="number" min="0" max={available} step="1" value={quantities[x.id]??0} onChange={(e)=>setQuantities({...quantities,[x.id]:Math.min(available,Math.max(0,Number(e.target.value)))})}/></PosField></article>})}</div>
+    <div className="refund-footer"><div><span>Вернуть клиенту</span><strong>{formatMoney(total)}</strong></div><PosField label="Способ возврата"><select value={method} onChange={(e)=>setMethod(e.target.value as PaymentMethod)}>{sale.payments.map((x)=><option key={x.method} value={x.method}>{paymentNames[x.method]||x.method}</option>)}</select></PosField></div>
+    {method==='remote_payment'&&<div className="error-note">Автоматический возврат удалённой оплаты пока не подключён. Выберите другой согласованный способ возврата.</div>}
+  </PosModal>
 }
 
 function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;onClose:()=>void;onComplete:(amount:number,reason:string)=>Promise<void>}){
   const [amount,setAmount]=useState('');const [reason,setReason]=useState('')
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ДЕНЕЖНЫЙ ЯЩИК</small><h2>{type==='deposit'?'Внесение':'Изъятие'}</h2></div><button onClick={onClose}>×</button></header><label className="cash-input"><span>Сумма</span><input autoFocus value={amount} onChange={(e)=>setAmount(e.target.value)}/></label><label className="cash-input"><span>Основание</span><input value={reason} onChange={(e)=>setReason(e.target.value)} placeholder={type==='deposit'?'Размен в начале смены':'Инкассация'}/></label><button className="primary confirm" disabled={toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</button></div></div>
+  return <PosModal open title={type==='deposit'?'Внесение':'Изъятие'} className="compact-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</PosButton>}>
+    <div className="modal-field-stack"><PosField label="Сумма"><input autoFocus inputMode="decimal" value={amount} onChange={(e)=>setAmount(e.target.value)}/></PosField><PosField label="Основание"><input value={reason} onChange={(e)=>setReason(e.target.value)} placeholder={type==='deposit'?'Размен в начале смены':'Инкассация'}/></PosField></div>
+  </PosModal>
 }
 
 function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClose:()=>void;onSelect:(value:Customer|null)=>void}){
@@ -408,7 +422,10 @@ function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClo
   useEffect(()=>{let cancelled=false;if(digits.length<4){setVisible([]);setSearching(false);return};const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(digits);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)}},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[digits])
   const overflow=visible.length>50
   const rows=visible.slice(0,50)
-  return <div className="modal-backdrop"><div className="payment-modal customer-modal"><header><div><small>ЛОКАЛЬНАЯ БАЗА КЛИЕНТОВ</small><h2>Выбрать покупателя</h2></div><button onClick={onClose}>×</button></header><label className="customer-search"><span>⌕</span><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите минимум 4 цифры телефона"/></label><div className="customer-list"><button className={!selected?'active':''} onClick={()=>onSelect(null)}><div><b>Розничный покупатель</b><small>Без персональной скидки</small></div></button>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><button key={x.id} className={selected?.id===x.id?'active':''} onClick={()=>onSelect(x)}><div><b>{x.name}</b><small>{x.phone}</small></div><strong className="club-badge">Скидка {x.discountPercent}%</strong></button>)}{!searching&&digits.length<4&&<div className="pilot-empty">Поиск выполняется только по телефону. Введите последние 4 цифры или больше.</div>}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div></div></div>
+  return <PosModal open title="Выбрать покупателя" className="customer-modal" layout="matrix" onClose={onClose}>
+    <PosField label="Телефон" helper="Введите минимум 4 цифры"><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Последние цифры телефона"/></PosField>
+    <div className="customer-list"><PosButton className={!selected?'active':''} variant="quiet" onClick={()=>onSelect(null)}><span><b>Розничный покупатель</b><small>Без персональной скидки</small></span></PosButton>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><PosButton key={x.id} className={selected?.id===x.id?'active':''} variant="quiet" onClick={()=>onSelect(x)}><span><b>{x.name}</b><small>{x.phone}</small></span><strong className="club-badge">Скидка {x.discountPercent}%</strong></PosButton>)}{!searching&&digits.length<4&&<div className="pilot-empty">Поиск выполняется только по телефону. Введите последние 4 цифры или больше.</div>}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div>
+  </PosModal>
 }
 
 function ManualDiscountModal({lines,rules,clubPercent,reviewCount,current,onClose,onApply}:{
@@ -420,14 +437,20 @@ function ManualDiscountModal({lines,rules,clubPercent,reviewCount,current,onClos
   const value=type==='amount'?toMinor(input):Math.max(0,Number(input.replace(',','.'))||0)
   const draft:ManualDiscount={type,value}
   const preview=calculateDiscountBreakdown(lines,rules,clubPercent,reviewCount,draft)
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ТЕКУЩИЙ ЧЕК</small><h2>Дополнительная скидка</h2></div><button onClick={onClose}>×</button></header><div className="form-row"><button className={type==='percent'?'active':''} onClick={()=>setType('percent')}>%</button><button className={type==='amount'?'active':''} onClick={()=>setType('amount')}>₽</button></div><label className="cash-input"><span>{type==='percent'?'Процент':'Сумма, ₽'}</span><input autoFocus type="number" min="0" step={type==='amount'?'0.01':'0.1'} value={input} onChange={(event)=>setInput(event.target.value)}/></label><div className="settings-status">Будет применено: <b>{formatMoney(preview.manualDiscountMinor)}</b><br/>Новый итог: <b>{formatMoney(preview.totalMinor)}</b></div><div className="settings-actions"><button onClick={()=>onApply(null)}>Убрать скидку</button><button className="primary" onClick={()=>onApply(draft)}>Применить</button></div></div></div>
+  return <PosModal open title="Дополнительная скидка" className="compact-modal" onClose={onClose} footer={<><PosButton variant="quiet" onClick={()=>onApply(null)}>Убрать скидку</PosButton><PosButton variant="primary" onClick={()=>onApply(draft)}>Применить</PosButton></>}>
+    <div className="discount-type-actions"><PosButton className={type==='percent'?'active':''} onClick={()=>setType('percent')}>%</PosButton><PosButton className={type==='amount'?'active':''} onClick={()=>setType('amount')}>₽</PosButton></div>
+    <PosField label={type==='percent'?'Процент':'Сумма, ₽'}><input autoFocus type="number" min="0" step={type==='amount'?'0.01':'0.1'} value={input} onChange={(event)=>setInput(event.target.value)}/></PosField>
+    <div className="modal-summary">Будет применено: <b>{formatMoney(preview.manualDiscountMinor)}</b><br/>Новый итог: <b>{formatMoney(preview.totalMinor)}</b></div>
+  </PosModal>
 }
 
 function PriceOverrideModal({line,minimumMinor,onClose,onApply}:{line:CartLine;minimumMinor:number;onClose:()=>void;onApply:(price:number)=>void}){
   const [input,setInput]=useState(String(line.unitPriceMinor/100))
   const price=toMinor(input)
   const valid=price>=minimumMinor
-  return <div className="modal-backdrop"><div className="payment-modal compact-modal"><header><div><small>ПОЗИЦИЯ ЧЕКА</small><h2>Изменить цену</h2></div><button onClick={onClose}>×</button></header><p>{line.name}</p><label className="cash-input"><span>Цена за единицу, ₽</span><input autoFocus type="number" min={minimumMinor/100} step="0.01" value={input} onChange={(event)=>setInput(event.target.value)}/></label>{!valid&&<div className="error-note">Минимальная цена: {formatMoney(minimumMinor)}</div>}<button className="primary confirm" disabled={!valid} onClick={()=>onApply(price)}>Применить · {formatMoney(price)}</button></div></div>
+  return <PosModal open title="Изменить цену" className="compact-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={()=>onApply(price)}>Применить · {formatMoney(price)}</PosButton>}>
+    <p className="modal-context-name">{line.name}</p><PosField label="Цена за единицу, ₽" error={!valid?'Минимальная цена: '+formatMoney(minimumMinor):undefined}><input autoFocus type="number" min={minimumMinor/100} step="0.01" value={input} onChange={(event)=>setInput(event.target.value)}/></PosField>
+  </PosModal>
 }
 
 export const CASH_COUNT_DENOMINATIONS=[500000,100000,50000,10000,5000,1000,500,200,100] as const
@@ -441,11 +464,17 @@ function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount[
   const lines=buildCashCountLines(quantities)
   const total=cashCountTotal(lines)
   const expected=type==='opening'?total:expectedMinor
-  return <div className="modal-backdrop"><div className="payment-modal cash-count-modal"><header><div><small>ПЕРЕСЧЁТ НАЛИЧНЫХ</small><h2>{type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'}</h2></div><button onClick={onClose}>×</button></header><div className="denominations">{CASH_COUNT_DENOMINATIONS.map((x)=><label key={x}><span>{formatMoney(x)}</span><input type="number" min="0" step="1" inputMode="numeric" aria-label={`Количество купюр или монет ${formatMoney(x)}`} value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/><b>{formatMoney(x*(quantities[x]||0))}</b></label>)}</div><div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={total-expected===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(total-expected)}</strong></div></div><button className="primary confirm" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</button></div></div>
+  const difference=total-expected
+  const title=type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'
+  return <PosModal open title={title} className="cash-count-modal" layout="matrix" onClose={onClose} footer={<PosButton variant="primary" size="touch" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</PosButton>}>
+    <div className="denominations">{CASH_COUNT_DENOMINATIONS.map((x)=><div className="denomination-row" key={x}><span className="denomination-badge">{formatMoney(x)}</span><PosField label="Количество"><input type="number" min="0" step="1" inputMode="numeric" aria-label={'Количество купюр или монет '+formatMoney(x)} value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/></PosField><b>{formatMoney(x*(quantities[x]||0))}</b></div>)}</div>
+    <div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={difference===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(difference)}</strong></div></div>
+  </PosModal>
 }
 
-function Nav({active,icon,label,badge,className='',onClick}:{active:boolean;icon:string;label:string;badge?:number;className?:string;onClick:()=>void}){return <button className={[active?'active':'',className].filter(Boolean).join(' ')} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}
-export function SettingsNavTrigger(){return <Nav active={false} icon="⚙" label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
-function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className="page"><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
+export const NAV_ICON_MAP:Record<Screen|'settings',PosIconName>={sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings'}
+export function Nav({active,icon,label,badge,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{badge?<b>{badge}</b>:null}</PosButton>}
+export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
+function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className={title==='Текущая смена'?'page shift-page':'page'}><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
-function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i>＋</i><b>{title}</b><span>{text}</span></div>}
+function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i><PosIcon name="plus"/></i><b>{title}</b><span>{text}</span></div>}

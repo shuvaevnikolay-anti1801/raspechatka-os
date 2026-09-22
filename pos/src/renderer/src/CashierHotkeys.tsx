@@ -27,7 +27,7 @@ export default function CashierHotkeys(){
         return
       }
       if(event.key==='Escape'){
-        const closeButton=document.querySelector<HTMLButtonElement>('.modal-backdrop header button, .safety-backdrop .safety-panel>header button')
+        const closeButton=document.querySelector<HTMLButtonElement>('.pos-modal__header button[aria-label], .safety-backdrop .safety-panel>header button')
         if(closeButton){event.preventDefault();closeButton.click()}
         return
       }
@@ -38,7 +38,7 @@ export default function CashierHotkeys(){
         return
       }
       if(event.key==='Enter'&&!isEditing(event.target)){
-        const modalConfirm=document.querySelector<HTMLButtonElement>('.modal-backdrop button.primary.confirm:not(:disabled)')
+        const modalConfirm=document.querySelector<HTMLButtonElement>('.pos-modal__footer .pos-button--primary:not(:disabled)')
         if(modalConfirm){event.preventDefault();modalConfirm.click()}
       }
     }

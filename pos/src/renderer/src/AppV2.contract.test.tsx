@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { PosButton, PosIconButton } from './ui/PosButton'
+import { PosField } from './ui/PosField'
+import { PosIcon } from './ui/PosIcon'
+import { PosModal } from './ui/PosModal'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
@@ -188,7 +193,7 @@ describe('unified warehouse workplace contract',()=>{
   })
   it('keeps write-off fields vertical and independent from sale products',()=>{
     const markup=renderToStaticMarkup(<WriteOffModal products={operationalStockItems(catalog)} onClose={()=>undefined} onComplete={async()=>undefined}/>)
-    const labels=['>Товар<','>Количество<','>Причина<','>Комментарий ']
+    const labels=['>Товар<','>Количество<','>Причина<','>Комментарий<']
     const positions=labels.map((label)=>markup.indexOf(label))
     expect(positions.every((position)=>position>=0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a,b)=>a-b))
@@ -208,5 +213,100 @@ describe('unified warehouse workplace contract',()=>{
     expect(markup).toContain('Осталось по заказу: 4 пачка')
     expect(markup).not.toContain('Цена')
     expect(markup).not.toContain('rate')
+  })
+})
+
+
+describe('DEV-169 POS foundation contract',()=>{
+  it('maps every shell section to a semantic SVG icon',()=>{
+    expect(NAV_ICON_MAP).toEqual({
+      sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings',
+    })
+    const markup=renderToStaticMarkup(<Nav active icon={NAV_ICON_MAP.sale} label="Продажа" onClick={()=>undefined}/>)
+    expect(markup).toContain('<svg')
+    expect(markup).toContain('data-pos-icon="sale"')
+    expect(markup).toContain('aria-current="page"')
+    expect(markup).not.toContain('▣')
+  })
+
+  it('keeps button variants and accessible icon-only labels explicit',()=>{
+    const button=renderToStaticMarkup(<PosButton variant="danger" size="touch">Удалить</PosButton>)
+    const iconButton=renderToStaticMarkup(<PosIconButton icon="refresh" label="Обновить данные"/>)
+    expect(button).toContain('pos-button--danger')
+    expect(button).toContain('pos-button--touch')
+    expect(iconButton).toContain('aria-label="Обновить данные"')
+    expect(iconButton).toContain('title="Обновить данные"')
+    expect(iconButton).toContain('data-pos-icon="refresh"')
+  })
+
+  it('provides shared modal and field API contracts',()=>{
+    const modal=renderToStaticMarkup(<PosModal open title="Проверка" layout="form" onClose={()=>undefined} footer={<PosButton>Готово</PosButton>}><PosField label="Имя" helper="Подсказка"><input/></PosField></PosModal>)
+    expect(modal).toContain('role="dialog"')
+    expect(modal).toContain('aria-modal="true"')
+    expect(modal).toContain('pos-modal--form')
+    expect(modal).toContain('pos-field__helper')
+    expect(modal).toContain('aria-label="Закрыть"')
+  })
+
+  it('renders icons with currentColor and no unicode glyph dependency',()=>{
+    const markup=renderToStaticMarkup(<PosIcon name="settings"/>)
+    expect(markup).toContain('currentColor')
+    expect(markup).toContain('aria-hidden="true"')
+    expect(markup).not.toContain('⚙')
+  })
+})
+
+
+describe('DEV-169 stage 3 operational modal contracts',()=>{
+  const appSource=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+  const shiftSource=readFileSync(new URL('./ShiftCloseGuard.tsx',import.meta.url),'utf8')
+  const css=readFileSync(new URL('./checkout.css',import.meta.url),'utf8')
+
+  it('blocks clearly incomplete order phones and keeps all required fields',()=>{
+    expect(isCompleteOrderPhone('+7 900 000-00-00')).toBe(true)
+    expect(isCompleteOrderPhone('90000')).toBe(false)
+    expect(isCompleteOrderPhone('+7 900 000-00')).toBe(false)
+    expect(appSource).toContain("isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)")
+    expect(appSource).toContain('title="Оформить заказ"')
+    expect(appSource).not.toContain('ОБЯЗАТЕЛЬСТВО КЛИЕНТУ')
+    expect(appSource).not.toContain('Заказ появится в работе только после успешной оплаты')
+    expect(appSource).toContain('className="order-description-field"')
+  })
+
+  it('uses shared modal, field, and button primitives for every mounted inline modal',()=>{
+    for(const title of ['Оформить заказ','Возврат по чеку ','Внесение','Выбрать покупателя','Дополнительная скидка','Изменить цену']){
+      expect(appSource).toContain(title)
+    }
+    expect(appSource.match(/<PosModal/g)?.length).toBeGreaterThanOrEqual(7)
+    expect(appSource.match(/<PosField/g)?.length).toBeGreaterThanOrEqual(8)
+    expect(appSource.match(/<PosButton/g)?.length).toBeGreaterThanOrEqual(8)
+  })
+
+  it('preserves cash count denomination order and close-shift interception hooks',()=>{
+    expect(CASH_COUNT_DENOMINATIONS).toEqual([500000,100000,50000,10000,5000,1000,500,200,100])
+    expect(appSource).toContain('className="cash-count-modal"')
+    expect(appSource).toContain('className="denomination-row"')
+    expect(appSource).toContain("difference===0?'match':'mismatch'")
+    expect(appSource).toContain("type==='closing'?' и закрыть смену':''")
+    expect(shiftSource).toContain("button.closest('.cash-count-modal')")
+    expect(shiftSource).toContain("querySelector<HTMLElement>('.cash-reconcile .mismatch strong')")
+  })
+
+  it('keeps discrepancy recording before the guarded close click',()=>{
+    const record=shiftSource.indexOf('recordShiftDiscrepancy(differenceMinor,note.trim())')
+    const release=shiftSource.indexOf('allowNext.current=true')
+    const click=shiftSource.indexOf('target.current?.click()')
+    expect(record).toBeGreaterThan(-1)
+    expect(release).toBeGreaterThan(record)
+    expect(click).toBeGreaterThan(release)
+    expect(shiftSource).toContain('<PosModal')
+    expect(shiftSource).toContain('variant="danger"')
+  })
+
+  it('keeps modal footers accessible and reflows cash count at short height',()=>{
+    expect(css).toContain('@media (max-height:760px)')
+    expect(css).toContain('.denominations{display:grid;grid-template-columns:1fr 1fr')
+    expect(css).toContain('.cash-count-modal .pos-modal__body')
+    expect(css).toContain('.denomination-row{min-height:52px}')
   })
 })

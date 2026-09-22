@@ -16,6 +16,8 @@ import type {
 } from "../../shared/contracts";
 import { formatPersonShortName } from "./person-name";
 import { PinEntryLayout, PinInput } from "./PinEntry";
+import { PosButton, PosIconButton } from "./ui/PosButton";
+import { PosField } from "./ui/PosField";
 import "./settings-hub.css";
 
 type ExtendedPosApi = typeof window.raspechatkaPos;
@@ -73,14 +75,14 @@ export function SettingsAdminGate({
       >
         <PinEntryLayout
           footerLeft={
-            <button type="button" onClick={onCancel}>
+            <PosButton type="button" onClick={onCancel}>
               Отмена
-            </button>
+            </PosButton>
           }
           footerRight={
-            <button className="primary" type="submit">
+            <PosButton variant="primary" type="submit">
               Войти
-            </button>
+            </PosButton>
           }
         >
           <div className="settings-gate-content">
@@ -390,7 +392,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 одном месте.
               </p>
             </div>
-            <button onClick={close}>×</button>
+            <PosIconButton icon="close" label="Закрыть настройки" onClick={close}/>
           </header>
           <div className="settings-hub-body">
             <section className="settings-section status-section">
@@ -399,12 +401,12 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                   <h2>Состояние кассы</h2>
                   <p>Обновляется автоматически каждые 10 секунд.</p>
                 </div>
-                <button onClick={() => void refresh()}>Обновить</button>
+                <PosButton onClick={() => void refresh()}>Обновить</PosButton>
               </div>
               <div className="settings-status-grid">
                 {statusItems.map(([label, ready, text]) => (
                   <article key={label} className={ready ? "ready" : "bad"}>
-                    <i />
+                    <i aria-hidden="true" />
                     <div>
                       <b>{label}</b>
                       <span>{text}</span>
@@ -424,9 +426,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                   </p>
                 </div>
                 {connection?.configured && (
-                  <button onClick={() => setShowPairing((x) => !x)}>
+                  <PosButton onClick={() => setShowPairing((x) => !x)}>
                     {showPairing ? "Отмена" : "Переподключить"}
-                  </button>
+                  </PosButton>
                 )}
               </div>
               {connection?.configured && !showPairing ? (
@@ -470,28 +472,20 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 </div>
               ) : (
                 <div className="settings-form-grid">
-                  <label>
-                    <span>Адрес OS</span>
-                    <input
+                  <PosField label="Адрес OS"><input
                       value={pairing.serverUrl}
                       onChange={(e) =>
                         setPairing({ ...pairing, serverUrl: e.target.value })
                       }
-                    />
-                  </label>
-                  <label>
-                    <span>Device ID</span>
-                    <input
+                    /></PosField>
+                  <PosField label="Device ID"><input
                       value={pairing.deviceId || ""}
                       onChange={(e) =>
                         setPairing({ ...pairing, deviceId: e.target.value })
                       }
                       placeholder="POS-…"
-                    />
-                  </label>
-                  <label className="wide">
-                    <span>Token</span>
-                    <input
+                    /></PosField>
+                  <PosField label="Token" className="settings-full"><input
                       type="password"
                       value={pairing.token || ""}
                       onChange={(e) =>
@@ -499,10 +493,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                       }
                       placeholder="Показывается в OS один раз"
                       autoComplete="new-password"
-                    />
-                  </label>
-                  <button
-                    className="primary wide"
+                    /></PosField>
+                  <PosButton
+                    variant="primary" className="settings-full"
                     disabled={
                       busy ||
                       !pairing.deviceId?.trim() ||
@@ -511,7 +504,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                     onClick={() => void saveConnection()}
                   >
                     Подключить кассу
-                  </button>
+                  </PosButton>
                 </div>
               )}
               {boot?.employees.length ? (
@@ -520,12 +513,12 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                     Подтверждённых кассиров точки:{" "}
                     <b>{boot.employees.length}</b>
                   </span>
-                  <button
+                  <PosButton
                     disabled={busy || !connection?.configured}
                     onClick={() => void syncConfiguration()}
                   >
                     Обновить конфигурацию
-                  </button>
+                  </PosButton>
                 </div>
               ) : (
                 connection?.configured && (
@@ -551,9 +544,8 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 </label>
               </div>
               <div className="settings-form-grid">
-                <label><span>Драйвер ККТ 10</span><strong>{atolDriver?.installed ? `🟢 Найден${atolDriver.version ? ` · ${atolDriver.version}` : ""}` : `🟠 ${atolDriver?.error || "Не найден"}`}</strong></label>
-                <label><span>ККТ</span>
-                  <select value={atol.direct?.selectedDevice?.serialNumber || ""}
+                <label><span>Драйвер ККТ 10</span><strong className={atolDriver?.installed ? "settings-indicator ready" : "settings-indicator warning"}>{atolDriver?.installed ? `Найден${atolDriver.version ? ` · ${atolDriver.version}` : ""}` : `${atolDriver?.error || "Не найден"}`}</strong></label>
+                <PosField label="ККТ"><select value={atol.direct?.selectedDevice?.serialNumber || ""}
                     onChange={(e) => {
                       const device = atolDevices.find((x) => x.serialNumber === e.target.value);
                       if (device) setAtol({ ...atol, adapter: "driver", direct: { selectedDevice: {
@@ -565,20 +557,19 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                     {atolDevices.map((device) => <option key={device.serialNumber} value={device.serialNumber}>
                       {device.modelName} · {device.serialNumber} · {device.connection.toUpperCase()}
                     </option>)}
-                  </select>
-                </label>
-                <label><span>СНО</span><select value={atol.taxationType} onChange={(e) => setAtol({ ...atol, taxationType: e.target.value })}>
+                  </select></PosField>
+                <PosField label="СНО"><select value={atol.taxationType} onChange={(e) => setAtol({ ...atol, taxationType: e.target.value })}>
                   <option value="patent">Патент</option><option value="usnIncome">УСН доход</option><option value="usnIncomeOutcome">УСН доход − расход</option><option value="osn">ОСН</option>
-                </select></label>
-                <label><span>НДС</span><select value={atol.taxType} onChange={(e) => setAtol({ ...atol, taxType: e.target.value })}>
+                </select></PosField>
+                <PosField label="НДС"><select value={atol.taxType} onChange={(e) => setAtol({ ...atol, taxType: e.target.value })}>
                   <option value="none">Без НДС</option><option value="vat0">0%</option><option value="vat5">5%</option><option value="vat7">7%</option><option value="vat10">10%</option><option value="vat20">20%</option><option value="vat22">22%</option>
-                </select></label>
+                </select></PosField>
                 {atolStatus && <label><span>Статус ККТ</span><strong>{atolStatus.connected ? `Подключена · смена: ${atolStatus.shiftState ?? "неизвестно"}` : atolStatus.errorDescription || "Нет связи"}</strong></label>}
               </div>
               <div className="settings-actions">
-                <button onClick={() => void refreshAtolDevices()}>Обновить</button>
-                <button className="primary" onClick={() => void saveAtol()}>Подключить / сохранить</button>
-                <button onClick={() => void testAtol()}>Проверить связь</button>
+                <PosButton onClick={() => void refreshAtolDevices()}>Обновить</PosButton>
+                <PosButton variant="primary" onClick={() => void saveAtol()}>Подключить / сохранить</PosButton>
+                <PosButton onClick={() => void testAtol()}>Проверить связь</PosButton>
               </div>
             </section>
             <section className="settings-section">
@@ -601,24 +592,16 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="settings-form-grid">
                 <label>
                   <span>Dual Connector</span>
-                  <strong>{devices?.payment.ready ? "🟢 Найден и подключён" : inpas.enabled ? "🟠 Нет связи" : "Выключен"}</strong>
+                  <strong className={devices?.payment.ready ? "settings-indicator ready" : inpas.enabled ? "settings-indicator warning" : "settings-indicator"}>{devices?.payment.ready ? "Найден и подключён" : inpas.enabled ? "Нет связи" : "Выключен"}</strong>
                 </label>
-                <label>
-                  <span>ID терминала</span>
-                  <input
+                <PosField label="ID терминала"><input
                     value={inpas.terminalId}
                     onChange={(e) =>
                       setInpas({ ...inpas, terminalId: e.target.value })
                     }
-                  />
-                </label>
-                <label>
-                  <span>Код валюты</span>
-                  <input value={inpas.currencyCode} readOnly />
-                </label>
-                <label>
-                  <span>Таймаут, сек.</span>
-                  <input
+                  /></PosField>
+                <PosField label="Код валюты"><input value={inpas.currencyCode} readOnly /></PosField>
+                <PosField label="Таймаут, сек."><input
                     type="number"
                     min="30"
                     max="3600"
@@ -629,19 +612,18 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                         timeoutMs: Number(e.target.value) * 1000,
                       })
                     }
-                  />
-                </label>
+                  /></PosField>
               </div>
               <div className="settings-actions">
-                <button className="primary" onClick={() => void saveInpas()}>
+                <PosButton variant="primary" onClick={() => void saveInpas()}>
                   Сохранить INPAS
-                </button>
-                <button onClick={() => void terminal("test")}>
+                </PosButton>
+                <PosButton onClick={() => void terminal("test")}>
                   Проверить связь
-                </button>
-                <button onClick={() => void terminal("reconcile")}>
+                </PosButton>
+                <PosButton onClick={() => void terminal("reconcile")}>
                   Сверка итогов
-                </button>
+                </PosButton>
               </div>
             </section>
 
@@ -652,9 +634,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                   <p>Любой установленный Windows-принтер.</p>
                 </div>
               </div>
-              <label className="printer-row">
-                <span>Принтер</span>
-                <select
+              <PosField label="Принтер" className="printer-row"><select
                   value={printer}
                   onChange={(e) => void selectPrinter(e.target.value)}
                 >
@@ -665,8 +645,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                       {x.isDefault ? " · по умолчанию" : ""}
                     </option>
                   ))}
-                </select>
-              </label>
+                </select></PosField>
             </section>
 
             <section className="settings-section">
@@ -696,9 +675,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                           {x.lastError || "Операция сохранена локально"}
                         </span>
                       </div>
-                      <button onClick={() => void recover(x.id)}>
+                      <PosButton onClick={() => void recover(x.id)}>
                         Проверить и продолжить
-                      </button>
+                      </PosButton>
                     </article>
                   ))}
                   {printJobs.map((x) => (
@@ -707,9 +686,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                         <b>Товарный чек · {x.state}</b>
                         <span>{x.lastError || "Ожидает печати"}</span>
                       </div>
-                      <button onClick={() => void retryPrint(x.id)}>
+                      <PosButton onClick={() => void retryPrint(x.id)}>
                         Повторить печать
-                      </button>
+                      </PosButton>
                     </article>
                   ))}
                 </div>
@@ -722,7 +701,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                   <h2>Диагностика</h2>
                   <p>Последние технические события приложения.</p>
                 </div>
-                <button onClick={() => void refresh()}>Обновить</button>
+                <PosButton onClick={() => void refresh()}>Обновить</PosButton>
               </div>
               <div className="settings-log">
                 {diagnostics.length ? (

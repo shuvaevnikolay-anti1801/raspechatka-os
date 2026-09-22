@@ -2,7 +2,15 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { WorkplaceData, WorkScheduleEntry } from '../../shared/contracts'
-import WorkPage, { buildStockReceiptRequest, ReceiveModal, scheduleCellPresentation, shiftDisplayLabel, SupplyRequestModal, WarehouseWorkspace, WriteOffModal } from './WorkPage'
+import WorkPage, {
+  buildStockReceiptRequest,
+  ReceiveModal,
+  scheduleCellPresentation,
+  shiftDisplayLabel,
+  SupplyRequestModal,
+  WarehouseWorkspace,
+  WriteOffModal,
+} from './WorkPage'
 
 const entry=(id:string,date:string,shiftCode:string,shiftName:string):WorkScheduleEntry=>({
   id,date,employeeId:'employee-1',employeeName:'Иван Иванов',shiftTemplate:shiftName,
@@ -79,18 +87,25 @@ describe('WorkPage schedule presentation',()=>{
     expect(markup).not.toContain('Редактировать')
   })
 
-  it('uses the exact TeamPage color and diagonal semantics',()=>{
+  it('keeps exact U/V colors while using tokenized readable desktop sizing',()=>{
     const css=readFileSync(new URL('./workplace.css',import.meta.url),'utf8')
+    const source=readFileSync(new URL('./WorkPage.tsx',import.meta.url),'utf8')
+
     expect(css).toContain('.schedule-shift-morning{background:#fff4a8}')
     expect(css).toContain('.schedule-shift-evening{background:#a9cef7}')
     expect(css).toContain('.schedule-shift-both{background:linear-gradient(135deg,#fff4a8 0 50%,#a9cef7 50% 100%)}')
     expect(css).toContain('.work-schedule{display:grid;grid-template-columns:minmax(0,1fr)')
-    expect(css).toContain('.schedule-upcoming>.upcoming-shift{display:grid;')
     expect(css).toContain('grid-template-columns:repeat(auto-fit,minmax(250px,1fr))')
+    expect(css).toContain('font-size:var(--pos-type-label)')
+    expect(source).toContain("minmax(clamp(40px,2.45vw,52px),1fr)")
+    expect(css).toContain('@media (min-width:1100px) and (max-width:1279px)')
+    expect(css).toContain('@media (min-width:1600px)')
+    expect(css).toContain('@media (max-height:760px)')
+    expect(css).not.toMatch(/font-size:[0-9]px/)
   })
 })
 
-describe('WarehouseWorkspace stacked layout',()=>{
+describe('WarehouseWorkspace design-system migration',()=>{
   const warehouseData:WorkplaceData={
     ...workplace,
     operationalCatalog:[
@@ -118,16 +133,19 @@ describe('WarehouseWorkspace stacked layout',()=>{
     expect(deliveries).toBeLessThan(stock)
     expect(markup).toContain('class="warehouse-workspace"')
     expect(markup).not.toContain('work-grid')
-    expect(markup).not.toContain('Товары и склад')
     expect(markup).not.toContain('Остатки и поставки текущей точки')
   })
 
-  it('preserves action buttons, delivery summary, search and stock/storage content',()=>{
+  it('uses Design Code primary/danger hierarchy and preserves warehouse content',()=>{
     const markup=renderToStaticMarkup(
       <WarehouseWorkspace data={warehouseData} onChanged={async()=>undefined} notify={()=>undefined}/>,
     )
 
+    expect(markup).toContain('pos-button--danger')
+    expect(markup).toContain('warehouse-action-writeoff')
     expect(markup).toContain('>Списать брак<')
+    expect(markup).toContain('pos-button--primary')
+    expect(markup).toContain('warehouse-action-need')
     expect(markup).toContain('>Потребность точки<')
     expect(markup).toContain('№ PO-17')
     expect(markup).toContain('Поставщик бумаги')
@@ -140,6 +158,7 @@ describe('WarehouseWorkspace stacked layout',()=>{
     expect(markup).toContain('8 пачка')
     expect(markup).toContain('>Создать приёмку<')
     expect(markup).toContain('placeholder="Название, ID или код"')
+    expect(markup).toContain('pos-field')
     expect(markup).toContain('Бумага А4')
     expect(markup).toContain('PAPER-A4')
     expect(markup).toContain('7 пачка')
@@ -156,22 +175,23 @@ describe('WarehouseWorkspace stacked layout',()=>{
     expect(source).toContain('window.raspechatkaPos.createStockReceipt(request)')
   })
 
-  it('keeps page width fluid and limits horizontal overflow to the stock table',()=>{
+  it('keeps long data inside bounded scroll regions and removes legacy visual exceptions',()=>{
     const css=readFileSync(new URL('./workplace.css',import.meta.url),'utf8')
+
     expect(css).toContain('.warehouse-workspace{display:flex;flex-direction:column;')
     expect(css).toContain('.warehouse-deliveries,.warehouse-stock{width:100%;min-width:0;margin:0}')
-    expect(css).toContain('.stock-table-scroll{width:100%;overflow-x:auto}')
-    expect(css).not.toContain('.warehouse-workspace{display:grid')
-    expect(css).toContain('.warehouse-action{min-height:50px;')
-    expect(css).toContain('.warehouse-action-writeoff{border-color:#cf7770;background:#fff1ef;color:#8f2923}')
-    expect(css).toContain('.warehouse-action-need{border-color:#789c13;background:var(--rp-green);color:#fff}')
-    expect(css).toContain('.warehouse-workspace .work-card{border-radius:0}')
-    expect(css).toContain('.delivery-card{display:grid;')
-    expect(css).toContain('border-radius:0;background:#fff')
+    expect(css).toContain('.delivery-list-scroll{display:grid;')
+    expect(css).toContain('.stock-table-scroll{width:100%;max-height:clamp(')
+    expect(css).toContain('overflow-wrap:anywhere')
+    expect(css).toContain('position:sticky;top:0')
+    expect(css).not.toContain('@media(max-width:900px)')
+    expect(css).not.toContain('#cf7770')
+    expect(css).not.toContain('#789c13')
+    expect(css).not.toContain('.warehouse-modal-header')
+    expect(css).not.toContain('.warehouse-modal-actions')
+    expect(css).not.toContain('.warehouse-field input')
   })
 })
-
-
 
 describe('Warehouse operational modals',()=>{
   const products=[{id:'paper-a4',name:'Бумага А4',itemCode:'PAPER-A4',itemType:'Product' as const,uom:'пачка',trackInventory:true,stock:7,storageAddress:'Стеллаж 2'}]
@@ -182,6 +202,9 @@ describe('Warehouse operational modals',()=>{
 
   it('renders receiving context, bounded quantities and an obvious submit without changing defaults',()=>{
     const markup=renderToStaticMarkup(<ReceiveModal order={order} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+
+    expect(markup).toContain('pos-modal--matrix')
+    expect(markup).toContain('warehouse-receive-modal')
     expect(markup).toContain('Заказ № PO-17')
     expect(markup).toContain('Поставщик бумаги')
     expect(markup).toContain('Осталось по заказу: 8 пачка')
@@ -192,6 +215,7 @@ describe('Warehouse operational modals',()=>{
     expect(markup).toContain('value="8"')
     expect(markup).toContain('>Подтвердить приёмку<')
     expect(markup).toContain('aria-label="Закрыть"')
+    expect(markup).toContain('aria-label="Убрать Бумага А4"')
   })
 
   it('keeps receipt payload bounds and exact request shape',()=>{
@@ -202,30 +226,42 @@ describe('Warehouse operational modals',()=>{
     ])).toEqual({purchaseOrderId:'PO-17',lines:[{purchaseOrderItemId:'valid',quantity:5}]})
   })
 
-  it('renders readable write-off fields with warning semantics and unchanged optional comment',()=>{
+  it('uses shared PosModal and PosField contracts for write-off',()=>{
     const markup=renderToStaticMarkup(<WriteOffModal products={products} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+
+    expect(markup).toContain('pos-modal--form')
     expect(markup).toContain('warehouse-writeoff-modal')
     expect(markup).toContain('Проверьте товар, количество и причину')
     expect(markup).toContain('>Количество<')
     expect(markup).toContain('>Причина<')
-    expect(markup).toContain('Комментарий <small>необязательно</small>')
+    expect(markup).toContain('>Комментарий<')
+    expect(markup).toContain('>необязательно<')
+    expect(markup).toContain('pos-field')
+    expect(markup).toContain('pos-button--danger')
     expect(markup).toContain('>Подтвердить списание<')
     expect(markup).not.toContain(' required')
   })
 
-  it('renders supply item, description, quantity and comment with the approved action name',()=>{
+  it('uses shared PosModal and PosField contracts for supply requests',()=>{
     const markup=renderToStaticMarkup(<SupplyRequestModal products={products} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+
+    expect(markup).toContain('pos-modal--form')
+    expect(markup).toContain('warehouse-supply-modal')
     expect(markup).toContain('>Позиция из каталога<')
     expect(markup).toContain('>Наименование или описание<')
     expect(markup).toContain('>Количество<')
-    expect(markup).toContain('Комментарий <small>необязательно</small>')
+    expect(markup).toContain('>Комментарий<')
+    expect(markup).toContain('>необязательно<')
+    expect(markup).toContain('pos-button--primary')
     expect(markup).toContain('>Потребность точки<')
     expect(markup).not.toContain(' required')
   })
 
-  it('preserves close, submit and exact payload expressions',()=>{
+  it('preserves submit payloads and validation expressions exactly',()=>{
     const source=readFileSync(new URL('./WorkPage.tsx',import.meta.url),'utf8')
-    expect(source.match(/onClick={onClose}/g)?.length).toBeGreaterThanOrEqual(6)
+
+    expect(source.match(/<PosModal/g)?.length).toBe(3)
+    expect(source.match(/onClose={onClose}/g)?.length).toBeGreaterThanOrEqual(3)
     expect(source).toContain('onComplete({productId,quantity:Number(quantity),reason,comment})')
     expect(source).toContain('onComplete({productId:productId||undefined,itemName:itemName.trim(),quantity:Number(quantity),comment})')
     expect(source).toContain('onComplete(request)')
@@ -233,13 +269,18 @@ describe('Warehouse operational modals',()=>{
     expect(source).toContain('disabled={invalid||request.lines.length===0}')
   })
 
-  it('uses dedicated angular, touch-sized warehouse modal controls',()=>{
+  it('reuses the shared modal shell instead of another warehouse modal style',()=>{
+    const source=readFileSync(new URL('./WorkPage.tsx',import.meta.url),'utf8')
+    const modalSource=readFileSync(new URL('./ui/PosModal.tsx',import.meta.url),'utf8')
     const css=readFileSync(new URL('./workplace.css',import.meta.url),'utf8')
-    expect(css).toContain('.warehouse-modal{width:min(720px,calc(100vw - 32px))')
-    expect(css).toContain('border-radius:0;overflow:auto')
-    expect(css).toContain('.warehouse-modal-close{flex:none;width:48px;height:48px')
-    expect(css).toContain('.warehouse-field input,.warehouse-field select,.warehouse-field textarea,.receive-quantity input{width:100%;min-height:48px')
-    expect(css).toContain('.warehouse-modal-actions button{min-height:50px')
-    expect(css).toContain('.receive-remove{width:48px;height:48px')
+
+    expect(source).toContain("import { PosModal } from './ui/PosModal'")
+    expect(source).toContain("import { PosField } from './ui/PosField'")
+    expect(source).not.toContain('modal-backdrop')
+    expect(source).not.toContain('payment-modal compact-modal')
+    expect(modalSource).toContain('onClick={onClose}')
+    expect(css).toContain('.warehouse-modal.pos-modal{width:min(720px,calc(100vw - 32px))}')
+    expect(css).toContain('.warehouse-receive-modal.pos-modal{width:min(860px,calc(100vw - 32px))}')
+    expect(css).toContain('.receive-lines{max-height:min(46vh,480px);overflow:auto')
   })
 })

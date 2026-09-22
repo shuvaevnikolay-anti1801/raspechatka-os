@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
-import './pilot-ux.css'
 import { formatMoney } from './money'
+import { PosButton } from './ui/PosButton'
+import { PosModal } from './ui/PosModal'
+import { PosIcon } from './ui/PosIcon'
 
 const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата'}
 export const paymentSummary=(payments:readonly PaymentPart[])=>
@@ -73,25 +75,25 @@ export default function SaleSuccessOverlay(){
     }
   }
 
-  return <div className="sale-success-backdrop">
-    <section className="sale-success-card" role="dialog" aria-modal="true" aria-labelledby="sale-success-title">
-      <div className="sale-success-icon" aria-hidden="true">✓</div>
-      <h2 id="sale-success-title">Оплата проведена</h2>
-
-      <dl className="sale-success-facts">
-        <div><dt>Сумма</dt><dd className="sale-success-total">{formatMoney(result.totalMinor)}</dd></div>
-        <div><dt>Способ оплаты</dt><dd>{paymentSummary(payments)}</dd></div>
-        <div><dt>Сдача</dt><dd className={result.changeMinor?'change':''}>{result.changeMinor?formatMoney(result.changeMinor):'Без сдачи'}</dd></div>
-        <div><dt>Номер чека</dt><dd>{result.receiptNumber}</dd></div>
-        <div><dt>Дата и время</dt><dd>{new Date(createdAt).toLocaleString('ru-RU')}</dd></div>
-      </dl>
-
-      {printError&&<div className="sale-success-print-error" role="alert">{printError}</div>}
-
-      <div className="sale-success-actions">
-        <button autoFocus className="primary sale-success-return" onClick={close}>Вернуться к продаже</button>
-        <button className="sale-success-print" disabled={printing} onClick={()=>void printCommodity()}>{printing?'Печатаем…':'Напечатать товарный чек'}</button>
-      </div>
-    </section>
-  </div>
+  return <PosModal
+    open
+    title="Оплата проведена"
+    layout="action"
+    className="sale-success-modal"
+    onClose={close}
+    footer={<div className="sale-success-actions">
+      <PosButton autoFocus variant="primary" size="touch" className="sale-success-return" onClick={close}>Вернуться к продаже</PosButton>
+      <PosButton variant="secondary" size="touch" className="sale-success-print" disabled={printing} onClick={()=>void printCommodity()}>{printing?'Печатаем…':'Напечатать товарный чек'}</PosButton>
+    </div>}
+  >
+    <div className="sale-success-icon" aria-hidden="true"><PosIcon name="check"/></div>
+    <dl className="sale-success-facts">
+      <div><dt>Сумма</dt><dd className="sale-success-total">{formatMoney(result.totalMinor)}</dd></div>
+      <div><dt>Способ оплаты</dt><dd>{paymentSummary(payments)}</dd></div>
+      <div><dt>Сдача</dt><dd className={result.changeMinor?'change':''}>{result.changeMinor?formatMoney(result.changeMinor):'Без сдачи'}</dd></div>
+      <div><dt>Номер чека</dt><dd>{result.receiptNumber}</dd></div>
+      <div><dt>Дата и время</dt><dd>{new Date(createdAt).toLocaleString('ru-RU')}</dd></div>
+    </dl>
+    {printError&&<div className="sale-success-print-error" role="alert">{printError}</div>}
+  </PosModal>
 }

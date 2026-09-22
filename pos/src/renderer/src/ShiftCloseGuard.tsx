@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import './pilot-ux.css'
 import { formatMoney } from './money'
+import { PosButton } from './ui/PosButton'
+import { PosField } from './ui/PosField'
+import { PosModal } from './ui/PosModal'
 
 type ExtendedPosApi=typeof window.raspechatkaPos&{
   recordShiftDiscrepancy:(differenceMinor:number,note:string)=>Promise<unknown>
@@ -44,14 +46,15 @@ export default function ShiftCloseGuard(){
   }
 
   if(!open)return null
-  return <div className="pilot-backdrop">
-    <section className="pilot-modal discrepancy-modal">
-      <header><div><small>ЗАКРЫТИЕ СМЕНЫ</small><h2>Есть расхождение наличных</h2></div><button onClick={()=>setOpen(false)}>×</button></header>
-      <div className="discrepancy-amount"><span>Расхождение</span><strong>{formatMoney(differenceMinor)}</strong></div>
-      <p>Смена может быть закрыта, но причина должна остаться в журнале кассы. Напишите коротко, что произошло.</p>
-      <label className="discrepancy-note"><span>Комментарий *</span><textarea autoFocus value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Например: при пересчёте не хватает 100 ₽, сообщено старшему менеджеру"/></label>
-      {error&&<div className="pilot-message error">{error}</div>}
-      <div className="readiness-actions"><button onClick={()=>setOpen(false)}>Вернуться к пересчёту</button><button className="primary" disabled={!note.trim()} onClick={()=>void confirm()}>Записать причину и закрыть смену</button></div>
-    </section>
-  </div>
+  return <PosModal
+    open
+    title="Есть расхождение наличных"
+    className="discrepancy-modal"
+    onClose={()=>setOpen(false)}
+    footer={<><PosButton variant="secondary" onClick={()=>setOpen(false)}>Вернуться к пересчёту</PosButton><PosButton variant="danger" size="touch" disabled={!note.trim()} onClick={()=>void confirm()}>Записать причину и закрыть смену</PosButton></>}
+  >
+    <div className="discrepancy-amount"><span>Расхождение</span><strong>{formatMoney(differenceMinor)}</strong></div>
+    <p>Смена может быть закрыта, но причина должна остаться в журнале кассы. Напишите коротко, что произошло.</p>
+    <PosField label="Комментарий *" size="textarea" error={error||undefined}><textarea autoFocus value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Например: при пересчёте не хватает 100 ₽, сообщено старшему менеджеру"/></PosField>
+  </PosModal>
 }
