@@ -1,6 +1,18 @@
-.work-tabs{display:flex;align-items:center;gap:var(--pos-space-2);margin-bottom:var(--pos-space-4)}
+.work-tabs{display:flex;align-items:center;gap:var(--pos-space-2);margin-bottom:var(--pos-space-4);border-bottom:var(--pos-border-base)}
 .work-tabs .work-tab{white-space:nowrap}
 .work-tabs .work-tab b{min-width:18px;padding:2px 5px;background:var(--pos-danger);color:var(--pos-surface);font-size:var(--pos-type-meta);text-align:center}
+.work-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--pos-space-4)}
+.work-card{min-width:0;padding:var(--pos-space-5);border:var(--pos-border-base);background:var(--pos-surface)}
+.work-card>small{color:var(--pos-muted);font-size:var(--pos-type-meta);font-weight:var(--pos-weight-medium);letter-spacing:.08em}
+.work-card h2{margin:var(--pos-space-3) 0 var(--pos-space-1);font-size:var(--pos-type-modal)}
+.work-card h3{margin:0 0 var(--pos-space-3);font-size:var(--pos-type-strong)}
+.work-card p{color:var(--pos-muted);font-size:var(--pos-type-body);line-height:1.5}
+.hero-card{border-top:4px solid var(--pos-brand)}
+.hero-card>strong{display:block;margin:var(--pos-space-3) 0;font-size:var(--pos-type-kpi);letter-spacing:-.03em}
+.hero-card>.pos-button{width:100%;margin-top:var(--pos-space-3)}
+.pay-cleaner{margin-top:var(--pos-space-2)}
+.work-card article{font-size:var(--pos-type-body)}
+.work-card article small{color:var(--pos-muted);font-size:var(--pos-type-label)}
 
 .work-schedule{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--pos-space-4);align-items:start;width:100%}
 .schedule-upcoming,.schedule-month{min-width:0;width:100%}
@@ -99,6 +111,7 @@
 .warehouse-error{margin:0;padding:var(--pos-space-3);border:1px solid var(--pos-danger);background:var(--pos-danger-soft);color:var(--pos-danger);font-size:var(--pos-type-label)}
 
 @media (min-width:1100px) and (max-width:1279px){
+  .work-grid{grid-template-columns:1fr}
   .work-tabs{gap:var(--pos-space-1)}
   .schedule-month>header{margin-bottom:var(--pos-space-2)}
   .schedule-upcoming{gap:var(--pos-space-2)}
