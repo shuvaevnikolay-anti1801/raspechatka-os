@@ -27,8 +27,25 @@ describe('current receipt UX contract',()=>{
     expect(appSource).toContain("cashierPhrase:upsellCycle.candidate.cashierPhrase||'Предложите покупателю: '+activeUpsellProduct.name")
     expect(receiptSource).toContain('onClick={onAcceptUpsell}>+</button>')
     expect(receiptSource).toContain('onClick={onDismissUpsell}>×</button>')
+    expect(receiptSource).toContain('className="receipt-upsell-phrase">{upsell.cashierPhrase}</p>')
+    expect(receiptSource).toContain('className="receipt-upsell-item"')
     expect(receiptSource).toContain("aria-label={'Добавить '+upsell.name}")
     expect(receiptSource).toContain('aria-label="Отклонить рекомендацию"')
+  })
+
+  it('keeps every receipt action callback and the intentional manual discount control',()=>{
+    for(const callback of [
+      'onClick={onClear}',
+      'onClick={onOpenCustomer}',
+      'onClick={onRemoveCustomer}',
+      'onClick={onOpenManualDiscount}',
+      'onClick={onHold}',
+      'onClick={onCreateOrder}',
+      'onClick={onPay}',
+      'onClick={onAcceptUpsell}',
+      'onClick={onDismissUpsell}',
+    ])expect(receiptSource).toContain(callback)
+    expect(receiptSource).toContain('className="receipt-manual-discount"')
   })
 
   it('preserves fractional quantity controls and free-price action',()=>{
