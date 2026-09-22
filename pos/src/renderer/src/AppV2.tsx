@@ -9,13 +9,13 @@ import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import type {
-  BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
+  BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
   Customer, HeldReceipt, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary,
   StockWriteOffRequest, SupplyRequestInput, StockReceiptRequest, OperationalCatalogItem, DeliveryNotice, WorkplaceData
 } from '../../shared/contracts'
 
-type Screen='sale'|'receipts'|'orders'|'shift'|'work'|'settings'
+type Screen='sale'|'receipts'|'orders'|'shift'|'work'
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,averageCheckBeforeDiscountMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0}
@@ -49,7 +49,6 @@ export default function AppV2(){
   const [summary,setSummary]=useState<ShiftSummary>(emptySummary)
   const [workplace,setWorkplace]=useState<WorkplaceData>(emptyWorkplace)
   const [lastCashCount,setLastCashCount]=useState<CashCount|null>(null)
-  const [connection,setConnection]=useState<ConnectionStatus|null>(null)
   const [screen,setScreen]=useState<Screen>('sale')
   const [query,setQuery]=useState('')
   const [category,setCategory]=useState('Все')
@@ -76,12 +75,11 @@ export default function AppV2(){
       window.raspechatkaPos.getBootState(),window.raspechatkaPos.listProducts(),
       window.raspechatkaPos.listSales(),window.raspechatkaPos.listHeldReceipts(),
       window.raspechatkaPos.getShiftSummary(),window.raspechatkaPos.listCashOperations(),
-      window.raspechatkaPos.getConnectionStatus(),window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),
-      window.raspechatkaPos.getLastCashCount()
+      window.raspechatkaPos.getWorkplaceData(),window.raspechatkaPos.listOrders(),window.raspechatkaPos.getLastCashCount()
     ])
     setBoot(result[0]);setProducts(result[1]);setSales(result[2]);setHeld(result[3])
-    setSummary(result[4]);setCashOperations(result[5]);setConnection(result[6])
-    setWorkplace(result[7]);setOrders(result[8]);setLastCashCount(result[9])
+    setSummary(result[4]);setCashOperations(result[5])
+    setWorkplace(result[6]);setOrders(result[7]);setLastCashCount(result[8])
     setAuth(nextAuth)
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
@@ -231,7 +229,7 @@ export default function AppV2(){
         <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
         <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
         <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
-        <Nav active={screen==='settings'} icon="⚙" label="Настройки" onClick={()=>setScreen('settings')}/>
+        <SettingsNavTrigger/>
       </nav>
       <div className="pos-header-actions">
         <span className={`pos-header-status ${boot.online?'online':'offline'}`} title={boot.lastSyncAt?'Последняя синхронизация: '+new Date(boot.lastSyncAt).toLocaleString('ru-RU')+' · К отправке: '+boot.pendingSync:'Успешной синхронизации ещё не было · К отправке: '+boot.pendingSync}><i/>{boot.online?'ОС на связи':'Локальный режим'}</span>
@@ -285,7 +283,6 @@ export default function AppV2(){
       {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section><h3>Движения наличных</h3>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p>Операций пока нет</p>}</section></div>}
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} 
-    {screen==='settings'&&<Settings boot={boot} connection={connection} onSaved={refresh} onSynced={async()=>{await refresh();if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer));setMessage('Каталог, клиенты, настройки и очередь операций синхронизированы')}}/>}
 
     {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
@@ -463,12 +460,13 @@ function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount[
   return <div className="modal-backdrop"><div className="payment-modal cash-count-modal"><header><div><small>ПЕРЕСЧЁТ НАЛИЧНЫХ</small><h2>{type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'}</h2></div><button onClick={onClose}>×</button></header><div className="denominations">{denominations.map((x)=><label key={x}><span>{formatMoney(x)}</span><input type="number" min="0" step="1" value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/><b>{formatMoney(x*(quantities[x]||0))}</b></label>)}</div><div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={total-expected===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(total-expected)}</strong></div></div><button className="primary confirm" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</button></div></div>
 }
 
-function Nav({active,icon,label,badge,onClick}:{active:boolean;icon:string;label:string;badge?:number;onClick:()=>void}){return <button className={active?'active':''} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}
+function Nav({active,icon,label,badge,onClick,className='' }:{active:boolean;icon:string;label:string;badge?:number;onClick:()=>void;className?:string}){const classes=[className,active?'active':''].filter(Boolean).join(' ');return <button className={classes} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}
+export function SettingsNavTrigger(){return <Nav active={false} icon="⚙" label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className="page"><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
 function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i>＋</i><b>{title}</b><span>{text}</span></div>}
 
-function Settings({boot,connection,onSaved,onSynced}:{boot:BootState;connection:ConnectionStatus|null;onSaved:()=>Promise<void>;onSynced:()=>Promise<void>}){
+:{boot:BootState;connection:ConnectionStatus|null;onSaved:()=>Promise<void>;onSynced:()=>Promise<void>}){
   const [form,setForm]=useState<ConnectionConfig>({serverUrl:connection?.serverUrl||'https://os.rpechatka.ru',apiKey:'',apiSecret:'',workplaceCode:connection?.workplaceCode||''});const [status,setStatus]=useState('')
   const save=async()=>{try{await window.raspechatkaPos.saveConnection(form);await onSaved();setStatus('Подключение сохранено в защищённом хранилище Windows')}catch(e){setStatus(String(e))}}
   const sync=async()=>{try{setStatus('Отправляем операции и обновляем каталог…');await window.raspechatkaPos.syncNow();await onSynced();setStatus('Синхронизация завершена')}catch(e){setStatus(e instanceof Error?e.message:String(e))}}
