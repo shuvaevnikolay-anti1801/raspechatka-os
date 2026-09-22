@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildStockReceiptRequest, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, runLockedCashierSwitch, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
+import { buildStockReceiptRequest, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
@@ -60,6 +60,14 @@ describe('cashier workplace micro-contract',()=>{
     expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
     expect(markup).toContain('inputMode="numeric"')
     expect(markup).toContain('maxLength="4"')
+  })
+
+  it('routes pre-login and authenticated Settings through the same explicit trigger class',()=>{
+    const preLogin=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    const authenticated=renderToStaticMarkup(<SettingsNavTrigger/>)
+    expect(preLogin).toContain('settings-open-trigger')
+    expect(authenticated).toContain('settings-open-trigger')
+    expect(authenticated).toContain('Настройки')
   })
 
   it('uses shared centered PIN layout and fixed left/right footer roles',()=>{
