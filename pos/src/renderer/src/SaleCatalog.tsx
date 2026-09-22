@@ -59,8 +59,8 @@ export default function SaleCatalog({
         const favorite=favoriteIds.has(product.id)
         return <article className="product-card pos-v2-product sale-product-tile" key={product.id}>
           <button className="product-card-add" onClick={()=>onAdd(product)}>
-            <strong>{product.name}</strong>
-            <footer><b>{formatMoney(product.priceMinor)}</b>{product.stock!=null&&<span>Остаток {product.stock}</span>}</footer>
+            <strong className="product-card-name">{product.name}</strong>
+            <footer className="product-card-meta"><b className="product-card-price">{formatMoney(product.priceMinor)}</b>{product.stock!=null&&<span className="product-card-stock">Остаток {product.stock}</span>}</footer>
           </button>
           <button
             className={'product-favorite'+(favorite?' active':'')}
