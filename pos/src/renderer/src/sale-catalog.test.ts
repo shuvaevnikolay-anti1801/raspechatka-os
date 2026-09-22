@@ -21,7 +21,7 @@ describe('sale categories',()=>{
     expect(saleCategories(products)).not.toContain('Все')
   })
 
-  it('renders category labels without icons or item counts',()=>{
+  it('renders readable label-only category controls',()=>{
     const source=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
     const categoriesSource=source.slice(source.indexOf('export function SaleCategories'),source.indexOf('export default function SaleCatalog'))
     expect(categoriesSource).not.toContain('<span')
@@ -30,19 +30,19 @@ describe('sale categories',()=>{
   })
 })
 
-describe('workstation favorites',()=>{
-  it('uses a separate star action that never invokes the add callback',()=>{
+describe('workstation favorites and product cards',()=>{
+  it('uses a separate quiet semantic star action that never invokes add',()=>{
     const onAdd=vi.fn()
     const onToggle=vi.fn()
     onToggle('p-1')
     expect(onToggle).toHaveBeenCalledWith('p-1')
     expect(onAdd).not.toHaveBeenCalled()
-
     const source=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
     expect(source).toContain('className="product-card-add" onClick={()=>onAdd(product)}')
+    expect(source).toContain('icon="star"')
+    expect(source).toContain('variant="quiet"')
     expect(source).toContain("onClick={()=>onToggleFavorite(product.id)}")
-    expect(source).toMatch(/<\/button>\s*<button\s+className=\{'product-favorite'/)
-    expect(source).toContain('aria-label={(favorite?')
+    expect(source).toContain('aria-pressed={favorite}')
   })
 
   it('persists, restores, and prunes favorites against the local catalog',()=>{
@@ -63,15 +63,18 @@ describe('workstation favorites',()=>{
     expect(filterSaleProducts(products,FAVORITES_CATEGORY,'poster',['p-1','p-2'])).toEqual([])
   })
 
-  it('uses a deterministic long-name structure without square tile forcing',()=>{
+  it('keeps long names safe and price/stock geometry deterministic',()=>{
     const source=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
     const css=readFileSync(new URL('./sale-workspace.css',import.meta.url),'utf8')
     expect(source).toContain('className="product-card-name"')
     expect(source).toContain('className="product-card-meta"')
     expect(source).toContain('className="product-card-price"')
-    expect(source).toContain('className="product-card-stock"')
+    expect(source).toContain("product.stock==null?' empty':''")
+    expect(source).toContain('<PosIcon name="inventory"/>')
+    expect(source).not.toMatch(/>Остаток\s/)
     expect(css).toContain('-webkit-line-clamp:3')
     expect(css).toContain('overflow-wrap:anywhere')
+    expect(css).toContain('grid-template-columns:minmax(0,1fr) 48px')
     expect(css).not.toContain('aspect-ratio')
   })
 
