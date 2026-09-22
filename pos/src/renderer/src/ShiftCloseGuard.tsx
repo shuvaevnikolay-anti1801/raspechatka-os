@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import './pilot-ux.css'
 import { formatMoney } from './money'
 import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
