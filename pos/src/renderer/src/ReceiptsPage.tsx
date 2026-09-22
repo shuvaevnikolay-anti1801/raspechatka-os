@@ -1,5 +1,6 @@
 import { PosButton } from './ui/PosButton'
 import { PosModal } from './ui/PosModal'
+import { PosIcon } from './ui/PosIcon'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   BootState,
@@ -324,7 +325,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
     <section className="receipt-search-page">
       <form onSubmit={(event)=>{event.preventDefault();apply()}}>
         <label className="receipt-search-input">
-          <span aria-hidden="true">⌕</span>
+          <span aria-hidden="true"><PosIcon name="search"/></span>
           <input
             value={draft.text}
             onChange={(event)=>setDraft({...draft,text:event.target.value})}
