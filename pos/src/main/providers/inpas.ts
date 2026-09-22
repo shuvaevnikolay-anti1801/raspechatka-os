@@ -138,12 +138,11 @@ export class InpasSettingsStore {
         throw new Error("ID терминала содержит недопустимые символы");
       if (!/^\d{3}$/.test(next.currencyCode))
         throw new Error("Код валюты должен состоять из трёх цифр");
+      // Production uses the registered DualConnector COM bridge and does not
+      // require DC Console to be installed. Preserve a discovered console path
+      // only for the explicit hidden legacy fallback.
       const launcher = this.resolveLauncher(next);
-      if (!launcher)
-        throw new Error(
-          "INPAS Dual Connector / DC Console не найден. Проверьте установку DualConnector 2.0"
-        );
-      next.executablePath = launcher.path;
+      next.executablePath = launcher?.path ?? "";
     }
     writeFileSync(this.filePath, JSON.stringify(next, null, 2), "utf-8");
     return next;
@@ -334,8 +333,12 @@ export class InpasPaymentProvider implements PaymentProvider {
     return this.run("charge", request.operationId, request.amountMinor);
   }
 
-  refund(request: PaymentRequest): Promise<PaymentResult> {
-    return this.run("refund", request.operationId, request.amountMinor);
+  async refund(_request: PaymentRequest): Promise<PaymentResult> {
+    return {
+      status: "declined",
+      message:
+        "Legacy INPAS refund отключён: operation 4 является void, а не возвратом. Используйте прямой INPAS adapter.",
+    };
   }
 
   async getOperationStatus(request: PaymentRequest): Promise<PaymentResult> {
@@ -368,7 +371,7 @@ export class InpasPaymentProvider implements PaymentProvider {
   }
 
   private async run(
-    kind: "charge" | "refund" | "health" | "reconcile",
+    kind: "charge" | "health" | "reconcile",
     operationId: string,
     amountMinor?: number,
     provided?: InpasSettings
@@ -387,7 +390,6 @@ export class InpasPaymentProvider implements PaymentProvider {
 
     const operationCode = {
       charge: "1",
-      refund: "4",
       health: "26",
       reconcile: "59",
     }[kind];
@@ -395,14 +397,19 @@ export class InpasPaymentProvider implements PaymentProvider {
     // DualConnector 1.x uses "DC Console.exe" and a legacy CLI shape.
     // Keep this special case read-only until monetary operations are verified
     // against real PAX hardware. Modern DCConsole.bat/jar arguments stay intact.
-    const args =
-      legacyExe && kind === "health"
-        ? ["-p5", `-z${settings.terminalId}`, "-o26", "-m22", "-l1"]
-        : [`-o${operationCode}`, `-z${settings.terminalId}`];
-    if (!(legacyExe && kind === "health")) {
+    const legacyReadOnly = legacyExe && (kind === "health" || kind === "reconcile");
+    const args = legacyReadOnly
+      ? [
+          "-p5",
+          `-z${settings.terminalId}`,
+          `-o${operationCode}`,
+          "-m22",
+          "-l1",
+        ]
+      : [`-o${operationCode}`, `-z${settings.terminalId}`];
+    if (!legacyReadOnly) {
       if (amountMinor !== undefined) args.push(`-a${amountMinor}`);
-      if (kind === "charge" || kind === "refund")
-        args.push(`-c${settings.currencyCode}`);
+      if (kind === "charge") args.push(`-c${settings.currencyCode}`);
       args.push(`-s${Math.ceil(settings.timeoutMs / 1000)}`);
     }
 
@@ -565,8 +572,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         };
       }
 
-      if (kind === "charge" || kind === "refund")
-        this.storeResult(operationId, paymentResult);
+      if (kind === "charge") this.storeResult(operationId, paymentResult);
       return paymentResult;
     } finally {
       this.running = false;

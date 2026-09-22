@@ -1,6 +1,6 @@
 {
   "name": "raspechatka-pos",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Windows-касса и рабочее место менеджера Распечатки",
   "main": "out/main/index.js",
@@ -53,6 +53,14 @@
       {
         "from": "native/atol-bridge/publish/Raspechatka.AtolBridge.exe",
         "to": "native/atol/Raspechatka.AtolBridge.exe"
+      },
+      {
+        "from": "native/inpas-bridge/publish",
+        "to": "native/inpas",
+        "filter": [
+          "Raspechatka.InpasBridge.exe",
+          "Raspechatka.InpasBridge.exe.config"
+        ]
       }
     ]
   }
