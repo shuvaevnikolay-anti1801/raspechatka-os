@@ -4,7 +4,7 @@
 .payment-amount-due{display:flex;align-items:baseline;justify-content:space-between;gap:var(--pos-space-5)}
 .payment-amount-due span{color:var(--pos-muted);font-size:var(--pos-type-body)}
 .payment-amount-due strong{color:var(--pos-ink);font-size:clamp(38px,5vw,54px);font-weight:var(--pos-weight-strong);line-height:1}
-.checkout-methods{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--pos-space-2)}
+.checkout-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--pos-space-2)}
 .checkout-methods .pos-button{min-height:76px;display:flex;flex-direction:column;align-items:flex-start;gap:var(--pos-space-1);padding:var(--pos-space-3);text-align:left}
 .checkout-methods .pos-button span{font-size:var(--pos-type-body);font-weight:var(--pos-weight-strong)}
 .checkout-methods .pos-button small{color:var(--pos-muted);font-size:var(--pos-type-meta)}
