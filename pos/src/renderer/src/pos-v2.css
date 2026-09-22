@@ -50,9 +50,36 @@
   .receipt-search>div{align-items:flex-start}
   .receipt-filter-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}
 }
-.cashier-login-screen{min-height:100vh;display:grid;place-items:center;background:#f3f5f1;padding:32px}.cashier-login-card{width:min(560px,100%);background:#fff;border-radius:24px;padding:36px;box-shadow:0 18px 60px #1832251a}.cashier-login-card>small{color:#3f7459;font-weight:800;letter-spacing:.12em}.cashier-login-card h1{font-size:36px;margin:8px 0 12px}.cashier-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:24px 0}.cashier-list button{padding:18px;text-align:left;border:1px solid #dce4de;border-radius:14px;background:#fff}.cashier-list button.active{border-color:#397455;background:#eef7f1}.cashier-login-card form{display:grid;gap:12px;margin-top:24px}.cashier-login-card label{display:grid;gap:6px}.cashier-login-card input{font-size:28px;padding:12px;border:1px solid #cad6ce;border-radius:12px}.cashier-login-card form>button{padding:14px;border-radius:12px}.cashier-login-error{color:#a62d2d;background:#fff0f0;padding:12px;border-radius:10px}
+.cashier-login-screen{min-height:100vh;display:grid;place-items:center;background:#f3f5f1;padding:32px}
+.cashier-login-card{position:relative;width:min(560px,100%);min-height:min(680px,calc(100vh - 64px));display:flex;flex-direction:column;background:#fff;border:1px solid #dce4de;border-radius:0;padding:36px;box-shadow:0 18px 60px #1832251a}
+.cashier-login-card>small{color:#3f7459;font-weight:800;letter-spacing:.12em}
+.cashier-login-card h1{font-size:36px;margin:8px 0 12px}
+.cashier-login-card .cashier-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:24px 0 28px}
+.cashier-login-card .cashier-list button{padding:18px;text-align:left;border:1px solid #dce4de;border-radius:0;background:#fff}
+.cashier-login-card .cashier-list button.active{border-color:#397455;background:#eef7f1}
+.cashier-login-card form.cashier-pin-form{display:flex;flex:1;min-height:0;margin-top:20px}
+.cashier-login-card .pin-entry-layout{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:20px;width:100%;min-height:100%}
+.cashier-login-card .pin-entry-main{display:grid;align-content:center;justify-items:center;gap:14px;min-height:0}
+.cashier-login-card .cashier-pin-fields{display:grid;gap:14px;width:min(100%,360px);justify-items:stretch}
+.cashier-login-card label{display:grid;gap:6px}
+.cashier-login-card .pin-input{position:relative;width:100%;max-width:18rem;min-height:72px;margin-inline:auto}
+.cashier-login-card .pin-input-control{position:absolute;inset:0;width:100%;height:100%;z-index:2;opacity:0;cursor:text;letter-spacing:normal;padding:0;border:0;border-radius:0;background:transparent}
+.cashier-login-card .pin-input:focus-within{outline:3px solid #b9d8c1;outline-offset:4px;border-radius:0}
+.cashier-login-card .pin-input-slots{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:100%;height:72px}
+.cashier-login-card .pin-input-slots span{display:grid;place-items:center;border:1px solid #cad6ce;border-radius:0;background:#fff;color:#183225;font-size:36px;line-height:1}
+.cashier-login-card .pin-input-slots span.filled{border-color:#397455;background:#eef7f1}
+.cashier-login-card .pin-entry-footer{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:end;gap:16px;width:100%}
+.cashier-login-card .pin-entry-footer-left{justify-self:start}
+.cashier-login-card .pin-entry-footer-right{justify-self:end;text-align:right}
+.cashier-login-card .cashier-login-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;min-height:44px}
+.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:44px;padding:10px 0;border:0;border-radius:0;background:transparent;color:#657f0d;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.cashier-login-card .settings-open-trigger{color:#7d837b}
+.cashier-login-card .cashier-switch-cashier{min-height:48px;padding:12px 16px;border:1px solid #cad6ce;border-radius:0;background:#fff;color:#183225;font-weight:700}
+.cashier-login-card .cashier-switch-blocked{margin:2px 0 0;color:#5f675f;font-size:14px;line-height:1.45;text-align:center}
+.cashier-login-error{color:#a62d2d;background:#fff0f0;padding:12px;border-radius:0}
 
-.upsell-card{margin:10px 12px 0;padding:11px 12px;border:1px solid #b9d983;border-left:4px solid var(--rp-green);border-radius:8px;background:#f1f8df;color:var(--rp-ink)}
+
+.upsell-card{margin:10px 12px 0;padding:11px 12px;border:1px solid #b9d983;border-left:4px solid var(--rp-green);border-radius:0;background:#f1f8df;color:var(--rp-ink)}
 .upsell-card>small{color:#5a7406;font-size:9px;font-weight:800;letter-spacing:.08em}
 .upsell-card>p{margin:6px 0 9px;color:#4d5c36;font-size:11px;line-height:1.35}
 .upsell-card-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
@@ -72,47 +99,3 @@
 .cashier-login-card .cashier-login-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;min-height:28px}
 .cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:28px;padding:3px 0;border:0;background:transparent;color:#657f0d;font-size:10px;text-decoration:underline;text-underline-offset:3px}
 .cashier-login-card .settings-open-trigger{color:#7d837b}
-
-.work-schedule{display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:12px;align-items:start}
-.schedule-upcoming,.schedule-month{min-width:0}
-.schedule-upcoming h3,.schedule-month h3{font-size:13px}
-.schedule-upcoming>article{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid #eceeea;font-size:10px}
-.schedule-upcoming>article:last-child{border-bottom:0}
-.schedule-upcoming article div{display:flex;flex-direction:column;gap:3px}
-.schedule-upcoming article small,.schedule-month header p{color:var(--rp-muted);font-size:9px}
-.schedule-upcoming article strong{font-size:9px;text-align:right}
-.schedule-month>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.schedule-month>header>small{color:var(--rp-muted);font-size:9px}
-.schedule-grid{min-width:760px;overflow:auto;border:1px solid var(--rp-line)}
-.schedule-grid-row{display:grid;align-items:stretch;min-height:44px;border-bottom:1px solid #eceeea}
-.schedule-grid-row:last-child{border-bottom:0}
-.schedule-grid-row>*{display:flex;align-items:center;justify-content:center;min-width:0;padding:5px 3px;border-right:1px solid #eceeea;font-size:9px;text-align:center}
-.schedule-grid-row>*:first-child{justify-content:flex-start;padding-left:10px;text-align:left}
-.schedule-grid-row>*:last-child{border-right:0}
-.schedule-grid-header{min-height:50px;background:#f4f6f2;color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase}
-.schedule-grid-header span{flex-direction:column;gap:2px}
-.schedule-grid-header span b{color:var(--rp-ink);font-size:9px}
-.schedule-mark{background:var(--rp-green-soft);color:#56720a;font-weight:800}
-@media(max-width:1180px){
-  .work-schedule{grid-template-columns:1fr}
-  .schedule-grid{min-width:760px}
-}
-
-.warehouse-workspace{display:grid;gap:14px}
-.warehouse-actions{align-items:center}
-.warehouse-actions>div{margin-right:auto}
-.delivery-list>header{display:flex;align-items:center;justify-content:space-between}
-.delivery-list>header small{color:var(--rp-muted)}
-.delivery-card{border:1px solid var(--rp-line);border-radius:10px;margin-top:8px;overflow:hidden}
-.delivery-summary{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(180px,1.2fr);gap:12px;width:100%;padding:12px;background:#fff;border:0;text-align:left;cursor:pointer}
-.delivery-summary div{display:grid;gap:3px}
-.delivery-summary small,.delivery-summary span{color:var(--rp-muted);font-size:11px}
-.delivery-detail{display:grid;gap:8px;padding:10px 12px;background:#f8faf7;border-top:1px solid var(--rp-line)}
-.delivery-detail>div{display:flex;justify-content:space-between;gap:12px}
-.delivery-detail>button{justify-self:start}
-.warehouse-search{display:flex;align-items:center;gap:8px;margin:10px 0}
-.warehouse-search input{flex:1;min-height:38px}
-.receive-line{display:grid;grid-template-columns:1fr 100px 36px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--rp-line)}
-.receive-line div{display:grid;gap:3px}
-.receive-line small{color:var(--rp-muted)}
-.receive-line button{min-height:36px}
