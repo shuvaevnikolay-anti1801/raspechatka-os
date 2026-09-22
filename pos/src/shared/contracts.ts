@@ -124,6 +124,9 @@ export type BootState = {
   accessRevoked: boolean
   online: boolean
   pendingSync: number
+  masterDataError?: string
+  documentQueueError?: string
+  documentQueueSynced?: boolean
   lastSyncAt?: string
   source: 'demo' | 'frappe'
   shift: Shift | null
@@ -441,5 +444,6 @@ export type PosApi = {
   verifyAdminCode: (code:string) => Promise<boolean>
   resetCashierPin: (cashierId:string,adminCode:string,newPin:string,confirmation:string) => Promise<void>
   setUpsellCursor: (triggerItem:string,cursor:number) => Promise<void>
+  syncConfiguration: () => Promise<BootState>
   syncNow: () => Promise<BootState>
 }
