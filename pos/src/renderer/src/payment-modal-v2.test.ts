@@ -67,7 +67,7 @@ describe('payment modal stage 3 presentation',()=>{
   })
 
   it('renders equal method tiles with explicit active and unavailable states',()=>{
-    expect(css).toContain('grid-template-columns:repeat(5,minmax(0,1fr))')
+    expect(css).toContain('grid-template-columns:repeat(3,minmax(0,1fr))')
     expect(source).toContain("className={choice==='cash'?'active':''}")
     expect(source).toContain("className={choice==='card'?'active':''}")
     expect(source).toContain("className={choice==='qr'?'active':''}")
