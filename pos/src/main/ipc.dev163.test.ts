@@ -28,6 +28,16 @@ vi.mock('./sync',()=>({
   performSync:syncMocks.full,
 }))
 
+vi.mock('./connection',()=>({ConnectionStore:class {}}))
+vi.mock('./database',()=>({PosDatabase:class {}}))
+vi.mock('./diagnostics',()=>({PosDiagnostics:class {}}))
+vi.mock('./print-jobs',()=>({CommodityPrintQueue:class {}}))
+vi.mock('./shift-coordinator',()=>({ShiftCoordinator:class {}}))
+vi.mock('./transaction-engine',()=>({PosTransactionEngine:class {}}))
+vi.mock('./cashier-auth',()=>({CashierAuthSession:class {}}))
+vi.mock('./pos-lifecycle',()=>({PosLifecycleStore:class {}}))
+vi.mock('./frappe',()=>({getPointReceipt:vi.fn()}))
+
 import { assertConnectionIdentityChangeAllowed, registerIpcHandlers } from './ipc'
 
 const register=()=>{
