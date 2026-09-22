@@ -791,10 +791,41 @@ def _ingest_stock_receipt(event_id, payload, connection, cashier_id):
 	doc.submit()
 
 
+_SUPPORTED_PUSH_EVENT_TYPES = {
+	"shift.opened",
+	"shift.closed",
+	"sale.completed",
+	"sale.returned",
+	"cash.deposited",
+	"cash.withdrawn",
+	"cash.counted",
+	"stock.write_off.requested",
+	"point.supply.requested",
+	"stock.receipt.requested",
+	"order.created",
+	"order.updated",
+}
+
+
+def _push_event_error_message(exc):
+	"""Return a concise client-safe validation message without internal details."""
+	safe_types = tuple(
+		exception_type
+		for exception_type in (
+			getattr(frappe, "ValidationError", None),
+			getattr(frappe, "PermissionError", None),
+		)
+		if isinstance(exception_type, type)
+	)
+	message = str(exc) if safe_types and isinstance(exc, safe_types) else _("Не удалось обработать событие")
+	message = " ".join(str(message or "").split())
+	return (message or _("Событие отклонено"))[:300]
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
-	"""POS outbox ingestion with correct receipt-level discount allocation."""
+	"""POS outbox ingestion with event-level rollback and partial acceptance."""
 	connection = base_pos._authenticate(device_id, token)
 	employees = base_pos._point_employees(connection.business_point)
 	events = frappe.parse_json(events) if isinstance(events, str) else (events or [])
@@ -803,66 +834,83 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 	if len(events) > 100:
 		frappe.throw(_("За один запрос можно передать не более 100 событий"))
 	accepted = []
+	errors = []
 	try:
-		for event in events:
-			event_id = str(event.get("id") or "").strip()
-			event_type = str(event.get("eventType") or "").strip()
-			payload = _normalize_v2_payload(event.get("payload") or {})
-			if event.get("createdAt"):
-				_normalize_v2_payload({"createdAt": event.get("createdAt")})
-			selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)
-			if not event_id or not event_type:
-				frappe.throw(_("В событии отсутствует id или eventType"))
-			if not selected:
-				frappe.throw(_("Кассир события не назначен на текущую точку"))
-			stats = {"created": 0, "duplicates": 0, "errors": []}
-			if event_type == "shift.opened":
-				sales_api._ingest_shift(base_pos._shift(payload, selected["id"]), connection, stats)
-			elif event_type == "shift.closed":
-				sales_api._ingest_shift(
-					base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True
+		for index, event in enumerate(events):
+			event_id = ""
+			event_type = ""
+			save_point = f"pos_event_{index}"
+			frappe.db.savepoint(save_point)
+			try:
+				if not isinstance(event, dict):
+					frappe.throw(_("Событие должно быть объектом"))
+				event_id = str(event.get("id") or "").strip()
+				event_type = str(event.get("eventType") or "").strip()
+				if not event_id or not event_type:
+					frappe.throw(_("В событии отсутствует id или eventType"))
+				if event_type not in _SUPPORTED_PUSH_EVENT_TYPES:
+					frappe.throw(_("Неподдерживаемый тип события: {0}").format(event_type))
+				payload = _normalize_v2_payload(event.get("payload") or {})
+				if event.get("createdAt"):
+					_normalize_v2_payload({"createdAt": event.get("createdAt")})
+				selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)
+				if not selected:
+					frappe.throw(_("Кассир события не назначен на текущую точку"))
+				stats = {"created": 0, "duplicates": 0, "errors": []}
+				if event_type == "shift.opened":
+					sales_api._ingest_shift(base_pos._shift(payload, selected["id"]), connection, stats)
+				elif event_type == "shift.closed":
+					sales_api._ingest_shift(
+						base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True
+					)
+				elif event_type == "sale.completed":
+					receipt, review_count = _sale_receipt(payload, selected["id"], connection)
+					sales_api._ingest_receipt(receipt, connection, stats)
+					if review_count:
+						name = frappe.db.get_value("Sales Receipt", {"external_id": payload.get("id")}, "name")
+						if name:
+							doc = frappe.get_doc("Sales Receipt", name)
+							log_cashier_action(
+								doc,
+								"REVIEW_RECEIVED",
+								external_id=f"{payload.get('id')}:reviews",
+								metric_value=review_count,
+							)
+							update_shift_totals(doc.shift)
+				elif event_type == "sale.returned":
+					sales_api._ingest_receipt(
+						base_pos._return_receipt(payload, selected["id"]), connection, stats
+					)
+				elif event_type == "cash.deposited":
+					sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Deposit"), connection, stats)
+				elif event_type == "cash.withdrawn":
+					sales_api._ingest_cash(
+						base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats
+					)
+				elif event_type == "cash.counted":
+					_ingest_cash_count(event_id, payload, connection, selected["id"])
+				elif event_type == "stock.write_off.requested":
+					_ingest_stock_write_off(event_id, payload, connection, selected["id"])
+				elif event_type == "point.supply.requested":
+					_ingest_supply_request(event_id, payload, connection, selected["id"])
+				elif event_type == "stock.receipt.requested":
+					_ingest_stock_receipt(event_id, payload, connection, selected["id"])
+				elif event_type in ("order.created", "order.updated"):
+					base_pos._ingest_order(event_type, event_id, connection, payload)
+				accepted.append(event_id)
+			except Exception as exc:
+				frappe.db.rollback(save_point=save_point)
+				errors.append(
+					{
+						"id": event_id,
+						"eventType": event_type,
+						"message": _push_event_error_message(exc),
+					}
 				)
-			elif event_type == "sale.completed":
-				receipt, review_count = _sale_receipt(payload, selected["id"], connection)
-				sales_api._ingest_receipt(receipt, connection, stats)
-				if review_count:
-					name = frappe.db.get_value("Sales Receipt", {"external_id": payload.get("id")}, "name")
-					if name:
-						doc = frappe.get_doc("Sales Receipt", name)
-						log_cashier_action(
-							doc,
-							"REVIEW_RECEIVED",
-							external_id=f"{payload.get('id')}:reviews",
-							metric_value=review_count,
-						)
-						update_shift_totals(doc.shift)
-			elif event_type == "sale.returned":
-				sales_api._ingest_receipt(
-					base_pos._return_receipt(payload, selected["id"]), connection, stats
-				)
-			elif event_type == "cash.deposited":
-				sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Deposit"), connection, stats)
-			elif event_type == "cash.withdrawn":
-				sales_api._ingest_cash(
-					base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats
-				)
-			elif event_type == "cash.counted":
-				_ingest_cash_count(event_id, payload, connection, selected["id"])
-			elif event_type == "stock.write_off.requested":
-				_ingest_stock_write_off(event_id, payload, connection, selected["id"])
-			elif event_type == "point.supply.requested":
-				_ingest_supply_request(event_id, payload, connection, selected["id"])
-			elif event_type == "stock.receipt.requested":
-				_ingest_stock_receipt(event_id, payload, connection, selected["id"])
-			elif event_type in ("order.created", "order.updated"):
-				base_pos._ingest_order(event_type, event_id, connection, payload)
-			else:
-				continue
-			accepted.append(event_id)
 		connection.app_version = app_version or connection.app_version
 		connection.last_sync_at = now_datetime()
 		base_pos._touch(connection)
-		return {"accepted": accepted}
+		return {"accepted": accepted, "errors": errors}
 	except Exception as exc:
 		base_pos._touch(connection, exc)
 		raise
