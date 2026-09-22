@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import SettingsHub, {
+  buildSettingsStatusItems,
   SETTINGS_OPEN_TRIGGER_SELECTOR,
   SettingsAdminGate,
   resolveSettingsAdminGate,
@@ -59,6 +60,24 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(markup).not.toContain('API key')
     expect(markup).not.toContain('API secret')
     expect(markup).not.toContain('Код рабочего места')
+  })
+
+  it('keeps only four technical status tiles and leaves shift state out of this grid',()=>{
+    const items=buildSettingsStatusItems({
+      os:{ready:true,message:'OS'},
+      fiscal:{ready:true,message:'ККТ'},
+      payment:{ready:true,message:'Эквайринг'},
+      printer:{ready:true,message:'Принтер'},
+      shift:{ready:true,message:'Смена открыта'},
+    } as any)
+    expect(items.map(([label])=>label)).toEqual(['OS','ККТ','Эквайринг','Принтер'])
+    expect(items.flat()).not.toContain('Смена')
+  })
+
+  it('does not expose the legacy Web Requests setup assistant in Settings UI',()=>{
+    const markup=renderToStaticMarkup(<SettingsHub initialOpen/>)
+    expect(markup).not.toContain('Первичная настройка Web Requests')
+    expect(markup).not.toContain('Настроить АТОЛ 1Ф автоматически')
   })
 
   it('keeps diagnostics in the full hub',()=>{
