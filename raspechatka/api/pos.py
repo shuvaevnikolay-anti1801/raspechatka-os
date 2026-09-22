@@ -424,7 +424,9 @@ def _order_source_receipt(point_name, source_sale_id):
 
 
 def _apply_order_created(event_id, workplace, payload):
-	if not _doctype_exists("POS Order") or frappe.db.exists("POS Order", {"source_pos_event": event_id}):
+	if not _doctype_exists("POS Order"):
+		frappe.throw("POS Order недоступен для синхронизации")
+	if frappe.db.exists("POS Order", {"source_pos_event": event_id}):
 		return
 	status = {
 		"new": "New",
