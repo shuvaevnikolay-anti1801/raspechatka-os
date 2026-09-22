@@ -24,6 +24,7 @@ type CurrentReceiptProps={
   allowDiscounts:boolean
   reviewUnitMinor:number
   reviewCount:number
+  reviewDiscountMinor:number
   maxReviews:number
   onReviewCountChange:(count:number)=>void
   manualDiscount:ManualDiscount|null
@@ -44,7 +45,7 @@ type CurrentReceiptProps={
 export default function CurrentReceipt({
   lines,customer,clubPercent,allowFreePrice,onClear,onOpenCustomer,onRemoveCustomer,
   onOverridePrice,onChangeQuantity,onSetQuantity,upsell,onAcceptUpsell,onDismissUpsell,
-  allowDiscounts,reviewUnitMinor,reviewCount,maxReviews,onReviewCountChange,
+  allowDiscounts,reviewUnitMinor,reviewCount,reviewDiscountMinor,maxReviews,onReviewCountChange,
   manualDiscount,manualDiscountMinor,onOpenManualDiscount,clubDiscountMinor,
   hasProtectedItems,subtotalMinor,totalDiscountMinor,totalMinor,shiftOpen,
   onOpenShift,onHold,onCreateOrder,onPay,
@@ -95,7 +96,7 @@ export default function CurrentReceipt({
           <input aria-label="Количество отзывов" type="number" min="0" max={maxReviews} step="1" value={reviewCount} disabled={!allowDiscounts||reviewUnitMinor<=0} onChange={(event)=>onReviewCountChange(Math.max(0,Math.floor(Number(event.target.value)||0)))}/>
           <button disabled={!allowDiscounts} onClick={()=>onReviewCountChange(reviewCount+1)}>+</button>
         </div>
-        <strong>{reviewUnitMinor&&reviewCount?`− ${formatMoney(reviewUnitMinor*reviewCount)}`:'—'}</strong>
+        <strong>{reviewDiscountMinor?`− ${formatMoney(reviewDiscountMinor)}`:'—'}</strong>
       </div>
       <div className="review-discount-row">
         <div><span>Доп. скидка{manualDiscount?.type==='percent'?` ${manualDiscount.value}%`:''}</span><small>Ограничена настройками точки</small></div>
