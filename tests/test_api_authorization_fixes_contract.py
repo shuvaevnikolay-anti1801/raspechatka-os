@@ -90,4 +90,3 @@ def test_inventory_mentions_every_whitelisted_endpoint():
 		if module.split(".")[-1] not in inventory:
 			missing_modules.append(module)
 	assert missing_modules == []
-
