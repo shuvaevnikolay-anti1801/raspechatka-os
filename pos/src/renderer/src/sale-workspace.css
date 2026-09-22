@@ -164,8 +164,8 @@
 .current-receipt .current-receipt-line{
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;
-  gap:10px 12px;
-  padding:14px clamp(14px,4cqi,22px);
+  gap:8px 12px;
+  padding:12px clamp(14px,4cqi,22px);
   border-bottom:1px solid #e1e4df;
 }
 .current-receipt .receipt-line-description{min-width:0}
@@ -200,7 +200,7 @@
   flex:0 1 auto;
   max-height:48%;
   overflow:auto;
-  padding:12px clamp(14px,4cqi,22px) clamp(14px,4cqi,22px);
+  padding:10px clamp(14px,4cqi,22px) clamp(14px,4cqi,22px);
   border-top:1px solid #d8dcd5;
 }
 .current-receipt .current-receipt-footer :is(.subtotal,.review-discount-row){font-size:clamp(.8rem,2.5cqi,.94rem)}
