@@ -4,6 +4,7 @@ import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import { formatPersonShortName } from './person-name'
 import { formatMoney } from './money'
+import { PinEntryLayout, PinInput } from './PinEntry'
 import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
@@ -297,9 +298,20 @@ export default function AppV2(){
   </div>
 }
 
-export function PinInput({value,onChange,autoFocus=false,ariaLabel}:{value:string;onChange:(value:string)=>void;autoFocus?:boolean;ariaLabel:string}){
-  const numeric=(next:string)=>next.replace(/\D/g,'').slice(0,4)
-  return <div className="pin-input" data-filled={value.length>0}><input className="cashier-pin-input pin-input-control" autoFocus={autoFocus} type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={value} aria-label={ariaLabel} onChange={(event)=>onChange(numeric(event.target.value))}/><div className="pin-input-slots" aria-hidden="true">{[0,1,2,3].map((slot)=><span className={slot<value.length?'filled':''} key={slot}>{slot<value.length?'•':''}</span>)}</div></div>
+
+
+export const cashierResetEmployeeId=(auth:CashierAuthState,selectedEmployeeId:string):string=>
+  auth.status==='locked'?(auth.employee?.id||''):selectedEmployeeId
+
+export const lockedCashierCanSwitch=(auth:CashierAuthState):boolean=>
+  auth.status==='locked'&&!auth.openShiftCashierId&&!auth.openShiftCashierName
+
+export async function runLockedCashierSwitch(
+  logoutCashier:()=>Promise<unknown>,
+  refresh:()=>Promise<void>,
+):Promise<void>{
+  await logoutCashier()
+  await refresh()
 }
 
 export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<void>}){
@@ -312,6 +324,10 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   const [adminCode,setAdminCode]=useState('')
   const [error,setError]=useState('')
   const selected=boot.employees.find((row)=>row.id===employeeId)||(forced===employeeId?{id:employeeId,name:auth.openShiftCashierName||employeeId}:undefined)
+  const lockedEmployee=auth.employee
+  const resetEmployeeId=cashierResetEmployeeId(auth,employeeId)
+  const openWorkShift=Boolean(auth.openShiftCashierId||auth.openShiftCashierName)
+  const canSwitchCashier=lockedCashierCanSwitch(auth)
   const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setError('');if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setError(e instanceof Error?e.message:String(e))}}}
   useEffect(()=>{if(forced)void choose(forced)},[forced])
   const submit=async()=>{try{
@@ -320,20 +336,41 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
     else await window.raspechatkaPos.loginCashier(employeeId,pin)
     await onAuthenticated()
   }catch(e){setError(e instanceof Error?e.message:String(e));setPin('');setConfirmation('')}}
-  const reset=async()=>{try{await window.raspechatkaPos.resetCashierPin(employeeId,adminCode,pin,confirmation);setAdminReset(false);setAdminCode('');setSetup(false);setError('PIN изменён. Теперь войдите с новым PIN.');setPin('');setConfirmation('')}catch(e){setError(e instanceof Error?e.message:String(e))}}
-  const lockedEmployee=auth.employee
+  const reset=async()=>{try{
+    if(!resetEmployeeId)throw new Error('Не удалось определить кассира для сброса PIN')
+    await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)
+    setAdminReset(false);setAdminCode('');setSetup(false);setError('PIN изменён. Теперь войдите с новым PIN.');setPin('');setConfirmation('')
+  }catch(e){setError(e instanceof Error?e.message:String(e))}}
+  const switchCashier=async()=>{try{
+    await runLockedCashierSwitch(
+      ()=>window.raspechatkaPos.logoutCashier(),
+      async()=>{
+        setEmployeeId('');setPin('');setConfirmation('');setAdminReset(false);setAdminCode('');setSetup(false);setError('')
+        await onAuthenticated()
+      },
+    )
+  }catch(e){setError(e instanceof Error?e.message:String(e))}}
+  const footerLeft=<button className="settings-open-trigger" type="button">Настройки кассы</button>
+  const footerRight=!setup&&!adminReset
+    ?<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>
+    :undefined
   return <main className="cashier-login-screen"><section className="cashier-login-card">
     {auth.status==='locked'&&<small>КАССА ЗАБЛОКИРОВАНА</small>}<h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
     {forced&&<p>После перезапуска открытую смену может продолжить только <b>{formatPersonShortName(auth.openShiftCashierName)}</b>.</p>}
     {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>)}</div>}
     {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
-    {(selected||lockedEmployee)&&<form onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
-      {adminReset&&<label><span>Код администратора</span><PinInput autoFocus value={adminCode} onChange={setAdminCode} ariaLabel="Код администратора · 4 цифры"/></label>}
-      <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
-      {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
-      {error&&<div className="cashier-login-error">{error}</div>}
-      {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
-      <div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button>{auth.status!=='locked'&&!setup&&!adminReset&&<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setError('')}}>Забыли PIN?</button>}</div>
+    {(selected||lockedEmployee)&&<form className="cashier-pin-form" onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
+      <PinEntryLayout footerLeft={footerLeft} footerRight={footerRight}>
+        <div className="cashier-pin-fields">
+          {adminReset&&<label><span>Код администратора</span><PinInput autoFocus value={adminCode} onChange={setAdminCode} ariaLabel="Код администратора · 4 цифры"/></label>}
+          <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
+          {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
+          {error&&<div className="cashier-login-error">{error}</div>}
+          {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
+          {auth.status==='locked'&&canSwitchCashier&&<button className="cashier-switch-cashier" type="button" onClick={()=>void switchCashier()}>Сменить кассира</button>}
+          {auth.status==='locked'&&openWorkShift&&<p className="cashier-switch-blocked">Чтобы сменить кассира, разблокируйте текущего кассира и закройте смену.</p>}
+        </div>
+      </PinEntryLayout>
     </form>}
     {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button></div>}
   </section></main>
