@@ -7,21 +7,44 @@ from raspechatka.raspechatka_os.doctype.client import client
 
 class TestClientIdSeries(TestCase):
 	def test_sync_advances_series_to_existing_max(self):
-		db = SimpleNamespace(sql=Mock(side_effect=[[(250,)], []]))
-		with patch.object(client, "frappe", SimpleNamespace(db=db)):
+		db = SimpleNamespace(sql=Mock(return_value=[(250,)]))
+		series = Mock()
+		series.get_current_value.return_value = 200
+		with (
+			patch.object(client, "frappe", SimpleNamespace(db=db)),
+			patch.object(client, "NamingSeries", return_value=series) as naming_series,
+		):
 			result = client.sync_client_id_series(200)
 
 		self.assertEqual(result, 250)
-		self.assertEqual(db.sql.call_count, 2)
-		self.assertEqual(db.sql.call_args_list[1].args[1], ("RP-", 250))
+		naming_series.assert_called_once_with("RP-.######")
+		series.update_counter.assert_called_once_with(250)
 
 	def test_sync_respects_higher_explicit_id(self):
-		db = SimpleNamespace(sql=Mock(side_effect=[[(250,)], []]))
-		with patch.object(client, "frappe", SimpleNamespace(db=db)):
+		db = SimpleNamespace(sql=Mock(return_value=[(250,)]))
+		series = Mock()
+		series.get_current_value.return_value = 250
+		with (
+			patch.object(client, "frappe", SimpleNamespace(db=db)),
+			patch.object(client, "NamingSeries", return_value=series),
+		):
 			result = client.sync_client_id_series(900)
 
 		self.assertEqual(result, 900)
-		self.assertEqual(db.sql.call_args_list[1].args[1], ("RP-", 900))
+		series.update_counter.assert_called_once_with(900)
+
+	def test_sync_never_moves_series_backwards(self):
+		db = SimpleNamespace(sql=Mock(return_value=[(250,)]))
+		series = Mock()
+		series.get_current_value.return_value = 1200
+		with (
+			patch.object(client, "frappe", SimpleNamespace(db=db)),
+			patch.object(client, "NamingSeries", return_value=series),
+		):
+			result = client.sync_client_id_series(900)
+
+		self.assertEqual(result, 1200)
+		series.update_counter.assert_not_called()
 
 	def test_next_client_id_resyncs_after_collision(self):
 		db = SimpleNamespace(exists=Mock(side_effect=[True, False]))
