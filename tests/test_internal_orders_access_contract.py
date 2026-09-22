@@ -8,11 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_internal_orders_registry_is_unique_under_warehouse_and_deny_by_default():
 	registry = json.loads((ROOT / "frontend/src/access-pages.json").read_text(encoding="utf-8"))
 	warehouse = next(section for section in registry if section["key"] == "warehouse")
-	pages = [
-		page
-		for page in warehouse["pages"]
-		if page["area"] == "page.warehouse.internal_orders"
-	]
+	pages = [page for page in warehouse["pages"] if page["area"] == "page.warehouse.internal_orders"]
 	assert len(pages) == 1
 	page = pages[0]
 	assert page["label"] == "Внутренние заказы"
