@@ -4,6 +4,7 @@ import SettingsHub, {
   SETTINGS_OPEN_TRIGGER_SELECTOR,
   SettingsAdminGate,
   resolveSettingsAdminGate,
+  saveConnectionWithConfigurationRefresh,
   settingsGateStateAfterVerification,
 } from './SettingsHub'
 
@@ -63,6 +64,18 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     const markup=renderToStaticMarkup(<SettingsHub initialOpen/>)
     expect(markup).toContain('Диагностика')
     expect(markup).toContain('Последние технические события приложения.')
+  })
+
+  it('uses configuration refresh after admin connection save without full sync',async()=>{
+    const calls:string[]=[]
+    const api:any={
+      saveConnection:async()=>{calls.push('save')},
+      syncConfiguration:async()=>{calls.push('configuration');return {pointId:'point',pointName:'Point'}},
+      syncNow:async()=>{calls.push('full');return {}},
+    }
+    await expect(saveConnectionWithConfigurationRefresh(api,{serverUrl:'https://example.test',deviceId:'POS-1',token:'token'}))
+      .resolves.toMatchObject({pointId:'point'})
+    expect(calls).toEqual(['save','configuration'])
   })
 
   it('does not render obsolete POS Ready controls or copy',()=>{
