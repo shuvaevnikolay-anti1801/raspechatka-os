@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
-  CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
+  BankingEvidence, CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
   CashCount, CashCountLine, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
   SaleDetails, SaleSummary, Shift, ShiftSummary, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, WorkScheduleMonth,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
@@ -107,7 +107,7 @@ export class PosDatabase {
       );
       CREATE TABLE IF NOT EXISTS sale_payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id TEXT NOT NULL, method TEXT NOT NULL,
-        amount_minor INTEGER NOT NULL, transaction_id TEXT,
+        amount_minor INTEGER NOT NULL, transaction_id TEXT, banking_evidence_json TEXT,
         FOREIGN KEY (sale_id) REFERENCES sales(id)
       );
       CREATE TABLE IF NOT EXISTS returns (
@@ -123,7 +123,7 @@ export class PosDatabase {
       );
       CREATE TABLE IF NOT EXISTS return_payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT, return_id TEXT NOT NULL, method TEXT NOT NULL,
-        amount_minor INTEGER NOT NULL, transaction_id TEXT,
+        amount_minor INTEGER NOT NULL, transaction_id TEXT, banking_evidence_json TEXT,
         FOREIGN KEY (return_id) REFERENCES returns(id)
       );
       CREATE TABLE IF NOT EXISTS cash_operations (
@@ -169,6 +169,8 @@ export class PosDatabase {
       CREATE INDEX IF NOT EXISTS idx_receipt_mirror_point_created ON receipt_mirror(point_id,created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
     `)
+    this.ensureColumn('sale_payments', 'banking_evidence_json', 'TEXT')
+    this.ensureColumn('return_payments', 'banking_evidence_json', 'TEXT')
     this.ensureColumn('products', 'item_type', "TEXT NOT NULL DEFAULT 'service'")
     this.ensureColumn('products', 'uom', "TEXT NOT NULL DEFAULT 'шт'")
     this.ensureColumn('products', 'barcode', 'TEXT')
@@ -321,8 +323,9 @@ export class PosDatabase {
         const allocated=index===input.lines.length-1?input.totalMinor-Math.round(input.totalMinor*lineRaw.slice(0,index).reduce((s,x)=>s+x,0)/(rawTotal||1)):Math.round(input.totalMinor*lineRaw[index]/(rawTotal||1))
         insertLine.run(input.id,line.productId,line.name,line.quantity,line.unitPriceMinor,line.discountPercent??0,allocated)
       })
-      const pay=this.db.prepare('INSERT INTO sale_payments (sale_id,method,amount_minor,transaction_id) VALUES (?,?,?,?)')
-      input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null))
+      const pay=this.db.prepare('INSERT INTO sale_payments (sale_id,method,amount_minor,transaction_id,banking_evidence_json) VALUES (?,?,?,?,?)')
+      input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null,
+        x.bankingEvidence?JSON.stringify(x.bankingEvidence):null))
       const reduceStock=this.db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND track_inventory=1')
       input.lines.forEach((x)=>reduceStock.run(x.quantity,x.productId))
       this.queue('sale.completed',input,input.createdAt)
@@ -382,7 +385,13 @@ export class PosDatabase {
     const lines=this.db.prepare(`SELECT sale_items.id,product_id productId,name,quantity,unit_price_minor unitPriceMinor,
       discount_percent discountPercent,COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
       FROM sale_items WHERE sale_id=? ORDER BY id`).all(id) as unknown as SaleDetails['lines']
-    const payments=this.db.prepare('SELECT method,amount_minor amountMinor,transaction_id transactionId FROM sale_payments WHERE sale_id=? ORDER BY id').all(id) as PaymentPart[]
+    const payments=(this.db.prepare(`SELECT method,amount_minor amountMinor,transaction_id transactionId,
+      banking_evidence_json bankingEvidenceJson FROM sale_payments WHERE sale_id=? ORDER BY id`).all(id) as
+      Array<PaymentPart&{bankingEvidenceJson?:string|null}>).map(({bankingEvidenceJson,...payment})=>({
+        ...payment,
+        transactionId:payment.transactionId||undefined,
+        bankingEvidence:this.parseBankingEvidence(bankingEvidenceJson)
+      }))
     const rawRemote=(this.db.prepare('SELECT remote_payment_confirmation_json value FROM sales WHERE id=?').get(id) as {value:string|null}|undefined)?.value
     return {...sale,lines,payments,remotePaymentConfirmation:rawRemote?JSON.parse(rawRemote) as RemotePaymentConfirmation:undefined}
   }
@@ -437,6 +446,12 @@ export class PosDatabase {
     }catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
+  getReturnedPaymentMinor(saleId:string,method:PaymentPart['method']):number {
+    return Number((this.db.prepare(`SELECT COALESCE(SUM(return_payments.amount_minor),0) value
+      FROM return_payments JOIN returns ON returns.id=return_payments.return_id
+      WHERE returns.sale_id=? AND return_payments.method=?`).get(saleId,method) as {value:number}).value)
+  }
+
   findReturnByClientRequestId(id:string):{returnId:string;receiptNumber:string;totalMinor:number}|null {
     return (this.db.prepare('SELECT id returnId,fiscal_number receiptNumber,total_minor totalMinor FROM returns WHERE client_request_id=?').get(id) as {returnId:string;receiptNumber:string;totalMinor:number}|undefined)??null
   }
@@ -448,8 +463,9 @@ export class PosDatabase {
         .run(input.id,input.clientRequestId,input.saleId,input.shiftId,input.totalMinor,input.fiscalNumber,input.createdAt)
       const line=this.db.prepare('INSERT INTO return_items (return_id,sale_item_id,quantity,line_total_minor) VALUES (?,?,?,?)')
       input.lines.forEach((x)=>line.run(input.id,x.saleItemId,x.quantity,x.lineTotalMinor))
-      const pay=this.db.prepare('INSERT INTO return_payments (return_id,method,amount_minor,transaction_id) VALUES (?,?,?,?)')
-      input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null))
+      const pay=this.db.prepare('INSERT INTO return_payments (return_id,method,amount_minor,transaction_id,banking_evidence_json) VALUES (?,?,?,?,?)')
+      input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null,
+        x.bankingEvidence?JSON.stringify(x.bankingEvidence):null))
       const restoreStock=this.db.prepare(`UPDATE products SET stock=stock+? WHERE id=(
         SELECT product_id FROM sale_items WHERE id=?) AND track_inventory=1`)
       input.lines.forEach((x)=>restoreStock.run(x.quantity,x.saleItemId))
@@ -609,6 +625,11 @@ export class PosDatabase {
       total_minor totalMinor,paid_minor paidMinor,status,comment,created_at createdAt,due_at dueAt,ready_at readyAt,issued_at issuedAt,
       source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 5000`).all() as any[])
       .map((x)=>({...x,lines:JSON.parse(x.lines),paymentStatus:x.paidMinor>=x.totalMinor?'paid':x.paidMinor>0?'partial':'unpaid'})) as Order[]
+  }
+
+  private parseBankingEvidence(value:string|null|undefined):BankingEvidence|undefined {
+    if(!value)return undefined
+    try{return JSON.parse(value) as BankingEvidence}catch{return undefined}
   }
 
   private createPaidOrderFromSaleSnapshot(
