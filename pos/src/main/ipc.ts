@@ -208,9 +208,9 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>{assertCashierAccess();return database.saveCashCount(countType,lines)})
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
   ipcMain.handle('pos:list-orders',()=>database.listOrders())
-  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{assertCashierAccess();return database.createUnpaidOrder(request)})
-  ipcMain.handle('pos:create-order-from-sale',(_event,request:CreateOrderFromSaleRequest)=>{assertCashierAccess();return database.createOrderFromSale(request)})
-  ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>{assertCashierAccess();return database.updateOrder(request)})
+  ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{const cashier=assertCashierAccess();return database.createUnpaidOrder(request,cashier.id)})
+  ipcMain.handle('pos:create-order-from-sale',(_event,request:CreateOrderFromSaleRequest)=>{const cashier=assertCashierAccess();return database.createOrderFromSale(request,cashier.id)})
+  ipcMain.handle('pos:update-order',(_event,request:UpdateOrderRequest)=>{const cashier=assertCashierAccess();return database.updateOrder(request,cashier.id)})
 
   ipcMain.handle('pos:open-shift',async():Promise<Shift>=>{
     const cashier=assertCashierAccess()
