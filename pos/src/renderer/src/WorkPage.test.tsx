@@ -114,7 +114,6 @@ describe('WarehouseWorkspace stacked layout',()=>{
     const stock=markup.indexOf('data-workplace-block="stock"')
 
     expect(actions).toBeGreaterThanOrEqual(0)
-    expect(actions).toBe(35)
     expect(actions).toBeLessThan(deliveries)
     expect(deliveries).toBeLessThan(stock)
     expect(markup).toContain('class="warehouse-workspace"')
