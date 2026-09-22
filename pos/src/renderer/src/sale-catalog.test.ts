@@ -63,6 +63,18 @@ describe('workstation favorites',()=>{
     expect(filterSaleProducts(products,FAVORITES_CATEGORY,'poster',['p-1','p-2'])).toEqual([])
   })
 
+  it('uses a deterministic long-name structure without square tile forcing',()=>{
+    const source=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
+    const css=readFileSync(new URL('./sale-workspace.css',import.meta.url),'utf8')
+    expect(source).toContain('className="product-card-name"')
+    expect(source).toContain('className="product-card-meta"')
+    expect(source).toContain('className="product-card-price"')
+    expect(source).toContain('className="product-card-stock"')
+    expect(css).toContain('-webkit-line-clamp:3')
+    expect(css).toContain('overflow-wrap:anywhere')
+    expect(css).not.toContain('aspect-ratio')
+  })
+
   it('contains no product image or placeholder-image markup',()=>{
     const source=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
     expect(source).not.toMatch(/<img|backgroundImage|placeholder-image|product-image/i)
