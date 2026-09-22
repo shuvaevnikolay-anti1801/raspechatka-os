@@ -52,6 +52,21 @@ class TestPosOrders(TestCase):
 		self.assertEqual(doc.status, "Ready")
 		doc.save.assert_called_once_with(ignore_permissions=True)
 
+	def test_order_create_rejects_when_canonical_doctype_is_unavailable(self):
+		def throw(message, exception=None):
+			raise (exception or RuntimeError)(message)
+
+		with (
+			patch.object(pos, "_doctype_exists", return_value=False),
+			patch.object(pos, "frappe", SimpleNamespace(throw=throw)),
+		):
+			with self.assertRaisesRegex(RuntimeError, "POS Order"):
+				pos._apply_order_created(
+					"EVENT-CREATE",
+					SimpleNamespace(business_point="POINT-1"),
+					{"orderNumber": "ORD-1", "phone": "+79001234567", "lines": []},
+				)
+
 	def test_missing_order_update_is_rejected_instead_of_silently_accepted(self):
 		def throw(message, exception=None):
 			raise (exception or RuntimeError)(message)
