@@ -27,11 +27,22 @@
 .schedule-upcoming{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));column-gap:22px}
 .schedule-upcoming>h3,.schedule-upcoming>p{grid-column:1/-1}
 
-.warehouse-workspace{display:grid;gap:14px}
-.warehouse-actions{align-items:center}
-.warehouse-actions>div{margin-right:auto}
+.warehouse-workspace{display:flex;flex-direction:column;gap:12px;width:100%;min-width:0}
+.warehouse-actions{width:100%;min-height:0;padding:10px 14px;align-items:center;flex-wrap:wrap}
+.warehouse-actions>div{min-width:220px;margin-right:auto}
+.warehouse-actions h2{margin:0}
+.warehouse-actions p{margin-top:2px}
+.warehouse-actions button{min-height:34px}
+.warehouse-deliveries,.warehouse-stock{width:100%;min-width:0;margin:0}
 .delivery-list>header{display:flex;align-items:center;justify-content:space-between}
 .delivery-list>header small{color:var(--rp-muted)}
+.stock-table-scroll{width:100%;overflow-x:auto}
+.stock-table-scroll>header,.stock-table-scroll>div{display:grid;grid-template-columns:minmax(240px,1.3fr) minmax(110px,.45fr) minmax(220px,1fr);align-items:center;gap:14px;min-width:650px;min-height:52px;padding:0 15px;border-bottom:1px solid #eceeea;font-size:10px}
+.stock-table-scroll>header{min-height:38px;background:#f4f6f2;color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase}
+.stock-table-scroll>div>div{display:flex;flex-direction:column;gap:3px}
+.stock-table-scroll small{color:var(--rp-muted);font-size:8px}
+.stock-table-scroll .low{color:var(--rp-danger)}
+.stock-table-scroll>p{padding:12px 15px}
 .delivery-card{border:1px solid var(--rp-line);border-radius:10px;margin-top:8px;overflow:hidden}
 .delivery-summary{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(180px,1.2fr);gap:12px;width:100%;padding:12px;background:#fff;border:0;text-align:left;cursor:pointer}
 .delivery-summary div{display:grid;gap:3px}
@@ -49,4 +60,7 @@
 @media(max-width:900px){
   .schedule-grid{min-width:760px}
   .schedule-upcoming{grid-template-columns:1fr}
+  .warehouse-actions{align-items:flex-start}
+  .warehouse-actions>div{flex-basis:100%;margin-right:0}
+  .delivery-summary{grid-template-columns:1fr}
 }
