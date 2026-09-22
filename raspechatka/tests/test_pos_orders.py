@@ -90,7 +90,10 @@ class TestPosOrders(TestCase):
 
 	def test_delayed_order_event_accepts_cashier_from_current_point(self):
 		fake_frappe = SimpleNamespace(db=SimpleNamespace(get_value=Mock(return_value=None)))
-		with patch.object(pos_v2, "frappe", fake_frappe):
+		with (
+			patch.object(pos_v2, "frappe", fake_frappe),
+			patch.object(pos_v2.base_pos, "frappe", fake_frappe),
+		):
 			selected = pos_v2._trusted_event_cashier(
 				SimpleNamespace(business_point="POINT-1"),
 				[{"id": "EMP-1", "name": "Кассир"}],
@@ -109,7 +112,10 @@ class TestPosOrders(TestCase):
 			throw=throw,
 			PermissionError=PermissionError,
 		)
-		with patch.object(pos_v2, "frappe", fake_frappe):
+		with (
+			patch.object(pos_v2, "frappe", fake_frappe),
+			patch.object(pos_v2.base_pos, "frappe", fake_frappe),
+		):
 			with self.assertRaises(PermissionError):
 				pos_v2._trusted_event_cashier(
 					SimpleNamespace(business_point="POINT-1"),
