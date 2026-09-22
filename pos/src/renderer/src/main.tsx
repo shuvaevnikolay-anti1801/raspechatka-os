@@ -9,6 +9,7 @@ import './styles.css'
 import './cashier-cleanup.css'
 import './pos-v2.css'
 import './sale-workspace.css'
+import './pos-design-system.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
