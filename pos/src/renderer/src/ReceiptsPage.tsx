@@ -370,8 +370,8 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             <input inputMode="decimal" value={draft.amountMax} onChange={(event)=>setDraft({...draft,amountMax:event.target.value})}/>
           </label>
           <div className="receipt-filter-actions">
-            <button type="button" disabled={searching} onClick={clear}>Очистить</button>
-            <button type="submit" className="primary" disabled={searching}>{searching?'Ищем…':'Найти'}</button>
+            <PosButton type="button" variant="secondary" disabled={searching} onClick={clear}>Очистить</PosButton>
+            <PosButton type="submit" variant="primary" disabled={searching}>{searching?'Ищем…':'Найти'}</PosButton>
           </div>
         </div>
       </form>
