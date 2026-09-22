@@ -21,13 +21,10 @@
 
 .customer-list .club-badge{padding:4px 7px;background:var(--rp-green-soft);color:#5a7406!important;font-size:9px!important;white-space:nowrap}
 .customer-list .club-status{color:var(--rp-muted);font-size:9px;white-space:nowrap}
-.pos-v2-metrics{grid-template-columns:repeat(5,minmax(0,1fr))!important}
 
 @media(max-width:1280px){
-  .pos-v2-metrics{grid-template-columns:repeat(3,minmax(0,1fr))!important}
   .receipt-search{grid-template-columns:1fr}
   .receipt-search>div{align-items:flex-start}
-  .receipt-filter-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}
 }
 .cashier-login-screen{min-height:100vh;display:grid;place-items:center;background:#f3f5f1;padding:32px}
 .cashier-login-card{position:relative;width:min(560px,100%);min-height:min(680px,calc(100vh - 64px));display:flex;flex-direction:column;background:#fff;border:1px solid #dce4de;border-radius:0;padding:36px;box-shadow:0 18px 60px #1832251a}

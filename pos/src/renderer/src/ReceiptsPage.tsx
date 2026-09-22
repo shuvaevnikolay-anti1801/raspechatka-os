@@ -1,3 +1,4 @@
+import { PosButton } from './ui/PosButton'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   BootState,
@@ -316,13 +317,13 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
     await onReturn(row.cached)
   }
 
-  return <main className="page receipts-page">
+  return <main className="page records-page receipts-page">
     <div className="page-heading"><h1>Чеки</h1></div>
 
     <section className="receipt-search-page">
       <form onSubmit={(event)=>{event.preventDefault();apply()}}>
         <label className="receipt-search-input">
-          <span>⌕</span>
+          <span aria-hidden="true">⌕</span>
           <input
             value={draft.text}
             onChange={(event)=>setDraft({...draft,text:event.target.value})}
@@ -394,7 +395,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             {receipt.lines.slice(0,4).map((line)=><span key={line.productId}>{line.name} × {line.quantity}</span>)}
             {receipt.lines.length>4&&<span>+ ещё {receipt.lines.length-4}</span>}
           </div>
-          <button onClick={()=>void onRestore(receipt)}>Продолжить</button>
+          <PosButton variant="secondary" onClick={()=>void onRestore(receipt)}>Продолжить</PosButton>
         </article>)}
       </div>
     </section>}
@@ -434,9 +435,9 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
             <span>{paymentLabel||'—'}</span>
             <strong>{formatMoney(summary.totalMinor)}<small>{asStatus(summary.status)}</small></strong>
             <div className="sale-actions" onClick={(event)=>event.stopPropagation()}>
-              <button onClick={()=>void printCommodity(row)}>Товарный чек</button>
-              <button disabled={Boolean(copyReason)} title={copyReason||'Печать точной копии выбранного фискального документа'} onClick={()=>void printFiscalCopy(row)}>Копия чека</button>
-              <button className="danger" disabled={Boolean(returnReason)} title={returnReason||'Оформить возврат по этому чеку'} onClick={()=>void returnReceipt(row)}>Возврат</button>
+              <PosButton variant="secondary" onClick={()=>void printCommodity(row)}>Товарный чек</PosButton>
+              <PosButton variant="secondary" disabled={Boolean(copyReason)} title={copyReason||'Печать точной копии выбранного фискального документа'} onClick={()=>void printFiscalCopy(row)}>Копия чека</PosButton>
+              <PosButton variant="danger" disabled={Boolean(returnReason)} title={returnReason||'Оформить возврат по этому чеку'} onClick={()=>void returnReceipt(row)}>Возврат</PosButton>
             </div>
           </div>
         }):<div className="page-empty">{searching?'Ищем чеки…':'Чеки не найдены'}</div>}

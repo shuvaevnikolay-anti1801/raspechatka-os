@@ -1,3 +1,4 @@
+import { PosButton } from './ui/PosButton'
 import { useEffect, useMemo, useState } from 'react'
 import type { Order, SaleSummary } from '../../shared/contracts'
 import { formatMoney } from './money'
@@ -33,10 +34,10 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
     }
   }
 
-  return <main className="page orders-page">
+  return <main className="page records-page orders-page">
     <div className="page-heading orders-heading">
       <div><h1>Заказы</h1><p>Оплаченные работы, которые нужно изготовить и выдать клиенту.</p></div>
-      <button className="primary" onClick={()=>setCreating(true)}>+ Создать заказ</button>
+      <PosButton variant="primary" onClick={()=>setCreating(true)}>+ Создать заказ</PosButton>
     </div>
 
     <div className="data-table orders-table">
@@ -56,10 +57,10 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
         </span>
         <span className={'order-status '+order.status}>{statusName(order.status)}</span>
         <div className="order-actions">
-          <button className="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, описание или срок">Изменить</button>
+          <PosButton variant="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, описание или срок">Изменить</PosButton>
           {order.status==='ready'
-            ?<button className="primary order-issued" onClick={()=>void update(order,'issued')}>Выдан</button>
-            :<button className="primary" onClick={()=>void update(order,'ready')}>Готово</button>}
+            ?<PosButton variant="primary" className="order-issued" onClick={()=>void update(order,'issued')}>Выдан</PosButton>
+            :<PosButton variant="primary" onClick={()=>void update(order,'ready')}>Готово</PosButton>}
         </div>
       </div>):<div className="page-empty"><b>Активных заказов нет</b><span>Новые оплаченные заказы появятся здесь.</span></div>}
     </div>
