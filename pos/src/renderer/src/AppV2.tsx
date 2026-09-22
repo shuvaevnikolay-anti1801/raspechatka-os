@@ -21,6 +21,12 @@ const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,a
 const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
+export const manualSyncMessage=(result:BootState)=>{
+  if(result.documentQueueError)return `Справочники доступны, но очередь документов не отправлена: ${result.documentQueueError}. Осталось: ${result.pendingSync}`
+  if(result.pendingSync>0)return `Сервер доступен, но в очереди осталось документов: ${result.pendingSync}`
+  if(result.masterDataError)return `Документы отправлены, но справочники не обновлены: ${result.masterDataError}`
+  return 'Данные обновлены'
+}
 export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
 export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer})
 export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
@@ -157,9 +163,9 @@ export default function AppV2(){
     if(syncing||busy)return
     setSyncing(true)
     try{
-      await window.raspechatkaPos.syncNow();await refresh()
+      const result=await window.raspechatkaPos.syncNow();await refresh()
       if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer))
-      setMessage('Данные обновлены')
+      setMessage(manualSyncMessage(result))
     }catch{
       await refresh().catch(()=>undefined)
       setMessage('Не удалось связаться с Распечатка OS — продолжаем работать локально')
