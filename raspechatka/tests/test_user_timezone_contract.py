@@ -49,3 +49,13 @@ def test_users_page_has_system_fallback_selector_and_read_only_diagnostics():
     assert "raspechatka.api.time.get_time_diagnostics" in page
     assert "Время системы" in page
     assert "System Settings" not in page
+
+
+def test_legacy_india_fallback_is_repaired_only_on_moscow_site():
+    patch = (ROOT / "patches" / "v1_0" / "repair_legacy_user_timezones.py").read_text()
+    assert 'LEGACY_FRAPPE_FALLBACK = "Asia/Kolkata"' in patch
+    assert 'CANONICAL_SITE_TIMEZONE = "Europe/Moscow"' in patch
+    assert "get_effective_site_timezone() != CANONICAL_SITE_TIMEZONE" in patch
+    assert 'filters={"time_zone": LEGACY_FRAPPE_FALLBACK}' in patch
+    assert '"time_zone",' in patch
+    assert '""' in patch
