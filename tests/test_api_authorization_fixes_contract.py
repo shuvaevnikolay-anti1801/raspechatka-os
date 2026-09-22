@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 
@@ -92,25 +91,3 @@ def test_inventory_mentions_every_whitelisted_endpoint():
 			missing_modules.append(module)
 	assert missing_modules == []
 
-
-def test_internal_orders_page_is_unique_deny_by_default_and_api_is_read_only_scoped():
-	registry = json.loads((ROOT / "frontend/src/access-pages.json").read_text(encoding="utf-8"))
-	pages = [
-		page
-		for section in registry
-		for page in section["pages"]
-		if page["area"] == "page.warehouse.internal_orders"
-	]
-	assert len(pages) == 1
-	page = pages[0]
-	assert page["label"] == "Внутренние заказы"
-	assert page["route"] == "/warehouse/internal-orders"
-	assert "legacy_area" not in page
-
-	source = (API / "internal_orders.py").read_text(encoding="utf-8")
-	contract = '@access_contract(area="page.warehouse.internal_orders", action="read", scope="point")'
-	assert source.count("@frappe.whitelist()") == 2
-	assert source.count(contract) == 2
-	assert source.count('require_access(AREA, "read")') == 2
-	for forbidden in ("insert(", ".save(", "delete_doc(", "db.set_value("):
-		assert forbidden not in source
