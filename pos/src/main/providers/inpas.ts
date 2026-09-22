@@ -48,6 +48,13 @@ export type InpasLauncher = {
   prefixArgs: string[];
 };
 
+function isLegacyDcConsoleExe(launcher: InpasLauncher): boolean {
+  return (
+    launcher.type === "exe" &&
+    basename(launcher.path).toLowerCase() === "dc console.exe"
+  );
+}
+
 const DEFAULT_SETTINGS: InpasSettings = {
   enabled: false,
   executablePath: "",
@@ -384,11 +391,20 @@ export class InpasPaymentProvider implements PaymentProvider {
       health: "26",
       reconcile: "59",
     }[kind];
-    const args = [`-o${operationCode}`, `-z${settings.terminalId}`];
-    if (amountMinor !== undefined) args.push(`-a${amountMinor}`);
-    if (kind === "charge" || kind === "refund")
-      args.push(`-c${settings.currencyCode}`);
-    args.push(`-s${Math.ceil(settings.timeoutMs / 1000)}`);
+    const legacyExe = isLegacyDcConsoleExe(launcher);
+    // DualConnector 1.x uses "DC Console.exe" and a legacy CLI shape.
+    // Keep this special case read-only until monetary operations are verified
+    // against real PAX hardware. Modern DCConsole.bat/jar arguments stay intact.
+    const args =
+      legacyExe && kind === "health"
+        ? ["-p5", `-z${settings.terminalId}`, "-o26", "-m22", "-l1"]
+        : [`-o${operationCode}`, `-z${settings.terminalId}`];
+    if (!(legacyExe && kind === "health")) {
+      if (amountMinor !== undefined) args.push(`-a${amountMinor}`);
+      if (kind === "charge" || kind === "refund")
+        args.push(`-c${settings.currencyCode}`);
+      args.push(`-s${Math.ceil(settings.timeoutMs / 1000)}`);
+    }
 
     const cwd = dirname(launcher.path);
     const resultPath = join(cwd, "result.txt");
@@ -419,6 +435,7 @@ export class InpasPaymentProvider implements PaymentProvider {
       kind,
       operationCode,
       launcherType: launcher.type,
+      launcherMode: legacyExe ? "legacy-exe" : "modern-console",
       launcherPath: launcher.path,
       command: launcher.command,
       launchArgs,
