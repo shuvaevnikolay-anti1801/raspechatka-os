@@ -108,7 +108,7 @@ def test_internal_orders_page_is_unique_deny_by_default_and_api_is_read_only_sco
 	assert "legacy_area" not in page
 
 	source = (API / "internal_orders.py").read_text(encoding="utf-8")
-	contract = '@access_contract(area=AREA, action="read", scope="point")'
+	contract = '@access_contract(area="page.warehouse.internal_orders", action="read", scope="point")'
 	assert source.count("@frappe.whitelist()") == 2
 	assert source.count(contract) == 2
 	assert source.count('require_access(AREA, "read")') == 2
