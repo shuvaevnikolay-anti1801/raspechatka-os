@@ -74,9 +74,11 @@ test("standard list consumers initialize from filter readiness", () => {
 		"pages/ClientMarketingPage.vue",
 		"pages/ClientsPage.vue",
 		"pages/EmployeesPage.vue",
+		"pages/InternalOrdersPage.vue",
 		"pages/FinanceBankPage.vue",
 		"pages/FinanceCalendarPage.vue",
 		"pages/FinancePaymentsPage.vue",
+		"pages/InternalOrdersPage.vue",
 		"pages/FinanceReportPage.vue",
 		"pages/MasterDataPage.vue",
 		"pages/ReferencesPage.vue",
@@ -90,6 +92,7 @@ test("standard list consumers initialize from filter readiness", () => {
 
 	const serverConsumers = [
 		"pages/CatalogPage.vue",
+		"pages/InternalOrdersPage.vue",
 		"pages/WarehouseDocumentsPage.vue",
 		"pages/WarehouseMovementsPage.vue",
 		"pages/WarehouseReceiptsPage.vue",
