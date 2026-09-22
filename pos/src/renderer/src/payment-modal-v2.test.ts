@@ -40,7 +40,8 @@ describe('PaymentModalV2 safety and visibility contracts',()=>{
     expect(source).toContain('checked={remoteConfirmed}')
     expect(source).toContain('Я проверил(а), что оплата действительно получена')
     expect(source).toContain('confirmed:true,confirmedAt:new Date().toISOString(),note:remoteNote.trim()||undefined')
-    expect(source).toContain('remotePaymentConfirmation')
+    expect(source).toContain('remoteConfirmation?:RemotePaymentConfirmation')
+    expect(source).toContain('confirmation)')
   })
 
   it('keeps mixed allocation, exact-total, remainder, and terminal gates',()=>{
