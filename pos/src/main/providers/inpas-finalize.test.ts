@@ -111,6 +111,28 @@ describe("INPAS launcher discovery", () => {
     }
   });
 
+  it("prefers a v2 BAT launcher over legacy DC Console.exe", () => {
+    const root = mkdtempSync(join(tmpdir(), "raspechatka-inpas-prefer-v2-"));
+    try {
+      const connector = join(root, "INPAS", "DualConnector");
+      const bat = join(connector, "DCConsole.bat");
+      const exe = join(connector, "DC Console.exe");
+      mkdirSync(connector, { recursive: true });
+      writeFileSync(bat, "@echo off");
+      writeFileSync(exe, "exe");
+      process.env["ProgramFiles(x86)"] = root;
+      process.env.ProgramFiles = "";
+      delete process.env.RASPECHATKA_INPAS_CONSOLE;
+      process.env.ComSpec = "C:\\Windows\\System32\\cmd.exe";
+
+      const store = new InpasSettingsStore(join(root, "settings.json"));
+      expect(store.resolveLauncher(inpasSettings())?.path).toBe(bat);
+      expect(store.resolveLauncher(inpasSettings())?.type).toBe("bat");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps compatibility with legacy DC Console.exe", () => {
     const root = mkdtempSync(join(tmpdir(), "raspechatka-inpas-exe-"));
     try {
@@ -209,6 +231,48 @@ describe("INPAS runner final result contract", () => {
       });
       expect((result.raw as any).exitCode).toBe(7);
       expect((result.raw as any).statusCode).toBe("1");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the legacy DC Console.exe CLI for read-only operation 26", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "raspechatka-inpas-legacy-run-"));
+    try {
+      const exe = join(directory, "DC Console.exe");
+      writeFileSync(exe, "exe");
+
+      const settings = new InpasSettingsStore(join(directory, "settings.json"));
+      settings.save(inpasSettings(exe));
+      const calls: Array<{ file: string; args: string[]; cwd: string }> = [];
+      const provider = new InpasPaymentProvider(
+        settings,
+        join(directory, "results"),
+        async (file, args, options) => {
+          calls.push({ file, args, cwd: options.cwd });
+          writeFileSync(
+            join(options.cwd, "result.txt"),
+            "[27] = '40000037'\r\n[39] = '1'\r\n[19] = 'OK'",
+            "latin1"
+          );
+          return {
+            code: 0,
+            signal: null,
+            stdout: "",
+            stderr: "",
+            timedOut: false,
+          };
+        }
+      );
+
+      expect((await provider.healthCheck()).ready).toBe(true);
+      expect(calls).toEqual([
+        {
+          file: exe,
+          args: ["-p5", "-z40000037", "-o26", "-m22", "-l1"],
+          cwd: directory,
+        },
+      ]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
