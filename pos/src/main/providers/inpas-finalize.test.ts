@@ -250,7 +250,7 @@ describe("INPAS runner final result contract", () => {
         "/d",
         "/s",
         "/c",
-        `call "${bat}" -o26 -z40000037 -a10 -c643 -s60`,
+        `call "${bat}" -o26 -z40000037 -s60`,
       ]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
