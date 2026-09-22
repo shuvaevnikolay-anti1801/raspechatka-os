@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import SettingsHub, {
   SETTINGS_OPEN_TRIGGER_SELECTOR,
   SettingsAdminGate,
+  resolveSettingsAdminGate,
   settingsGateStateAfterVerification,
 } from './SettingsHub'
 
@@ -30,8 +31,11 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(markup).toContain('inputMode="numeric"')
   })
 
-  it('keeps a wrong admin code at the gate and does not open settings',()=>{
-    expect(settingsGateStateAfterVerification(false)).toEqual({
+  it('keeps a wrong admin code at the gate and does not open settings',async()=>{
+    const seen:string[]=[]
+    const state=await resolveSettingsAdminGate('1234',async(code)=>{seen.push(code);return false})
+    expect(seen).toEqual(['1234'])
+    expect(state).toEqual({
       gateOpen:true,
       open:false,
       gateError:'Неверный пароль',
