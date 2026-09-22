@@ -97,7 +97,7 @@ describe('WarehouseWorkspace stacked layout',()=>{
       {id:'paper-a4',name:'Бумага А4',itemCode:'PAPER-A4',itemType:'Product',uom:'пачка',trackInventory:true,stock:7,storageAddress:'Стеллаж 2'},
     ],
     deliveries:[{
-      id:'PO-17',supplier:'Поставщик бумаги',status:'Ожидается',expectedDate:'2026-09-25',comment:'Доставка утром',
+      id:'PO-17',supplier:'Поставщик бумаги',status:'Ожидается',expectedDate:'2026-09-25',deliveryCompany:'СДЭК',deliveryCode:'1234',comment:'Доставка утром',
       items:[{
         purchaseOrderItemId:'POI-1',itemId:'paper-a4',itemName:'Бумага А4',itemCode:'PAPER-A4',
         uom:'пачка',orderedQuantity:10,receivedQuantity:2,remainingQuantity:8,
@@ -132,6 +132,8 @@ describe('WarehouseWorkspace stacked layout',()=>{
     expect(markup).toContain('№ PO-17')
     expect(markup).toContain('Поставщик бумаги')
     expect(markup).toContain('Доставка утром')
+    expect(markup).toContain('Перевозчик: СДЭК')
+    expect(markup).toContain('Код доставки: 1234')
     expect(markup).toContain('25.09.2026')
     expect(markup).toContain('Ожидается')
     expect(markup).toContain('Осталось принять: 1 поз.')
