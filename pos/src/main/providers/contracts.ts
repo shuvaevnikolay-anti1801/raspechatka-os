@@ -1,4 +1,4 @@
-import type { BootState, CartLine, PaymentMethod, PaymentPart, PrintResult, SaleDetails } from '../../shared/contracts'
+import type { BankingEvidence, BootState, CartLine, PaymentMethod, PaymentPart, PrintResult, SaleDetails } from '../../shared/contracts'
 
 export type DeviceHealth = {
   ready: boolean
@@ -7,16 +7,45 @@ export type DeviceHealth = {
   details?: Record<string, unknown>
 }
 
+export type PaymentRecoveryEvidence = {
+  state?: 'in_progress'|'approved'|'declined'|'unknown'
+  kind?: 'sale'|'refund'
+  method?: PaymentMethod
+  amountMinor?: number
+  transactionId?: string
+  provider?: string
+  adapter?: string
+  terminalId?: string
+  referenceNumber?: string
+  terminalTransactionId?: string
+  authorizationCode?: string
+  responseCode?: string
+  requestHash?: string
+  startedAt?: string
+  completedAt?: string
+  bankingEvidence?: BankingEvidence
+  safeResult?: PaymentResult
+}
+
+export type PaymentAttemptContext = {
+  provider: 'inpas'
+  adapter: 'direct'|'console'
+  terminalId?: string
+}
+
 export type PaymentRequest = {
   operationId: string
   saleId: string
   amountMinor: number
   method: PaymentMethod
+  originalPayment?: PaymentPart
+  recovery?: PaymentRecoveryEvidence
 }
 
 export type PaymentResult = {
   status: 'approved' | 'declined' | 'unknown'
   transactionId?: string
+  bankingEvidence?: BankingEvidence
   message?: string
   raw?: unknown
 }
@@ -85,6 +114,7 @@ export type FiscalShiftStatus = {
 }
 
 export interface PaymentProvider {
+  getAttemptContext?(): PaymentAttemptContext
   healthCheck(): Promise<DeviceHealth>
   charge(request: PaymentRequest): Promise<PaymentResult>
   refund(request: PaymentRequest): Promise<PaymentResult>
