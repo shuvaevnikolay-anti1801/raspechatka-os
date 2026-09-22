@@ -11,11 +11,28 @@ import { PosDiagnostics } from './diagnostics'
 import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
-import { buildBootState, performSync } from './sync'
+import { buildBootState, performConfigurationSync, performSync } from './sync'
 import { PosTransactionEngine } from './transaction-engine'
 import { CashierAuthSession } from './cashier-auth'
 import { PosLifecycleStore } from './pos-lifecycle'
 import { getPointReceipt } from './frappe'
+
+export const connectionIdentityChanged=(previous:ConnectionConfig|undefined,next:ConnectionConfig):boolean=>{
+  if(!previous)return false
+  const normalizeServer=(value?:string)=>value?.trim().replace(/\/+$/,'')??''
+  return normalizeServer(previous.serverUrl)!==normalizeServer(next.serverUrl)
+    ||(previous.deviceId??'')!==(next.deviceId??'')
+}
+
+export function assertConnectionIdentityChangeAllowed(
+  previous:ConnectionConfig|undefined,
+  next:ConnectionConfig,
+  hasOpenShift:boolean
+):boolean{
+  const changed=connectionIdentityChanged(previous,next)
+  if(changed&&hasOpenShift)throw new Error('Нельзя изменить подключение к точке во время открытой смены')
+  return changed
+}
 
 const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='cash'?rules.acceptsCash:
@@ -62,7 +79,7 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:begin-initial-setup',()=>lifecycle.beginConfiguration())
   ipcMain.handle('pos:complete-initial-setup',async()=>{
     lifecycle.beginConfiguration()
-    await performSync(database,connectionStore)
+    await performConfigurationSync(database,connectionStore)
     const status=lifecycle.markReady()
     diagnostics.record({source:'app',eventType:'lifecycle.ready',message:'Первоначальная настройка POS завершена'})
     return status
@@ -252,16 +269,22 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
     if(lifecycle.status().state!=='READY')lifecycle.beginConfiguration()
     const previous=connectionStore.load()
-    const normalizeServer=(value?:string)=>value?.trim().replace(/\/+$/,'')??''
-    const identityChanged=Boolean(previous)&&(
-      normalizeServer(previous?.serverUrl)!==normalizeServer(config.serverUrl)||
-      (previous?.deviceId??'')!==(config.deviceId??'')
-    )
-    if(identityChanged&&database.currentShift())throw new Error('Нельзя изменить подключение к точке во время открытой смены')
+    const identityChanged=assertConnectionIdentityChangeAllowed(previous,config,Boolean(database.currentShift()))
     if(identityChanged)database.clearConfirmedPointData()
     connectionStore.save(config);database.setState('sync_error','')
     diagnostics.record({source:'sync',eventType:'sync.connection_saved',message:'Настройки подключения к Raspechatka OS сохранены'})
     return connectionStore.status(bootState().lastSyncAt)
+  })
+  ipcMain.handle('pos:sync-configuration',async()=>{
+    diagnostics.record({source:'sync',eventType:'sync.configuration_started',message:'Запущено обновление конфигурации и справочников'})
+    try{
+      const result=await performConfigurationSync(database,connectionStore)
+      diagnostics.record({source:'sync',eventType:'sync.configuration_completed',message:'Конфигурация и справочники обновлены'})
+      return result
+    }catch(error){
+      diagnostics.record({source:'sync',level:'warning',eventType:'sync.configuration_failed',message:errorMessage(error)})
+      throw error
+    }
   })
   ipcMain.handle('pos:sync-now',async()=>{
     assertCashierAccess()
