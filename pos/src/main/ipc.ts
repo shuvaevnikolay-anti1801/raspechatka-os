@@ -269,7 +269,14 @@ export function registerIpcHandlers(dependencies:{
     diagnostics.record({source:'sync',eventType:'sync.manual_started',message:'Запущена ручная синхронизация'})
     try{
       const result=await performSync(database,connectionStore,cashierAuth.state().employee?.id)
-      diagnostics.record({source:'sync',eventType:'sync.manual_completed',message:`Синхронизация завершена · к отправке ${result.pendingSync}`})
+      const queueComplete=result.documentQueueSynced!==false&&result.pendingSync===0
+      diagnostics.record({
+        source:'sync',level:queueComplete?'info':'warning',
+        eventType:queueComplete?'sync.manual_completed':'sync.manual_partial',
+        message:queueComplete
+          ?'Синхронизация завершена · очередь документов отправлена'
+          :`Синхронизация завершена частично · к отправке ${result.pendingSync}${result.documentQueueError?` · ${result.documentQueueError}`:''}`
+      })
       return result
     }catch(error){
       diagnostics.record({source:'sync',level:'warning',eventType:'sync.manual_failed',message:errorMessage(error)})
