@@ -29,11 +29,13 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			"Catalog Warehouse",
 			f"TEST-WH-{suffix}",
 			business_point=self.point,
+			active=1,
 		)
 		self.foreign_warehouse = self._raw(
 			"Catalog Warehouse",
 			f"TEST-WH-FOREIGN-{suffix}",
 			business_point=self.foreign_point,
+			active=1,
 		)
 		self.supplier = self._raw("Catalog Supplier", f"TEST-SUP-{suffix}", active=1)
 		self.uom = self._raw("Catalog Unit", f"TEST-UOM-{suffix}")
@@ -158,6 +160,7 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		receipt = frappe.get_last_doc("Stock Receipt", filters={"external_id": event["id"]})
 		self.assertEqual(receipt.docstatus, 1)
 		self.assertEqual(receipt.source, "POS")
+		self.assertEqual(receipt.external_id, event["id"])
 		self.assertEqual(receipt.cashier, self.employee)
 		self.assertEqual(receipt.purchase_order, order.name)
 		self.assertEqual(receipt.supplier, self.supplier)
@@ -236,6 +239,7 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		write_off = frappe.get_last_doc("Stock Write Off", filters={"external_id": event["id"]})
 		self.assertEqual(write_off.docstatus, 1)
 		self.assertEqual(write_off.source, "POS")
+		self.assertEqual(write_off.external_id, event["id"])
 		self.assertEqual(write_off.cashier, self.employee)
 		self.assertEqual(write_off.business_point, self.point)
 		self.assertEqual(write_off.warehouse, self.warehouse)
