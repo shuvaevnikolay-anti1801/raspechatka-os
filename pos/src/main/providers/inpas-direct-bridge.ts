@@ -303,7 +303,11 @@ export class NativeInpasBridge implements InpasDirectBridge {
         reject(error);
         this.resetChild(child, error);
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      });
       child.stdin.write(JSON.stringify({
         protocolVersion: PROTOCOL_VERSION,
         id,
