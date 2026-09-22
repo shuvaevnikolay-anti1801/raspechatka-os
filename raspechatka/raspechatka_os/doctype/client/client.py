@@ -3,11 +3,49 @@ import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.model.naming import make_autoname
+from frappe.model.naming import NamingSeries, make_autoname
 from frappe.utils import add_days, cint, flt, now_datetime
 
 CHANNELS = ("Telegram", "MAX", "VK")
 SUPPORTED_MESSENGERS = (*CHANNELS, "WhatsApp")
+
+CLIENT_ID_AUTONAME = "RP-.######"
+CLIENT_ID_PATTERN = re.compile(r"^RP-(\d+)$")
+
+
+def _client_id_number(value):
+	match = CLIENT_ID_PATTERN.fullmatch(str(value or "").strip())
+	return int(match.group(1)) if match else 0
+
+
+def sync_client_id_series(minimum=0):
+	"""Advance the RP- series to at least the largest ID already present in Client."""
+	rows = frappe.db.sql(
+		"""
+		SELECT MAX(CAST(SUBSTRING(`client_id`, 4) AS UNSIGNED))
+		FROM `tabClient`
+		WHERE `client_id` REGEXP '^RP-[0-9]+$'
+		"""
+	)
+	existing_max = cint(rows[0][0]) if rows and rows[0] else 0
+	target = max(cint(minimum), existing_max)
+	series = NamingSeries(CLIENT_ID_AUTONAME)
+	current = series.get_current_value()
+	if target > current:
+		series.update_counter(target)
+		return target
+	return current
+
+
+def next_client_id():
+	"""Allocate a collision-safe RP- identifier even after legacy/manual imports."""
+	sync_client_id_series()
+	for _attempt in range(3):
+		candidate = make_autoname(CLIENT_ID_AUTONAME)
+		if not frappe.db.exists("Client", {"client_id": candidate}):
+			return candidate
+		sync_client_id_series(_client_id_number(candidate))
+	frappe.throw(_("Не удалось сформировать уникальный ID клиента. Повторите регистрацию."))  # noqa: RUF001
 
 
 def normalize_phone(value):
@@ -103,7 +141,10 @@ def calculate_loyalty_state(client, messengers=None, settings=None):
 
 class Client(Document):
 	def before_insert(self):
-		self.client_id = self.client_id or make_autoname("RP-.######")
+		if self.client_id:
+			sync_client_id_series(_client_id_number(self.client_id))
+		else:
+			self.client_id = next_client_id()
 		self.registered_by = self.registered_by or frappe.session.user
 		self.registered_at = self.registered_at or now_datetime()
 		self.registration_source = self.registration_source or "Распечатка ОС"  # noqa: RUF001
