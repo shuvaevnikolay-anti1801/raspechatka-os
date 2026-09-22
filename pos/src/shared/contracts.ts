@@ -124,6 +124,9 @@ export type BootState = {
   accessRevoked: boolean
   online: boolean
   pendingSync: number
+  masterDataError?: string
+  documentQueueError?: string
+  documentQueueSynced?: boolean
   lastSyncAt?: string
   source: 'demo' | 'frappe'
   shift: Shift | null
