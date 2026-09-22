@@ -30,32 +30,46 @@
 .upcoming-shift>strong{font-size:14px;text-align:right;white-space:nowrap}
 .upcoming-shift>small{grid-column:3;color:var(--rp-muted);font-size:11px;font-weight:700;text-align:right}
 
-.warehouse-workspace{display:flex;flex-direction:column;gap:12px;width:100%;min-width:0}
-.warehouse-actions{width:100%;min-height:0;padding:10px 14px;align-items:center;flex-wrap:wrap}
-.warehouse-actions>div{min-width:220px;margin-right:auto}
-.warehouse-actions h2{margin:0}
-.warehouse-actions p{margin-top:2px}
-.warehouse-actions button{min-height:34px}
+.warehouse-workspace{display:flex;flex-direction:column;gap:16px;width:100%;min-width:0}
+.warehouse-workspace .work-card{border-radius:0}
+.warehouse-actions{display:flex;align-items:center;justify-content:flex-start;gap:12px;width:100%;min-height:0}
+.warehouse-action{min-height:50px;padding:0 22px;border:1px solid transparent;border-radius:0;font-size:14px;font-weight:800;cursor:pointer}
+.warehouse-action-writeoff{border-color:#cf7770;background:#fff1ef;color:#8f2923}
+.warehouse-action-writeoff:hover{background:#ffe5e1}
+.warehouse-action-need{border-color:#789c13;background:var(--rp-green);color:#fff}
+.warehouse-action-need:hover{filter:brightness(.96)}
 .warehouse-deliveries,.warehouse-stock{width:100%;min-width:0;margin:0}
-.delivery-list>header{display:flex;align-items:center;justify-content:space-between}
-.delivery-list>header small{color:var(--rp-muted)}
+.delivery-list>header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px}
+.delivery-list>header h2{margin:0;font-size:18px}
+.delivery-list>header small{color:var(--rp-muted);font-size:12px}
+.delivery-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;margin-top:10px;padding:16px;border:1px solid var(--rp-line);border-radius:0;background:#fff}
+.delivery-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;min-width:0}
+.delivery-heading>div:first-child{display:grid;gap:4px;min-width:0}
+.delivery-heading small{color:var(--rp-muted);font-size:10px;font-weight:800;letter-spacing:.04em}
+.delivery-heading strong{font-size:16px;line-height:1.25}
+.delivery-heading>div:first-child>b{font-size:12px;color:var(--rp-muted)}
+.delivery-status{display:grid;justify-items:end;gap:5px;flex:none;text-align:right}
+.delivery-status span{font-size:13px;font-weight:700}
+.delivery-status b{padding:4px 8px;background:#f0f3ed;font-size:11px}
+.delivery-note{grid-column:1;margin:0;padding:9px 11px;border-left:3px solid #b8c4ad;background:#f7f9f5;color:var(--rp-muted);font-size:13px;line-height:1.35}
+.delivery-lines{grid-column:1;display:grid;gap:0;border-top:1px solid var(--rp-line)}
+.delivery-lines>strong{padding:10px 0 7px;font-size:12px}
+.delivery-lines>div{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:42px;padding:7px 0;border-top:1px solid #eceeea;font-size:13px}
+.delivery-lines>div>span{display:grid;gap:2px;min-width:0}
+.delivery-lines>div small{color:var(--rp-muted);font-size:10px}
+.delivery-lines>div>b{flex:none;white-space:nowrap}
+.delivery-receive{grid-column:2;grid-row:1/5;align-self:end;min-height:48px;padding:0 18px;border-radius:0;white-space:nowrap}
 .stock-table-scroll{width:100%;overflow-x:auto}
-.warehouse-stock>.stock-table-scroll{display:block;min-height:0;padding:0;border-bottom:0;font-size:inherit}
-.warehouse-stock .stock-table-scroll>header,.warehouse-stock .stock-table-scroll>div{display:grid;grid-template-columns:minmax(240px,1.3fr) minmax(110px,.45fr) minmax(220px,1fr);align-items:center;gap:14px;min-width:650px;min-height:52px;padding:0 15px;border-bottom:1px solid #eceeea;font-size:10px}
-.warehouse-stock .stock-table-scroll>header{min-height:38px;background:#f4f6f2;color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase}
-.warehouse-stock .stock-table-scroll>div>div{display:flex;flex-direction:column;gap:3px}
-.stock-table-scroll small{color:var(--rp-muted);font-size:8px}
+.warehouse-search{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.warehouse-search span{font-size:13px;font-weight:800}
+.warehouse-search input{flex:1;min-height:46px;padding:0 13px;font-size:13px}
+.warehouse-stock>.stock-table-scroll{display:block;min-height:0;padding:0;border:1px solid var(--rp-line);border-bottom:0;font-size:inherit}
+.warehouse-stock .stock-table-scroll>header,.warehouse-stock .stock-table-scroll>div{display:grid;grid-template-columns:minmax(260px,1.45fr) minmax(120px,.5fr) minmax(220px,1fr);align-items:center;gap:18px;min-width:700px;min-height:58px;padding:0 16px;border-bottom:1px solid #eceeea;font-size:13px}
+.warehouse-stock .stock-table-scroll>header{min-height:42px;background:#f4f6f2;color:var(--rp-muted);font-size:10px;font-weight:800;text-transform:uppercase}
+.warehouse-stock .stock-table-scroll>div>div{display:flex;flex-direction:column;gap:4px}
+.stock-table-scroll small{color:var(--rp-muted);font-size:10px}
 .stock-table-scroll .low{color:var(--rp-danger)}
-.stock-table-scroll>p{padding:12px 15px}
-.delivery-card{border:1px solid var(--rp-line);border-radius:10px;margin-top:8px;overflow:hidden}
-.delivery-summary{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(180px,1.2fr);gap:12px;width:100%;padding:12px;background:#fff;border:0;text-align:left;cursor:pointer}
-.delivery-summary div{display:grid;gap:3px}
-.delivery-summary small,.delivery-summary span{color:var(--rp-muted);font-size:11px}
-.delivery-detail{display:grid;gap:8px;padding:10px 12px;background:#f8faf7;border-top:1px solid var(--rp-line)}
-.delivery-detail>div{display:flex;justify-content:space-between;gap:12px}
-.delivery-detail>button{justify-self:start}
-.warehouse-search{display:flex;align-items:center;gap:8px;margin:10px 0}
-.warehouse-search input{flex:1;min-height:38px}
+.stock-table-scroll>p{padding:16px}
 .receive-line{display:grid;grid-template-columns:1fr 100px 36px;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--rp-line)}
 .receive-line div{display:grid;gap:3px}
 .receive-line small{color:var(--rp-muted)}
@@ -64,7 +78,9 @@
 @media(max-width:900px){
   .schedule-grid{min-width:760px}
   .schedule-upcoming{grid-template-columns:1fr}
-  .warehouse-actions{align-items:flex-start}
-  .warehouse-actions>div{flex-basis:100%;margin-right:0}
-  .delivery-summary{grid-template-columns:1fr}
+  .warehouse-actions{align-items:stretch;flex-wrap:wrap}
+  .warehouse-action{flex:1 1 220px}
+  .delivery-card{grid-template-columns:1fr}
+  .delivery-heading{align-items:flex-start}
+  .delivery-receive{grid-column:1;grid-row:auto;width:100%}
 }
