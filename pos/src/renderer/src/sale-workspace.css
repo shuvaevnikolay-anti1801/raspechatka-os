@@ -69,7 +69,10 @@
 .current-receipt .pos-v2-qty input::-webkit-outer-spin-button,.current-receipt .pos-v2-qty input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .current-receipt .receipt-line-amount{margin-left:auto;color:var(--pos-ink);font-size:var(--pos-type-body)}
 .current-receipt .receipt-price-override{padding:0;border:0;border-bottom:1px solid currentColor;background:transparent;color:var(--pos-muted);font-size:var(--pos-type-meta)}
+.current-receipt .empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--pos-space-2);padding:var(--pos-space-6);color:var(--pos-muted);text-align:center}
 .current-receipt .empty .pos-icon{width:36px;height:36px;color:var(--pos-brand)}
+.current-receipt .empty b{color:var(--pos-ink);font-size:var(--pos-type-body)}
+.current-receipt .empty span{max-width:240px;font-size:var(--pos-type-label);line-height:1.45}
 
 .current-receipt .receipt-upsell{flex:0 0 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--pos-space-3);padding:var(--pos-space-3) clamp(12px,3cqi,20px);border-top:var(--pos-border-base);border-bottom:var(--pos-border-base);background:var(--pos-brand)}
 .current-receipt .receipt-upsell-copy{min-width:0}
