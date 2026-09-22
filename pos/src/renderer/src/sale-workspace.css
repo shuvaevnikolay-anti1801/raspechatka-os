@@ -1,0 +1,36 @@
+.sale-workspace{
+  --sale-categories-ratio:.16;
+  --sale-receipt-ratio:.34;
+  display:grid;
+  grid-template-columns:
+    minmax(160px,calc((100% - 24px)*var(--sale-categories-ratio)))
+    12px
+    minmax(420px,1fr)
+    12px
+    minmax(320px,calc((100% - 24px)*var(--sale-receipt-ratio)));
+  min-height:0;
+  flex:1;
+  overflow:hidden;
+  background:#eef0ec;
+  color:var(--rp-ink,#272727);
+}
+.sale-workspace-zone{min-width:0;min-height:0;overflow:hidden;background:#fff}
+.sale-workspace-zone>.categories,.sale-workspace-zone>.catalog,.sale-workspace-zone>.receipt{height:100%;box-sizing:border-box}
+.sale-splitter{position:relative;z-index:3;touch-action:none;cursor:col-resize;background:#d8dcd5}
+.sale-splitter::after{content:"";position:absolute;inset:calc(50% - 32px) 3px;width:6px;height:64px;background:var(--rp-green,#a1ce0f)}
+.sale-workspace :is(button,input,textarea,select,.product-card,.receipt-line,.customer-row,.upsell-card){border-radius:0}
+.sale-workspace-catalog{container-type:inline-size}
+.sale-workspace-receipt{container-type:inline-size}
+.sale-workspace .catalog{width:100%}
+.sale-workspace .product-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+@container (min-width:760px){
+  .sale-workspace .product-card strong{font-size:clamp(1rem,2.2cqi,1.3rem)}
+  .sale-workspace .product-card footer b{font-size:clamp(1.15rem,2.6cqi,1.55rem)}
+}
+@container (min-width:420px){
+  .sale-workspace .receipt-line{font-size:clamp(.95rem,2.8cqi,1.1rem)}
+  .sale-workspace .pos-v2-pay{font-size:clamp(1rem,3.5cqi,1.35rem);min-height:60px}
+}
+@media (max-width:1100px){
+  .sale-workspace{grid-template-columns:minmax(150px,18%) 12px minmax(360px,1fr) 12px minmax(300px,34%)}
+}
