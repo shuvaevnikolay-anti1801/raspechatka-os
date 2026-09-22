@@ -3,6 +3,7 @@ import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
 import { formatMoney } from './money'
 import { PosButton } from './ui/PosButton'
 import { PosModal } from './ui/PosModal'
+import { PosIcon } from './ui/PosIcon'
 
 const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата'}
 export const paymentSummary=(payments:readonly PaymentPart[])=>
@@ -85,7 +86,7 @@ export default function SaleSuccessOverlay(){
       <PosButton variant="secondary" size="touch" className="sale-success-print" disabled={printing} onClick={()=>void printCommodity()}>{printing?'Печатаем…':'Напечатать товарный чек'}</PosButton>
     </div>}
   >
-    <div className="sale-success-icon" aria-hidden="true">✓</div>
+    <div className="sale-success-icon" aria-hidden="true"><PosIcon name="check"/></div>
     <dl className="sale-success-facts">
       <div><dt>Сумма</dt><dd className="sale-success-total">{formatMoney(result.totalMinor)}</dd></div>
       <div><dt>Способ оплаты</dt><dd>{paymentSummary(payments)}</dd></div>
