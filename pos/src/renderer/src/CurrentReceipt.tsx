@@ -65,6 +65,7 @@ export default function CurrentReceipt({
     </div>}
 
     <footer className="receipt-total current-receipt-footer">
+      <div className="receipt-service-block">
       <div className="receipt-service-row receipt-customer">
         <div><span>Покупатель</span><small>{customer?'Скидка клуба '+clubPercent+'%':'Клубная скидка и история покупок'}</small></div>
         <button className="receipt-service-action" onClick={onOpenCustomer}>{customer?.name||'Найти по телефону'}</button>
@@ -90,6 +91,7 @@ export default function CurrentReceipt({
         <div className="subtotal"><span>Без скидок</span><strong>{formatMoney(subtotalMinor)}</strong></div>
         <div className="subtotal"><span>Скидка составила</span><strong>− {formatMoney(totalDiscountMinor)}</strong></div>
       </>}
+      </div>
       {!shiftOpen
         ? <PosButton className="receipt-open-shift" variant="primary" size="touch" onClick={onOpenShift}>Открыть смену</PosButton>
         : <PosButton className="pos-v2-pay" variant="primary" size="touch" disabled={!lines.length} onClick={onPay}>К оплате · {formatMoney(totalMinor)}</PosButton>}
