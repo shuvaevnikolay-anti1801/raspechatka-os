@@ -32,7 +32,7 @@
 .schedule-grid-header>*:first-child{z-index:4;background:var(--pos-canvas);font-size:var(--pos-type-meta)}
 .schedule-grid-header span{flex-direction:column;gap:var(--pos-space-1)}
 .schedule-grid-header span b{color:var(--pos-ink);font-size:var(--pos-type-label)}
-.schedule-mark{color:#30382c;font-weight:var(--pos-weight-strong)}
+.schedule-mark{color:var(--pos-graphite);font-weight:var(--pos-weight-strong)}
 .schedule-shift-morning{background:#fff4a8}
 .schedule-shift-evening{background:#a9cef7}
 .schedule-shift-both{background:linear-gradient(135deg,#fff4a8 0 50%,#a9cef7 50% 100%)}
