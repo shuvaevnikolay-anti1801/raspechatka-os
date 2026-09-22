@@ -1,4 +1,5 @@
 import { PosButton } from './ui/PosButton'
+import { PosModal } from './ui/PosModal'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
   BootState,
@@ -471,12 +472,7 @@ function ReceiptDetailModal({detail,onClose}:{detail:ReceiptDetail;onClose:()=>v
   const gross=lines.reduce((sum,line)=>sum+Math.round(line.quantity*line.unitPriceMinor),0)
   const discount=Math.max(0,gross-value.totalMinor)
 
-  return <div className="modal-backdrop" onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose()}}>
-    <section className="payment-modal receipt-detail-modal">
-      <header>
-        <div><small>ЧЕК</small><h2>{value.receiptNumber}</h2></div>
-        <button onClick={onClose}>×</button>
-      </header>
+  return <PosModal open title={`Чек ${value.receiptNumber}`} onClose={onClose} layout="matrix" className="receipt-detail-modal">
       <div className="receipt-detail-summary">
         <DetailField label="Дата и время">{new Date(value.createdAt).toLocaleString('ru-RU')}</DetailField>
         <DetailField label="Кассир">{cashier?formatPersonShortName(cashier):'—'}</DetailField>
@@ -508,8 +504,7 @@ function ReceiptDetailModal({detail,onClose}:{detail:ReceiptDetail;onClose:()=>v
           <div className="receipt-detail-total"><span>Итого</span><strong>{formatMoney(value.totalMinor)}</strong></div>
         </section>
       </div>
-    </section>
-  </div>
+  </PosModal>
 }
 
 function DetailField({label,children}:{label:string;children:ReactNode}){
