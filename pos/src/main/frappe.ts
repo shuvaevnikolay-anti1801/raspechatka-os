@@ -54,13 +54,24 @@ async function post<T>(config:ConnectionConfig,method:string,body:Record<string,
   }finally{clearTimeout(timer)}
 }
 
-export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):Promise<string[]> {
-  if(!events.length)return []
-  const result=await post<{accepted:string[]}>(config,'raspechatka.api.pos_v2.push_events',{
+export type PushEventError={
+  id:string
+  eventType:string
+  message:string
+}
+
+export type PushEventsResult={
+  accepted:string[]
+  errors:PushEventError[]
+}
+
+export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):Promise<PushEventsResult> {
+  if(!events.length)return {accepted:[],errors:[]}
+  const result=await post<{accepted?:string[];errors?:PushEventError[]}>(config,'raspechatka.api.pos_v2.push_events',{
     device_id:config.deviceId,token:config.token,
     events,app_version:'0.1.2'
   },20000)
-  return result.accepted||[]
+  return {accepted:result.accepted||[],errors:result.errors||[]}
 }
 
 export async function loadBootstrap(config:ConnectionConfig,cashierId?:string):Promise<BootstrapResponse> {
