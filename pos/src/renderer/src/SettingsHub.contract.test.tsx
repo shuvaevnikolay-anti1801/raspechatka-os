@@ -98,6 +98,17 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(calls).toEqual(['save','configuration'])
   })
 
+
+  it('uses shared settings actions and accessible fields without exposing provider setup copy',()=>{
+    const markup=renderToStaticMarkup(<SettingsHub initialOpen/>)
+    expect(markup).toContain('pos-button--primary')
+    expect(markup).toContain('pos-button--secondary')
+    expect(markup).toContain('pos-field__label')
+    expect(markup).toContain('aria-label="Закрыть настройки"')
+    expect(markup).not.toMatch(/🟢|🟠/)
+    expect(markup).not.toContain('Первичная настройка Web Requests')
+  })
+
   it('does not render obsolete POS Ready controls or copy',()=>{
     const markup=renderToStaticMarkup(<SettingsHub initialOpen/>)
     expect(markup).not.toContain('POS Ready')
