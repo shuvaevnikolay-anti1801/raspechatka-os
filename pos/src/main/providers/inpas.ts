@@ -572,8 +572,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         };
       }
 
-      if (kind === "charge" || kind === "refund")
-        this.storeResult(operationId, paymentResult);
+      if (kind === "charge") this.storeResult(operationId, paymentResult);
       return paymentResult;
     } finally {
       this.running = false;
