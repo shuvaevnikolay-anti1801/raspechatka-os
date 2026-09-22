@@ -87,15 +87,3 @@
 .upsell-card-actions{display:flex;align-items:center;gap:8px;margin-top:10px}
 .upsell-card-actions button{min-height:38px;padding:0 12px;border:1px solid #a9c86d;background:#fff;color:#536c12;font-size:10px;font-weight:700}
 .upsell-card-actions button.primary{border-color:var(--rp-green);background:var(--rp-green);color:#fff}
-
-.cashier-login-card{position:relative;min-height:390px;display:flex;flex-direction:column}
-.cashier-login-card .cashier-list{margin-bottom:28px}
-.cashier-login-card .pin-input{position:relative;width:100%;max-width:12.5rem;min-height:56px}
-.cashier-login-card .pin-input-control{position:absolute;inset:0;width:100%;height:100%;z-index:2;opacity:0;cursor:text;letter-spacing:normal;padding:0;border:0;background:transparent}
-.cashier-login-card .pin-input:focus-within{outline:3px solid #b9d8c1;outline-offset:3px;border-radius:12px}
-.cashier-login-card .pin-input-slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%;height:56px}
-.cashier-login-card .pin-input-slots span{display:grid;place-items:center;border:1px solid #cad6ce;border-radius:12px;background:#fff;color:#183225;font-size:28px;line-height:1}
-.cashier-login-card .pin-input-slots span.filled{border-color:#397455;background:#eef7f1}
-.cashier-login-card .cashier-login-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;min-height:28px}
-.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:28px;padding:3px 0;border:0;background:transparent;color:#657f0d;font-size:10px;text-decoration:underline;text-underline-offset:3px}
-.cashier-login-card .settings-open-trigger{color:#7d837b}
