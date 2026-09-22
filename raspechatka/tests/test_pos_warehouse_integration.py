@@ -1,4 +1,3 @@
-# ruff: noqa: RUF001
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
