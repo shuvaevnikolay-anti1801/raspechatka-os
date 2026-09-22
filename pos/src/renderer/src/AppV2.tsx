@@ -4,6 +4,7 @@ import { resolveCurrentCustomer } from '../../shared/customer'
 import PaymentModalV2, { type PaymentChoice } from './PaymentModalV2'
 import SaleWorkspace from './SaleWorkspace'
 import SaleCatalog, { FAVORITES_CATEGORY, SaleCategories } from './SaleCatalog'
+import CurrentReceipt from './CurrentReceipt'
 import { formatPersonShortName } from './person-name'
 import { formatMoney } from './money'
 import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
@@ -104,6 +105,7 @@ export default function AppV2(){
   },[message])
 
   const productById=useMemo(()=>new Map(products.map((p)=>[p.id,p])),[products])
+  const activeUpsellProduct=upsellCycle.state==='showing'&&upsellCycle.candidate?productById.get(upsellCycle.candidate.item):undefined
   const saleProductIds=useMemo(()=>products.map((product)=>product.id),[products])
   const discountRules={
     allowDiscounts:Boolean(boot?.rules.allowDiscounts),maxDiscountPercent:boot?.rules.maxDiscountPercent??0,
@@ -242,34 +244,44 @@ export default function AppV2(){
       productIds={saleProductIds}
       categories={()=><SaleCategories products={products} selected={category} onSelect={setCategory}/>}
       catalog={(favoriteProductIds,onToggleFavorite)=><SaleCatalog products={products} query={query} category={category} favoriteProductIds={favoriteProductIds} onQueryChange={setQuery} onAdd={add} onToggleFavorite={onToggleFavorite}/>} 
-      receipt={<aside className="receipt">
-        <header><div><small>ТЕКУЩАЯ ПРОДАЖА</small></div><button disabled={!cart.length} onClick={clear}>Очистить</button></header>
-        <div className="customer-row"><button onClick={()=>setCustomerOpen(true)}>◎ {customer?.name||'Найти покупателя по телефону'}</button>{customer&&<span>Скидка клуба {clubPercent}% · <button onClick={()=>chooseCustomer(null)}>убрать</button></span>}</div>
-        <div className="receipt-lines">{!cart.length?<div className="empty"><i>＋</i><b>Чек пока пуст</b><span>Выберите услугу или найдите её по названию</span></div>:cart.map((line)=><div className="receipt-line" key={line.productId}>
-          <div><strong>{line.name}</strong><small>{formatMoney(line.unitPriceMinor)} за ед. {boot.rules.allowFreePrice&&<button onClick={()=>overridePrice(line)}>изменить цену</button>}</small></div>
-          <div className="qty pos-v2-qty"><button onClick={()=>change(line.productId,-1)}>−</button><input aria-label={'Количество '+line.name} type="number" min="0.001" step="0.001" value={line.quantity} onChange={(e)=>setQuantity(line.productId,Number(e.target.value))}/><button onClick={()=>change(line.productId,1)}>+</button></div>
-          <b>{formatMoney(line.quantity*line.unitPriceMinor)}</b>
-        </div>)}</div>
-        {upsellCycle.state==='showing'&&upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)&&<div className="upsell-card">
-          <small>ПРЕДЛОЖИТЕ ПОКУПАТЕЛЮ</small>
-          <p>{upsellCycle.candidate.cashierPhrase||'Предложите покупателю: '+productById.get(upsellCycle.candidate.item)!.name}</p>
-          <div className="upsell-card-row"><strong>{productById.get(upsellCycle.candidate.item)!.name}</strong><b>{formatMoney(productById.get(upsellCycle.candidate.item)!.priceMinor)}</b></div>
-          <div className="upsell-card-actions"><button className="primary" onClick={acceptUpsell}>＋ Добавить</button><button onClick={dismissUpsell}>Не сейчас</button></div>
-        </div>}
-        <footer className="receipt-total">
-          {clubDiscountMinor>0&&<div className="subtotal"><span>Скидка клуба {clubPercent}%</span><strong>− {formatMoney(clubDiscountMinor)}</strong></div>}
-          <div className={'review-discount-row '+(!discountRules.allowDiscounts?'disabled':'')}><div><span>Отзывы</span><small>{reviewUnitMinor>0?`${formatMoney(reviewUnitMinor)} за отзыв`:'Скидка не настроена'}</small></div><div className="review-count"><button disabled={!discountRules.allowDiscounts||safeReviewCount<=0} onClick={()=>setReviewCount(Math.max(0,safeReviewCount-1))}>−</button><input type="number" min="0" max={maxReviews} step="1" value={safeReviewCount} disabled={!discountRules.allowDiscounts||reviewUnitMinor<=0} onChange={(e)=>setReviewCount(Math.max(0,Math.floor(Number(e.target.value)||0)))}/><button disabled={!discountRules.allowDiscounts} onClick={()=>setReviewCount(safeReviewCount+1)}>+</button></div><strong>{reviewDiscountMinor?`− ${formatMoney(reviewDiscountMinor)}`:'—'}</strong></div>
-          <div className="review-discount-row"><div><span>Доп. скидка{manualDiscount?.type==='percent'?` ${manualDiscount.value}%`:''}</span><small>Ограничена настройками точки</small></div><button disabled={!discountRules.allowDiscounts} onClick={()=>setManualDiscountOpen(true)}>{manualDiscount?'Изменить':'Скидка'}</button><strong>{breakdown.manualDiscountMinor?`− ${formatMoney(breakdown.manualDiscountMinor)}`:'—'}</strong></div>
-          {cart.some((line)=>productById.get(line.productId)?.preventDiscounts)&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}
-          {breakdown.totalDiscountMinor>0&&<>
-            <div className="subtotal"><span>Без скидок</span><strong>{formatMoney(subtotal)}</strong></div>
-            <div className="subtotal"><span>Скидка составила</span><strong>− {formatMoney(breakdown.totalDiscountMinor)}</strong></div>
-          </>}
-          {!boot.shift?<button className="primary wide" onClick={openShift}>Открыть смену</button>:<>
-            <div className="receipt-actions pos-v2-actions"><button disabled={!cart.length} onClick={holdReceipt}>Отложить</button><button disabled={!cart.length} onClick={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}>Оформить заказ</button><button className="primary pos-v2-pay" disabled={!cart.length} onClick={()=>setPayment(preferredPayment)}>К оплате · {formatMoney(total)}</button></div>
-          </>}
-        </footer>
-      </aside>}
+      receipt={<CurrentReceipt
+        lines={cart}
+        customer={customer}
+        clubPercent={clubPercent}
+        allowFreePrice={Boolean(boot.rules.allowFreePrice)}
+        onClear={clear}
+        onOpenCustomer={()=>setCustomerOpen(true)}
+        onRemoveCustomer={()=>chooseCustomer(null)}
+        onOverridePrice={overridePrice}
+        onChangeQuantity={change}
+        onSetQuantity={setQuantity}
+        upsell={upsellCycle.state==='showing'&&upsellCycle.candidate&&activeUpsellProduct?{
+          cashierPhrase:upsellCycle.candidate.cashierPhrase||'Предложите покупателю: '+activeUpsellProduct.name,
+          name:activeUpsellProduct.name,
+          priceMinor:activeUpsellProduct.priceMinor,
+        }:null}
+        onAcceptUpsell={acceptUpsell}
+        onDismissUpsell={dismissUpsell}
+        allowDiscounts={discountRules.allowDiscounts}
+        reviewUnitMinor={reviewUnitMinor}
+        reviewCount={safeReviewCount}
+        reviewDiscountMinor={reviewDiscountMinor}
+        maxReviews={maxReviews}
+        onReviewCountChange={setReviewCount}
+        manualDiscount={manualDiscount}
+        manualDiscountMinor={breakdown.manualDiscountMinor}
+        onOpenManualDiscount={()=>setManualDiscountOpen(true)}
+        clubDiscountMinor={clubDiscountMinor}
+        hasProtectedItems={cart.some((line)=>productById.get(line.productId)?.preventDiscounts)}
+        subtotalMinor={subtotal}
+        totalDiscountMinor={breakdown.totalDiscountMinor}
+        totalMinor={total}
+        shiftOpen={Boolean(boot.shift)}
+        onOpenShift={openShift}
+        onHold={holdReceipt}
+        onCreateOrder={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}
+        onPay={()=>setPayment(preferredPayment)}
+      />}
     />}
 
     {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>}
