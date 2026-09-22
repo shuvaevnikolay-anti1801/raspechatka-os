@@ -129,9 +129,7 @@ async function load(page = 1, size = pageSize.value) {
 async function loadOptions() {
 	optionsError.value = "";
 	try {
-		const result = await call(
-			"raspechatka.api.internal_orders.get_internal_order_options"
-		);
+		const result = await call("raspechatka.api.internal_orders.get_internal_order_options");
 		options.points = result.points || [];
 		options.statuses = result.statuses || [];
 	} catch (exception) {
