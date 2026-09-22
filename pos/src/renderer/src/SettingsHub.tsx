@@ -34,6 +34,13 @@ export const settingsGateStateAfterVerification = (verified: boolean): SettingsG
     ? { gateOpen: false, open: true, gateError: "" }
     : { gateOpen: true, open: false, gateError: "Неверный пароль" };
 
+export async function resolveSettingsAdminGate(
+  password: string,
+  verify: (password: string) => Promise<boolean>
+): Promise<SettingsGateState> {
+  return settingsGateStateAfterVerification(await verify(password));
+}
+
 export function SettingsAdminGate({
   password,
   error,
@@ -215,8 +222,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
   }, [open]);
 
   const unlock = async () => {
-    const next = settingsGateStateAfterVerification(
-      await pos().verifyAdminCode(password)
+    const next = await resolveSettingsAdminGate(
+      password,
+      (code) => pos().verifyAdminCode(code)
     );
     setGateOpen(next.gateOpen);
     setOpen(next.open);
