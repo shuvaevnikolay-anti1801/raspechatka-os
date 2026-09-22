@@ -386,7 +386,7 @@ export class PosDatabase {
       discount_percent discountPercent,COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
       FROM sale_items WHERE sale_id=? ORDER BY id`).all(id) as unknown as SaleDetails['lines']
     const payments=(this.db.prepare(`SELECT method,amount_minor amountMinor,transaction_id transactionId,
-      banking_evidence_json bankingEvidenceJson FROM sale_payments WHERE sale_id=? ORDER BY id`).all(id) as
+      banking_evidence_json bankingEvidenceJson FROM sale_payments WHERE sale_id=? ORDER BY id`).all(id) as unknown as
       Array<PaymentPart&{bankingEvidenceJson?:string|null}>).map(({bankingEvidenceJson,...payment})=>({
         ...payment,
         transactionId:payment.transactionId||undefined,
