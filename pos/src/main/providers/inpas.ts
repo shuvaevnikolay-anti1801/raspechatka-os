@@ -34,7 +34,11 @@ type CommandResult = {
 type CommandExecutor = (
   executable: string,
   args: string[],
-  options: { cwd: string; timeoutMs: number }
+  options: {
+    cwd: string;
+    timeoutMs: number;
+    windowsVerbatimArguments?: boolean;
+  }
 ) => Promise<CommandResult>;
 
 export type InpasLauncher = {
@@ -397,6 +401,12 @@ export class InpasPaymentProvider implements PaymentProvider {
           ]
         : [...launcher.prefixArgs, ...args];
     const timeoutMs = settings.timeoutMs + 5000;
+    // Node normally applies C-runtime quoting to child arguments on Windows.
+    // cmd.exe does not understand the resulting backslash-escaped quotes in
+    // a /c command string, so BAT launchers must receive their arguments
+    // verbatim. Otherwise a path such as "C:\Program Files (x86)\..."
+    // reaches cmd.exe as a quoted literal and DCConsole.bat is never started.
+    const windowsVerbatimArguments = launcher.type === "bat";
     const startedAt = Date.now();
     let cwdWritable = true;
     try {
@@ -417,6 +427,7 @@ export class InpasPaymentProvider implements PaymentProvider {
       resultPath,
       receiptPath,
       timeoutMs,
+      windowsVerbatimArguments,
       terminalId: settings.terminalId,
       currencyCode: settings.currencyCode,
       amountMinor,
@@ -434,6 +445,7 @@ export class InpasPaymentProvider implements PaymentProvider {
         processResult = await this.executor(launcher.command, launchArgs, {
           cwd,
           timeoutMs,
+          windowsVerbatimArguments,
         });
       } catch (error) {
         this.logDiagnostics("process launch failed", {
@@ -649,7 +661,11 @@ export class InpasPaymentProvider implements PaymentProvider {
 function executeCommand(
   executable: string,
   args: string[],
-  options: { cwd: string; timeoutMs: number }
+  options: {
+    cwd: string;
+    timeoutMs: number;
+    windowsVerbatimArguments?: boolean;
+  }
 ): Promise<CommandResult> {
   return new Promise((resolvePromise, reject) => {
     execFile(
@@ -658,6 +674,7 @@ function executeCommand(
       {
         cwd: options.cwd,
         windowsHide: true,
+        windowsVerbatimArguments: options.windowsVerbatimArguments,
         timeout: options.timeoutMs,
         encoding: "buffer",
         maxBuffer: 1024 * 1024,
