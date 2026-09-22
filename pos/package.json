@@ -55,8 +55,12 @@
         "to": "native/atol/Raspechatka.AtolBridge.exe"
       },
       {
-        "from": "native/inpas-bridge/publish/Raspechatka.InpasBridge.exe",
-        "to": "native/inpas/Raspechatka.InpasBridge.exe"
+        "from": "native/inpas-bridge/publish",
+        "to": "native/inpas",
+        "filter": [
+          "Raspechatka.InpasBridge.exe",
+          "Raspechatka.InpasBridge.exe.config"
+        ]
       }
     ]
   }
