@@ -7,7 +7,6 @@ import { ConnectionStore } from "./connection";
 import { registerIpcHandlers } from "./ipc";
 import { registerPosV2Ipc } from "./pos-v2-ipc";
 import { registerHardwareSettingsIpc } from "./hardware-ipc";
-import { MockPaymentProvider } from "./providers/mock";
 import { WindowsPrintProvider } from "./providers/print";
 import { AtolSettingsStore } from "./providers/atol-web";
 import { createFiscalProvider } from "./providers/fiscal-provider-factory";
@@ -26,6 +25,12 @@ import { CommodityPrintQueue } from "./print-jobs";
 import { buildBootState, startAutomaticSync } from "./sync";
 import { PosDiagnostics } from "./diagnostics";
 import { InpasPaymentProvider, InpasSettingsStore } from "./providers/inpas";
+import {
+  isInpasBridgeExecutableAvailable,
+  NativeInpasBridge,
+  resolveInpasBridgeExecutablePath,
+} from "./providers/inpas-direct-bridge";
+import { createPaymentProvider } from "./providers/payment-provider-factory";
 import { CashierAuthSession } from "./cashier-auth";
 import { PosLifecycleStore } from "./pos-lifecycle";
 import { AtolCredentialStore, AtolWebManager } from "./atol-web-manager";
@@ -37,6 +42,7 @@ let journal: TransactionJournal | undefined;
 let printQueue: CommodityPrintQueue | undefined;
 let diagnostics: PosDiagnostics | undefined;
 let atolDriverBridge: NativeAtolDriverBridge | undefined;
+let inpasDirectBridge: NativeInpasBridge | undefined;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -115,13 +121,36 @@ if (!hasLock) {
     const inpasSettingsStore = new InpasSettingsStore(
       join(userData, "inpas-settings.json")
     );
-    const inpasProvider = new InpasPaymentProvider(
+    const inpasLegacyProvider = new InpasPaymentProvider(
       inpasSettingsStore,
       join(userData, "inpas-results")
     );
-    const paymentProvider = trainingMode
-      ? new MockPaymentProvider()
-      : inpasProvider;
+    const inpasBridgePath = resolveInpasBridgeExecutablePath({
+      isPackaged: app.isPackaged,
+    });
+    inpasDirectBridge = new NativeInpasBridge({
+      executablePath: inpasBridgePath,
+    });
+    const paymentProvider = createPaymentProvider({
+      trainingMode,
+      settingsStore: inpasSettingsStore,
+      legacyProvider: inpasLegacyProvider,
+      directBridge: inpasDirectBridge,
+      diagnostics,
+    });
+    if (
+      !trainingMode &&
+      process.env.RASPECHATKA_INPAS_ADAPTER !== "console" &&
+      !isInpasBridgeExecutableAvailable(inpasBridgePath)
+    ) {
+      diagnostics.record({
+        source: "payment",
+        level: "warning",
+        eventType: "inpas.driver.missing",
+        message: "INPAS bridge helper не найден: прямой эквайринг не настроен",
+        details: { errorCode: "not_configured" },
+      });
+    }
     const atolBridgePath = resolveAtolBridgeExecutablePath({ isPackaged: app.isPackaged });
     atolDriverBridge = trainingMode ? undefined : new NativeAtolDriverBridge({
       executablePath: atolBridgePath,
@@ -234,7 +263,7 @@ if (!hasLock) {
       trainingMode ? undefined : atolManager,
       trainingMode ? undefined : fiscalProvider,
       inpasSettingsStore,
-      trainingMode ? undefined : inpasProvider,
+      trainingMode ? undefined : paymentProvider,
       diagnostics,
       atolDriverBridge,
       () => journal!.hasBlockingFiscalOperation()
@@ -276,6 +305,7 @@ app.on("before-quit", () => {
   stopAutomaticPrintRetry?.();
   printQueue?.close();
   void atolDriverBridge?.stop();
+  void inpasDirectBridge?.stop();
   journal?.close();
   database?.close();
   diagnostics?.close();
