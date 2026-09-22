@@ -1,4 +1,5 @@
 # ruff: noqa: RUF001
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
@@ -130,6 +131,17 @@ class TestPosOperationalWarehouseContract(TestCase):
 		)
 
 
+class TestPosLocalWarehouseTruth(TestCase):
+	def test_stock_receipt_queues_without_optimistically_mutating_delivery_cache(self):
+		source = (
+			Path(__file__).resolve().parents[2] / "pos" / "src" / "main" / "database.ts"
+		).read_text(encoding="utf-8")
+		method = source[source.index("  createStockReceipt("):source.index("  recordCleanerVisit(")]
+		self.assertIn("this.queue('stock.receipt.requested'", method)
+		self.assertNotIn("data.deliveries=", method)
+		self.assertNotIn("this.setWorkplaceData(data)", method)
+
+
 class TestCanonicalPurchaseOrderReceiptStatus(TestCase):
 	def test_received_quantities_keep_partial_open_and_close_only_when_full(self):
 		for received_quantity, expected_status in ((2, "Частично принято"), (5, "Принято")):
@@ -259,6 +271,34 @@ class TestPosWarehouseIngestion(TestCase):
 					"EMP-1",
 				)
 		self.assertEqual(sql.call_args.args[1], ("PO-FOREIGN", "POINT-A"))
+
+	def test_write_off_rejects_item_without_balance_in_point_warehouse(self):
+		def exists(doctype, filters):
+			if doctype == "Stock Write Off":
+				return False
+			if doctype == "Stock Balance":
+				self.assertEqual(filters, {"item": "ITEM-FOREIGN", "warehouse": "WH-A"})
+				return False
+			raise AssertionError(f"Unexpected exists lookup: {doctype}")
+
+		with (
+			patch.object(pos_v2.frappe.db, "exists", side_effect=exists),
+			patch.object(
+				pos_v2,
+				"_point_stock_context",
+				return_value=(SimpleNamespace(name="POINT-A", business_entity="BE-1"), "WH-A"),
+			),
+			patch.object(pos_v2, "get_item"),
+			patch.object(pos_v2.frappe, "get_doc") as get_doc,
+		):
+			with self.assertRaises(Exception):
+				pos_v2._ingest_stock_write_off(
+					"EVENT-FOREIGN",
+					{"productId": "ITEM-FOREIGN", "quantity": 1},
+					SimpleNamespace(business_point="POINT-A"),
+					"EMP-1",
+				)
+		get_doc.assert_not_called()
 
 	def test_duplicate_warehouse_events_are_noops(self):
 		with (
