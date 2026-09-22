@@ -193,7 +193,7 @@ describe('unified warehouse workplace contract',()=>{
   })
   it('keeps write-off fields vertical and independent from sale products',()=>{
     const markup=renderToStaticMarkup(<WriteOffModal products={operationalStockItems(catalog)} onClose={()=>undefined} onComplete={async()=>undefined}/>)
-    const labels=['>Товар<','>Количество<','>Причина<','>Комментарий ']
+    const labels=['>Товар<','>Количество<','>Причина<','>Комментарий<']
     const positions=labels.map((label)=>markup.indexOf(label))
     expect(positions.every((position)=>position>=0)).toBe(true)
     expect(positions).toEqual([...positions].sort((a,b)=>a-b))
