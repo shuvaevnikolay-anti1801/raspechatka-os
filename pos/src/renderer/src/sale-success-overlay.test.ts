@@ -57,8 +57,10 @@ describe('sale success overlay contract',()=>{
   })
 
   it('blocks duplicate print requests and closes only after successful print',()=>{
-    expect(source).toContain('if(printing)return')
+    expect(source).toContain('if(printingRef.current)return')
+    expect(source).toContain('printingRef.current=true')
     expect(source).toContain('disabled={printing}')
+    expect(source).toContain('printingRef.current=false')
     expect(source).toContain("await window.raspechatkaPos.printSale(result.saleId,'commodity')")
     expect(source).toContain("current?.result.saleId===result.saleId?null:current")
   })
