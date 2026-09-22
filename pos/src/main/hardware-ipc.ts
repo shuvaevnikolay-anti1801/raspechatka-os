@@ -6,10 +6,8 @@ import { NativeAtolDriverBridge, resolveAtolBridgeExecutablePath } from "./provi
 import type { AtolDriverBridge, AtolDriverInfo } from "./providers/atol-driver";
 import type { AtolWebManager } from "./atol-web-manager";
 import type { FiscalProvider } from "./providers/contracts";
-import type {
-  InpasPaymentProvider,
-  InpasSettingsStore,
-} from "./providers/inpas";
+import type { InpasSettingsStore } from "./providers/inpas";
+import type { RoutedPaymentProvider } from "./providers/payment-provider-factory";
 
 function atolErrorDetails(error: unknown): Record<string, unknown> {
   const value = error as {
@@ -27,7 +25,7 @@ export function registerHardwareSettingsIpc(
   atolManager: AtolWebManager | undefined,
   fiscalProvider: FiscalProvider | undefined,
   inpasSettingsStore: InpasSettingsStore,
-  paymentProvider: InpasPaymentProvider | undefined,
+  paymentProvider: RoutedPaymentProvider | undefined,
   diagnostics: PosDiagnostics,
   driverBridge: AtolDriverBridge = new NativeAtolDriverBridge({
     executablePath:
