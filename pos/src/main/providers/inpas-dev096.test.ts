@@ -88,12 +88,22 @@ describe("DEV-096 INPAS BAT launcher", () => {
 
       const store = new InpasSettingsStore(join(root, "settings.json"));
       store.save(settings(bat));
-      const calls: Array<{ file: string; args: string[]; cwd: string }> = [];
+      const calls: Array<{
+        file: string;
+        args: string[];
+        cwd: string;
+        windowsVerbatimArguments?: boolean;
+      }> = [];
       const provider = new InpasPaymentProvider(
         store,
         join(root, "results"),
         async (file, args, options) => {
-          calls.push({ file, args, cwd: options.cwd });
+          calls.push({
+            file,
+            args,
+            cwd: options.cwd,
+            windowsVerbatimArguments: options.windowsVerbatimArguments,
+          });
           writeFileSync(
             join(options.cwd, "result.txt"),
             "[27] = '40000037'\r\n[39] = '1'\r\n[19] = 'OK'",
@@ -120,6 +130,7 @@ describe("DEV-096 INPAS BAT launcher", () => {
             `call "${bat}" -o26 -z40000037 -a10 -c643 -s360`,
           ],
           cwd: root,
+          windowsVerbatimArguments: true,
         },
       ]);
     } finally {
