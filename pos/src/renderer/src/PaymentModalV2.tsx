@@ -69,41 +69,73 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
 
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'&&!busy){event.preventDefault();onClose();return}
+      if(event.key==='Escape'&&!busy){
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        onClose()
+        return
+      }
       if(event.key==='Enter'&&canSubmit){
         const target=event.target as HTMLElement|null
         if(target?.tagName==='TEXTAREA')return
-        event.preventDefault();void submit()
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        void submit()
       }
     }
-    window.addEventListener('keydown',handler)
-    return()=>window.removeEventListener('keydown',handler)
+    window.addEventListener('keydown',handler,{capture:true})
+    return()=>window.removeEventListener('keydown',handler,{capture:true})
   })
 
-  return <div className="modal-backdrop"><div className="payment-modal payment-modal-v2">
-    <header><div><small>ОПЛАТА</small><h2>{formatMoney(total)}</h2></div><button onClick={onClose} disabled={busy}>×</button></header>
-    <div className="method-grid checkout-methods">
-      {rules.acceptsCash&&<button className={choice==='cash'?'active':''} onClick={()=>onChoice('cash')} disabled={busy}>Наличные</button>}
-      {rules.acceptsCard&&<button className={choice==='card'?'active':''} onClick={()=>onChoice('card')} disabled={busy||!terminalReady}>Карта{!terminalReady&&<small>Терминал не готов</small>}</button>}
-      {rules.acceptsQr&&<button className={choice==='qr'?'active':''} onClick={()=>onChoice('qr')} disabled={busy||!terminalReady}>QR / СБП{!terminalReady&&<small>Терминал не готов</small>}</button>}
-      {rules.acceptsRemotePayment!==false&&<button className={choice==='remote_payment'?'active':''} onClick={()=>onChoice('remote_payment')} disabled={busy}>Удалённая оплата<small>По ссылке Точки</small></button>}
-      <button className={choice==='mixed'?'active':''} onClick={()=>onChoice('mixed')} disabled={busy}>Смешанная</button>
+  return <div className="modal-backdrop payment-backdrop"><div className="payment-modal payment-modal-v2" role="dialog" aria-modal="true" aria-labelledby="payment-title">
+    <header className="payment-heading">
+      <div><small>ОПЛАТА</small><h2 id="payment-title">Выберите способ оплаты</h2></div>
+      <button className="payment-close" aria-label="Закрыть оплату" onClick={onClose} disabled={busy}>×</button>
+    </header>
+
+    <div className="payment-amount-due"><span>К оплате</span><strong>{formatMoney(total)}</strong></div>
+
+    <div className="method-grid checkout-methods" aria-label="Способы оплаты">
+      {rules.acceptsCash&&<button className={choice==='cash'?'active':''} onClick={()=>onChoice('cash')} disabled={busy}><span>Наличные</span></button>}
+      {rules.acceptsCard&&<button className={choice==='card'?'active':''} onClick={()=>onChoice('card')} disabled={busy||!terminalReady}><span>Карта</span>{!terminalReady&&<small>Терминал не готов</small>}</button>}
+      {rules.acceptsQr&&<button className={choice==='qr'?'active':''} onClick={()=>onChoice('qr')} disabled={busy||!terminalReady}><span>QR / СБП</span>{!terminalReady&&<small>Терминал не готов</small>}</button>}
+      {rules.acceptsRemotePayment!==false&&<button className={choice==='remote_payment'?'active':''} onClick={()=>onChoice('remote_payment')} disabled={busy}><span>Удалённая оплата</span><small>По ссылке Точки</small></button>}
+      <button className={choice==='mixed'?'active':''} onClick={()=>onChoice('mixed')} disabled={busy}><span>Смешанная</span></button>
     </div>
 
-    {(terminalChoice||mixedUsesTerminal)&&!terminalReady&&<div className="payment-warning"><strong>Эквайринг пока недоступен</strong><span>{terminalMessage}. Деньги не будут считаться принятыми без ответа реального терминала.</span></div>}
+    <div className="payment-context">
+      {(terminalChoice||mixedUsesTerminal)&&!terminalReady&&<div className="payment-warning">
+        <strong>Эквайринг пока недоступен</strong>
+        <span>{terminalMessage}. Деньги не будут считаться принятыми без ответа реального терминала.</span>
+      </div>}
 
-    {choice==='cash'&&<label className="cash-input"><span>Получено от клиента</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} placeholder={formatMoney(total).replace(/\s₽$/,'')}/><small>{cashMinor>0&&cashMinor<total?'Получено меньше суммы чека':'Сдача: '+formatMoney(Math.max(0,cashMinor-total))}</small></label>}
+      {choice==='cash'&&<div className="cash-payment-context">
+        <label className="cash-input payment-received"><span>Получено от клиента</span><input autoFocus inputMode="decimal" value={cash} onChange={(event)=>setCash(event.target.value)} placeholder={formatMoney(total).replace(/\s₽$/,'')}/></label>
+        <div className={'payment-change '+(cashMinor>0&&cashMinor<total?'invalid':'')}>
+          <span>{cashMinor>0&&cashMinor<total?'Недостаточно':'Сдача'}</span>
+          <strong>{cashMinor>0&&cashMinor<total?'Получено меньше суммы чека':formatMoney(Math.max(0,cashMinor-total))}</strong>
+        </div>
+      </div>}
 
-    {remoteChoice&&<section className="remote-confirmation">
-      <strong>Удалённая оплата по ссылке Точки</strong>
-      <p>Проверьте подтверждение клиента или поступление денег. Касса не обращается к PAX и после подтверждения сразу перейдёт к фискальному чеку АТОЛ.</p>
-      <label className="remote-check"><input type="checkbox" checked={remoteConfirmed} onChange={(e)=>setRemoteConfirmed(e.target.checked)} disabled={busy}/><span><b>Я проверил(а), что оплата действительно получена</b><small>Кассир и точное время подтверждения будут зафиксированы приложением.</small></span></label>
-      <label className="cash-input"><span>Комментарий (необязательно)</span><input value={remoteNote} onChange={(e)=>setRemoteNote(e.target.value)} placeholder="Например: подтверждение в приложении Точки" disabled={busy}/></label>
-    </section>}
+      {remoteChoice&&<section className="remote-confirmation">
+        <strong>Удалённая оплата по ссылке Точки</strong>
+        <p>Проверьте подтверждение клиента или поступление денег. Касса не обращается к PAX и после подтверждения сразу перейдёт к фискальному чеку АТОЛ.</p>
+        <label className="remote-check"><input type="checkbox" checked={remoteConfirmed} onChange={(event)=>setRemoteConfirmed(event.target.checked)} disabled={busy}/><span><b>Я проверил(а), что оплата действительно получена</b><small>Кассир и точное время подтверждения будут зафиксированы приложением.</small></span></label>
+        <label className="cash-input"><span>Комментарий (необязательно)</span><input value={remoteNote} onChange={(event)=>setRemoteNote(event.target.value)} placeholder="Например: подтверждение в приложении Точки" disabled={busy}/></label>
+      </section>}
 
-    {choice==='mixed'&&<div className="split-payment"><p>Укажите, сколько клиент платит каждым способом.</p>{rules.acceptsCash&&<label><span>Наличными</span><input autoFocus value={cash} onChange={(e)=>setCash(e.target.value)} disabled={busy}/></label>}{rules.acceptsCard&&<label><span>Картой</span><input value={card} onChange={(e)=>setCard(e.target.value)} disabled={busy||!terminalReady}/></label>}{rules.acceptsQr&&<div><span>QR — остаток</span><b>{formatMoney(mixedRemainder)}</b></div>}<footer><span>Распределено</span><b>{formatMoney(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0))}</b></footer></div>}
+      {choice==='mixed'&&<div className="split-payment">
+        <p>Укажите, сколько клиент платит каждым способом.</p>
+        <div className="split-payment-fields">
+          {rules.acceptsCash&&<label><span>Наличными</span><input autoFocus inputMode="decimal" value={cash} onChange={(event)=>setCash(event.target.value)} disabled={busy}/></label>}
+          {rules.acceptsCard&&<label><span>Картой</span><input inputMode="decimal" value={card} onChange={(event)=>setCard(event.target.value)} disabled={busy||!terminalReady}/></label>}
+          {rules.acceptsQr&&<div className="split-remainder"><span>QR — остаток</span><b>{formatMoney(mixedRemainder)}</b></div>}
+        </div>
+        <footer><span>Распределено</span><b>{formatMoney(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0))}</b></footer>
+      </div>}
+    </div>
 
-    <button className="primary confirm" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
+    <button className="primary confirm payment-confirm" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
     <p className="checkout-footnote">Enter — подтвердить · Esc — закрыть. После начала операции повторное нажатие блокируется. При сбое касса сохранит состояние и предложит безопасное восстановление.</p>
   </div></div>
 }
