@@ -598,6 +598,8 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 	if not item_id:
 		frappe.throw(_("Для списания не указан товар"))
 	get_item(item_id)
+	if not frappe.db.exists("Stock Balance", {"item": item_id, "warehouse": warehouse}):
+		frappe.throw(_("Товар недоступен для складского контекста этой точки"), frappe.PermissionError)
 	quantity = flt(payload.get("quantity"))
 	if quantity <= 0:
 		frappe.throw(_("Количество списания должно быть больше нуля"))
