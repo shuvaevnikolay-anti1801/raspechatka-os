@@ -48,3 +48,4 @@ raspechatka.patches.v1_0.repair_cashier_employee_links
 raspechatka.patches.v1_0.repair_moysklad_variants
 
 raspechatka.patches.v1_0.repair_dev161_time
+raspechatka.patches.v1_0.repair_client_id_series
