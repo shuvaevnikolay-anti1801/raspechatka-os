@@ -20,6 +20,14 @@ import "./settings-hub.css";
 
 type ExtendedPosApi = typeof window.raspechatkaPos;
 const pos = () => window.raspechatkaPos as ExtendedPosApi;
+export async function saveConnectionWithConfigurationRefresh(
+  api: Pick<ExtendedPosApi, "saveConnection" | "syncConfiguration">,
+  config: ConnectionConfig
+): Promise<BootState> {
+  await api.saveConnection(config);
+  return api.syncConfiguration();
+}
+
 export const SETTINGS_OPEN_TRIGGER_CLASS = "settings-open-trigger";
 export const SETTINGS_OPEN_TRIGGER_SELECTOR = "." + SETTINGS_OPEN_TRIGGER_CLASS;
 
@@ -243,8 +251,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     setBusy(true);
     setMessage("Проверяем подключение к Распечатка OS…");
     try {
-      await pos().saveConnection(pairing);
-      const next = await pos().syncConfiguration();
+      const next = await saveConnectionWithConfigurationRefresh(pos(), pairing);
       setBoot(next);
       setShowPairing(false);
       setPairing((x) => ({ ...x, token: "" }));
