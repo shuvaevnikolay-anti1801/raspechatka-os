@@ -128,11 +128,7 @@ def get_internal_orders(search=None, status=None, business_point=None, start=0, 
 	return _get_internal_orders(search, status, business_point, start, page_length)
 
 
-@frappe.whitelist()
-@access_contract(area=AREA, action="read", scope="point")
-def get_internal_order_options():
-	"""Return only points visible to the current page scope plus canonical statuses."""
-	require_access(AREA, "read")
+def _get_internal_order_options():
 	points = frappe.get_all(
 		"Business Point",
 		filters=point_filter(field="name"),
@@ -147,3 +143,11 @@ def get_internal_order_options():
 		],
 		"statuses": [{"value": value, "label": value} for value in STATUS_OPTIONS],
 	}
+
+
+@frappe.whitelist()
+@access_contract(area=AREA, action="read", scope="point")
+def get_internal_order_options():
+	"""Return only points visible to the current page scope plus canonical statuses."""
+	require_access(AREA, "read")
+	return _get_internal_order_options()
