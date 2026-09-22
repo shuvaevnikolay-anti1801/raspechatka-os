@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
 import './pilot-ux.css'
 import { formatMoney } from './money'
@@ -16,6 +16,7 @@ type Payload={
 export default function SaleSuccessOverlay(){
   const [payload,setPayload]=useState<Payload|null>(null)
   const [printing,setPrinting]=useState(false)
+  const printingRef=useRef(false)
   const [printError,setPrintError]=useState('')
 
   useEffect(()=>{
@@ -26,6 +27,7 @@ export default function SaleSuccessOverlay(){
 
       const saleId=data.result.saleId
       const fallbackCreatedAt=new Date().toISOString()
+      printingRef.current=false
       setPrinting(false)
       setPrintError('')
       setPayload({result:data.result,payments:data.payments||[],createdAt:fallbackCreatedAt})
@@ -56,7 +58,8 @@ export default function SaleSuccessOverlay(){
 
   const close=()=>setPayload(null)
   const printCommodity=async()=>{
-    if(printing)return
+    if(printingRef.current)return
+    printingRef.current=true
     setPrinting(true)
     setPrintError('')
     try{
@@ -65,6 +68,7 @@ export default function SaleSuccessOverlay(){
     }catch{
       setPrintError('Не удалось напечатать товарный чек. Попробуйте ещё раз.')
     }finally{
+      printingRef.current=false
       setPrinting(false)
     }
   }
