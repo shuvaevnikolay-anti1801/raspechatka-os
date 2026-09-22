@@ -33,6 +33,10 @@ h1,h2,h3,p { margin:0; }
 .toast button { margin-left:auto; border:0; background:transparent; font-size:18px; }
 
 /* Sale workspace migrated to sale-workspace.css in DEV-169 (2). */
+.secondary,.toolbar button,.settings-actions button,.held button { min-height:38px; padding:0 14px; border:1px solid var(--rp-line-dark); background:#fff; font-size:11px; font-weight:650; }
+.primary { border-color:var(--rp-ink)!important; background:var(--rp-ink)!important; color:#fff!important; }
+.primary:hover { background:#000!important; }
+.wide { width:100%; min-height:50px; border:1px solid var(--rp-ink); font-weight:750; }
 
 
 .page { min-height:0; padding:30px 34px 50px; overflow:auto; }
