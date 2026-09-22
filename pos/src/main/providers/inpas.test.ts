@@ -171,7 +171,13 @@ describe("InpasPaymentProvider", () => {
     );
     expect((await provider.healthCheck()).ready).toBe(true);
     await provider.reconcile();
-    expect(calls[0].args).toEqual(["-o26", "-z40000037", "-s60"]);
+    expect(calls[0].args).toEqual([
+      "-p5",
+      "-z40000037",
+      "-o26",
+      "-m22",
+      "-l1",
+    ]);
     expect(calls[1].args).toEqual(["-o59", "-z40000037", "-s60"]);
   });
 
