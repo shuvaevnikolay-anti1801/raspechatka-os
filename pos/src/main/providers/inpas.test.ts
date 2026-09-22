@@ -171,7 +171,8 @@ describe("InpasPaymentProvider", () => {
     );
     expect((await provider.healthCheck()).ready).toBe(true);
     await provider.reconcile();
-    expect(calls.map((call) => call.args[0])).toEqual(["-o26", "-o59"]);
+    expect(calls[0].args).toEqual(["-o26", "-z40000037", "-s60"]);
+    expect(calls[1].args).toEqual(["-o59", "-z40000037", "-s60"]);
   });
 
   it("does not approve exit code zero without SA field 39", async () => {
