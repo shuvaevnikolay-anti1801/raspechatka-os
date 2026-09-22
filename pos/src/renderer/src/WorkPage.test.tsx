@@ -70,7 +70,7 @@ describe('WorkPage schedule presentation',()=>{
     expect(markup).toContain('>Иванов И. И.<')
     expect(markup).not.toContain('>Иванов Иван Иванович<')
     expect(markup).toContain('class="upcoming-shift"')
-    expect(markup).toContain('datetime="2026-09-03"')
+    expect(markup).toContain('dateTime="2026-09-03"')
     expect(markup).toContain('>09:00–18:00<')
     expect(markup).toContain('>8 ч.<')
     expect(markup).not.toContain('<select')
