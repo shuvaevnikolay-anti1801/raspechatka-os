@@ -22,7 +22,10 @@ const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,e
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
 export const manualSyncMessage=(result:BootState)=>{
-  if(result.documentQueueError)return `Справочники доступны, но очередь документов не отправлена: ${result.documentQueueError}. Осталось: ${result.pendingSync}`
+  if(result.documentQueueError){
+    const master=result.masterDataError?` Справочники не обновлены: ${result.masterDataError}.`:' Справочники обновлены.'
+    return `Связь с сервером есть.${master} Очередь документов не отправлена: ${result.documentQueueError}. Осталось: ${result.pendingSync}`
+  }
   if(result.pendingSync>0)return `Сервер доступен, но в очереди осталось документов: ${result.pendingSync}`
   if(result.masterDataError)return `Документы отправлены, но справочники не обновлены: ${result.masterDataError}`
   return 'Данные обновлены'
