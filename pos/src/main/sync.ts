@@ -21,7 +21,11 @@ export function buildBootState(database:PosDatabase):BootState{
     workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
     cashierId:undefined,cashierName:'Выберите сотрудника',employees,
     accessRevoked:false,
-    online:Boolean(remote.online),pendingSync:database.pendingSyncCount(),lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
+    online:Boolean(remote.online),pendingSync:database.pendingSyncCount(),
+    masterDataError:database.getState('master_data_error')||undefined,
+    documentQueueError:database.getState('outbox_error')||undefined,
+    documentQueueSynced:database.pendingSyncCount()===0&&!database.getState('outbox_error'),
+    lastSyncAt:remote.lastSyncAt,source:remote.source??'demo',
     shift:database.currentShift(),rules:remote.rules??{
       allowFreePrice:true,allowRemoveCartItem:true,allowDiscounts:true,maxDiscountPercent:100,
       acceptsCash:true,acceptsCard:true,acceptsQr:false,acceptsRemotePayment:true
@@ -39,6 +43,7 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
   let bootstrapError=''
   let outboxError=''
   let successfulContact=false
+  let acceptedAny=false
 
   const applyBootstrap=async()=>{
     const remote=await loadBootstrap(config,cashierId)
@@ -63,6 +68,7 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
   // Ошибка каталога/клиентов не должна блокировать уже созданные чеки и смены.
   try{
     await applyBootstrap()
+    database.setState('master_data_error','')
   }catch(error){
     bootstrapError=error instanceof Error?error.message:String(error)
     database.setState('master_data_error',bootstrapError)
@@ -80,12 +86,24 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
         successfulContact=true
         if(!accepted.length)break
         database.markEventsSent(accepted)
+        acceptedAny=true
         guard++
       }
       database.setState('outbox_error','')
     }catch(error){
       outboxError=error instanceof Error?error.message:String(error)
       database.setState('outbox_error',outboxError)
+    }
+  }
+
+  if(acceptedAny){
+    try{
+      await applyBootstrap()
+      bootstrapError=''
+      database.setState('master_data_error','')
+    }catch(error){
+      bootstrapError=error instanceof Error?error.message:String(error)
+      database.setState('master_data_error',bootstrapError)
     }
   }
 
