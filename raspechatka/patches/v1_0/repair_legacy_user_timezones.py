@@ -2,7 +2,6 @@ import frappe
 
 from raspechatka.time_contract import get_effective_site_timezone
 
-
 LEGACY_FRAPPE_FALLBACK = "Asia/Kolkata"
 CANONICAL_SITE_TIMEZONE = "Europe/Moscow"
 
