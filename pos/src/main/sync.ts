@@ -178,7 +178,9 @@ export function startAutomaticSync(database:PosDatabase,connectionStore:Connecti
       return
     }
     try{
-      await performSync(database,connectionStore,cashierId())
+      const activeCashierId=cashierId()
+      if(activeCashierId)await performSync(database,connectionStore,activeCashierId)
+      else await performConfigurationSync(database,connectionStore)
       delayMs=15000
     }catch{
       delayMs=Math.min(Math.max(delayMs*2,15000),120000)
