@@ -10,7 +10,7 @@ from raspechatka.scope import point_filter
 
 
 AREA = "page.warehouse.internal_orders"
-STATUS_OPTIONS = ("Новая", "В работе", "Заказана", "Закрыта", "Отклонена")
+STATUS_OPTIONS = ("Новая", "В работе", "Заказана", "Закрыта", "Отклонена")  # noqa: RUF001
 DEFAULT_PAGE_LENGTH = 50
 MAX_PAGE_LENGTH = 200
 
