@@ -41,7 +41,7 @@ describe('workstation favorites',()=>{
     const source=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
     expect(source).toContain('className="product-card-add" onClick={()=>onAdd(product)}')
     expect(source).toContain("onClick={()=>onToggleFavorite(product.id)}")
-    expect(source.indexOf('</button>\n          <button\n            className={\'product-favorite\'')).toBeGreaterThan(-1)
+    expect(source).toMatch(/<\/button>\s*<button\s+className=\{'product-favorite'/)
     expect(source).toContain('aria-label={(favorite?')
   })
 
