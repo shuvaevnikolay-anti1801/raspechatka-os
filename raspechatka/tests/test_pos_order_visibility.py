@@ -1,6 +1,9 @@
 from types import SimpleNamespace
-from unittest import TestCase
+from unittest import SkipTest, TestCase
 from unittest.mock import patch
+from uuid import uuid4
+
+import frappe
 
 from raspechatka.api import pos, pos_device, pos_v2, sales
 
@@ -48,6 +51,9 @@ class CanonicalStore:
 					return name
 			return None
 		return None
+
+	def throw(self, message, exception=None):
+		raise (exception or RuntimeError)(message)
 
 	def get_doc(self, doctype, name=None):
 		if isinstance(doctype, dict):
@@ -247,12 +253,13 @@ class TestPosOrderVisibility(TestCase):
 			patch.object(pos, "frappe", store),
 			patch.object(pos, "_doctype_exists", return_value=True),
 		):
-			pos_device._ingest_order(
-				"order.updated",
-				"EVENT-FOREIGN-UPDATE",
-				Row(name="POS-CONNECTION-2", business_point="POINT-2"),
-				{"orderNumber": "ORD-1", "comment": "Подменено", "status": "ready"},
-			)
+			with self.assertRaisesRegex(RuntimeError, "ORD-1"):
+				pos_device._ingest_order(
+					"order.updated",
+					"EVENT-FOREIGN-UPDATE",
+					Row(name="POS-CONNECTION-2", business_point="POINT-2"),
+					{"orderNumber": "ORD-1", "comment": "Подменено", "status": "ready"},
+				)
 
 		self.assertEqual(order.comment, "Исходное описание")
 		self.assertEqual(order.status, "In Progress")
@@ -265,3 +272,265 @@ class TestPosOrderVisibility(TestCase):
 			patch.object(sales, "get_allowed_entities", return_value=["ENTITY-2"]),
 		):
 			self.assertEqual(sales.get_orders(), {"rows": []})
+
+
+class TestPosOrderFrappeIntegration(TestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		try:
+			frappe.db.sql("select 1")
+			frappe.get_meta("POS Order")
+		except Exception as exc:
+			raise SkipTest("Frappe site database is not initialized for integration tests") from exc
+
+	def setUp(self):
+		self.suffix = uuid4().hex[:10]
+		self.save_point = f"dev168_order_{self.suffix}"
+		frappe.db.savepoint(self.save_point)
+		self._create_fixtures()
+
+	def tearDown(self):
+		frappe.db.rollback(save_point=self.save_point)
+
+	@staticmethod
+	def _valid_inn(seed):
+		base = f"{int(seed, 16) % 10_000_000_000:010d}"
+		digits = [int(value) for value in base]
+		check_11 = sum(
+			weight * value
+			for weight, value in zip((7, 2, 4, 10, 3, 5, 9, 4, 6, 8), digits, strict=True)
+		) % 11 % 10
+		digits.append(check_11)
+		check_12 = sum(
+			weight * value
+			for weight, value in zip((3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8), digits, strict=True)
+		) % 11 % 10
+		return "".join(str(value) for value in (*digits, check_12))
+
+	def _create_fixtures(self):
+		self.organization = frappe.get_doc(
+			{
+				"doctype": "Organization",
+				"organization_code": f"DEV168-{self.suffix}",
+				"organization_name": f"DEV-168 {self.suffix}",
+				"organization_type": "Franchisee",
+				"active": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.entity = frappe.get_doc(
+			{
+				"doctype": "Business Entity",
+				"short_name": f"DEV168-{self.suffix}",
+				"full_name": f"ИП DEV-168 {self.suffix}",
+				"organization": self.organization.name,
+				"last_name": "Тестов",
+				"first_name": "Заказ",
+				"inn": self._valid_inn(self.suffix),
+				"tax_system": "Патент",
+			}
+		).insert(ignore_permissions=True)
+		self.position = frappe.get_doc(
+			{
+				"doctype": "Position",
+				"position_name": f"DEV-168 кассир {self.suffix}",
+				"active": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.point = frappe.get_doc(
+			{
+				"doctype": "Business Point",
+				"point_name": f"DEV-168 point {self.suffix}",
+				"business_entity": self.entity.name,
+				"city": "Ярославль",
+				"address": "Integration test",
+				"active": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.foreign_point = frappe.get_doc(
+			{
+				"doctype": "Business Point",
+				"point_name": f"DEV-168 foreign {self.suffix}",
+				"business_entity": self.entity.name,
+				"city": "Ярославль",
+				"address": "Integration test foreign",
+				"active": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.workplace = frappe.db.get_value(
+			"POS Workplace",
+			{"business_point": self.point.name},
+			"name",
+		)
+		self.assertTrue(self.workplace)
+		phone_suffix = int(self.suffix, 16) % 10_000_000
+		self.employee = frappe.get_doc(
+			{
+				"doctype": "Employee",
+				"last_name": "Тестов",
+				"first_name": f"Кассир{self.suffix[:4]}",
+				"phone": f"+7999{phone_suffix:07d}",
+				"business_entity": self.entity.name,
+				"position": self.position.name,
+				"employment_type": "Трудовой договор",
+				"active": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.profile = frappe.get_doc(
+			{
+				"doctype": "Raspechatka User Profile",
+				"last_name": "Тестов",
+				"first_name": f"Кассир{self.suffix[:4]}",
+				"phone": f"+7999{phone_suffix:07d}",
+				"access_profile": "Raspechatka Cashier",
+				"scope_type": "Points",
+				"organization": self.organization.name,
+				"business_entity": self.entity.name,
+				"linked_employee": self.employee.name,
+				"active": 1,
+				"assigned_points": [{"business_point": self.point.name, "is_default": 1}],
+			}
+		).insert(ignore_permissions=True)
+		self.device_id = f"DEV168-{self.suffix}"
+		self.token = f"token-{self.suffix}"
+		self.connection = frappe.get_doc(
+			{
+				"doctype": "POS Connection",
+				"business_point": self.point.name,
+				"device_id": self.device_id,
+				"api_token": self.token,
+				"enabled": 1,
+			}
+		).insert(ignore_permissions=True)
+
+	def test_real_push_round_trip_scope_bootstrap_and_replay(self):
+		order_number = f"ORD-DEV168-{self.suffix}"
+		created_payload = {
+			"orderNumber": order_number,
+			"phone": "+7 900 123-45-67",
+			"comment": "Реальный DB regression",
+			"status": "in_progress",
+			"createdAt": "2026-09-20T09:00:00+03:00",
+			"dueAt": "2026-09-20T12:00:00+03:00",
+			"sourceSaleId": f"SALE-{self.suffix}",
+			"fiscalNumber": "777",
+			"totalMinor": 12345,
+			"paidMinor": 12345,
+			"cashierId": self.employee.name,
+			"lines": [
+				{
+					"productId": f"NOITEM-{self.suffix}",
+					"name": "Фотокнига",
+					"quantity": 1,
+					"unitPriceMinor": 12345,
+				}
+			],
+		}
+		ready_payload = {
+			**created_payload,
+			"status": "ready",
+			"readyAt": "2026-09-20T10:30:00+03:00",
+		}
+		create_event = {"id": f"CREATE-{self.suffix}", "eventType": "order.created", "payload": created_payload}
+		ready_event = {"id": f"READY-{self.suffix}", "eventType": "order.updated", "payload": ready_payload}
+
+		result = pos_v2.push_events(
+			self.device_id,
+			self.token,
+			events=[create_event, ready_event],
+			app_version="dev168-test",
+		)
+
+		self.assertEqual(result, {"accepted": [create_event["id"], ready_event["id"]], "errors": []})
+		order_names = frappe.get_all(
+			"POS Order",
+			filters={"order_number": order_number, "business_point": self.point.name},
+			pluck="name",
+		)
+		self.assertEqual(len(order_names), 1)
+		order = frappe.get_doc("POS Order", order_names[0])
+		self.assertEqual(order.business_point, self.point.name)
+		self.assertEqual(order.status, "Ready")
+		self.assertEqual(order.source_pos_event, create_event["id"])
+		self.assertEqual(order.source_sale_id, created_payload["sourceSaleId"])
+		self.assertEqual(order.fiscal_number, "777")
+		self.assertEqual(order.total_amount, 123.45)
+		self.assertEqual(order.paid_amount, 123.45)
+		self.assertEqual(len(order.items), 1)
+		self.assertEqual(order.items[0].item_name, "Фотокнига")
+		self.assertEqual(order.items[0].quantity, 1)
+		self.assertEqual(order.items[0].rate, 123.45)
+		self.assertEqual(
+			frappe.utils.get_datetime(order.created_at),
+			frappe.utils.get_datetime(pos_v2._normalize_v2_payload(created_payload)["createdAt"]),
+		)
+		self.assertEqual(
+			frappe.utils.get_datetime(order.ready_at),
+			frappe.utils.get_datetime(pos_v2._normalize_v2_payload(ready_payload)["readyAt"]),
+		)
+
+		current_scope = {"global": False, "points": [self.point.name]}
+		with (
+			patch.object(sales, "require_access"),
+			patch.object(sales, "get_scope", return_value=current_scope),
+			patch.object(sales, "get_allowed_entities", return_value=[self.entity.name]),
+		):
+			rows = sales.get_orders()["rows"]
+		self.assertEqual([row["order_number"] for row in rows if row["order_number"] == order_number], [order_number])
+
+		foreign_scope = {"global": False, "points": [self.foreign_point.name]}
+		with (
+			patch.object(sales, "require_access"),
+			patch.object(sales, "get_scope", return_value=foreign_scope),
+			patch.object(sales, "get_allowed_entities", return_value=[self.entity.name]),
+		):
+			foreign_rows = sales.get_orders()["rows"]
+		self.assertNotIn(order_number, [row["order_number"] for row in foreign_rows])
+
+		bootstrap = pos_v2.get_bootstrap(
+			self.device_id,
+			self.token,
+			cashier_id=self.employee.name,
+		)
+		bootstrap_order = next(
+			row for row in bootstrap["workplaceData"]["orders"] if row["orderNumber"] == order_number
+		)
+		self.assertEqual(bootstrap_order["id"], order.name)
+		self.assertEqual(bootstrap_order["status"], "ready")
+		self.assertEqual(bootstrap_order["readyAt"], pos._pos_datetime_to_utc(order.ready_at))
+
+		replay = pos_v2.push_events(
+			self.device_id,
+			self.token,
+			events=[create_event],
+			app_version="dev168-test",
+		)
+		self.assertEqual(replay, {"accepted": [create_event["id"]], "errors": []})
+		self.assertEqual(
+			frappe.db.count(
+				"POS Order",
+				filters={"order_number": order_number, "business_point": self.point.name},
+			),
+			1,
+		)
+
+		missing_event = {
+			"id": f"MISSING-{self.suffix}",
+			"eventType": "order.updated",
+			"payload": {
+				"orderNumber": f"ORD-MISSING-{self.suffix}",
+				"status": "ready",
+				"readyAt": "2026-09-20T11:00:00+03:00",
+				"cashierId": self.employee.name,
+			},
+		}
+		missing = pos_v2.push_events(
+			self.device_id,
+			self.token,
+			events=[missing_event],
+			app_version="dev168-test",
+		)
+		self.assertEqual(missing["accepted"], [])
+		self.assertEqual(missing["errors"][0]["id"], missing_event["id"])
+		self.assertEqual(missing["errors"][0]["eventType"], "order.updated")
+		self.assertIn("не найден", missing["errors"][0]["message"])

@@ -106,6 +106,16 @@ export type SettingsHubProps = {
   initialOpen?: boolean;
 };
 
+export const buildSettingsStatusItems = (devices: DeviceStatuses | null) =>
+  devices
+    ? ([
+        ["OS", devices.os.ready, devices.os.message],
+        ["ККТ", devices.fiscal.ready, devices.fiscal.message],
+        ["Эквайринг", devices.payment.ready, devices.payment.message],
+        ["Принтер", devices.printer.ready, devices.printer.message],
+      ] as const)
+    : [];
+
 const defaultAtol: AtolSettings = {
   version: 2,
   enabled: false,
@@ -355,19 +365,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     }
   };
 
-  const statusItems = useMemo(
-    () =>
-      devices
-        ? ([
-            ["OS", devices.os.ready, devices.os.message],
-            ["ККТ", devices.fiscal.ready, devices.fiscal.message],
-            ["Эквайринг", devices.payment.ready, devices.payment.message],
-            ["Принтер", devices.printer.ready, devices.printer.message],
-            ["Смена", devices.shift.ready, devices.shift.message],
-          ] as const)
-        : [],
-    [devices]
-  );
+  const statusItems = useMemo(() => buildSettingsStatusItems(devices), [devices]);
 
   return (
     <>

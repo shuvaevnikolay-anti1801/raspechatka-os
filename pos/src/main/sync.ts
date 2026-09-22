@@ -63,6 +63,15 @@ function syncErrorText(bootstrapError:string,outboxError:string):string{
   ].filter(Boolean).join(' · ')
 }
 
+function outboxEventErrorsText(errors:Array<{id:string;eventType:string;message:string}>):string{
+  return errors.map((error)=>{
+    const eventType=error.eventType||'unknown'
+    const eventId=error.id||'без id'
+    const message=error.message||'Событие отклонено сервером'
+    return `${eventType} (${eventId}): ${message}`
+  }).join(' · ')
+}
+
 function finishContact(database:PosDatabase,successfulContact:boolean):BootState{
   const current=buildBootState(database)
   const lastSyncAt=successfulContact?new Date().toISOString():current.lastSyncAt
@@ -140,14 +149,33 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
       while(database.pendingSyncCount()>0&&guard<100){
         const events=database.pendingEvents(100)
         if(!events.length)break
-        const accepted=await pushEvents(config,events)
+        const result=await pushEvents(config,events)
         successfulContact=true
-        if(!accepted.length)break
-        database.markEventsSent(accepted)
-        acceptedAny=true
+
+        if(result.accepted.length){
+          database.markEventsSent(result.accepted)
+          acceptedAny=true
+        }
+
+        // A partial rejection is a terminal condition for this sync cycle.
+        // Accepted IDs are durable and may be read back canonically below, while
+        // rejected IDs remain pending for a later cycle instead of hot-looping.
+        const acceptedIds=new Set(result.accepted)
+        const errors=result.errors.length?result.errors:events
+          .filter((event)=>!acceptedIds.has(event.id))
+          .map((event)=>({
+            id:event.id,
+            eventType:event.eventType,
+            message:'Сервер не подтвердил событие',
+          }))
+        if(errors.length){
+          outboxError=outboxEventErrorsText(errors)
+          break
+        }
+
         guard++
       }
-      database.setState('outbox_error','')
+      database.setState('outbox_error',outboxError)
     }catch(error){
       outboxError=error instanceof Error?error.message:String(error)
       database.setState('outbox_error',outboxError)

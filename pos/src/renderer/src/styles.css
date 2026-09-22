@@ -228,10 +228,18 @@ h1,h2,h3,p { margin:0; }
 .stock-list>div>div { display:flex; flex-direction:column; gap:3px; }.stock-list small { color:var(--rp-muted); font-size:8px; }.stock-list .low { color:var(--rp-danger); }
 .open-needs { margin-top:8px; }.delivery-list>p { margin-bottom:14px; }.delivery-list article { align-items:flex-start; padding:16px 0; }.delivery-list article h3 { margin:4px 0; }.delivery-list article>div:last-child { align-items:flex-end; }.delivery-list article span { padding:5px 8px; background:var(--rp-green-soft); color:#587007; font-size:8px; }.delivery-list article strong { margin-top:8px; font-size:14px; }
 .cash-input select { height:44px; padding:0 9px; border:1px solid var(--rp-line-dark); background:#fff; font-size:10px; }
-.cash-count-modal { width:min(680px,100%); }.denominations { display:grid; grid-template-columns:1fr 1fr; gap:5px 18px; margin:18px 0; }
-.denominations label { display:grid; grid-template-columns:90px 90px 1fr; align-items:center; gap:8px; min-height:40px; border-bottom:1px solid #eceeea; font-size:9px; }
-.denominations input { height:32px; border:1px solid var(--rp-line-dark); text-align:center; }.denominations b { text-align:right; }
-.cash-reconcile { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:14px; }.cash-reconcile>div { display:flex; flex-direction:column; gap:5px; padding:12px; border:1px solid var(--rp-line); font-size:9px; }.cash-reconcile b,.cash-reconcile strong { font-size:16px; }.cash-reconcile .match { background:var(--rp-green-soft); }.cash-reconcile .mismatch { background:var(--rp-danger-soft); color:var(--rp-danger); }
+.cash-count-modal { box-sizing:border-box; width:min(780px,100%); max-height:calc(100vh - 32px); overflow:auto; }
+.denominations { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin:18px 0; }
+.denominations label { display:grid; grid-template-columns:minmax(110px,.8fr) minmax(96px,.65fr) minmax(120px,1fr); align-items:center; gap:12px; min-height:52px; border-bottom:1px solid #eceeea; font-size:14px; font-weight:700; }
+.denominations input { box-sizing:border-box; width:100%; height:48px; padding:0 10px; border:1px solid var(--rp-line-dark); border-radius:0; background:#fff; font-size:18px; font-weight:750; text-align:center; }
+.denominations b { font-size:15px; text-align:right; }
+.cash-reconcile { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+.cash-reconcile>div { display:flex; flex-direction:column; gap:8px; min-height:76px; box-sizing:border-box; padding:14px; border:1px solid var(--rp-line); border-radius:0; font-size:12px; }
+.cash-reconcile b,.cash-reconcile strong { font-size:20px; }
+.cash-reconcile .match { background:var(--rp-green-soft); }
+.cash-reconcile .mismatch { background:var(--rp-danger-soft); color:var(--rp-danger); }
+.cash-count-modal>.confirm { min-height:52px; font-size:14px; }
+@media(max-width:720px){.denominations{grid-template-columns:1fr}.cash-reconcile{grid-template-columns:1fr}}
 
 @media(max-width:1250px){.sale-layout{grid-template-columns:145px minmax(420px,1fr) 390px}.pos-header-nav>button{padding:0 9px}.product-grid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr))}.work-grid{grid-template-columns:1fr 1fr}.quick-card{grid-column:1/-1}}
 .orders-note{color:var(--muted);margin:0 0 18px;max-width:850px}.orders-list{display:grid;gap:12px;max-width:980px}.order-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}.order-card header{display:flex;justify-content:space-between;gap:16px}.order-card h2{margin:3px 0;font-size:22px}.order-card header span,.order-card p{color:var(--muted)}.order-status{padding:6px 10px;border-radius:999px;background:var(--soft);height:max-content}.order-status.ready{color:#167447;background:#e7f7ed}.order-status.issued{color:#666}.order-meta{display:flex;gap:18px;align-items:center;margin:14px 0}.order-meta strong{font-size:20px}.order-card footer{display:flex;gap:8px;flex-wrap:wrap}.order-card footer button{padding:7px 11px}.order-card footer button:first-child{margin-right:auto}.compact-modal textarea{min-height:76px;resize:vertical}

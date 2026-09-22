@@ -80,8 +80,8 @@ export default function CurrentReceipt({
     {upsell&&<div className="upsell-card receipt-upsell">
       <div className="receipt-upsell-copy">
         <small>ПРЕДЛОЖИТЕ ПОКУПАТЕЛЮ</small>
-        <p>{upsell.cashierPhrase}</p>
-        <div><strong>{upsell.name}</strong><b>{formatMoney(upsell.priceMinor)}</b></div>
+        <p className="receipt-upsell-phrase">{upsell.cashierPhrase}</p>
+        <div className="receipt-upsell-item"><strong>{upsell.name}</strong><b>{formatMoney(upsell.priceMinor)}</b></div>
       </div>
       <button className="receipt-upsell-add" aria-label={'Добавить '+upsell.name} onClick={onAcceptUpsell}>+</button>
       <button className="receipt-upsell-dismiss" aria-label="Отклонить рекомендацию" onClick={onDismissUpsell}>×</button>
@@ -100,7 +100,7 @@ export default function CurrentReceipt({
       </div>
       <div className="review-discount-row">
         <div><span>Доп. скидка{manualDiscount?.type==='percent'?` ${manualDiscount.value}%`:''}</span><small>Ограничена настройками точки</small></div>
-        <button disabled={!allowDiscounts} onClick={onOpenManualDiscount}>{manualDiscount?'Изменить':'Скидка'}</button>
+        <button className="receipt-manual-discount" disabled={!allowDiscounts} onClick={onOpenManualDiscount}>{manualDiscount?'Изменить':'Скидка'}</button>
         <strong>{manualDiscountMinor?`− ${formatMoney(manualDiscountMinor)}`:'—'}</strong>
       </div>
       {hasProtectedItems&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}

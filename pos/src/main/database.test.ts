@@ -194,7 +194,7 @@ describe('PosDatabase',()=>{
     database.createStockReceipt({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]},'EMP-1')
     for(let index=0;index<4;index+=1)database.recordCleanerVisit('Николай')
     expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(200000)
-    expect(database.getWorkplaceData().deliveries[0].items[0].remainingQuantity).toBe(2)
+    expect(database.getWorkplaceData().deliveries[0].items[0].remainingQuantity).toBe(4)
     database.payCleaner(200000)
     expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(0)
 
@@ -217,7 +217,7 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
   })
 
-  it('keeps a partially received purchase order with reduced remaining quantity',()=>{
+  it('keeps a partially received purchase order unchanged until canonical sync',()=>{
     const database=createDatabase()
     database.setWorkplaceData({
       schedule:[],
@@ -240,12 +240,13 @@ describe('PosDatabase',()=>{
     },'EMP-1')
     expect(database.getWorkplaceData().deliveries).toEqual([expect.objectContaining({
       id:'PO-PART',
-      status:'Частично принято',
-      items:[expect.objectContaining({purchaseOrderItemId:'POI-PART',receivedQuantity:3,remainingQuantity:2})],
+      status:'Ожидается',
+      items:[expect.objectContaining({purchaseOrderItemId:'POI-PART',receivedQuantity:1,remainingQuantity:4})],
     })])
+    expect(database.pendingEvents().filter((event)=>event.eventType==='stock.receipt.requested')).toHaveLength(1)
   })
 
-  it('removes a fully received purchase order from the optimistic workplace snapshot',()=>{
+  it('keeps a fully requested receipt visible until canonical sync confirms it',()=>{
     const database=createDatabase()
     database.setWorkplaceData({
       schedule:[],
@@ -266,7 +267,12 @@ describe('PosDatabase',()=>{
       purchaseOrderId:'PO-FULL',
       lines:[{purchaseOrderItemId:'POI-FULL',quantity:2}],
     },'EMP-1')
-    expect(database.getWorkplaceData().deliveries).toEqual([])
+    expect(database.getWorkplaceData().deliveries).toEqual([expect.objectContaining({
+      id:'PO-FULL',
+      status:'Ожидается',
+      items:[expect.objectContaining({purchaseOrderItemId:'POI-FULL',receivedQuantity:0,remainingQuantity:2})],
+    })])
+    expect(database.pendingEvents().filter((event)=>event.eventType==='stock.receipt.requested')).toHaveLength(1)
   })
 
   it('assigns morning and evening explicitly and preserves them after restart',()=>{
