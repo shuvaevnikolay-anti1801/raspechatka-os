@@ -135,7 +135,9 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
       </div>}
     </div>
 
-    <button className="primary confirm payment-confirm" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
-    <p className="checkout-footnote">Enter — подтвердить · Esc — закрыть. После начала операции повторное нажатие блокируется. При сбое касса сохранит состояние и предложит безопасное восстановление.</p>
+    <footer className="payment-actions">
+      <button className="primary confirm payment-confirm" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
+      <p className="checkout-footnote">Enter — подтвердить · Esc — закрыть. После начала операции повторное нажатие блокируется. При сбое касса сохранит состояние и предложит безопасное восстановление.</p>
+    </footer>
   </div></div>
 }
