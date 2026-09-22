@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
@@ -31,6 +31,25 @@ describe('receipt discount input ownership',()=>{
 
   it('resets receipt discount inputs only for explicit clear/new receipt',()=>{
     expect(emptyReceiptDiscountInputs()).toEqual({customer:null,reviewCount:0,manualDiscount:null})
+  })
+})
+
+describe('cash count contract',()=>{
+  it('keeps denomination payload order and exact integer arithmetic',()=>{
+    expect(CASH_COUNT_DENOMINATIONS).toEqual([500000,100000,50000,10000,5000,1000,500,200,100])
+    const lines=buildCashCountLines({500000:2,1000:3,100:4})
+    expect(lines).toEqual([
+      {denominationMinor:500000,quantity:2},
+      {denominationMinor:100000,quantity:0},
+      {denominationMinor:50000,quantity:0},
+      {denominationMinor:10000,quantity:0},
+      {denominationMinor:5000,quantity:0},
+      {denominationMinor:1000,quantity:3},
+      {denominationMinor:500,quantity:0},
+      {denominationMinor:200,quantity:0},
+      {denominationMinor:100,quantity:4},
+    ])
+    expect(cashCountTotal(lines)).toBe(1003400)
   })
 })
 
