@@ -37,9 +37,10 @@
 .delivery-list>header{display:flex;align-items:center;justify-content:space-between}
 .delivery-list>header small{color:var(--rp-muted)}
 .stock-table-scroll{width:100%;overflow-x:auto}
-.stock-table-scroll>header,.stock-table-scroll>div{display:grid;grid-template-columns:minmax(240px,1.3fr) minmax(110px,.45fr) minmax(220px,1fr);align-items:center;gap:14px;min-width:650px;min-height:52px;padding:0 15px;border-bottom:1px solid #eceeea;font-size:10px}
-.stock-table-scroll>header{min-height:38px;background:#f4f6f2;color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase}
-.stock-table-scroll>div>div{display:flex;flex-direction:column;gap:3px}
+.warehouse-stock>.stock-table-scroll{display:block;min-height:0;padding:0;border-bottom:0;font-size:inherit}
+.warehouse-stock .stock-table-scroll>header,.warehouse-stock .stock-table-scroll>div{display:grid;grid-template-columns:minmax(240px,1.3fr) minmax(110px,.45fr) minmax(220px,1fr);align-items:center;gap:14px;min-width:650px;min-height:52px;padding:0 15px;border-bottom:1px solid #eceeea;font-size:10px}
+.warehouse-stock .stock-table-scroll>header{min-height:38px;background:#f4f6f2;color:var(--rp-muted);font-size:8px;font-weight:700;text-transform:uppercase}
+.warehouse-stock .stock-table-scroll>div>div{display:flex;flex-direction:column;gap:3px}
 .stock-table-scroll small{color:var(--rp-muted);font-size:8px}
 .stock-table-scroll .low{color:var(--rp-danger)}
 .stock-table-scroll>p{padding:12px 15px}
