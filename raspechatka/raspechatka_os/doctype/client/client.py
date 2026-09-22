@@ -3,13 +3,12 @@ import re
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.model.naming import make_autoname
+from frappe.model.naming import NamingSeries, make_autoname
 from frappe.utils import add_days, cint, flt, now_datetime
 
 CHANNELS = ("Telegram", "MAX", "VK")
 SUPPORTED_MESSENGERS = (*CHANNELS, "WhatsApp")
 
-CLIENT_ID_SERIES = "RP-"
 CLIENT_ID_AUTONAME = "RP-.######"
 CLIENT_ID_PATTERN = re.compile(r"^RP-(\d+)$")
 
@@ -30,17 +29,12 @@ def sync_client_id_series(minimum=0):
 	)
 	existing_max = cint(rows[0][0]) if rows and rows[0] else 0
 	target = max(cint(minimum), existing_max)
-	if not target:
-		return 0
-	frappe.db.sql(
-		"""
-		INSERT INTO `tabSeries` (`name`, `current`)
-		VALUES (%s, %s)
-		ON DUPLICATE KEY UPDATE `current` = GREATEST(`current`, VALUES(`current`))
-		""",
-		(CLIENT_ID_SERIES, target),
-	)
-	return target
+	series = NamingSeries(CLIENT_ID_AUTONAME)
+	current = series.get_current_value()
+	if target > current:
+		series.update_counter(target)
+		return target
+	return current
 
 
 def next_client_id():
