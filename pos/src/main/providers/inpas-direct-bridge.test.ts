@@ -180,7 +180,7 @@ describe("NativeInpasBridge refund protocol", () => {
         .toBe("D:\\tools\\InpasBridge.exe");
     } finally {
       if (previousResources) Object.defineProperty(process, "resourcesPath", previousResources);
-      else delete electronProcess.resourcesPath;
+      else Reflect.deleteProperty(electronProcess, "resourcesPath");
       if (previousEnv === undefined) delete process.env.RASPECHATKA_INPAS_BRIDGE_PATH;
       else process.env.RASPECHATKA_INPAS_BRIDGE_PATH = previousEnv;
     }
