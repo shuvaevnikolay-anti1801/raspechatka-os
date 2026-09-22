@@ -25,6 +25,7 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     )
     expect(markup).toContain('pin-entry-layout')
     expect(markup).toContain('pin-entry-main')
+    expect(markup).toContain('pin-entry-content')
     expect((markup.match(/<input/g)||[]).length).toBe(1)
     expect((markup.match(/pin-input-control/g)||[]).length).toBe(1)
     expect((markup.match(/<span class="/g)||[]).length).toBe(4)
