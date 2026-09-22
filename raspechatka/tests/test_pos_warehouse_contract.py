@@ -312,6 +312,8 @@ class TestPosWarehouseIngestion(TestCase):
 			patch.object(pos_v2.base_pos, "_authenticate", return_value=connection),
 			patch.object(pos_v2.base_pos, "_point_employees", return_value=[{"id": "EMP-1", "name": "Иван"}]),
 			patch.object(pos_v2, "_trusted_event_cashier", return_value={"id": "EMP-1"}),
+			patch.object(pos_v2.frappe.db, "savepoint"),
+			patch.object(pos_v2.frappe.db, "rollback"),
 			patch.object(pos_v2, "_ingest_stock_write_off") as write_off,
 			patch.object(pos_v2, "_ingest_supply_request") as supply,
 			patch.object(pos_v2, "_ingest_stock_receipt") as receipt,
@@ -320,6 +322,7 @@ class TestPosWarehouseIngestion(TestCase):
 			result = pos_v2.push_events("DEVICE-1", "TOKEN", events=events, app_version="test")
 
 		self.assertEqual(result["accepted"], ["EVENT-WO", "EVENT-NEED", "EVENT-REC"])
+		self.assertEqual(result["errors"], [])
 		write_off.assert_called_once()
 		supply.assert_called_once()
 		receipt.assert_called_once()
