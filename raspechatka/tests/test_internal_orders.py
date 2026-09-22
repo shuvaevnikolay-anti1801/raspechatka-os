@@ -3,7 +3,7 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from raspechatka import scope as scope_api
-from raspechatka.api import internal_orders
+from raspechatka.api import internal_orders, pos_v2
 
 
 class FakeFrappe:
@@ -166,6 +166,98 @@ class TestInternalOrdersApi(TestCase):
 			[value["value"] for value in options["statuses"]],
 			list(internal_orders.STATUS_OPTIONS),
 		)
+
+	def test_pos_supply_request_fields_map_into_internal_order_shape(self):
+		captured = {}
+
+		class PosDb:
+			def exists(self, doctype, filters):
+				return False
+
+		class PosFrappe:
+			db = PosDb()
+
+			def get_doc(self, values):
+				captured.update(values)
+				return SimpleNamespace(insert=lambda ignore_permissions=False: None)
+
+		with (
+			patch.object(pos_v2, "frappe", PosFrappe()),
+			patch.object(
+				pos_v2,
+				"_point_stock_context",
+				return_value=(SimpleNamespace(name="POINT-1", business_entity="ENTITY-1"), "WH-1"),
+			),
+			patch.object(pos_v2, "_employee_user", return_value="cashier@example.test"),
+			patch.object(pos_v2, "nowdate", return_value="2026-09-22"),
+		):
+			pos_v2._ingest_supply_request(
+				"EVENT-SUPPLY-1",
+				{
+					"itemName": "Фотобумага A4",
+					"quantity": 3,
+					"comment": "Заканчивается на точке",
+				},
+				SimpleNamespace(business_point="POINT-1"),
+				"EMP-1",
+			)
+
+		self.assertEqual(
+			{
+				key: captured[key]
+				for key in (
+					"doctype",
+					"request_date",
+					"business_entity",
+					"business_point",
+					"warehouse",
+					"item",
+					"item_name",
+					"quantity",
+					"comment",
+					"requested_by_employee",
+					"requested_by",
+					"source_pos_event",
+				)
+			},
+			{
+				"doctype": "Point Supply Request",
+				"request_date": "2026-09-22",
+				"business_entity": "ENTITY-1",
+				"business_point": "POINT-1",
+				"warehouse": "WH-1",
+				"item": None,
+				"item_name": "Фотобумага A4",
+				"quantity": 3.0,
+				"comment": "Заканчивается на точке",
+				"requested_by_employee": "EMP-1",
+				"requested_by": "cashier@example.test",
+				"source_pos_event": "EVENT-SUPPLY-1",
+			},
+		)
+
+		self.fake.orders = [
+			SimpleNamespace(
+				name="NEED-2026-00003",
+				request_date=captured["request_date"],
+				creation="2026-09-22 11:00:00",
+				business_point=captured["business_point"],
+				requested_by_employee=captured["requested_by_employee"],
+				item=captured["item"],
+				item_name=captured["item_name"],
+				quantity=captured["quantity"],
+				comment=captured["comment"],
+				status="Новая",
+			)
+		]
+		row = internal_orders._get_internal_orders()["rows"][0]
+		self.assertEqual(row["business_point"], "POINT-1")
+		self.assertEqual(row["requested_by_employee"], "EMP-1")
+		self.assertEqual(row["item"], None)
+		self.assertEqual(row["item_name"], "Фотобумага A4")
+		self.assertEqual(row["quantity"], 3.0)
+		self.assertEqual(row["comment"], "Заканчивается на точке")
+		self.assertEqual(row["status"], "Новая")
 
 	def test_endpoint_denies_before_read_when_page_view_is_missing(self):
 		denied = PermissionError("Нет доступа")
