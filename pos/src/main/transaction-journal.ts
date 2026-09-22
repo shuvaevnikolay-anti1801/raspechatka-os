@@ -308,7 +308,7 @@ export class TransactionJournal {
   }
 
   getLatestPaymentAttempt(operationId: string): null | {
-    id:string; action:'charge'|'refund';kind:'sale'|'refund';method:string;amountMinor:number
+    id:string; action:'charge'|'refund';kind:'sale'|'refund';method:PaymentPart['method'];amountMinor:number
     state:'in_progress'|'approved'|'declined'|'unknown';transactionId?:string
     provider?:string;adapter?:string;terminalId?:string;referenceNumber?:string
     terminalTransactionId?:string;authorizationCode?:string;responseCode?:string;requestHash?:string
