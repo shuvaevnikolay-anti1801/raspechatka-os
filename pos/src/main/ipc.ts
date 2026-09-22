@@ -269,7 +269,7 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:save-connection',(_event,config:ConnectionConfig)=>{
     if(lifecycle.status().state!=='READY')lifecycle.beginConfiguration()
     const previous=connectionStore.load()
-    const identityChanged=assertConnectionIdentityChangeAllowed(previous,config,Boolean(database.currentShift()))
+    const identityChanged=assertConnectionIdentityChangeAllowed(previous??undefined,config,Boolean(database.currentShift()))
     if(identityChanged)database.clearConfirmedPointData()
     connectionStore.save(config);database.setState('sync_error','')
     diagnostics.record({source:'sync',eventType:'sync.connection_saved',message:'Настройки подключения к Raspechatka OS сохранены'})
