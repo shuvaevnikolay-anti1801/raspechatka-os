@@ -64,4 +64,10 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(markup).toContain('Диагностика')
     expect(markup).toContain('Последние технические события приложения.')
   })
+
+  it('does not render obsolete POS Ready controls or copy',()=>{
+    const markup=renderToStaticMarkup(<SettingsHub initialOpen/>)
+    expect(markup).not.toContain('POS Ready')
+    expect(markup).not.toContain('Подключение POS Ready')
+  })
 })
