@@ -66,6 +66,16 @@ export const parseSalePreferences=(raw:string|null,containerWidth:number):SalePr
   }
 }
 
+export const pruneFavoriteProductIds=(favoriteProductIds:readonly string[],productIds:readonly string[])=>{
+  const available=new Set(productIds)
+  return [...new Set(favoriteProductIds.filter((id)=>available.has(id)))]
+}
+
+export const toggleFavoriteProductId=(favoriteProductIds:readonly string[],productId:string)=>
+  favoriteProductIds.includes(productId)
+    ? favoriteProductIds.filter((id)=>id!==productId)
+    : [...favoriteProductIds,productId]
+
 export const readSalePreferences=(containerWidth:number,storage:Pick<Storage,'getItem'>=window.localStorage)=>
   parseSalePreferences(storage.getItem(SALE_PREFERENCES_KEY),containerWidth)
 
