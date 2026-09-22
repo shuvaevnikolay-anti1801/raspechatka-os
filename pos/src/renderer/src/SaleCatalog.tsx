@@ -1,5 +1,7 @@
 import type { Product } from '../../shared/contracts'
 import { formatMoney } from './money'
+import { PosIconButton } from './ui/PosButton'
+import { PosIcon } from './ui/PosIcon'
 
 export const FAVORITES_CATEGORY='Избранное'
 
@@ -52,22 +54,29 @@ export default function SaleCatalog({
   const visible=filterSaleProducts(products,category,query,favoriteProductIds)
   const favoriteIds=new Set(favoriteProductIds)
   return <section className="catalog">
-    <div className="catalog-toolbar"><label className="search"><span>⌕</span><input autoFocus value={query} onChange={(event)=>onQueryChange(event.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label></div>
+    <div className="catalog-toolbar"><label className="search"><PosIcon name="search"/><input autoFocus value={query} onChange={(event)=>onQueryChange(event.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label></div>
     {!visible.length&&category===FAVORITES_CATEGORY
-      ? <div className="favorites-empty"><span aria-hidden="true">★</span><strong>В избранном пока пусто</strong><p>Нажмите ★ на карточке товара, чтобы он появился здесь.</p></div>
+      ? <div className="favorites-empty"><PosIcon name="star"/><strong>В избранном пока пусто</strong><p>Нажмите звезду на карточке товара, чтобы он появился здесь.</p></div>
       : <div className="product-grid">{visible.map((product)=>{
         const favorite=favoriteIds.has(product.id)
-        return <article className="product-card pos-v2-product sale-product-tile" key={product.id}>
+        return <article className="product-card sale-product-tile" key={product.id}>
           <button className="product-card-add" onClick={()=>onAdd(product)}>
             <strong className="product-card-name">{product.name}</strong>
-            <footer className="product-card-meta"><b className="product-card-price">{formatMoney(product.priceMinor)}</b>{product.stock!=null&&<span className="product-card-stock">Остаток {product.stock}</span>}</footer>
+            <footer className="product-card-meta">
+              <b className="product-card-price">{formatMoney(product.priceMinor)}</b>
+              <span className={'product-card-stock'+(product.stock==null?' empty':'')} aria-label={product.stock==null?undefined:'Остаток '+product.stock}>
+                {product.stock!=null&&<><PosIcon name="inventory"/><span>{product.stock}</span></>}
+              </span>
+            </footer>
           </button>
-          <button
+          <PosIconButton
+            icon="star"
+            variant="quiet"
             className={'product-favorite'+(favorite?' active':'')}
-            aria-label={(favorite?'Убрать из избранного: ':'Добавить в избранное: ')+product.name}
+            label={(favorite?'Убрать из избранного: ':'Добавить в избранное: ')+product.name}
             aria-pressed={favorite}
             onClick={()=>onToggleFavorite(product.id)}
-          >★</button>
+          />
         </article>
       })}</div>}
   </section>
