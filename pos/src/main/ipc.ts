@@ -287,11 +287,11 @@ export function registerIpcHandlers(dependencies:{
     }
   })
   ipcMain.handle('pos:sync-now',async()=>{
-    assertCashierAccess()
+    const cashier=assertCashierAccess()
     if(transactionEngine.hasBlockingOperation())throw new Error('Синхронизация временно недоступна: завершите текущую оплату или восстановление операции')
     diagnostics.record({source:'sync',eventType:'sync.manual_started',message:'Запущена ручная синхронизация'})
     try{
-      const result=await performSync(database,connectionStore,cashierAuth.state().employee?.id)
+      const result=await performSync(database,connectionStore,cashier.id)
       diagnostics.record({source:'sync',eventType:'sync.manual_completed',message:`Синхронизация завершена · к отправке ${result.pendingSync}`})
       return result
     }catch(error){
