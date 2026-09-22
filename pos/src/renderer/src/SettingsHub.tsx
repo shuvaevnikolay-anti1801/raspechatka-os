@@ -244,7 +244,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     setMessage("Проверяем подключение к Распечатка OS…");
     try {
       await pos().saveConnection(pairing);
-      const next = await pos().syncNow();
+      const next = await pos().syncConfiguration();
       setBoot(next);
       setShowPairing(false);
       setPairing((x) => ({ ...x, token: "" }));
@@ -256,14 +256,14 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       setBusy(false);
     }
   };
-  const syncNow = async () => {
+  const syncConfiguration = async () => {
     setBusy(true);
-    setMessage("Синхронизация…");
+    setMessage("Обновляем конфигурацию и справочники…");
     try {
-      const next = await pos().syncNow();
+      const next = await pos().syncConfiguration();
       setBoot(next);
       await refresh();
-      setMessage("Синхронизация завершена");
+      setMessage("Конфигурация и справочники обновлены");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -517,9 +517,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                   </span>
                   <button
                     disabled={busy || !connection?.configured}
-                    onClick={() => void syncNow()}
+                    onClick={() => void syncConfiguration()}
                   >
-                    Синхронизировать сейчас
+                    Обновить конфигурацию
                   </button>
                 </div>
               ) : (
