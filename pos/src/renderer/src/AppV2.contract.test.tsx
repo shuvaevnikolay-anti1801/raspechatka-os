@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { PosButton, PosIconButton } from './ui/PosButton'
+import { PosField } from './ui/PosField'
+import { PosIcon } from './ui/PosIcon'
+import { PosModal } from './ui/PosModal'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
@@ -208,5 +212,45 @@ describe('unified warehouse workplace contract',()=>{
     expect(markup).toContain('Осталось по заказу: 4 пачка')
     expect(markup).not.toContain('Цена')
     expect(markup).not.toContain('rate')
+  })
+})
+
+
+describe('DEV-169 POS foundation contract',()=>{
+  it('maps every shell section to a semantic SVG icon',()=>{
+    expect(NAV_ICON_MAP).toEqual({
+      sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings',
+    })
+    const markup=renderToStaticMarkup(<Nav active icon={NAV_ICON_MAP.sale} label="Продажа" onClick={()=>undefined}/>)
+    expect(markup).toContain('<svg')
+    expect(markup).toContain('data-pos-icon="sale"')
+    expect(markup).toContain('aria-current="page"')
+    expect(markup).not.toContain('▣')
+  })
+
+  it('keeps button variants and accessible icon-only labels explicit',()=>{
+    const button=renderToStaticMarkup(<PosButton variant="danger" size="touch">Удалить</PosButton>)
+    const iconButton=renderToStaticMarkup(<PosIconButton icon="refresh" label="Обновить данные"/>)
+    expect(button).toContain('pos-button--danger')
+    expect(button).toContain('pos-button--touch')
+    expect(iconButton).toContain('aria-label="Обновить данные"')
+    expect(iconButton).toContain('title="Обновить данные"')
+    expect(iconButton).toContain('data-pos-icon="refresh"')
+  })
+
+  it('provides shared modal and field API contracts',()=>{
+    const modal=renderToStaticMarkup(<PosModal open title="Проверка" layout="form" onClose={()=>undefined} footer={<PosButton>Готово</PosButton>}><PosField label="Имя" helper="Подсказка"><input/></PosField></PosModal>)
+    expect(modal).toContain('role="dialog"')
+    expect(modal).toContain('aria-modal="true"')
+    expect(modal).toContain('pos-modal--form')
+    expect(modal).toContain('pos-field__helper')
+    expect(modal).toContain('aria-label="Закрыть"')
+  })
+
+  it('renders icons with currentColor and no unicode glyph dependency',()=>{
+    const markup=renderToStaticMarkup(<PosIcon name="settings"/>)
+    expect(markup).toContain('currentColor')
+    expect(markup).toContain('aria-hidden="true"')
+    expect(markup).not.toContain('⚙')
   })
 })
