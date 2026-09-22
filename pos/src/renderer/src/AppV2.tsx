@@ -477,4 +477,4 @@ export function Nav({active,icon,label,badge,className='',onClick}:{active:boole
 export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className={title==='Текущая смена'?'page shift-page':'page'}><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
-function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i><PosIcon name="add"/></i><b>{title}</b><span>{text}</span></div>}
+function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i><PosIcon name="plus"/></i><b>{title}</b><span>{text}</span></div>}
