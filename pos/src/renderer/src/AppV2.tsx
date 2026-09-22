@@ -11,6 +11,8 @@ import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import { PinEntryLayout, PinInput } from './PinEntry'
+import { PosButton } from './ui/PosButton'
+import { PosIcon, type PosIconName } from './ui/PosIcon'
 import WorkPage from './WorkPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
@@ -220,20 +222,20 @@ export default function AppV2(){
   return <div className="app-shell">
     <header className="pos-header">
       <nav className="pos-header-nav" aria-label="Разделы кассы">
-        <Nav active={screen==='sale'} icon="▣" label="Продажа" onClick={()=>setScreen('sale')}/>
-        <Nav active={screen==='receipts'} icon="⌁" label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
-        <Nav active={screen==='orders'} icon="▤" label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
-        <Nav active={screen==='shift'} icon="◷" label="Смена" onClick={()=>setScreen('shift')}/>
-        <Nav active={screen==='work'} icon="▦" label="Работа" onClick={()=>setScreen('work')}/>
+        <Nav active={screen==='sale'} icon={NAV_ICON_MAP.sale} label="Продажа" onClick={()=>setScreen('sale')}/>
+        <Nav active={screen==='receipts'} icon={NAV_ICON_MAP.receipts} label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
+        <Nav active={screen==='orders'} icon={NAV_ICON_MAP.orders} label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
+        <Nav active={screen==='shift'} icon={NAV_ICON_MAP.shift} label="Смена" onClick={()=>setScreen('shift')}/>
+        <Nav active={screen==='work'} icon={NAV_ICON_MAP.work} label="Работа" onClick={()=>setScreen('work')}/>
         <SettingsNavTrigger/>
       </nav>
       <div className="pos-header-actions">
         <span className={`pos-header-status ${boot.online?'online':'offline'}`} title={boot.lastSyncAt?'Последняя синхронизация: '+new Date(boot.lastSyncAt).toLocaleString('ru-RU')+' · К отправке: '+boot.pendingSync:'Успешной синхронизации ещё не было · К отправке: '+boot.pendingSync}><i/>{boot.online?'ОС на связи':'Локальный режим'}</span>
-        <button className="pos-header-lock" onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</button>
-        <button className="pos-header-refresh secondary" disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</button>
+        <PosButton className="pos-header-lock" variant="quiet" size="compact" icon={<PosIcon name="lock"/>} onClick={async()=>setAuth(await window.raspechatkaPos.lockCashier())}>Заблокировать · {formatPersonShortName(boot.cashierName)}</PosButton>
+        <PosButton className="pos-header-refresh" variant="secondary" size="compact" icon={<PosIcon name="refresh"/>} disabled={syncing||busy} onClick={()=>void syncNow()}>{syncing?'Синхронизация…':'Обновить данные'}</PosButton>
       </div>
     </header>
-    {message&&<div className="toast" onClick={()=>setMessage('')}>{message}<button>×</button></div>}
+    {message&&<div className="toast" role="status" onClick={()=>setMessage('')}>{message}<PosButton variant="quiet" size="icon" aria-label="Закрыть уведомление"><PosIcon name="close"/></PosButton></div>}
 
     {screen==='sale'&&<SaleWorkspace
       productIds={saleProductIds}
@@ -350,9 +352,9 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
       },
     )
   }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
-  const footerLeft=<button className="settings-open-trigger" type="button">Настройки кассы</button>
+  const footerLeft=<PosButton className="settings-open-trigger" variant="quiet" type="button" icon={<PosIcon name="settings"/>}>Настройки кассы</PosButton>
   const footerRight=!setup&&!adminReset
-    ?<button className="cashier-forgot-pin" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</button>
+    ?<PosButton className="cashier-forgot-pin" variant="quiet" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</PosButton>
     :undefined
   return <main className="cashier-login-screen"><section className="cashier-login-card">
     {auth.status==='locked'&&<small>КАССА ЗАБЛОКИРОВАНА</small>}<h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
@@ -366,13 +368,13 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
           <label><span>{setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}</span><PinInput autoFocus={!adminReset} value={pin} onChange={setPin} ariaLabel={setup||adminReset?'Новый PIN · 4 цифры':'PIN кассира · 4 цифры'}/></label>
           {(setup||adminReset)&&<label><span>Повторите PIN</span><PinInput value={confirmation} onChange={setConfirmation} ariaLabel="Повторите PIN · 4 цифры"/></label>}
           {notice&&<div className={cashierPinNoticeClass(notice.severity)} role={notice.severity==='error'?'alert':'status'}>{notice.message}</div>}
-          {(setup||adminReset)&&<button className="primary" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</button>}
-          {auth.status==='locked'&&canSwitchCashier&&<button className="cashier-switch-cashier" type="button" onClick={()=>void switchCashier()}>Сменить кассира</button>}
+          {(setup||adminReset)&&<PosButton className="cashier-pin-submit" variant="primary" size="touch" type="submit">{adminReset?'Сбросить PIN':'Создать PIN и войти'}</PosButton>}
+          {auth.status==='locked'&&canSwitchCashier&&<PosButton className="cashier-switch-cashier" variant="secondary" size="touch" type="button" onClick={()=>void switchCashier()}>Сменить кассира</PosButton>}
           {auth.status==='locked'&&openWorkShift&&<p className="cashier-switch-blocked">Чтобы сменить кассира, разблокируйте текущего кассира и закройте смену.</p>}
         </div>
       </PinEntryLayout>
     </form>}
-    {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><button className="settings-open-trigger" type="button">Настройки кассы</button></div>}
+    {!(selected||lockedEmployee)&&auth.status!=='locked'&&<div className="cashier-login-footer"><PosButton className="settings-open-trigger" variant="quiet" type="button" icon={<PosIcon name="settings"/>}>Настройки кассы</PosButton></div>}
   </section></main>
 }
 
@@ -444,8 +446,9 @@ function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount[
   return <div className="modal-backdrop"><div className="payment-modal cash-count-modal"><header><div><small>ПЕРЕСЧЁТ НАЛИЧНЫХ</small><h2>{type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'}</h2></div><button onClick={onClose}>×</button></header><div className="denominations">{CASH_COUNT_DENOMINATIONS.map((x)=><label key={x}><span>{formatMoney(x)}</span><input type="number" min="0" step="1" inputMode="numeric" aria-label={`Количество купюр или монет ${formatMoney(x)}`} value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/><b>{formatMoney(x*(quantities[x]||0))}</b></label>)}</div><div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={total-expected===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(total-expected)}</strong></div></div><button className="primary confirm" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</button></div></div>
 }
 
-function Nav({active,icon,label,badge,className='',onClick}:{active:boolean;icon:string;label:string;badge?:number;className?:string;onClick:()=>void}){return <button className={[active?'active':'',className].filter(Boolean).join(' ')} onClick={onClick}><i>{icon}</i>{label}{badge?<b>{badge}</b>:null}</button>}
-export function SettingsNavTrigger(){return <Nav active={false} icon="⚙" label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
+export const NAV_ICON_MAP:Record<Screen|'settings',PosIconName>={sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings'}
+export function Nav({active,icon,label,badge,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{badge?<b>{badge}</b>:null}</PosButton>}
+export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className="page"><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
 function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i>＋</i><b>{title}</b><span>{text}</span></div>}
