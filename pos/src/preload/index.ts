@@ -200,6 +200,7 @@ const api: ExtendedPosApi = {
     ),
   setUpsellCursor: (triggerItem: string, cursor: number) =>
     ipcRenderer.invoke("pos:set-upsell-cursor", triggerItem, cursor),
+  syncConfiguration: () => ipcRenderer.invoke("pos:sync-configuration"),
   syncNow: () => ipcRenderer.invoke("pos:sync-now"),
 };
 

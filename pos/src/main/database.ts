@@ -635,6 +635,7 @@ export class PosDatabase {
   private createPaidOrderFromSaleSnapshot(
     input:{id:string;createdAt:string;lines:CartLine[];totalMinor:number;customerId?:string;customerName?:string;fiscalNumber:string},
     meta:{phone:string;comment?:string;dueAt?:string},
+    trustedCashierId?:string,
   ):Order {
     const phone=meta.phone.trim()
     const comment=meta.comment?.trim()||''
@@ -661,7 +662,7 @@ export class PosDatabase {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(order.id,order.orderNumber,order.phone,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),
         order.totalMinor,order.paidMinor,order.status,order.comment??null,order.dueAt??null,order.sourceSaleId??null,order.fiscalNumber??null,now,now)
-    this.queue('order.created',order,now)
+    this.queue('order.created',order,now,trustedCashierId)
     return order
   }
 
@@ -669,16 +670,16 @@ export class PosDatabase {
     return this.listOrders().find((x)=>x.sourceSaleId===saleId)
   }
 
-  createOrderFromSale(input:{saleId:string;phone:string;comment:string;dueAt:string}):Order {
+  createOrderFromSale(input:{saleId:string;phone:string;comment:string;dueAt:string},trustedCashierId?:string):Order {
     const sale=this.getSale(input.saleId)
     if(sale.status!=='completed')throw new Error('Заказ можно создать только по завершённой оплаченной продаже без возврата')
     return this.createPaidOrderFromSaleSnapshot({
       id:sale.id,createdAt:new Date().toISOString(),lines:sale.lines,totalMinor:sale.totalMinor,
       customerName:sale.customerName,fiscalNumber:sale.receiptNumber
-    },input)
+    },input,trustedCashierId)
   }
 
-  createUnpaidOrder(input:CreateUnpaidOrderRequest):Order {
+  createUnpaidOrder(input:CreateUnpaidOrderRequest,trustedCashierId?:string):Order {
     if(!input.phone.trim()||input.phone.replace(/\D/g,'').length<5)throw new Error('Укажите телефон покупателя')
     if(!input.lines.length)throw new Error('Заказ пуст')
     const now=new Date().toISOString(),id=randomUUID(),orderNumber=`ORD-${now.slice(0,10).replace(/-/g,'')}-${id.slice(0,6).toUpperCase()}`
@@ -687,11 +688,11 @@ export class PosDatabase {
     const order:Order={id,orderNumber,phone:input.phone.trim(),lines:input.lines,totalMinor,paidMinor:0,paymentStatus:'unpaid',status:'new',comment:input.comment?.trim()||undefined,createdAt:now,dueAt:input.dueAt}
     this.db.prepare(`INSERT INTO orders (id,order_number,phone,lines_json,total_minor,paid_minor,status,comment,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id,orderNumber,order.phone,JSON.stringify(order.lines),totalMinor,0,'new',order.comment||null,order.dueAt||null,now,now)
-    this.queue('order.created',order,now)
+    this.queue('order.created',order,now,trustedCashierId)
     return order
   }
 
-  updateOrder(input:UpdateOrderRequest):Order {
+  updateOrder(input:UpdateOrderRequest,trustedCashierId?:string):Order {
     const current=this.listOrders().find((x)=>x.id===input.id)
     if(!current)throw new Error('Заказ не найден')
     if(input.phone!==undefined&&input.phone.trim().replace(/\D/g,'').length<5)throw new Error('Укажите корректный телефон')
@@ -716,7 +717,7 @@ export class PosDatabase {
     this.db.prepare('UPDATE orders SET phone=?,comment=?,status=?,due_at=?,ready_at=?,issued_at=?,updated_at=? WHERE id=?')
       .run(next.phone,next.comment||null,next.status,next.dueAt||null,readyAt||null,issuedAt||null,updatedAt,input.id)
     const result={...next,readyAt,issuedAt}
-    this.queue('order.updated',result,updatedAt)
+    this.queue('order.updated',result,updatedAt,trustedCashierId)
     return result
   }
 

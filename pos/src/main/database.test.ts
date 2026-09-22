@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PosDatabase } from './database'
+import type { CreateUnpaidOrderRequest, UpdateOrderRequest } from '../shared/contracts'
 
 const folders:string[]=[]
 const databases:PosDatabase[]=[]
@@ -58,6 +59,31 @@ describe('PosDatabase',()=>{
     expect(()=>database.createOrderFromSale({
       saleId:'sale-order-duplicate',phone:'+7 900 123-45-67',comment:'Повтор',dueAt:'2026-09-06T13:00:00.000Z'
     })).toThrow(/уже существует заказ/)
+  })
+
+  it('persists authenticated cashier evidence on closed-shift order events',()=>{
+    const database=createDatabase()
+    database.openShift({
+      id:'shift-closed-order',openedAt:'2026-09-06T10:00:00.000Z',
+      cashierId:'cashier-from-shift',cashierName:'Тест'
+    })
+    database.closeShift()
+    const order=database.createUnpaidOrder({
+      phone:'+7 900 000-00-02',
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      comment:'После закрытия смены',
+      cashierId:'cashier-from-renderer'
+    } as CreateUnpaidOrderRequest & {cashierId:string},'cashier-authenticated')
+    database.updateOrder({
+      id:order.id,status:'ready',cashierId:'cashier-from-renderer'
+    } as UpdateOrderRequest & {cashierId:string},'cashier-authenticated')
+
+    const orderEvents=database.pendingEvents().filter((event)=>event.eventType.startsWith('order.'))
+    expect(orderEvents).toHaveLength(2)
+    expect(orderEvents.map((event)=>event.payload)).toEqual([
+      expect.objectContaining({id:order.id,cashierId:'cashier-authenticated'}),
+      expect.objectContaining({id:order.id,status:'ready',cashierId:'cashier-authenticated'})
+    ])
   })
 
   it('keeps legacy orders without lifecycle timestamps readable',()=>{

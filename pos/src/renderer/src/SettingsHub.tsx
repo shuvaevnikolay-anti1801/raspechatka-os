@@ -15,10 +15,97 @@ import type {
   AtolSettings,
 } from "../../shared/contracts";
 import { formatPersonShortName } from "./person-name";
+import { PinEntryLayout, PinInput } from "./PinEntry";
 import "./settings-hub.css";
 
 type ExtendedPosApi = typeof window.raspechatkaPos;
 const pos = () => window.raspechatkaPos as ExtendedPosApi;
+export async function saveConnectionWithConfigurationRefresh(
+  api: Pick<ExtendedPosApi, "saveConnection" | "syncConfiguration">,
+  config: ConnectionConfig
+): Promise<BootState> {
+  await api.saveConnection(config);
+  return api.syncConfiguration();
+}
+
+export const SETTINGS_OPEN_TRIGGER_CLASS = "settings-open-trigger";
+export const SETTINGS_OPEN_TRIGGER_SELECTOR = "." + SETTINGS_OPEN_TRIGGER_CLASS;
+
+export type SettingsGateState = {
+  gateOpen: boolean;
+  open: boolean;
+  gateError: string;
+};
+
+export const settingsGateStateAfterVerification = (verified: boolean): SettingsGateState =>
+  verified
+    ? { gateOpen: false, open: true, gateError: "" }
+    : { gateOpen: true, open: false, gateError: "Неверный пароль" };
+
+export async function resolveSettingsAdminGate(
+  password: string,
+  verify: (password: string) => Promise<boolean>
+): Promise<SettingsGateState> {
+  return settingsGateStateAfterVerification(await verify(password));
+}
+
+export function SettingsAdminGate({
+  password,
+  error,
+  onPasswordChange,
+  onCancel,
+  onSubmit,
+}: {
+  password: string;
+  error: string;
+  onPasswordChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="settings-gate-backdrop">
+      <form
+        className="settings-gate"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <PinEntryLayout
+          footerLeft={
+            <button type="button" onClick={onCancel}>
+              Отмена
+            </button>
+          }
+          footerRight={
+            <button className="primary" type="submit">
+              Войти
+            </button>
+          }
+        >
+          <div className="settings-gate-content">
+            <small>ЗАЩИЩЁННЫЙ РАЗДЕЛ</small>
+            <h2>Настройки кассы</h2>
+            <p>Введите пароль администратора.</p>
+            <PinInput
+              autoFocus
+              value={password}
+              onChange={onPasswordChange}
+              ariaLabel="Пароль администратора · 4 цифры"
+            />
+            {error && <div className="settings-error">{error}</div>}
+          </div>
+        </PinEntryLayout>
+      </form>
+    </div>
+  );
+}
+
+export type SettingsHubProps = {
+  initialGateOpen?: boolean;
+  initialOpen?: boolean;
+};
+
 const defaultAtol: AtolSettings = {
   version: 2,
   enabled: false,
@@ -37,9 +124,9 @@ const defaultInpas: InpasSettings = {
   qrMode: "terminal_choice",
 };
 
-export default function SettingsHub() {
-  const [gateOpen, setGateOpen] = useState(false);
-  const [open, setOpen] = useState(false);
+export default function SettingsHub({ initialGateOpen = false, initialOpen = false }: SettingsHubProps = {}) {
+  const [gateOpen, setGateOpen] = useState(initialGateOpen);
+  const [open, setOpen] = useState(initialOpen);
   const [password, setPassword] = useState("");
   const [gateError, setGateError] = useState("");
   const [boot, setBoot] = useState<BootState | null>(null);
@@ -66,22 +153,16 @@ export default function SettingsHub() {
 
   useEffect(() => {
     const handler = (event: MouseEvent) => {
-      const target = (
-        event.target as HTMLElement | null
-      )?.closest<HTMLButtonElement>("button");
-      if (!target) return;
-      const navButtons = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(".main-nav>button")
+      const trigger = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        SETTINGS_OPEN_TRIGGER_SELECTOR
       );
-      const isSettings =
-        navButtons[5] === target ||
-        target.classList.contains("settings-open-trigger");
-      if (!isSettings) return;
+      if (!trigger) return;
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
       setPassword("");
       setGateError("");
+      setOpen(false);
       setGateOpen(true);
     };
     document.addEventListener("click", handler, true);
@@ -149,12 +230,14 @@ export default function SettingsHub() {
   }, [open]);
 
   const unlock = async () => {
-    if (!(await pos().verifyAdminCode(password))) {
-      setGateError("Неверный пароль");
-      return;
-    }
-    setGateOpen(false);
-    setOpen(true);
+    const next = await resolveSettingsAdminGate(
+      password,
+      (code) => pos().verifyAdminCode(code)
+    );
+    setGateOpen(next.gateOpen);
+    setOpen(next.open);
+    setGateError(next.gateError);
+    if (!next.open) return;
     setPassword("");
     void refresh();
   };
@@ -168,8 +251,7 @@ export default function SettingsHub() {
     setBusy(true);
     setMessage("Проверяем подключение к Распечатка OS…");
     try {
-      await pos().saveConnection(pairing);
-      const next = await pos().syncNow();
+      const next = await saveConnectionWithConfigurationRefresh(pos(), pairing);
       setBoot(next);
       setShowPairing(false);
       setPairing((x) => ({ ...x, token: "" }));
@@ -181,14 +263,14 @@ export default function SettingsHub() {
       setBusy(false);
     }
   };
-  const syncNow = async () => {
+  const syncConfiguration = async () => {
     setBusy(true);
-    setMessage("Синхронизация…");
+    setMessage("Обновляем конфигурацию и справочники…");
     try {
-      const next = await pos().syncNow();
+      const next = await pos().syncConfiguration();
       setBoot(next);
       await refresh();
-      setMessage("Синхронизация завершена");
+      setMessage("Конфигурация и справочники обновлены");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -290,39 +372,13 @@ export default function SettingsHub() {
   return (
     <>
       {gateOpen && (
-        <div className="settings-gate-backdrop">
-          <form
-            className="settings-gate"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void unlock();
-            }}
-          >
-            <small>ЗАЩИЩЁННЫЙ РАЗДЕЛ</small>
-            <h2>Настройки кассы</h2>
-            <p>Введите пароль администратора.</p>
-            <input
-              autoFocus
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
-              value={password}
-              onChange={(e) =>
-                setPassword(e.target.value.replace(/\D/g, "").slice(0, 4))
-              }
-              placeholder="••••"
-            />
-            {gateError && <div className="settings-error">{gateError}</div>}
-            <div>
-              <button type="button" onClick={() => setGateOpen(false)}>
-                Отмена
-              </button>
-              <button className="primary" type="submit">
-                Войти
-              </button>
-            </div>
-          </form>
-        </div>
+        <SettingsAdminGate
+          password={password}
+          error={gateError}
+          onPasswordChange={setPassword}
+          onCancel={() => setGateOpen(false)}
+          onSubmit={() => void unlock()}
+        />
       )}
 
       {open && (
@@ -468,9 +524,9 @@ export default function SettingsHub() {
                   </span>
                   <button
                     disabled={busy || !connection?.configured}
-                    onClick={() => void syncNow()}
+                    onClick={() => void syncConfiguration()}
                   >
-                    Синхронизировать сейчас
+                    Обновить конфигурацию
                   </button>
                 </div>
               ) : (

@@ -9,6 +9,7 @@ import ShiftCloseGuard from './ShiftCloseGuard'
 import './styles.css'
 import './cashier-cleanup.css'
 import './pos-v2.css'
+import './sale-workspace.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
