@@ -3,7 +3,7 @@ import type { SVGProps } from 'react'
 export type PosIconName=
   |'sale'|'receipts'|'orders'|'shift'|'work'|'settings'
   |'search'|'refresh'|'lock'|'trash'|'hold'|'order'|'close'
-  |'star'|'inventory'|'plus'|'minus'
+  |'star'|'inventory'|'plus'|'minus'|'check'
 
 const paths:Record<PosIconName,JSX.Element>={
   sale:<><path d="M4 7h16l-1 13H5L4 7Z"/><path d="M8 7a4 4 0 0 1 8 0"/></>,
@@ -22,6 +22,7 @@ const paths:Record<PosIconName,JSX.Element>={
   star:<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>,
   inventory:<><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></>,
   plus:<path d="M12 5v14M5 12h14"/>,
+  check:<path d="m5 12 4 4L19 6"/>,
   minus:<path d="M5 12h14"/>,
 }
 
