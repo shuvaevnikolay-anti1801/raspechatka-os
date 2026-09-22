@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
-import './pilot-ux.css'
 import { formatMoney } from './money'
 import { PosButton } from './ui/PosButton'
 import { PosModal } from './ui/PosModal'
