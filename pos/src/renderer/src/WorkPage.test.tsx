@@ -13,7 +13,7 @@ const entry=(id:string,date:string,shiftCode:string,shiftName:string):WorkSchedu
 const workplace:WorkplaceData={
   schedule:[],
   scheduleMonth:{
-    month:'2026-09',days:2,employees:[{id:'employee-1',name:'Иван Иванов'}],
+    month:'2026-09',days:2,employees:[{id:'employee-1',name:'Иванов Иван Иванович'}],
     entries:[
       entry('morning','2026-09-01','U','Утренняя'),
       entry('evening','2026-09-01','V','Вечерняя'),
@@ -67,6 +67,12 @@ describe('WorkPage schedule presentation',()=>{
     expect(markup).toContain('>В<')
     expect(markup).toContain('Только просмотр')
     expect(markup).toContain('сентябрь 2026 г.')
+    expect(markup).toContain('>Иванов И. И.<')
+    expect(markup).not.toContain('>Иванов Иван Иванович<')
+    expect(markup).toContain('class="upcoming-shift"')
+    expect(markup).toContain('datetime="2026-09-03"')
+    expect(markup).toContain('>09:00–18:00<')
+    expect(markup).toContain('>8 ч.<')
     expect(markup).not.toContain('<select')
     expect(markup).not.toContain('<input')
     expect(markup).not.toContain('Сохранить')
@@ -79,6 +85,8 @@ describe('WorkPage schedule presentation',()=>{
     expect(css).toContain('.schedule-shift-evening{background:#a9cef7}')
     expect(css).toContain('.schedule-shift-both{background:linear-gradient(135deg,#fff4a8 0 50%,#a9cef7 50% 100%)}')
     expect(css).toContain('.work-schedule{display:grid;grid-template-columns:minmax(0,1fr)')
+    expect(css).toContain('.schedule-upcoming>.upcoming-shift{display:grid;')
+    expect(css).toContain('grid-template-columns:repeat(auto-fit,minmax(250px,1fr))')
   })
 })
 
