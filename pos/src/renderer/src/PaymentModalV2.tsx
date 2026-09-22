@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import type { BootState, PaymentMethod, PaymentPart, RemotePaymentConfirmation } from '../../shared/contracts'
 import './checkout.css'
 import { formatMoney } from './money'
+import { PosButton } from './ui/PosButton'
+import { PosField } from './ui/PosField'
+import { PosModal } from './ui/PosModal'
 
 export type PaymentChoice=PaymentMethod|'mixed'
 
@@ -87,20 +90,24 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
     return()=>window.removeEventListener('keydown',handler,{capture:true})
   })
 
-  return <div className="modal-backdrop payment-backdrop"><div className="payment-modal payment-modal-v2" role="dialog" aria-modal="true" aria-labelledby="payment-title">
-    <header className="payment-heading">
-      <div><small>ОПЛАТА</small><h2 id="payment-title">Выберите способ оплаты</h2></div>
-      <button className="payment-close" aria-label="Закрыть оплату" onClick={onClose} disabled={busy}>×</button>
-    </header>
-
+  return <PosModal
+    open
+    title="Выберите способ оплаты"
+    layout="action"
+    className="payment-modal-v2"
+    closeLabel="Закрыть оплату"
+    closeDisabled={busy}
+    onClose={onClose}
+    footer={<PosButton className="payment-confirm" variant="primary" size="touch" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Оплатить · '+formatMoney(total)}</PosButton>}
+  >
     <div className="payment-amount-due"><span>К оплате</span><strong>{formatMoney(total)}</strong></div>
 
-    <div className="method-grid checkout-methods" aria-label="Способы оплаты">
-      {rules.acceptsCash&&<button className={choice==='cash'?'active':''} onClick={()=>onChoice('cash')} disabled={busy}><span>Наличные</span></button>}
-      {rules.acceptsCard&&<button className={choice==='card'?'active':''} onClick={()=>onChoice('card')} disabled={busy||!terminalReady}><span>Карта</span>{!terminalReady&&<small>Терминал не готов</small>}</button>}
-      {rules.acceptsQr&&<button className={choice==='qr'?'active':''} onClick={()=>onChoice('qr')} disabled={busy||!terminalReady}><span>QR / СБП</span>{!terminalReady&&<small>Терминал не готов</small>}</button>}
-      {rules.acceptsRemotePayment!==false&&<button className={choice==='remote_payment'?'active':''} onClick={()=>onChoice('remote_payment')} disabled={busy}><span>Удалённая оплата</span><small>По ссылке Точки</small></button>}
-      <button className={choice==='mixed'?'active':''} onClick={()=>onChoice('mixed')} disabled={busy}><span>Смешанная</span></button>
+    <div className="checkout-methods" aria-label="Способы оплаты">
+      <PosButton className={choice==='cash'?'active':''} onClick={()=>onChoice('cash')} disabled={busy||!rules.acceptsCash}><span>Наличные</span>{!rules.acceptsCash&&<small>Не принимается</small>}</PosButton>
+      <PosButton className={choice==='card'?'active':''} onClick={()=>onChoice('card')} disabled={busy||!rules.acceptsCard||!terminalReady}><span>Карта</span>{!rules.acceptsCard?<small>Не принимается</small>:!terminalReady&&<small>Терминал не готов</small>}</PosButton>
+      <PosButton className={choice==='qr'?'active':''} onClick={()=>onChoice('qr')} disabled={busy||!rules.acceptsQr||!terminalReady}><span>QR / СБП</span>{!rules.acceptsQr?<small>Не принимается</small>:!terminalReady&&<small>Терминал не готов</small>}</PosButton>
+      <PosButton className={choice==='remote_payment'?'active':''} onClick={()=>onChoice('remote_payment')} disabled={busy||rules.acceptsRemotePayment===false}><span>Удалённая оплата</span><small>{rules.acceptsRemotePayment===false?'Не принимается':'По ссылке Точки'}</small></PosButton>
+      <PosButton className={choice==='mixed'?'active':''} onClick={()=>onChoice('mixed')} disabled={busy}><span>Смешанная</span></PosButton>
     </div>
 
     <div className="payment-context">
@@ -110,7 +117,7 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
       </div>}
 
       {choice==='cash'&&<div className="cash-payment-context">
-        <label className="cash-input payment-received"><span>Получено от клиента</span><input autoFocus inputMode="decimal" value={cash} onChange={(event)=>setCash(event.target.value)} placeholder={formatMoney(total).replace(/\s₽$/,'')}/></label>
+        <PosField label="Получено от клиента"><input autoFocus inputMode="decimal" value={cash} onChange={(event)=>setCash(event.target.value)} placeholder={formatMoney(total).replace(/\s₽$/,'')}/></PosField>
         <div className={'payment-change '+(cashMinor>0&&cashMinor<total?'invalid':'')}>
           <span>{cashMinor>0&&cashMinor<total?'Недостаточно':'Сдача'}</span>
           <strong>{cashMinor>0&&cashMinor<total?'Получено меньше суммы чека':formatMoney(Math.max(0,cashMinor-total))}</strong>
@@ -121,23 +128,17 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
         <strong>Удалённая оплата по ссылке Точки</strong>
         <p>Проверьте подтверждение клиента или поступление денег. Касса не обращается к PAX и после подтверждения сразу перейдёт к фискальному чеку АТОЛ.</p>
         <label className="remote-check"><input type="checkbox" checked={remoteConfirmed} onChange={(event)=>setRemoteConfirmed(event.target.checked)} disabled={busy}/><span><b>Я проверил(а), что оплата действительно получена</b><small>Кассир и точное время подтверждения будут зафиксированы приложением.</small></span></label>
-        <label className="cash-input"><span>Комментарий (необязательно)</span><input value={remoteNote} onChange={(event)=>setRemoteNote(event.target.value)} placeholder="Например: подтверждение в приложении Точки" disabled={busy}/></label>
+        <PosField label="Комментарий" helper="Необязательно"><input value={remoteNote} onChange={(event)=>setRemoteNote(event.target.value)} placeholder="Например: подтверждение в приложении Точки" disabled={busy}/></PosField>
       </section>}
 
       {choice==='mixed'&&<div className="split-payment">
-        <p>Укажите, сколько клиент платит каждым способом.</p>
         <div className="split-payment-fields">
-          {rules.acceptsCash&&<label><span>Наличными</span><input autoFocus inputMode="decimal" value={cash} onChange={(event)=>setCash(event.target.value)} disabled={busy}/></label>}
-          {rules.acceptsCard&&<label><span>Картой</span><input inputMode="decimal" value={card} onChange={(event)=>setCard(event.target.value)} disabled={busy||!terminalReady}/></label>}
+          {rules.acceptsCash&&<PosField label="Наличными"><input autoFocus inputMode="decimal" value={cash} onChange={(event)=>setCash(event.target.value)} disabled={busy}/></PosField>}
+          {rules.acceptsCard&&<PosField label="Картой"><input inputMode="decimal" value={card} onChange={(event)=>setCard(event.target.value)} disabled={busy||!terminalReady}/></PosField>}
           {rules.acceptsQr&&<div className="split-remainder"><span>QR — остаток</span><b>{formatMoney(mixedRemainder)}</b></div>}
         </div>
         <footer><span>Распределено</span><b>{formatMoney(cashMinor+cardMinor+(rules.acceptsQr?mixedRemainder:0))}</b></footer>
       </div>}
     </div>
-
-    <footer className="payment-actions">
-      <button className="primary confirm payment-confirm" disabled={!canSubmit} onClick={()=>void submit()}>{busy?'Операция выполняется…':'Подтвердить · '+formatMoney(total)}</button>
-      <p className="checkout-footnote">Enter — подтвердить · Esc — закрыть. После начала операции повторное нажатие блокируется. При сбое касса сохранит состояние и предложит безопасное восстановление.</p>
-    </footer>
-  </div></div>
+  </PosModal>
 }
