@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type CSSProperties, type ReactNode } from 'react'
 import {
   DEFAULT_SALE_PREFERENCES,
   clampSaleLayout,
@@ -60,12 +60,12 @@ export default function SaleWorkspace({categories,catalog,receipt}:SaleWorkspace
   return <main
     ref={rootRef}
     className="sale-workspace"
-    style={{'--sale-categories-ratio':layout.categoriesRatio,'--sale-receipt-ratio':layout.receiptRatio} as React.CSSProperties}
+    style={{'--sale-categories-ratio':layout.categoriesRatio,'--sale-receipt-ratio':layout.receiptRatio} as CSSProperties}
   >
     <div className="sale-workspace-zone sale-workspace-categories">{categories}</div>
-    <div className="sale-splitter" role="separator" aria-label="Изменить ширину категорий" aria-orientation="vertical" data-testid="sale-splitter" onPointerMove={(event)=>event.currentTarget.hasPointerCapture(event.pointerId)&&resize('categories',event)}/>
+    <div className="sale-splitter" role="separator" aria-label="Изменить ширину категорий" aria-orientation="vertical" data-testid="sale-splitter" onPointerDown={(event)=>{event.currentTarget.setPointerCapture(event.pointerId);resize('categories',event)}} onPointerMove={(event)=>event.currentTarget.hasPointerCapture(event.pointerId)&&resize('categories',event)}/>
     <div className="sale-workspace-zone sale-workspace-catalog">{catalog}</div>
-    <div className="sale-splitter" role="separator" aria-label="Изменить ширину чека" aria-orientation="vertical" data-testid="sale-splitter" onPointerMove={(event)=>event.currentTarget.hasPointerCapture(event.pointerId)&&resize('receipt',event)}/>
+    <div className="sale-splitter" role="separator" aria-label="Изменить ширину чека" aria-orientation="vertical" data-testid="sale-splitter" onPointerDown={(event)=>{event.currentTarget.setPointerCapture(event.pointerId);resize('receipt',event)}} onPointerMove={(event)=>event.currentTarget.hasPointerCapture(event.pointerId)&&resize('receipt',event)}/>
     <div className="sale-workspace-zone sale-workspace-receipt">{receipt}</div>
   </main>
 }
