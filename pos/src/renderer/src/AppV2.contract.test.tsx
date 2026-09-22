@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildStockReceiptRequest, CashierLogin, emptyReceiptDiscountInputs, PinInput, replaceReceiptCustomer, EXPECTED_CASH_LABEL, operationalStockItems, ReceiveModal, TOAST_DISMISS_MS, warehouseItemMatches, WorkPage, WriteOffModal } from './AppV2'
+import { cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
+import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -33,6 +35,9 @@ describe('receipt discount input ownership',()=>{
 })
 
 describe('cashier workplace micro-contract',()=>{
+  const lockedAuth:CashierAuthState={status:'locked',employee:{id:'e1',name:'Иван Иванов'}}
+  const lockedOpenShiftAuth:CashierAuthState={...lockedAuth,openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
+
   it('keeps normal selection calm and PIN as one four-digit form field',()=>{
     const selector=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
     const login=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
@@ -45,17 +50,65 @@ describe('cashier workplace micro-contract',()=>{
     expect(login).toContain('pin-input-slots')
     expect((login.match(/class="[^"]*pin-input-slots/g)||[]).length).toBe(1)
     expect((login.match(/class="[^"]*pin-input-control/g)||[]).length).toBe(1)
-    expect(login).toContain('cashier-login-footer')
-    expect(login).toContain('settings-open-trigger')
-    expect(login).toContain('cashier-forgot-pin')
   })
-  it('renders four equal visual slots while keeping one real input',()=>{
+
+  it('renders exactly four visual slots while keeping one real PIN input',()=>{
     const markup=renderToStaticMarkup(<PinInput value="12" onChange={()=>undefined} ariaLabel="PIN"/>)
+    expect((markup.match(/<input/g)||[]).length).toBe(1)
     expect((markup.match(/pin-input-control/g)||[]).length).toBe(1)
     expect((markup.match(/pin-input-slots/g)||[]).length).toBe(1)
     expect((markup.match(/<span class="/g)||[]).length).toBe(4)
     expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
+    expect(markup).toContain('inputMode="numeric"')
+    expect(markup).toContain('maxLength="4"')
   })
+
+  it('routes pre-login and authenticated Settings through the same explicit trigger class',()=>{
+    const preLogin=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    const authenticated=renderToStaticMarkup(<SettingsNavTrigger/>)
+    expect(preLogin).toContain('settings-open-trigger')
+    expect(authenticated).toContain('settings-open-trigger')
+    expect(authenticated).toContain('Настройки')
+  })
+
+  it('uses shared centered PIN layout and fixed left/right footer roles',()=>{
+    const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
+    expect(markup).toContain('pin-entry-layout')
+    expect(markup).toContain('pin-entry-main')
+    expect(markup).toContain('pin-entry-footer')
+    const left=markup.indexOf('pin-entry-footer-left')
+    const right=markup.indexOf('pin-entry-footer-right')
+    expect(left).toBeGreaterThan(-1)
+    expect(right).toBeGreaterThan(left)
+    expect(markup.slice(left,right)).toContain('Настройки кассы')
+    expect(markup.slice(right)).toContain('Забыли PIN?')
+  })
+
+  it('keeps forgot-PIN available while locked and targets the locked employee',()=>{
+    const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={lockedAuth} onAuthenticated={async()=>undefined}/>)
+    expect(markup).toContain('Забыли PIN?')
+    expect(cashierResetEmployeeId(lockedAuth,'')).toBe('e1')
+  })
+
+  it('offers closed-shift cashier hand-off through logout then refresh',async()=>{
+    const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={lockedAuth} onAuthenticated={async()=>undefined}/>)
+    expect(lockedCashierCanSwitch(lockedAuth)).toBe(true)
+    expect(markup).toMatch(/>Сменить кассира<\//)
+    const calls:string[]=[]
+    await runLockedCashierSwitch(
+      async()=>{calls.push('logout')},
+      async()=>{calls.push('refresh')},
+    )
+    expect(calls).toEqual(['logout','refresh'])
+  })
+
+  it('does not offer cashier switching while a work shift is open',()=>{
+    const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={lockedOpenShiftAuth} onAuthenticated={async()=>undefined}/>)
+    expect(lockedCashierCanSwitch(lockedOpenShiftAuth)).toBe(false)
+    expect(markup).not.toMatch(/>Сменить кассира<\//)
+    expect(markup).toContain('разблокируйте текущего кассира и закройте смену')
+  })
+
   it('keeps the toast timeout and shift metric label contract',()=>{
     expect(TOAST_DISMISS_MS).toBe(3000)
     expect(EXPECTED_CASH_LABEL).toBe('Денег в кассе')

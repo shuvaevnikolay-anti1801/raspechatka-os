@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from raspechatka.api import pos
+from raspechatka.api import pos, pos_v2
 
 
 class TestPosOrders(TestCase):
@@ -64,3 +64,63 @@ class TestPosOrders(TestCase):
 			{"name": "SALE-RECEIPT-1", "business_point": "POINT-1", "receipt_type": "Sale"},
 			"name",
 		)
+
+	def test_duplicate_order_create_event_is_idempotent(self):
+		doc = SimpleNamespace(insert=Mock())
+		exists = Mock(side_effect=[False, True])
+		fake_frappe = SimpleNamespace(
+			db=SimpleNamespace(exists=exists),
+			get_doc=Mock(return_value=doc),
+		)
+		payload = {
+			"orderNumber": "ORD-DUPLICATE",
+			"phone": "+79001234567",
+			"status": "new",
+			"lines": [],
+		}
+		with (
+			patch.object(pos, "_doctype_exists", return_value=True),
+			patch.object(pos, "frappe", fake_frappe),
+		):
+			pos._apply_order_created("EVENT-DUPLICATE", SimpleNamespace(business_point="POINT-1"), payload)
+			pos._apply_order_created("EVENT-DUPLICATE", SimpleNamespace(business_point="POINT-1"), payload)
+
+		fake_frappe.get_doc.assert_called_once()
+		doc.insert.assert_called_once_with(ignore_permissions=True)
+
+	def test_delayed_order_event_accepts_cashier_from_current_point(self):
+		fake_frappe = SimpleNamespace(db=SimpleNamespace(get_value=Mock(return_value=None)))
+		with (
+			patch.object(pos_v2, "frappe", fake_frappe),
+			patch.object(pos_v2.base_pos, "frappe", fake_frappe),
+		):
+			selected = pos_v2._trusted_event_cashier(
+				SimpleNamespace(business_point="POINT-1"),
+				[{"id": "EMP-1", "name": "Кассир"}],
+				"order.updated",
+				{"cashierId": "EMP-1"},
+			)
+
+		self.assertEqual(selected, {"id": "EMP-1", "name": "Кассир"})
+
+	def test_delayed_order_event_rejects_foreign_cashier(self):
+		def throw(message, exception=None):
+			raise (exception or RuntimeError)(message)
+
+		fake_frappe = SimpleNamespace(
+			db=SimpleNamespace(get_value=Mock(return_value=None)),
+			throw=throw,
+			PermissionError=PermissionError,
+		)
+		with (
+			patch.object(pos_v2, "frappe", fake_frappe),
+			patch.object(pos_v2.base_pos, "frappe", fake_frappe),
+		):
+			with self.assertRaises(PermissionError):
+				pos_v2._trusted_event_cashier(
+					SimpleNamespace(business_point="POINT-1"),
+					[{"id": "EMP-1", "name": "Кассир"}],
+					"order.created",
+					{"cashierId": "EMP-FOREIGN"},
+				)
+
