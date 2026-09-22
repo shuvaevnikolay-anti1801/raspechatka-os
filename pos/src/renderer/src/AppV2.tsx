@@ -8,7 +8,7 @@ import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate
 import OrdersPage from './OrdersPage'
 import ReceiptsPage from './ReceiptsPage'
 import WorkPage from './WorkPage'
-export { WorkPage, WriteOffModal, SupplyRequestModal, ReceiveModal, operationalStockItems, warehouseItemMatches, buildStockReceiptRequest, shiftDisplayLabel, scheduleCellPresentation } from './WorkPage'
+export { default as WorkPage, WriteOffModal, SupplyRequestModal, ReceiveModal, operationalStockItems, warehouseItemMatches, buildStockReceiptRequest, shiftDisplayLabel, scheduleCellPresentation } from './WorkPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, ConnectionConfig, ConnectionStatus,
   Customer, HeldReceipt, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
