@@ -1,4 +1,6 @@
 import { PosButton } from './ui/PosButton'
+import { PosField } from './ui/PosField'
+import { PosModal } from './ui/PosModal'
 import { useEffect, useMemo, useState } from 'react'
 import type { Order, SaleSummary } from '../../shared/contracts'
 import { formatMoney } from './money'
@@ -91,16 +93,16 @@ function EditOrder({order,close,saved}:{order:Order;close:()=>void;saved:()=>Pro
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(event)=>{if(event.target===event.currentTarget)close()}}>
-    <div className="payment-modal compact-modal">
-      <header><div><small>№ {short(order.phone)}</small><h2>Изменить заказ</h2></div><button onClick={close}>×</button></header>
-      <label className="cash-input"><span>Телефон *</span><input value={phone} onChange={(event)=>setPhone(event.target.value)}/></label>
-      <label className="cash-input"><span>Описание заказа *</span><textarea value={comment} onChange={(event)=>setComment(event.target.value)}/></label>
-      <label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></label>
+  return <PosModal open title="Изменить заказ" onClose={close} className="compact-modal" footer={
+    <PosButton variant="primary" disabled={!valid} onClick={()=>void submit()}>Сохранить</PosButton>
+  }>
+    <div className="order-modal-form">
+      <PosField label="Телефон *"><input value={phone} onChange={(event)=>setPhone(event.target.value)}/></PosField>
+      <PosField label="Описание заказа *" size="textarea"><textarea value={comment} onChange={(event)=>setComment(event.target.value)}/></PosField>
+      <PosField label="Срок готовности *"><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></PosField>
       {error&&<div className="error-note">{error}</div>}
-      <button className="primary confirm" disabled={!valid} onClick={()=>void submit()}>Сохранить</button>
     </div>
-  </div>
+  </PosModal>
 }
 
 function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:()=>Promise<void>}){
@@ -140,29 +142,28 @@ function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:(
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(event)=>{if(event.target===event.currentTarget)close()}}>
-    <div className="payment-modal order-create-modal">
-      <header><div><small>ОПЛАЧЕННЫЙ ЧЕК</small><h2>Создать заказ</h2></div><button onClick={close}>×</button></header>
-      <p>Выберите чек, по которому деньги уже приняты. Сумму и состав заказа касса возьмёт из сохранённой продажи.</p>
-      <label className="cash-input"><span>Найти чек</span><input className="order-receipt-search" placeholder="Номер, телефон или покупатель" value={query} onChange={(event)=>setQuery(event.target.value)}/></label>
-      <label className="cash-input"><span>Оплаченный чек *</span>
-        <select value={saleId} disabled={loading} onChange={(event)=>{
-          const id=event.target.value
-          setSaleId(id)
-          const sale=sales.find((item)=>item.id===id)
-          if(sale?.customerPhone)setPhone(sale.customerPhone)
-        }}>
-          <option value="">{loading?'Загружаем чеки…':'Выберите чек'}</option>
-          {matches.map((sale)=><option key={sale.id} value={sale.id}>{sale.receiptNumber} · {sale.customerName||'Покупатель'} · {formatMoney(sale.totalMinor)}</option>)}
-        </select>
-      </label>
+  return <PosModal open title="Создать заказ" onClose={close} layout="matrix" className="order-create-modal" footer={
+    <PosButton variant="primary" disabled={!valid} onClick={()=>void submit()}>Создать заказ</PosButton>
+  }>
+    <div className="order-modal-form">
+      <PosField label="Найти чек"><input className="order-receipt-search" placeholder="Номер, телефон или покупатель" value={query} onChange={(event)=>setQuery(event.target.value)}/></PosField>
+      <PosField label="Оплаченный чек *"><select value={saleId} disabled={loading} onChange={(event)=>{
+        const id=event.target.value
+        setSaleId(id)
+        const sale=sales.find((item)=>item.id===id)
+        if(sale?.customerPhone)setPhone(sale.customerPhone)
+      }}>
+        <option value="">{loading?'Загружаем чеки…':'Выберите чек'}</option>
+        {matches.map((sale)=><option key={sale.id} value={sale.id}>{sale.receiptNumber} · {sale.customerName||'Покупатель'} · {formatMoney(sale.totalMinor)}</option>)}
+      </select></PosField>
       {selected&&<div className="order-selected-receipt"><span>Оплачено</span><b>{formatMoney(selected.totalMinor)}</b><small>{selected.receiptNumber} · {new Date(selected.createdAt).toLocaleString('ru-RU')}</small></div>}
-      <label className="cash-input"><span>Телефон *</span><input value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="+7 900 000-00-00"/></label>
-      <label className="cash-input"><span>Описание заказа *</span><textarea value={comment} onChange={(event)=>setComment(event.target.value)} placeholder="Что нужно изготовить"/></label>
-      <label className="cash-input"><span>Срок готовности *</span><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></label>
+      <div className="order-modal-compact-fields">
+        <PosField label="Телефон *"><input value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="+7 900 000-00-00"/></PosField>
+        <PosField label="Срок готовности *"><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></PosField>
+      </div>
+      <PosField label="Описание заказа *" size="textarea"><textarea value={comment} onChange={(event)=>setComment(event.target.value)} placeholder="Что нужно изготовить"/></PosField>
       {error&&<div className="error-note">{error}</div>}
       {!loading&&!sales.length&&<div className="settings-status">Нет свободных оплаченных чеков для нового заказа.</div>}
-      <button className="primary confirm" disabled={!valid} onClick={()=>void submit()}>Создать заказ</button>
     </div>
-  </div>
+  </PosModal>
 }
