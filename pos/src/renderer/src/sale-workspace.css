@@ -31,3 +31,77 @@
   .sale-workspace .receipt-line{font-size:clamp(.95rem,2.8cqi,1.1rem)}
   .sale-workspace .pos-v2-pay{font-size:clamp(1rem,3.5cqi,1.35rem);min-height:60px}
 }
+
+.sale-workspace .categories>button{justify-content:flex-start;min-height:48px}
+.sale-workspace .product-grid{
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  align-content:start;
+  gap:12px;
+}
+.sale-product-tile{
+  position:relative;
+  min-height:168px;
+  aspect-ratio:1.12/1;
+  padding:0;
+  overflow:hidden;
+  background:#fff;
+  border:1px solid #d8dcd5;
+  box-shadow:none;
+}
+.sale-product-tile .product-card-add{
+  width:100%;
+  height:100%;
+  padding:18px 16px 14px;
+  border:0;
+  background:transparent;
+  color:inherit;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  justify-content:space-between;
+  text-align:left;
+}
+.sale-product-tile .product-card-add strong{
+  padding-right:34px;
+  font-size:clamp(1rem,2.2cqi,1.3rem);
+  line-height:1.2;
+}
+.sale-product-tile .product-card-add footer{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.sale-product-tile .product-card-add footer b{font-size:clamp(1.25rem,2.8cqi,1.65rem);color:var(--rp-ink,#272727)}
+.sale-product-tile .product-card-add footer span{font-size:.82rem;color:#687067}
+.sale-product-tile .product-favorite{
+  position:absolute;
+  top:8px;
+  right:8px;
+  z-index:1;
+  width:38px;
+  height:38px;
+  padding:0;
+  border:1px solid #c8cdc5;
+  background:#fff;
+  color:#7b8178;
+  font-size:23px;
+  line-height:1;
+}
+.sale-product-tile .product-favorite.active{
+  border-color:var(--rp-green,#a1ce0f);
+  color:var(--rp-green,#a1ce0f);
+}
+.sale-product-tile:focus-within{outline:2px solid var(--rp-green,#a1ce0f);outline-offset:-2px}
+.favorites-empty{
+  min-height:280px;
+  display:grid;
+  place-content:center;
+  justify-items:center;
+  gap:8px;
+  padding:32px;
+  text-align:center;
+  color:#687067;
+}
+.favorites-empty>span{font-size:44px;color:var(--rp-green,#a1ce0f)}
+.favorites-empty strong{font-size:1.15rem;color:var(--rp-ink,#272727)}
+.favorites-empty p{margin:0;max-width:320px}
+@container (min-width:920px){
+  .sale-workspace .product-grid{grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px}
+  .sale-product-tile{min-height:184px}
+}
