@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, lockedCashierCanSwitch, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
@@ -63,6 +63,11 @@ describe('cashier workplace micro-contract',()=>{
     expect(markup).toContain('maxLength="4"')
   })
 
+  it('keeps success green and wrong PIN failures red through explicit notice severity',()=>{
+    expect(cashierPinNoticeClass('success')).toBe('cashier-login-notice cashier-login-success')
+    expect(cashierPinNoticeClass('error')).toBe('cashier-login-notice cashier-login-error')
+  })
+
   it('routes pre-login and authenticated Settings through the same explicit trigger class',()=>{
     const preLogin=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
     const authenticated=renderToStaticMarkup(<SettingsNavTrigger/>)
@@ -75,6 +80,7 @@ describe('cashier workplace micro-contract',()=>{
     const markup=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
     expect(markup).toContain('pin-entry-layout')
     expect(markup).toContain('pin-entry-main')
+    expect(markup).toContain('pin-entry-content')
     expect(markup).toContain('pin-entry-footer')
     const left=markup.indexOf('pin-entry-footer-left')
     const right=markup.indexOf('pin-entry-footer-right')
