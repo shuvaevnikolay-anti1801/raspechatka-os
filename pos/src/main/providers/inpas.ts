@@ -289,7 +289,7 @@ export class InpasPaymentProvider implements PaymentProvider {
       const result = await this.run(
         "health",
         `health-${Date.now()}`,
-        10,
+        undefined,
         settings
       );
       const health: DeviceHealth =
@@ -386,7 +386,7 @@ export class InpasPaymentProvider implements PaymentProvider {
     }[kind];
     const args = [`-o${operationCode}`, `-z${settings.terminalId}`];
     if (amountMinor !== undefined) args.push(`-a${amountMinor}`);
-    if (kind === "charge" || kind === "refund" || kind === "health")
+    if (kind === "charge" || kind === "refund")
       args.push(`-c${settings.currencyCode}`);
     args.push(`-s${Math.ceil(settings.timeoutMs / 1000)}`);
 
