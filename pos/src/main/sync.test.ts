@@ -204,6 +204,31 @@ describe('read-after-write and truthful queue state',()=>{
     })
   })
 
+  it('keeps an unsupported event pending with its server error',async()=>{
+    const events=[{id:'event-unsupported',eventType:'future.event',payload:{}}]
+    const {database,pendingIds}=createDatabase(0,events)
+    mocks.loadBootstrap.mockResolvedValueOnce(bootstrapPayload([]))
+    mocks.pushEvents.mockResolvedValueOnce({
+      accepted:[],
+      errors:[{
+        id:'event-unsupported',
+        eventType:'future.event',
+        message:'Неподдерживаемый тип события: future.event',
+      }],
+    })
+
+    const result=await performSync(database,connectionStore,'cashier')
+
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
+    expect(database.markEventsSent).not.toHaveBeenCalled()
+    expect(pendingIds()).toEqual(['event-unsupported'])
+    expect(result).toMatchObject({
+      pendingSync:1,
+      documentQueueSynced:false,
+      documentQueueError:'future.event (event-unsupported): Неподдерживаемый тип события: future.event',
+    })
+  })
+
   it('does not report queue success when the server accepts nothing',async()=>{
     const {database,pending}=createDatabase(1)
     mocks.loadBootstrap.mockResolvedValueOnce(bootstrapPayload([]))
