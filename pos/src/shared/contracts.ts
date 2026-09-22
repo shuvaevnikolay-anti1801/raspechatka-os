@@ -441,5 +441,6 @@ export type PosApi = {
   verifyAdminCode: (code:string) => Promise<boolean>
   resetCashierPin: (cashierId:string,adminCode:string,newPin:string,confirmation:string) => Promise<void>
   setUpsellCursor: (triggerItem:string,cursor:number) => Promise<void>
+  syncConfiguration: () => Promise<BootState>
   syncNow: () => Promise<BootState>
 }
