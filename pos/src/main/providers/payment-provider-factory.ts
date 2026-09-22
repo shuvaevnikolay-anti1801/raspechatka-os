@@ -17,9 +17,8 @@ export function createPaymentProvider(options: {
   diagnostics?: PosDiagnostics;
 }): RoutedPaymentProvider {
   if (options.trainingMode) {
-    const mock = new MockPaymentProvider() as RoutedPaymentProvider;
-    mock.settingsChanged = () => undefined;
-    return mock;
+    const mock = new MockPaymentProvider();
+    return Object.assign(mock, { settingsChanged: () => undefined });
   }
 
   const direct = new InpasDirectPaymentProvider(
