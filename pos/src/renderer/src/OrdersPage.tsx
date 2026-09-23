@@ -2,7 +2,7 @@ import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
 import { useEffect, useMemo, useState } from 'react'
-import type { Order, SaleSummary } from '../../shared/contracts'
+import type { CreateOrderFromSaleRequest, Order, SaleDetails, SaleSummary } from '../../shared/contracts'
 import { formatMoney } from './money'
 import {
   emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, orderFormDraftFromOrder,
@@ -13,6 +13,43 @@ const short=(phone:string)=>{const digits=phone.replace(/\D/g,'');return digits.
 const statusName=(status:Order['status'])=>status==='ready'?'Готов к выдаче':status==='issued'?'Выдан':status==='cancelled'?'Отменён':'В работе'
 const overdue=(order:Order)=>Boolean(order.dueAt&&new Date(order.dueAt).getTime()<Date.now()&&!['ready','issued','cancelled'].includes(order.status))
 const dueTime=(order:Order)=>order.dueAt?new Date(order.dueAt).getTime():Number.MAX_SAFE_INTEGER
+
+export const orderReceiptCustomerName=(sale:Pick<SaleSummary,'customerName'>)=>sale.customerName?.trim()||'Розничный покупатель'
+export const formatOrderReceiptDate=(value:string)=>new Date(value).toLocaleString('ru-RU',{
+  day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',
+})
+export const eligibleOrderSales=(sales:SaleSummary[],orders:Order[])=>{
+  const used=new Set(orders.map((order)=>order.sourceSaleId).filter(Boolean))
+  return sales.filter((sale)=>sale.status==='completed'&&!used.has(sale.id))
+}
+export const orderReceiptSelectorLabel=(sale:SaleSummary)=>[
+  sale.receiptNumber,
+  formatOrderReceiptDate(sale.createdAt),
+  orderReceiptCustomerName(sale),
+  sale.customerPhone?.trim(),
+  formatMoney(sale.totalMinor),
+].filter(Boolean).join(' · ')
+export const resolveOrderSaleSelection=(sales:SaleSummary[],selectorValue:string)=>
+  sales.find((sale)=>orderReceiptSelectorLabel(sale)===selectorValue)||null
+export const isOrderCreateReady=(sale:SaleDetails|null,draft:OrderFormDraft)=>
+  Boolean(sale&&sale.status==='completed'&&isOrderFormComplete(draft))
+export const buildOrderFromSaleRequest=(sale:SaleDetails,draft:OrderFormDraft):CreateOrderFromSaleRequest=>({
+  saleId:sale.id,
+  ...toOrderFormPayload(draft),
+})
+
+export function OrderReceiptPreview({sale}:{sale:SaleDetails}){
+  return <section className="order-selected-receipt" aria-label="Выбранный оплаченный чек">
+    <div className="order-selected-receipt-summary">
+      <span>{formatOrderReceiptDate(sale.createdAt)}</span>
+      <b>{formatMoney(sale.totalMinor)}</b>
+      <strong>{orderReceiptCustomerName(sale)}</strong>
+    </div>
+    <ul className="order-selected-receipt-lines">
+      {sale.lines.map((line,index)=><li key={index}><span>{line.name}</span><b>× {line.quantity}</b></li>)}
+    </ul>
+  </section>
+}
 
 type Props={orders:Order[];onChanged:()=>Promise<void>;notify:(text:string)=>void}
 
@@ -106,8 +143,10 @@ export function EditOrder({order,close,saved}:{order:Order;close:()=>void;saved:
 export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:()=>Promise<void>}){
   const [sales,setSales]=useState<SaleSummary[]>([])
   const [loading,setLoading]=useState(true)
-  const [query,setQuery]=useState('')
-  const [saleId,setSaleId]=useState('')
+  const [selectorValue,setSelectorValue]=useState('')
+  const [selectedSaleId,setSelectedSaleId]=useState('')
+  const [selectedSale,setSelectedSale]=useState<SaleDetails|null>(null)
+  const [detailLoading,setDetailLoading]=useState(false)
   const [draft,setDraft]=useState<OrderFormDraft>(()=>emptyOrderFormDraft())
   const [error,setError]=useState('')
 
@@ -115,23 +154,44 @@ export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;
     let cancelled=false
     window.raspechatkaPos.listSales().then((rows)=>{
       if(cancelled)return
-      const used=new Set(orders.map((order)=>order.sourceSaleId).filter(Boolean))
-      setSales(rows.filter((sale)=>sale.status==='completed'&&!used.has(sale.id)))
+      setSales(eligibleOrderSales(rows,orders))
     }).catch((reason)=>{if(!cancelled)setError(reason instanceof Error?reason.message:String(reason))})
       .finally(()=>{if(!cancelled)setLoading(false)})
     return()=>{cancelled=true}
   },[orders])
 
-  const text=query.trim().toLocaleLowerCase('ru-RU')
-  const matches=sales.filter((sale)=>!text||(sale.receiptNumber+' '+(sale.customerName||'')+' '+(sale.customerPhone||''))
-    .toLocaleLowerCase('ru-RU').includes(text)).slice(0,30)
-  const selected=sales.find((sale)=>sale.id===saleId)
-  const valid=Boolean(saleId)&&isOrderFormComplete(draft)
+  useEffect(()=>{
+    let cancelled=false
+    setSelectedSale(null)
+    if(!selectedSaleId){setDetailLoading(false);return()=>{cancelled=true}}
+    setDetailLoading(true)
+    window.raspechatkaPos.getSale(selectedSaleId).then((sale)=>{
+      if(cancelled)return
+      if(sale.id!==selectedSaleId||sale.status!=='completed'){
+        setError('Выбранный чек больше нельзя использовать для создания заказа')
+        return
+      }
+      setSelectedSale(sale)
+    }).catch((reason)=>{if(!cancelled)setError(reason instanceof Error?reason.message:String(reason))})
+      .finally(()=>{if(!cancelled)setDetailLoading(false)})
+    return()=>{cancelled=true}
+  },[selectedSaleId])
+
+  const valid=isOrderCreateReady(selectedSale,draft)
+  const selectReceipt=(value:string)=>{
+    setSelectorValue(value)
+    setError('')
+    setSelectedSale(null)
+    const sale=resolveOrderSaleSelection(sales,value)
+    setSelectedSaleId(sale?.id||'')
+    setDraft((current)=>({...current,phone:sale?.customerPhone||''}))
+  }
 
   const submit=async()=>{
+    if(!selectedSale)return
     setError('')
     try{
-      await window.raspechatkaPos.createOrderFromSale({saleId,...toOrderFormPayload(draft)})
+      await window.raspechatkaPos.createOrderFromSale(buildOrderFromSaleRequest(selectedSale,draft))
       await saved()
     }catch(reason){
       setError(reason instanceof Error?reason.message:String(reason))
@@ -142,17 +202,21 @@ export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;
     <PosButton variant="primary" disabled={!valid} onClick={()=>void submit()}>Создать заказ</PosButton>
   }>
     <div className="order-modal-form">
-      <PosField label="Найти чек"><input className="order-receipt-search" placeholder="Номер, телефон или покупатель" value={query} onChange={(event)=>setQuery(event.target.value)}/></PosField>
-      <PosField label="Оплаченный чек *"><select value={saleId} disabled={loading} onChange={(event)=>{
-        const id=event.target.value
-        setSaleId(id)
-        const sale=sales.find((item)=>item.id===id)
-        if(sale?.customerPhone)setDraft((current)=>({...current,phone:sale.customerPhone||''}))
-      }}>
-        <option value="">{loading?'Загружаем чеки…':'Выберите чек'}</option>
-        {matches.map((sale)=><option key={sale.id} value={sale.id}>{sale.receiptNumber} · {sale.customerName||'Покупатель'} · {formatMoney(sale.totalMinor)}</option>)}
-      </select></PosField>
-      {selected&&<div className="order-selected-receipt"><span>Оплачено</span><b>{formatMoney(selected.totalMinor)}</b><small>{selected.receiptNumber} · {new Date(selected.createdAt).toLocaleString('ru-RU')}</small></div>}
+      <PosField label="Оплаченный чек *" helper="Начните вводить номер чека, покупателя или телефон">
+        <input
+          type="search"
+          list="order-paid-sales"
+          value={selectorValue}
+          disabled={loading}
+          placeholder={loading?'Загружаем чеки…':'Выберите оплаченный чек'}
+          onChange={(event)=>selectReceipt(event.target.value)}
+        />
+      </PosField>
+      <datalist id="order-paid-sales">
+        {sales.map((sale)=><option key={sale.id} value={orderReceiptSelectorLabel(sale)}/>)}
+      </datalist>
+      {detailLoading&&<div className="settings-status">Загружаем чек…</div>}
+      {selectedSale&&<OrderReceiptPreview sale={selectedSale}/>} 
       <OrderFormFields draft={draft} onChange={setDraft}/>
       {error&&<div className="error-note">{error}</div>}
       {!loading&&!sales.length&&<div className="settings-status">Нет свободных оплаченных чеков для нового заказа.</div>}
