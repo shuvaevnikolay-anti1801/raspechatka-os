@@ -88,6 +88,28 @@ class TestPosPushEventsReliability(TestCase):
 		trusted_cashier.assert_not_called()
 		rollback_mock.assert_called_once_with(save_point="pos_event_0")
 
+	def test_explicit_permanent_validation_is_classified_and_later_event_proceeds(self):
+		connection = self._connection()
+		def ingest(event_id, payload, connection, cashier_id):
+			if event_id == "INVALID":
+				raise pos_v2.PermanentPosEventError("Недопустимая причина списания")
+		with (
+			patch.object(pos_v2.base_pos, "_authenticate", return_value=connection),
+			patch.object(pos_v2.base_pos, "_point_employees", return_value=[]),
+			patch.object(pos_v2, "_trusted_event_cashier", return_value={"id": "EMP-1"}),
+			patch.object(pos_v2.frappe.db, "savepoint"),
+			patch.object(pos_v2.frappe.db, "rollback"),
+			patch.object(pos_v2, "_ingest_stock_write_off", side_effect=ingest),
+			patch.object(pos_v2.base_pos, "_touch"),
+		):
+			result = pos_v2.push_events("DEVICE-1", "TOKEN", events=[
+				{"id": "INVALID", "eventType": "stock.write_off.requested", "payload": {}},
+				{"id": "VALID", "eventType": "stock.write_off.requested", "payload": {}},
+			])
+		self.assertEqual(result["accepted"], ["VALID"])
+		self.assertEqual(result["errors"][0]["message"],
+			"Invalid event: Недопустимая причина списания")
+
 	def test_unexpected_event_error_does_not_expose_internal_details(self):
 		connection = self._connection()
 		with (
