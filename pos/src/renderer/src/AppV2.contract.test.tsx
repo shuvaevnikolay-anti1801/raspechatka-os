@@ -7,7 +7,7 @@ import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
 import { PosModal } from './ui/PosModal'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
-import { PinInput } from './PinEntry'
+import { normalizePinValue, PIN_LENGTH, PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -85,6 +85,29 @@ describe('cashier workplace micro-contract',()=>{
     expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
     expect(markup).toContain('inputMode="numeric"')
     expect(markup).toContain('maxLength="4"')
+    expect(PIN_LENGTH).toBe(4)
+  })
+
+  it('keeps digits-only controlled PIN semantics without custom keyboard interception',()=>{
+    expect(normalizePinValue('1a2-34x5')).toBe('1234')
+    expect(normalizePinValue('аб12')).toBe('12')
+    const pinSource=readFileSync(new URL('./PinEntry.tsx',import.meta.url),'utf8')
+    expect(pinSource).toContain('value={value}')
+    expect(pinSource).toContain('onChange={(event)=>onChange(normalizePinValue(event.target.value))}')
+    expect(pinSource).not.toMatch(/onKey(?:Down|Up|Press)=/)
+  })
+
+  it('keeps every cashier auth mode on the shared PinInput and native form submit callbacks',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source.match(/<PinInput/g)?.length).toBe(3)
+    expect(source).toContain('PinInput autoFocus value={adminCode}')
+    expect(source).toContain("PinInput autoFocus={!adminReset} value={pin}")
+    expect(source).toContain('PinInput value={confirmation}')
+    expect(source).toContain('<form className="cashier-pin-form" onSubmit=')
+    expect(source).toContain("if(auth.status==='locked')await window.raspechatkaPos.unlockCashier(pin)")
+    expect(source).toContain("else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)")
+    expect(source).toContain("else await window.raspechatkaPos.loginCashier(employeeId,pin)")
+    expect(source).toContain('await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)')
   })
 
   it('keeps success green and wrong PIN failures red through explicit notice severity',()=>{
