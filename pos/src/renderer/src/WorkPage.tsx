@@ -186,7 +186,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
   return <div className="warehouse-workspace">
     <div className="warehouse-actions" data-workplace-block="actions">
       <PosButton variant="danger" size="touch" className="warehouse-action warehouse-action-writeoff" onClick={()=>setWriteOff(true)}>Списать брак</PosButton>
-      <PosButton variant="primary" size="touch" className="warehouse-action warehouse-action-need" onClick={()=>setNeed(true)}>Потребность точки</PosButton>
+      <PosButton variant="primary" size="touch" className="warehouse-action warehouse-action-need" onClick={()=>setNeed(true)}>Заказать</PosButton>
     </div>
 
     <section className="work-card delivery-list warehouse-deliveries" data-workplace-block="deliveries">
@@ -200,13 +200,13 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
 
     <section className="work-card stock-list warehouse-stock" data-workplace-block="stock">
       <PosField label="Поиск" className="warehouse-search">
-        <input value={stockQuery} onChange={(e)=>setStockQuery(e.target.value)} placeholder="Название, ID или код"/>
+        <input value={stockQuery} onChange={(e)=>setStockQuery(e.target.value)} placeholder="Название товара"/>
       </PosField>
       <div className="stock-table-scroll">
         <header><span>Товар</span><span>Остаток</span><span>Где лежит</span></header>
         {stockRows.length
           ?stockRows.map((item)=><div key={item.id}>
-            <div><b title={item.name}>{item.name}</b><small>{item.itemCode||item.id}</small></div>
+            <div><b title={item.name}>{item.name}</b></div>
             <strong className={(item.stock??0)<=0?'low':''}>{item.stock??'—'} {item.uom}</strong>
             <span>{item.storageAddress||'Адрес ещё не указан'}</span>
           </div>)
@@ -228,7 +228,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
         await window.raspechatkaPos.createSupplyRequest(request)
         setNeed(false)
         await onChanged()
-        notify('Потребность точки сохранена на кассе и будет передана в OS при синхронизации')
+        notify('Заказ для точки сохранён на кассе и будет передан в OS при синхронизации')
       }catch(e){notify(e instanceof Error?e.message:String(e))}
     }}/>}
 
@@ -260,7 +260,6 @@ function DeliveryCard({order,onReceive}:{order:DeliveryNotice;onReceive:()=>void
       <div>
         <small>ПОСТАВЩИК</small>
         <strong title={order.supplier}>{order.supplier}</strong>
-        <b>Заказ № {order.id}</b>
       </div>
       <div className="delivery-status">
         <span>{order.expectedDate?new Date(order.expectedDate+'T00:00:00').toLocaleDateString('ru-RU'):'Дата не назначена'}</span>
@@ -272,7 +271,7 @@ function DeliveryCard({order,onReceive}:{order:DeliveryNotice;onReceive:()=>void
     <div className="delivery-lines">
       <strong>Осталось принять: {remaining.length} поз.</strong>
       {remaining.map((item)=><div key={item.purchaseOrderItemId}>
-        <span><b title={item.itemName}>{item.itemName}</b><small>{item.itemCode||item.itemId}</small></span>
+        <span><b title={item.itemName}>{item.itemName}</b></span>
         <b>{item.remainingQuantity} {item.uom}</b>
       </div>)}
     </div>
@@ -281,10 +280,13 @@ function DeliveryCard({order,onReceive}:{order:DeliveryNotice;onReceive:()=>void
 }
 
 export function WriteOffModal({products,onClose,onComplete}:{products:OperationalCatalogItem[];onClose:()=>void;onComplete:(request:StockWriteOffRequest)=>Promise<void>}){
-  const [productId,setProductId]=useState(products[0]?.id||'')
+  const [productId,setProductId]=useState('')
+  const [productQuery,setProductQuery]=useState('')
   const [quantity,setQuantity]=useState('1')
   const [reason,setReason]=useState<StockWriteOffRequest['reason']>('Брак')
   const [comment,setComment]=useState('')
+  const productOptions=products.filter((item)=>warehouseItemMatches(item,productQuery)).slice(0,8)
+  const selectProduct=(item:OperationalCatalogItem)=>{setProductId(item.id);setProductQuery(item.name)}
 
   return <PosModal
     open
@@ -294,27 +296,45 @@ export function WriteOffModal({products,onClose,onComplete}:{products:Operationa
     className="warehouse-modal warehouse-writeoff-modal"
     footer={<>
       <PosButton variant="secondary" onClick={onClose}>Отмена</PosButton>
-      <PosButton variant="danger" size="touch" className="warehouse-confirm" disabled={!productId||Number(quantity)<=0} onClick={()=>onComplete({productId,quantity:Number(quantity),reason,comment})}>Подтвердить списание</PosButton>
+      <PosButton variant="danger" size="touch" className="warehouse-confirm" disabled={!productId||Number(quantity)<=0||!comment.trim()} onClick={()=>onComplete({productId,quantity:Number(quantity),reason,comment:comment.trim()})}>Подтвердить списание</PosButton>
     </>}
   >
     <p className="warehouse-modal-intro">Списание изменит фактический остаток товара.</p>
     <div className="warehouse-warning" role="note">Проверьте товар, количество и причину перед подтверждением.</div>
     <div className="warehouse-form">
-      <PosField label="Товар" className="warehouse-field-wide">
-        <select value={productId} onChange={(e)=>setProductId(e.target.value)}>
-          {products.map((x)=><option key={x.id} value={x.id}>{x.name} · остаток {x.stock??0}</option>)}
-        </select>
-      </PosField>
+      <div className="warehouse-field-wide warehouse-product-picker">
+        <PosField label="Товар" helper={productId?'Товар выбран':'Выберите товар из списка'}>
+          <input
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={productOptions.length>0}
+            value={productQuery}
+            onChange={(e)=>{setProductQuery(e.target.value);setProductId('')}}
+            placeholder="Начните вводить название товара"
+          />
+        </PosField>
+        {productOptions.length>0&&<div className="warehouse-product-options" role="listbox" aria-label="Товары">
+          {productOptions.map((item)=><PosButton
+            key={item.id}
+            variant="quiet"
+            size="control"
+            className="warehouse-product-option"
+            role="option"
+            aria-selected={item.id===productId}
+            onClick={()=>selectProduct(item)}
+          ><span>{item.name}</span><small>Остаток {item.stock??0} {item.uom}</small></PosButton>)}
+        </div>}
+      </div>
       <PosField label="Количество">
         <input type="number" min="0.001" step="0.001" value={quantity} onChange={(e)=>setQuantity(e.target.value)}/>
       </PosField>
       <PosField label="Причина">
         <select value={reason} onChange={(e)=>setReason(e.target.value as StockWriteOffRequest['reason'])}>
-          <option>Брак</option><option>Внутренние нужды</option><option>Обучение</option><option>Другое</option>
+          <option>Брак</option><option>Внутренние нужды</option><option>Обучение</option>
         </select>
       </PosField>
-      <PosField label="Комментарий" helper="необязательно" size="textarea" className="warehouse-field-wide">
-        <textarea value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Что произошло — коротко"/>
+      <PosField label="Комментарий" helper="обязательно" size="textarea" className="warehouse-field-wide">
+        <textarea required value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Что произошло — коротко"/>
       </PosField>
     </div>
   </PosModal>
@@ -323,37 +343,33 @@ export function WriteOffModal({products,onClose,onComplete}:{products:Operationa
 export function SupplyRequestModal({products,onClose,onComplete}:{products:OperationalCatalogItem[];onClose:()=>void;onComplete:(request:SupplyRequestInput)=>Promise<void>}){
   const [productId,setProductId]=useState('')
   const [itemName,setItemName]=useState('')
-  const [quantity,setQuantity]=useState('1')
   const [comment,setComment]=useState('')
   const select=(id:string)=>{setProductId(id);setItemName(products.find((x)=>x.id===id)?.name||'')}
 
   return <PosModal
     open
-    title="Потребность точки"
+    title="Заказать"
     onClose={onClose}
     layout="form"
     className="warehouse-modal warehouse-supply-modal"
     footer={<>
       <PosButton variant="secondary" onClick={onClose}>Отмена</PosButton>
-      <PosButton variant="primary" size="touch" className="warehouse-confirm" disabled={!itemName.trim()||Number(quantity)<=0} onClick={()=>onComplete({productId:productId||undefined,itemName:itemName.trim(),quantity:Number(quantity),comment})}>Потребность точки</PosButton>
+      <PosButton variant="primary" size="touch" className="warehouse-confirm" disabled={!itemName.trim()||!comment.trim()} onClick={()=>onComplete({productId:productId||undefined,itemName:itemName.trim(),comment:comment.trim()})}>Заказать</PosButton>
     </>}
   >
-    <p className="warehouse-modal-intro">Укажите, что и в каком количестве требуется заказать.</p>
+    <p className="warehouse-modal-intro">Укажите, что требуется заказать для точки.</p>
     <div className="warehouse-form">
       <PosField label="Позиция из каталога" className="warehouse-field-wide">
         <select value={productId} onChange={(e)=>select(e.target.value)}>
           <option value="">Другая позиция</option>
-          {products.map((x)=><option key={x.id} value={x.id}>{x.name} · {x.itemCode||x.id}</option>)}
+          {products.map((x)=><option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </PosField>
       <PosField label="Наименование или описание" className="warehouse-field-wide">
-        <input value={itemName} onChange={(e)=>setItemName(e.target.value)} placeholder="Например: бумага А4"/>
+        <input value={itemName} onChange={(e)=>{setItemName(e.target.value);setProductId('')}} placeholder="Например: бумага А4"/>
       </PosField>
-      <PosField label="Количество">
-        <input type="number" min="0.001" step="0.001" value={quantity} onChange={(e)=>setQuantity(e.target.value)}/>
-      </PosField>
-      <PosField label="Комментарий" helper="необязательно" size="textarea" className="warehouse-field-wide">
-        <textarea value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Срочность или уточнение"/>
+      <PosField label="Комментарий" helper="обязательно" size="textarea" className="warehouse-field-wide">
+        <textarea required value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Срочность или уточнение"/>
       </PosField>
     </div>
   </PosModal>
