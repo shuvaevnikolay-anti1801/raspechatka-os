@@ -154,3 +154,7 @@
   .cashier-login-card .pin-entry-layout,.cashier-login-card .cashier-pin-fields{gap:var(--pos-space-3)}
   .cashier-login-card .pin-input,.cashier-login-card .pin-input-slots{min-height:60px;height:60px}
 }
+
+.pos-header-nav .cash-warning,.shift-actions .cash-warning{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pos-danger);color:var(--pos-surface);font-size:var(--pos-type-label);font-weight:var(--pos-weight-strong);line-height:1}
+.pos-header-nav>.pos-button.active .cash-warning{background:var(--pos-danger);color:var(--pos-surface)}
+.shift-actions .cash-count-pending{border-color:var(--pos-danger);color:var(--pos-danger)}
