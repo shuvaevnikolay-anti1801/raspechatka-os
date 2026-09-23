@@ -68,7 +68,8 @@ jobs:
           =======
               {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
           >>>>>>> origin/codex/dev-173-pos-cash-drawer
-          """: """    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} \n""",
+          """: """    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>}
+""",
           }
           for old, new in replacements.items():
               if old not in s:
