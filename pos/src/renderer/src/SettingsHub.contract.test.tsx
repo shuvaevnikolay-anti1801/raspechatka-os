@@ -133,14 +133,17 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     const event:OutboxQueueItem={id:'e',eventType:'order.created',payload:{},createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:1,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null}
     const now=Date.parse('2026-09-23T12:00:00Z')
     expect(canRetrySyncQueueEvent(event,false,now)).toBe(true)
-    expect(canRetrySyncQueueEvent({...event,eventType:'sale.completed'},false,now)).toBe(false)
-    expect(canRetrySyncQueueEvent({...event,eventType:'cash.withdrawn'},false,now)).toBe(false)
+    for(const eventType of ['sale.completed','sale.returned','shift.opened','shift.closed','cash.deposited','cash.withdrawn','cash.counted','payment_unknown','fiscal_status_unknown']){
+      expect(canRetrySyncQueueEvent({...event,eventType},false,now)).toBe(false)
+    }
     expect(canRetrySyncQueueEvent({...event,status:'problem'},false,now)).toBe(false)
     expect(canRetrySyncQueueEvent({...event,nextAttemptAt:'2026-09-24T00:00:00Z'},false,now)).toBe(false)
     expect(canRetrySyncQueueEvent(event,true,now)).toBe(false)
     expect(canRetrySyncQueueEvent({...event,eventType:'order.updated'},false,now)).toBe(false)
     expect(canRetrySyncQueueEvent({...event,eventType:'order.updated',payload:{updatedAt:'2026-09-23T10:00:00Z'}},false,now)).toBe(true)
-    expect(canCancelSyncQueueEvent(event)).toBe(false)
+    for(const eventType of ['order.created','order.updated','sale.completed','cash.withdrawn']){
+      expect(canCancelSyncQueueEvent({...event,eventType})).toBe(false)
+    }
   })
 
   it('uses configuration refresh after admin connection save without full sync',async()=>{
