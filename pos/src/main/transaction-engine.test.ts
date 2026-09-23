@@ -38,6 +38,7 @@ class TestFiscalProvider implements FiscalProvider {
   saleCalls=0
   sales:FiscalRequest[]=[]
   returnCalls=0
+  returns:FiscalReturnRequest[]=[]
   statusCalls=0
   snapshotCalls=0
   throwOnSnapshot=false
@@ -50,7 +51,7 @@ class TestFiscalProvider implements FiscalProvider {
   async openShift(){return}
   async closeShift(){return {message:'closed'}}
   async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.sales.push(_request);this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
-  async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
+  async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returns.push(_request);this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
   async getOperationStatus(_request:{
     operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:unknown
   }):Promise<FiscalOperationStatus>{
@@ -341,6 +342,7 @@ describe('PosTransactionEngine safety',()=>{
       payments:[{method:'cash',amountMinor:1000}],
     },shiftId,1000,persisted)
     expect(partial.totalMinor).toBe(1000)
+    expect((fiscal.returns[0].lines[0] as typeof fiscal.returns[0].lines[0] & {lineTotalMinor:number}).lineTotalMinor).toBe(1000)
     await expect(engine.createReturn({
       clientRequestId:'over-return',saleId:sale.saleId,
       lines:[{saleItemId:first.id,quantity:0.6}],
