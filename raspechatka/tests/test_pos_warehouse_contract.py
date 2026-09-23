@@ -133,10 +133,10 @@ class TestPosOperationalWarehouseContract(TestCase):
 
 class TestPosLocalWarehouseTruth(TestCase):
 	def test_stock_receipt_queues_without_optimistically_mutating_delivery_cache(self):
-		source = (
-			Path(__file__).resolve().parents[2] / "pos" / "src" / "main" / "database.ts"
-		).read_text(encoding="utf-8")
-		method = source[source.index("  createStockReceipt("):source.index("  recordCleanerVisit(")]
+		source = (Path(__file__).resolve().parents[2] / "pos" / "src" / "main" / "database.ts").read_text(
+			encoding="utf-8"
+		)
+		method = source[source.index("  createStockReceipt(") : source.index("  recordCleanerVisit(")]
 		self.assertIn("this.queue('stock.receipt.requested'", method)
 		self.assertNotIn("data.deliveries=", method)
 		self.assertNotIn("this.setWorkplaceData(data)", method)
@@ -298,11 +298,11 @@ class TestPosWarehouseIngestion(TestCase):
 				pos_v2._ingest_stock_write_off(
 					"EVENT-FOREIGN",
 					{
-					"productId": "ITEM-FOREIGN",
-					"quantity": 1,
-					"reason": "Брак",
-					"comment": "Чужой товар",
-				},
+						"productId": "ITEM-FOREIGN",
+						"quantity": 1,
+						"reason": "Брак",
+						"comment": "Чужой товар",
+					},
 					SimpleNamespace(business_point="POINT-A"),
 					"EMP-1",
 				)
