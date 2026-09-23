@@ -105,6 +105,32 @@ class TestPosOrders(TestCase):
 		self.assertEqual(doc.source_sale_id, "SALE-1")
 		self.assertEqual(doc.save.call_count, 2)
 
+	def test_timestamped_update_locks_order_and_ignores_duplicate_or_stale_replay(self):
+		get_value = Mock(return_value="POS-ORDER-1")
+		doc = SimpleNamespace(
+			last_pos_update_at=None, last_pos_update_event=None,
+			phone="old", contact_method=None, comment=None, due_at=None,
+			ready_at=None, issued_at=None, source_receipt=None, source_sale_id=None,
+			status="New", save=Mock(),
+		)
+		db = SimpleNamespace(get_value=get_value, sql=Mock(return_value=[("POS-ORDER-1",)]))
+		with (
+			patch.object(pos, "_doctype_exists", return_value=True),
+			patch.object(pos, "frappe", SimpleNamespace(db=db, get_doc=Mock(return_value=doc))),
+		):
+			workplace = SimpleNamespace(business_point="POINT-1")
+			new = {"orderNumber": "ORD-1", "updatedAt": "2026-09-20 12:00:00",
+				"phone": "new", "status": "ready"}
+			pos._apply_order_updated("EVENT-NEW", workplace, new)
+			pos._apply_order_updated("EVENT-NEW", workplace, new)
+			pos._apply_order_updated("EVENT-OLD", workplace, {**new,
+				"updatedAt": "2026-09-20 11:00:00", "phone": "old", "status": "new"})
+		self.assertEqual(doc.phone, "new")
+		self.assertEqual(doc.status, "Ready")
+		self.assertEqual(doc.last_pos_update_event, "EVENT-NEW")
+		doc.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(db.sql.call_count, 3)
+
 	def test_order_create_rejects_when_canonical_doctype_is_unavailable(self):
 		def throw(message, exception=None):
 			raise (exception or RuntimeError)(message)
@@ -154,9 +180,9 @@ class TestPosOrders(TestCase):
 
 	def test_duplicate_order_create_event_is_idempotent(self):
 		doc = SimpleNamespace(insert=Mock())
-		exists = Mock(side_effect=[False, True])
+		get_value = Mock(side_effect=[None, "POINT-1"])
 		fake_frappe = SimpleNamespace(
-			db=SimpleNamespace(exists=exists),
+			db=SimpleNamespace(get_value=get_value),
 			get_doc=Mock(return_value=doc),
 		)
 		payload = {
