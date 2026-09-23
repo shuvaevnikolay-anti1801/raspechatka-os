@@ -328,6 +328,26 @@ export type OutboxQueueItem = OutboxEvent & {
   sentAt: string | null
 }
 
+export type SyncQueueItem = {
+  id:string
+  eventType:string
+  label:string
+  createdAt:string
+  status:'pending'|'problem'
+  attemptCount:number
+  nextAttemptAt:string|null
+  lastError:string|null
+  canRetry:boolean
+  canCancel:false
+}
+export type SyncQueueSnapshot = {
+  items:SyncQueueItem[]
+  total:number
+  problemCount:number
+  problemCountTruncated:boolean
+}
+export type SyncRetryResult = {sent:boolean;message:string}
+
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
 export type WorkScheduleEntry = {
   id:string; date:string; employeeId:string; employeeName?:string; shiftTemplate:string;
@@ -478,6 +498,9 @@ export type PosApi = {
   getSelectedPrinter: () => Promise<string|undefined>
   setSelectedPrinter: (name:string) => Promise<void>
   getDeviceStatuses: () => Promise<DeviceStatuses>
+  getPosVersion: () => Promise<string>
+  listSyncQueue: () => Promise<SyncQueueSnapshot>
+  retrySyncEvent: (id:string,adminCode:string) => Promise<SyncRetryResult>
   listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
   recoverOperation: (id:string) => Promise<RecoveryResult>
   listDiagnosticEvents: (limit?:number) => Promise<DiagnosticEvent[]>
