@@ -405,6 +405,116 @@ describe('PosDatabase',()=>{
     })
   })
 
+  describe('DEV-173 drawer shift state machine',()=>{
+    const bindDrawer=(database:PosDatabase,pointId='point-stage2',workplaceId='register-stage2')=>{
+      database.setState('bootstrap',JSON.stringify({pointId,workplaceId}))
+      return {pointId,workplaceId}
+    }
+
+    it('freezes the opening expected baseline and allows opening count to be deferred',()=>{
+      const database=createDatabase()
+      const {pointId,workplaceId}=bindDrawer(database)
+      database.getCashDrawerState(pointId,workplaceId)
+      database.openShift({id:'deferred-opening',openedAt:'2026-09-08T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      expect(database.currentShift()).toMatchObject({
+        id:'deferred-opening',openingExpectedMinor:0,openingExpectedVerified:true,openingCountPending:true,
+      })
+      expect(database.getShiftSummary()).toMatchObject({
+        expectedCashMinor:0,expectedCashVerified:true,openingCountPending:true,
+      })
+
+      database.addCashOperation('deposit',5000,'размен')
+      const opening=database.saveCashCount('opening',[{denominationMinor:1000,quantity:4}])
+      expect(opening).toMatchObject({
+        totalMinor:4000,expectedMinor:5000,expectedVerified:true,differenceMinor:-1000,
+      })
+      expect(database.getCashDrawerState(pointId,workplaceId).openingCountPending).toBe(false)
+      expect(database.getShiftSummary().expectedCashMinor).toBe(5000)
+    })
+
+    it('blocks work-shift close until a current closing count exists',()=>{
+      const database=createDatabase()
+      bindDrawer(database)
+      database.openShift({id:'must-close-count',openedAt:'2026-09-09T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      expect(()=>database.closeShift()).toThrow(/закрывающий пересчёт/)
+      database.saveCashCount('closing',[])
+      database.addCashOperation('deposit',1000,'after count')
+      expect(()=>database.closeShift()).toThrow(/движение наличных изменилось/)
+      const closing=database.saveCashCount('closing',[{denominationMinor:1000,quantity:1}])
+      expect(closing).toMatchObject({expectedMinor:1000,totalMinor:1000,differenceMinor:0})
+      expect(()=>database.closeShift()).not.toThrow()
+    })
+
+    it('hands the closing physical balance from cashier A to cashier B and marks B opening pending',()=>{
+      const database=createDatabase()
+      const {pointId,workplaceId}=bindDrawer(database,'point-handoff','register-handoff')
+      database.openShift({id:'shift-a',openedAt:'2026-09-10T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      database.saveCashCount('opening',[])
+      database.addCashOperation('deposit',12000,'float')
+      const closing=database.saveCashCount('closing',[{denominationMinor:1000,quantity:11}])
+      expect(closing).toMatchObject({expectedMinor:12000,totalMinor:11000,differenceMinor:-1000})
+      database.closeShift()
+      expect(database.getCashDrawerState(pointId,workplaceId)).toMatchObject({
+        baselineMinor:11000,baselineVerified:true,openingCountPending:false,baselineSourceId:closing.id,
+      })
+
+      const next=database.openShift({id:'shift-b',openedAt:'2026-09-10T14:00:00.000Z',cashierId:'B',cashierName:'B'})
+      expect(next).toMatchObject({
+        cashierId:'B',openingExpectedMinor:11000,openingExpectedVerified:true,openingCountPending:true,
+      })
+      const opening=database.saveCashCount('opening',[{denominationMinor:1000,quantity:10}])
+      expect(opening).toMatchObject({expectedMinor:11000,totalMinor:10000,differenceMinor:-1000})
+      expect(database.getShiftSummary().expectedCashMinor).toBe(11000)
+    })
+
+    it('counts sale return deposit and withdrawal exactly once from the frozen baseline',()=>{
+      const database=createDatabase()
+      bindDrawer(database,'point-accounting','register-accounting')
+      const shift=database.openShift({id:'accounting-shift',openedAt:'2026-09-11T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      database.saveCashCount('opening',[])
+      database.saveSale({
+        id:'drawer-sale',clientRequestId:'drawer-sale-request',shiftId:shift.id,totalMinor:10000,
+        paymentMethod:'cash',fiscalNumber:'DRAWER-SALE',createdAt:'2026-09-11T09:00:00.000Z',receiptDiscountPercent:0,
+        lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:10000}],
+        payments:[{method:'cash',amountMinor:10000}],
+      })
+      const sale=database.getSale('drawer-sale')
+      database.saveReturn({
+        id:'drawer-return',clientRequestId:'drawer-return-request',saleId:sale.id,shiftId:shift.id,
+        totalMinor:2000,fiscalNumber:'DRAWER-RETURN',createdAt:'2026-09-11T10:00:00.000Z',
+        lines:[{saleItemId:sale.lines[0].id,quantity:0.2,lineTotalMinor:2000}],
+        payments:[{method:'cash',amountMinor:2000}],
+      })
+      database.addCashOperation('deposit',3000,'deposit')
+      database.addCashOperation('withdrawal',1000,'withdrawal')
+      expect(database.getShiftSummary()).toMatchObject({
+        cashMinor:10000,returnsMinor:2000,depositsMinor:3000,withdrawalsMinor:1000,
+        expectedCashMinor:10000,expectedCashVerified:true,
+      })
+      const control=database.saveCashCount('control',[{denominationMinor:1000,quantity:9}])
+      expect(control).toMatchObject({expectedMinor:10000,totalMinor:9000,differenceMinor:-1000})
+      expect(database.getShiftSummary().expectedCashMinor).toBe(10000)
+    })
+
+    it('preserves opening pending and frozen baseline across restart',()=>{
+      const filePath=createDatabaseFile()
+      let database=openTrackedDatabase(filePath)
+      const {pointId,workplaceId}=bindDrawer(database,'point-restart-pending','register-restart-pending')
+      database.openShift({id:'restart-pending',openedAt:'2026-09-12T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      database.close()
+      databases.splice(databases.indexOf(database),1)
+
+      database=openTrackedDatabase(filePath)
+      expect(database.currentShift()).toMatchObject({
+        id:'restart-pending',openingExpectedMinor:0,openingExpectedVerified:true,openingCountPending:true,
+      })
+      expect(database.getCashDrawerState(pointId,workplaceId).openingCountPending).toBe(true)
+      const opening=database.saveCashCount('opening',[{denominationMinor:1000,quantity:2}])
+      expect(opening).toMatchObject({expectedMinor:0,totalMinor:2000,differenceMinor:2000})
+      expect(database.getCashDrawerState(pointId,workplaceId).openingCountPending).toBe(false)
+    })
+  })
+
   it('assigns morning and evening explicitly and preserves them after restart',()=>{
     const database=createDatabase()
     const morning=database.openShift({id:'shift-morning',openedAt:'2026-09-06T06:00:00.000Z',cashierName:'Анна'})
