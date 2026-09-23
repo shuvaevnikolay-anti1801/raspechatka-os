@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import SettingsHub, {
@@ -32,6 +33,18 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect((markup.match(/<span class="/g)||[]).length).toBe(4)
     expect(markup).toContain('maxLength="4"')
     expect(markup).toContain('inputMode="numeric"')
+    expect(markup).toContain('autoFocus=""')
+  })
+
+  it('keeps admin gate on shared PinInput with native Enter submit and unchanged callbacks',()=>{
+    const source=readFileSync(new URL('./SettingsHub.tsx',import.meta.url),'utf8')
+    expect(source.match(/<PinInput/g)?.length).toBe(1)
+    expect(source).toContain('<form')
+    expect(source).toContain('onSubmit={(event) =>')
+    expect(source).toContain('event.preventDefault();')
+    expect(source).toContain('onSubmit();')
+    expect(source).toContain('onChange={onPasswordChange}')
+    expect(source).not.toMatch(/onKey(?:Down|Up|Press)=/)
   })
 
   it('keeps a wrong admin code at the gate and does not open settings',async()=>{
