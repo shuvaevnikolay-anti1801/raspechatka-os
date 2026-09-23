@@ -49,7 +49,8 @@ describe('sale success overlay contract',()=>{
   })
 
   it('keeps overlay open on print failure with retry copy',()=>{
-    const catchBlock=source.slice(source.indexOf('}catch{'),source.indexOf('}finally{'))
+    const printStart=source.indexOf('const printCommodity')
+    const catchBlock=source.slice(source.indexOf('}catch(error){',printStart),source.indexOf('}finally{',printStart))
     expect(catchBlock).toContain("setPrintError(operatorError(error,'print'))")
     expect(catchBlock).not.toContain('setPayload(null)')
     expect(source).toContain('className="sale-success-print-error" role="alert"')
