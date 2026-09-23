@@ -361,12 +361,12 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
     else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)
     else await window.raspechatkaPos.loginCashier(employeeId,pin)
     await onAuthenticated()
-  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)});setPin('');setConfirmation('')}}
+  }catch(e){setNotice({severity:'error',message:operatorError(e,'auth')});setPin('');setConfirmation('')}}
   const reset=async()=>{try{
     if(!resetEmployeeId)throw new Error('Не удалось определить кассира для сброса PIN')
     await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)
     setAdminReset(false);setAdminCode('');setSetup(false);setNotice({severity:'success',message:'PIN изменён. Теперь войдите с новым PIN.'});setPin('');setConfirmation('')
-  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
+  }catch(e){setNotice({severity:'error',message:operatorError(e,'auth')})}}
   const switchCashier=async()=>{try{
     await runLockedCashierSwitch(
       ()=>window.raspechatkaPos.logoutCashier(),
@@ -375,7 +375,7 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
         await onAuthenticated()
       },
     )
-  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
+  }catch(e){setNotice({severity:'error',message:operatorError(e,'auth')})}}
   const footerLeft=<PosButton className="settings-open-trigger" variant="quiet" type="button" icon={<PosIcon name="settings"/>}>Настройки кассы</PosButton>
   const footerRight=!setup&&!adminReset
     ?<PosButton className="cashier-forgot-pin" variant="quiet" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</PosButton>
