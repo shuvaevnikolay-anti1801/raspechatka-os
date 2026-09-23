@@ -162,9 +162,7 @@ REFERENCE_LINK_DISPLAYS = {
 		"business_point": ("Business Point", "point_name"),
 		"pos_workplace": ("POS Workplace", "workplace_name"),
 	},
-	"financial-articles": {
-		"parent_financial_article": ("Financial Article", "article_name")
-	},
+	"financial-articles": {"parent_financial_article": ("Financial Article", "article_name")},
 	"catalog-groups": {"parent_catalog_group": ("Catalog Group", "group_name")},
 	"entities": {"organization": ("Organization", "organization_name")},
 	"points": {"business_entity": ("Business Entity", "short_name")},
@@ -528,8 +526,14 @@ def save_reference(reference, data):
 				number = Decimal(str(value))
 			except (InvalidOperation, TypeError, ValueError):
 				frappe.throw(_("Настройки уборки должны быть положительными числами"))
-			if not number.is_finite() or number <= 0 or (fieldname == "cleaning_every_n_visits" and number != number.to_integral_value()):
-				frappe.throw(_("Выплата должна быть больше нуля, количество уборок — целым числом не меньше 1"))
+			if (
+				not number.is_finite()
+				or number <= 0
+				or (fieldname == "cleaning_every_n_visits" and number != number.to_integral_value())
+			):
+				frappe.throw(
+					_("Выплата должна быть больше нуля, количество уборок — целым числом не меньше 1")
+				)
 			data[fieldname] = int(number) if fieldname == "cleaning_every_n_visits" else number
 	for fieldname in allowed:
 		if fieldname in data:
