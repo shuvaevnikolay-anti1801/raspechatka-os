@@ -4,6 +4,10 @@ import { PosModal } from './ui/PosModal'
 import { useEffect, useMemo, useState } from 'react'
 import type { Order, SaleSummary } from '../../shared/contracts'
 import { formatMoney } from './money'
+import {
+  emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, orderFormDraftFromOrder,
+  toOrderFormPayload, type OrderFormDraft,
+} from './OrderFormFields'
 
 const short=(phone:string)=>{const digits=phone.replace(/\D/g,'');return digits.slice(-4)||'—'}
 const statusName=(status:Order['status'])=>status==='ready'?'Готов к выдаче':status==='issued'?'Выдан':status==='cancelled'?'Отменён':'В работе'
@@ -45,7 +49,7 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
     <div className="data-table orders-table">
       <header>
         <span>Заказ</span><span>Телефон</span><span>Описание заказа</span><span>Оплата</span>
-        <span>Создан</span><span>Срок готовности</span><span>Статус</span><span>Действие</span>
+        <span>Создан</span><span>Дата выдачи</span><span>Статус</span><span>Действие</span>
       </header>
       {active.length?active.map((order)=><div key={order.id} className={overdue(order)?'order-row order-overdue':'order-row'}>
         <b className="order-number">№ {short(order.phone)}<small>{order.orderNumber}</small></b>
@@ -54,12 +58,12 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
         <span className="order-payment"><b>Оплачено · {formatMoney(order.totalMinor)}</b>{order.fiscalNumber&&<small>чек {order.fiscalNumber}</small>}</span>
         <span>{new Date(order.createdAt).toLocaleString('ru-RU')}</span>
         <span className={overdue(order)?'order-due overdue':'order-due'}>
-          {order.dueAt?new Date(order.dueAt).toLocaleString('ru-RU'):'Срок не указан'}
+          {order.dueAt?new Date(order.dueAt).toLocaleString('ru-RU'):'Дата не указана'}
           {overdue(order)&&<small>Просрочен</small>}
         </span>
         <span className={'order-status '+order.status}>{statusName(order.status)}</span>
         <div className="order-actions">
-          <PosButton variant="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, описание или срок">Изменить</PosButton>
+          <PosButton variant="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, способ связи, описание или дату выдачи">Изменить</PosButton>
           {order.status==='ready'
             ?<PosButton variant="primary" className="order-issued" onClick={()=>void update(order,'issued')}>Выдан</PosButton>
             :<PosButton variant="primary" onClick={()=>void update(order,'ready')}>Готово</PosButton>}
@@ -69,24 +73,22 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
 
     {editing&&<EditOrder order={editing} close={()=>setEditing(null)} saved={async()=>{
       setEditing(null);await onChanged();notify('Заказ сохранён')
-    }}/>}
+    }}/>} 
     {creating&&<CreateOrder orders={orders} close={()=>setCreating(false)} saved={async()=>{
       setCreating(false);await onChanged();notify('Заказ создан и поставлен в работу')
-    }}/>}
+    }}/>} 
   </main>
 }
 
-function EditOrder({order,close,saved}:{order:Order;close:()=>void;saved:()=>Promise<void>}){
-  const [phone,setPhone]=useState(order.phone)
-  const [comment,setComment]=useState(order.comment||'')
-  const [dueAt,setDueAt]=useState(order.dueAt||'')
+export function EditOrder({order,close,saved}:{order:Order;close:()=>void;saved:()=>Promise<void>}){
+  const [draft,setDraft]=useState<OrderFormDraft>(()=>orderFormDraftFromOrder(order))
   const [error,setError]=useState('')
-  const valid=phone.replace(/\D/g,'').length>=5&&Boolean(comment.trim())&&Boolean(dueAt)
+  const valid=isOrderFormComplete(draft)
 
   const submit=async()=>{
     setError('')
     try{
-      await window.raspechatkaPos.updateOrder({id:order.id,phone,comment,dueAt})
+      await window.raspechatkaPos.updateOrder({id:order.id,...toOrderFormPayload(draft)})
       await saved()
     }catch(reason){
       setError(reason instanceof Error?reason.message:String(reason))
@@ -96,23 +98,17 @@ function EditOrder({order,close,saved}:{order:Order;close:()=>void;saved:()=>Pro
   return <PosModal open title="Изменить заказ" onClose={close} className="compact-modal" footer={
     <PosButton variant="primary" disabled={!valid} onClick={()=>void submit()}>Сохранить</PosButton>
   }>
-    <div className="order-modal-form">
-      <PosField label="Телефон *"><input value={phone} onChange={(event)=>setPhone(event.target.value)}/></PosField>
-      <PosField label="Описание заказа *" size="textarea"><textarea value={comment} onChange={(event)=>setComment(event.target.value)}/></PosField>
-      <PosField label="Срок готовности *"><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></PosField>
-      {error&&<div className="error-note">{error}</div>}
-    </div>
+    <OrderFormFields draft={draft} onChange={setDraft} className="order-modal-form"/>
+    {error&&<div className="error-note">{error}</div>}
   </PosModal>
 }
 
-function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:()=>Promise<void>}){
+export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:()=>Promise<void>}){
   const [sales,setSales]=useState<SaleSummary[]>([])
   const [loading,setLoading]=useState(true)
   const [query,setQuery]=useState('')
   const [saleId,setSaleId]=useState('')
-  const [phone,setPhone]=useState('')
-  const [comment,setComment]=useState('')
-  const [dueAt,setDueAt]=useState('')
+  const [draft,setDraft]=useState<OrderFormDraft>(()=>emptyOrderFormDraft())
   const [error,setError]=useState('')
 
   useEffect(()=>{
@@ -130,12 +126,12 @@ function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:(
   const matches=sales.filter((sale)=>!text||(sale.receiptNumber+' '+(sale.customerName||'')+' '+(sale.customerPhone||''))
     .toLocaleLowerCase('ru-RU').includes(text)).slice(0,30)
   const selected=sales.find((sale)=>sale.id===saleId)
-  const valid=Boolean(saleId)&&phone.replace(/\D/g,'').length>=5&&Boolean(comment.trim())&&Boolean(dueAt)
+  const valid=Boolean(saleId)&&isOrderFormComplete(draft)
 
   const submit=async()=>{
     setError('')
     try{
-      await window.raspechatkaPos.createOrderFromSale({saleId,phone,comment,dueAt})
+      await window.raspechatkaPos.createOrderFromSale({saleId,...toOrderFormPayload(draft)})
       await saved()
     }catch(reason){
       setError(reason instanceof Error?reason.message:String(reason))
@@ -151,17 +147,13 @@ function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;saved:(
         const id=event.target.value
         setSaleId(id)
         const sale=sales.find((item)=>item.id===id)
-        if(sale?.customerPhone)setPhone(sale.customerPhone)
+        if(sale?.customerPhone)setDraft((current)=>({...current,phone:sale.customerPhone||''}))
       }}>
         <option value="">{loading?'Загружаем чеки…':'Выберите чек'}</option>
         {matches.map((sale)=><option key={sale.id} value={sale.id}>{sale.receiptNumber} · {sale.customerName||'Покупатель'} · {formatMoney(sale.totalMinor)}</option>)}
       </select></PosField>
       {selected&&<div className="order-selected-receipt"><span>Оплачено</span><b>{formatMoney(selected.totalMinor)}</b><small>{selected.receiptNumber} · {new Date(selected.createdAt).toLocaleString('ru-RU')}</small></div>}
-      <div className="order-modal-compact-fields">
-        <PosField label="Телефон *"><input value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="+7 900 000-00-00"/></PosField>
-        <PosField label="Срок готовности *"><input type="datetime-local" value={dueAt} onChange={(event)=>setDueAt(event.target.value)}/></PosField>
-      </div>
-      <PosField label="Описание заказа *" size="textarea"><textarea value={comment} onChange={(event)=>setComment(event.target.value)} placeholder="Что нужно изготовить"/></PosField>
+      <OrderFormFields draft={draft} onChange={setDraft}/>
       {error&&<div className="error-note">{error}</div>}
       {!loading&&!sales.length&&<div className="settings-status">Нет свободных оплаченных чеков для нового заказа.</div>}
     </div>
