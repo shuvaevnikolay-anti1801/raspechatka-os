@@ -10,6 +10,7 @@ import WorkPage, {
   shiftDisplayLabel,
   upcomingShiftLabel,
   SupplyRequestModal,
+  warehouseItemMatches,
   WarehouseWorkspace,
   WriteOffModal,
 } from './WorkPage'
@@ -217,8 +218,7 @@ describe('WarehouseWorkspace design-system migration',()=>{
     expect(markup).toContain('>Списать брак<')
     expect(markup).toContain('pos-button--primary')
     expect(markup).toContain('warehouse-action-need')
-    expect(markup).toContain('>Потребность точки<')
-    expect(markup).toContain('№ PO-17')
+    expect(markup).toContain('>Заказать<')
     expect(markup).toContain('Поставщик бумаги')
     expect(markup).toContain('Доставка утром')
     expect(markup).toContain('Перевозчик: СДЭК')
@@ -228,12 +228,15 @@ describe('WarehouseWorkspace design-system migration',()=>{
     expect(markup).toContain('Осталось принять: 1 поз.')
     expect(markup).toContain('8 пачка')
     expect(markup).toContain('>Создать приёмку<')
-    expect(markup).toContain('placeholder="Название, ID или код"')
+    expect(markup).toContain('placeholder="Название товара"')
     expect(markup).toContain('pos-field')
     expect(markup).toContain('Бумага А4')
-    expect(markup).toContain('PAPER-A4')
     expect(markup).toContain('7 пачка')
     expect(markup).toContain('Стеллаж 2')
+    expect(markup).not.toContain('PO-17')
+    expect(markup).not.toContain('POI-1')
+    expect(markup).not.toContain('PAPER-A4')
+    expect(markup).not.toContain('paper-a4')
   })
 
   it('keeps the existing warehouse callbacks wired without new transport semantics',()=>{
@@ -297,47 +300,68 @@ describe('Warehouse operational modals',()=>{
     ])).toEqual({purchaseOrderId:'PO-17',lines:[{purchaseOrderItemId:'valid',quantity:5}]})
   })
 
-  it('uses shared PosModal and PosField contracts for write-off',()=>{
+  it('renders searchable write-off selection with exact reasons and required comment',()=>{
     const markup=renderToStaticMarkup(<WriteOffModal products={products} onClose={()=>undefined} onComplete={async()=>undefined}/>)
 
     expect(markup).toContain('pos-modal--form')
     expect(markup).toContain('warehouse-writeoff-modal')
-    expect(markup).toContain('Проверьте товар, количество и причину')
+    expect(markup).toContain('role="combobox"')
+    expect(markup).toContain('aria-autocomplete="list"')
+    expect(markup).toContain('warehouse-product-options')
+    expect(markup).toContain('Бумага А4')
+    expect(markup).not.toContain('PAPER-A4')
+    expect(markup).toContain('>Брак<')
+    expect(markup).toContain('>Внутренние нужды<')
+    expect(markup).toContain('>Обучение<')
+    expect(markup).not.toContain('>Другое<')
     expect(markup).toContain('>Количество<')
-    expect(markup).toContain('>Причина<')
     expect(markup).toContain('>Комментарий<')
-    expect(markup).toContain('>необязательно<')
-    expect(markup).toContain('pos-field')
-    expect(markup).toContain('pos-button--danger')
+    expect(markup).toContain('>обязательно<')
+    expect(markup).toContain('required=""')
     expect(markup).toContain('>Подтвердить списание<')
-    expect(markup).not.toContain(' required')
   })
 
-  it('uses shared PosModal and PosField contracts for supply requests',()=>{
+  it('keeps technical catalog keys searchable without rendering them in the selector',()=>{
+    expect(warehouseItemMatches(products[0],'PAPER-A4')).toBe(true)
+    expect(warehouseItemMatches(products[0],'paper-a4')).toBe(true)
+    expect(warehouseItemMatches(products[0],'Бумага')).toBe(true)
+    const markup=renderToStaticMarkup(<WriteOffModal products={products} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(markup).not.toContain('PAPER-A4')
+    expect(markup).not.toContain('paper-a4')
+  })
+
+  it('renders quantity-less Заказать form with required comment and no technical catalog text',()=>{
     const markup=renderToStaticMarkup(<SupplyRequestModal products={products} onClose={()=>undefined} onComplete={async()=>undefined}/>)
 
     expect(markup).toContain('pos-modal--form')
     expect(markup).toContain('warehouse-supply-modal')
+    expect(markup).toContain('>Заказать<')
     expect(markup).toContain('>Позиция из каталога<')
     expect(markup).toContain('>Наименование или описание<')
-    expect(markup).toContain('>Количество<')
+    expect(markup).not.toContain('>Количество<')
     expect(markup).toContain('>Комментарий<')
-    expect(markup).toContain('>необязательно<')
-    expect(markup).toContain('pos-button--primary')
-    expect(markup).toContain('>Потребность точки<')
-    expect(markup).not.toContain(' required')
+    expect(markup).toContain('>обязательно<')
+    expect(markup).toContain('required=""')
+    expect(markup).not.toContain('PAPER-A4')
+    expect(markup).not.toContain('paper-a4')
   })
 
-  it('preserves submit payloads and validation expressions exactly',()=>{
+  it('preserves canonical callbacks while keeping supply quantity out of its renderer payload',()=>{
     const source=readFileSync(new URL('./WorkPage.tsx',import.meta.url),'utf8')
+    const writeOffSource=source.slice(source.indexOf('export function WriteOffModal'),source.indexOf('export function SupplyRequestModal'))
+    const supplySource=source.slice(source.indexOf('export function SupplyRequestModal'),source.indexOf('export function ReceiveModal'))
+    const receiveSource=source.slice(source.indexOf('export function ReceiveModal'))
 
     expect(source.match(/<PosModal/g)?.length).toBe(3)
     expect(source.match(/onClose={onClose}/g)?.length).toBeGreaterThanOrEqual(3)
-    expect(source).toContain('onComplete({productId,quantity:Number(quantity),reason,comment})')
-    expect(source).toContain('onComplete({productId:productId||undefined,itemName:itemName.trim(),quantity:Number(quantity),comment})')
-    expect(source).toContain('onComplete(request)')
-    expect(source).toContain('quantity<0||line.quantity>line.remainingQuantity')
-    expect(source).toContain('disabled={invalid||request.lines.length===0}')
+    expect(writeOffSource).toContain('onComplete({productId,quantity:Number(quantity),reason,comment:comment.trim()})')
+    expect(writeOffSource).toContain('disabled={!productId||Number(quantity)<=0||!comment.trim()}')
+    expect(supplySource).toContain('onComplete({productId:productId||undefined,itemName:itemName.trim(),comment:comment.trim()})')
+    expect(supplySource).toContain('disabled={!itemName.trim()||!comment.trim()}')
+    expect(supplySource).not.toContain('quantity')
+    expect(receiveSource).toContain('onComplete(request)')
+    expect(receiveSource).toContain('quantity<0||line.quantity>line.remainingQuantity')
+    expect(receiveSource).toContain('disabled={invalid||request.lines.length===0}')
   })
 
   it('reuses the shared modal shell instead of another warehouse modal style',()=>{
