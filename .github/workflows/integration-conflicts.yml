@@ -1,4 +1,4 @@
-name: Integration DEV-174 merger
+name: Integration DEV-176 conflict inspector
 
 on:
   push:
@@ -6,26 +6,39 @@ on:
       - codex/integration-dev-170-176-final
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  merge-dev174:
+  inspect-dev176:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Merge reviewed DEV-174
+      - name: Build DEV-176 conflict snapshot
         shell: bash
         run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git fetch origin codex/dev-174-pos-work-pages
-          if git merge-base --is-ancestor origin/codex/dev-174-pos-work-pages HEAD; then
-            echo "DEV-174 already integrated"
-            exit 0
-          fi
-          git merge --no-ff origin/codex/dev-174-pos-work-pages -m "integrate: DEV-174 work pages"
-          git diff HEAD^1..HEAD --check
-          git push origin HEAD:codex/integration-dev-170-176-final
+          set -uo pipefail
+          git config user.name integration-inspector
+          git config user.email integration-inspector@users.noreply.github.com
+          git fetch origin codex/dev-176-pos-fiscal-totals
+          set +e
+          git merge --no-commit --no-ff origin/codex/dev-176-pos-fiscal-totals
+          merge_rc=$?
+          set -e
+          mkdir -p integration-conflicts/base integration-conflicts/ours integration-conflicts/theirs integration-conflicts/merged
+          git diff --name-only --diff-filter=U | tee integration-conflicts/conflicts.txt
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            mkdir -p "integration-conflicts/base/$(dirname "$file")" "integration-conflicts/ours/$(dirname "$file")" "integration-conflicts/theirs/$(dirname "$file")" "integration-conflicts/merged/$(dirname "$file")"
+            git show ":1:$file" > "integration-conflicts/base/$file" || true
+            git show ":2:$file" > "integration-conflicts/ours/$file" || true
+            git show ":3:$file" > "integration-conflicts/theirs/$file" || true
+            cp "$file" "integration-conflicts/merged/$file" || true
+          done < integration-conflicts/conflicts.txt
+          printf '%s\n' "$merge_rc" > integration-conflicts/merge-exit-code.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integration-conflicts-dev176
+          path: integration-conflicts
+          if-no-files-found: error
