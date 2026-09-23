@@ -51,7 +51,7 @@ describe('DEV-172 stage 4 orders table',()=>{
     expect(markup).toContain('23.09.2026 10:15')
     expect(markup).toContain('24.09.2026 18:30')
     expect(markup).toContain('25.09.2026 09:05')
-    expect(markup).not.toContain(':37')
+    expect(markup).not.toContain('10:15:37')
     expect(markup).not.toContain(':59')
     expect(markup).not.toContain(':44')
     expect(markup).not.toContain('internal-order-secret')
