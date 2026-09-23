@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
@@ -833,6 +835,53 @@ def _ingest_stock_receipt(event_id, payload, connection, cashier_id):
 	doc.submit()
 
 
+def _ingest_cleaner_visit(event_id, payload, connection, cashier_id, created_at):
+	if not created_at:
+		frappe.throw(_("У события уборки отсутствует время создания"), frappe.ValidationError)
+	try:
+		instant = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+		if instant.tzinfo is None:
+			raise ValueError("timezone missing")
+	except ValueError:
+		frappe.throw(_("Время уборки должно содержать часовой пояс"), frappe.ValidationError)
+	# Lock the point to serialize concurrent visits from different workplaces.
+	locked = frappe.db.sql(
+		"select name, timezone from `tabBusiness Point` where name=%s and active=1 for update",
+		(connection.business_point,),
+		as_dict=True,
+	)
+	if not locked:
+		frappe.throw(_("Точка продаж недоступна"), frappe.PermissionError)
+	existing_event = frappe.db.get_value(
+		"Cleaner Visit", {"source_pos_event": event_id}, "business_point"
+	)
+	if existing_event:
+		if existing_event != connection.business_point:
+			frappe.throw(_("Событие уборки относится к другой точке"), frappe.PermissionError)
+		return
+	point_timezone = resolve_point_timezone(locked[0].timezone, get_effective_site_timezone())
+	visit_date = instant.astimezone(ZoneInfo(point_timezone)).date().isoformat()
+	legacy_event = str(payload.get("id") or "") != event_id
+	claimed_date = str(payload.get("visitDate") or "")
+	# Older POS versions used a separate outbox ID and UTC visit date.
+	expected_claim = instant.date().isoformat() if legacy_event else visit_date
+	if claimed_date != expected_claim:
+		frappe.throw(_("Дата уборки не совпадает с датой события точки"), frappe.ValidationError)
+	if frappe.db.exists("Cleaner Visit", {"business_point": connection.business_point, "visit_date": visit_date}):
+		frappe.throw(_("Уборка за эту дату уже отмечена"), frappe.ValidationError)
+	frappe.get_doc(
+		{
+			"doctype": "Cleaner Visit",
+			"visit_date": visit_date,
+			"business_point": connection.business_point,
+			"recorded_by": _employee_user(cashier_id),
+			"recorded_by_name": frappe.db.get_value("Employee", cashier_id, "employee_name") or cashier_id,
+			"paid": 0,
+			"source_pos_event": event_id,
+		}
+	).insert(ignore_permissions=True)
+
+
 _SUPPORTED_PUSH_EVENT_TYPES = {
 	"shift.opened",
 	"shift.closed",
@@ -844,6 +893,7 @@ _SUPPORTED_PUSH_EVENT_TYPES = {
 	"stock.write_off.requested",
 	"point.supply.requested",
 	"stock.receipt.requested",
+	"cleaner.visit.recorded",
 	"order.created",
 	"order.updated",
 }
@@ -937,6 +987,8 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 					_ingest_supply_request(event_id, payload, connection, selected["id"])
 				elif event_type == "stock.receipt.requested":
 					_ingest_stock_receipt(event_id, payload, connection, selected["id"])
+				elif event_type == "cleaner.visit.recorded":
+					_ingest_cleaner_visit(event_id, payload, connection, selected["id"], event.get("createdAt"))
 				elif event_type in ("order.created", "order.updated"):
 					base_pos._ingest_order(event_type, event_id, connection, payload)
 				accepted.append(event_id)

@@ -342,7 +342,12 @@ export type DeliveryNotice = {
 }
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
-export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[]; payoutAmountMinor?:number; everyNVisits?:number }
+export type CleanerPayoutState = 'not_due'|'due'|'withdrawal_pending'|'paid'
+export type CleanerStatus = {
+  visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[]
+  payoutAmountMinor?:number; everyNVisits?:number
+  schemaVersion?:1; cycleId?:string; payoutState?:CleanerPayoutState
+}
 export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth

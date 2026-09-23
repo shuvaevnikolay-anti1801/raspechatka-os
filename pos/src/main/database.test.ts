@@ -298,6 +298,7 @@ describe('PosDatabase',()=>{
       orders:[],
     })
     expect(database.listProducts().some((x)=>x.id==='paper-hidden')).toBe(false)
+    database.setState('bootstrap',JSON.stringify({pointId:'point-work',workplaceId:'pos-work',pointTimezone:'Europe/Moscow'}))
     database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierId:'SHIFT-EMP',cashierName:'Николай'})
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
     expect(count).toMatchObject({totalMinor:200000,differenceMinor:0})
@@ -311,16 +312,19 @@ describe('PosDatabase',()=>{
       quantity:999,cashierId:'FORGED-RENDERER'
     } as SupplyRequestInput & {quantity:number;cashierId:string},'EMP-1')
     database.createStockReceipt({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]},'EMP-1')
-    for(let index=0;index<4;index+=1)database.recordCleanerVisit('Николай')
-    expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(200000)
+    const firstVisit=database.recordCleanerVisit('Николай')
+    expect(database.recordCleanerVisit('Николай').visit.id).toBe(firstVisit.visit.id)
+    expect(database.getWorkplaceData().cleaner.visitsSincePayment).toBe(1)
     expect(database.getWorkplaceData().deliveries[0].items[0].remainingQuantity).toBe(4)
-    database.payCleaner(200000)
-    expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(0)
+    expect(()=>database.payCleaner(200000)).toThrow('временно недоступна')
+    expect(database.listCashOperations()).toHaveLength(0)
 
     const events=database.pendingEvents()
     expect(events.map((x)=>x.eventType)).toEqual(expect.arrayContaining([
-      'cash.counted','stock.write_off.requested','point.supply.requested','stock.receipt.requested','cleaner.visit.recorded','cleaner.paid'
+      'cash.counted','stock.write_off.requested','point.supply.requested','stock.receipt.requested','cleaner.visit.recorded'
     ]))
+    expect(events.filter((x)=>x.eventType==='cleaner.visit.recorded')).toHaveLength(1)
+    expect(events.some((x)=>x.eventType==='cleaner.paid')).toBe(false)
     const writeOff=events.find((x)=>x.eventType==='stock.write_off.requested')?.payload as Record<string,unknown>
     const need=events.find((x)=>x.eventType==='point.supply.requested')?.payload as Record<string,unknown>
     const receipt=events.find((x)=>x.eventType==='stock.receipt.requested')?.payload as Record<string,unknown>
