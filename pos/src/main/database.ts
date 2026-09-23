@@ -556,12 +556,15 @@ export class PosDatabase {
     if(!product)throw new Error('Товар не найден в оперативном каталоге')
     if(!product.trackInventory||!['Product','Variant'].includes(product.itemType))throw new Error('Для этой позиции складское списание недоступно')
     if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
+    if(!['Брак','Внутренние нужды','Обучение'].includes(request.reason))throw new Error('Недопустимая причина списания')
+    const comment=request.comment.trim()
+    if(!comment)throw new Error('Комментарий обязателен')
     this.queue('stock.write_off.requested',{
       cashierId,
       productId:request.productId,
       quantity:request.quantity,
       reason:request.reason,
-      comment:request.comment,
+      comment,
     },undefined,cashierId)
   }
   createSupplyRequest(request:SupplyRequestInput,cashierId:string):void {
@@ -570,13 +573,13 @@ export class PosDatabase {
     if(request.productId&&!product)throw new Error('Товар не найден в оперативном каталоге')
     const itemName=(product?.name||request.itemName||'').trim()
     if(!itemName)throw new Error('Укажите, что требуется точке')
-    if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
+    const comment=request.comment.trim()
+    if(!comment)throw new Error('Комментарий обязателен')
     this.queue('point.supply.requested',{
       cashierId,
       productId:product?.id,
       itemName,
-      quantity:request.quantity,
-      comment:request.comment,
+      comment,
     },undefined,cashierId)
   }
   createStockReceipt(request:StockReceiptRequest,cashierId:string):void {
