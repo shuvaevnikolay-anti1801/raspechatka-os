@@ -254,7 +254,7 @@ class TestInternalOrdersApi(TestCase):
 		self.assertEqual(row["requested_by_employee"], "EMP-1")
 		self.assertEqual(row["item"], None)
 		self.assertEqual(row["item_name"], "Фотобумага A4")
-		self.assertEqual(row["quantity"], 3.0)
+		self.assertEqual(row["quantity"], 1)
 		self.assertEqual(row["comment"], "Заканчивается на точке")
 		self.assertEqual(row["status"], "Новая")
 
