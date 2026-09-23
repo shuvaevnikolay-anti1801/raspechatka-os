@@ -342,7 +342,7 @@ describe('PosTransactionEngine safety',()=>{
       payments:[{method:'cash',amountMinor:1000}],
     },shiftId,1000,persisted)
     expect(partial.totalMinor).toBe(1000)
-    expect((fiscal.returns[0].lines[0] as typeof fiscal.returns[0].lines[0] & {lineTotalMinor:number}).lineTotalMinor).toBe(1000)
+    expect((fiscal.returns[0].lines[0] as {lineTotalMinor?:number}).lineTotalMinor).toBe(1000)
     await expect(engine.createReturn({
       clientRequestId:'over-return',saleId:sale.saleId,
       lines:[{saleItemId:first.id,quantity:0.6}],
