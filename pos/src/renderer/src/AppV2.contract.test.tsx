@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
@@ -19,6 +19,45 @@ const boot:BootState={
 }
 const auth:CashierAuthState={status:'signed_out'}
 const selectedAuth:CashierAuthState={status:'signed_out',openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
+
+describe('held receipt upsell lifecycle',()=>{
+  const pending={state:'showing' as const,triggerItem:'base',candidate:{item:'upsell',cashierPhrase:'Предложение'}}
+
+  it('holds and restores the exact pending candidate without rerunning selection',()=>{
+    const stored=JSON.parse(JSON.stringify({upsell:heldUpsellSnapshot(pending,null)}))
+    expect(stored.upsell).toEqual({state:'pending',triggerItem:'base',candidate:{item:'upsell',cashierPhrase:'Предложение'}})
+    expect(restoreHeldUpsell(stored.upsell)).toEqual({cycle:pending,outcome:null})
+  })
+
+  it('keeps dismissed proposals resolved across repeated restore',()=>{
+    const stored=heldUpsellSnapshot({state:'resolved'},'dismissed')
+    expect(stored).toEqual({state:'dismissed'})
+    expect(restoreHeldUpsell(stored)).toEqual({cycle:{state:'resolved'},outcome:'dismissed'})
+    expect(restoreHeldUpsell(stored)).toEqual(restoreHeldUpsell(stored))
+  })
+
+  it('keeps accepted proposals resolved without adding the item again',()=>{
+    const stored=heldUpsellSnapshot({state:'resolved'},'accepted')
+    expect(stored).toEqual({state:'accepted'})
+    const restored=restoreHeldUpsell(stored)
+    expect(restored).toEqual({cycle:{state:'resolved'},outcome:'accepted'})
+    expect(restoreHeldUpsell(stored)).toEqual(restored)
+    expect(restored.cycle.state).not.toBe('eligible')
+  })
+
+  it('reads legacy JSON without upsell once as a resolved cycle',()=>{
+    const legacy=JSON.parse('{"lines":[{"productId":"base"}]}')
+    expect(restoreHeldUpsell(legacy.upsell)).toEqual({cycle:{state:'resolved'},outcome:'dismissed'})
+  })
+
+  it('stores lifecycle in the same held receipt request and avoids restore re-add',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('reviewCount,manualDiscount,upsell:heldUpsellSnapshot(upsellCycle,upsellOutcome)')
+    expect(source).toContain('const savedUpsell=restoreHeldUpsell(receipt.upsell)')
+    expect(source).toContain('setUpsellCycle(savedUpsell.cycle);setUpsellOutcome(savedUpsell.outcome)')
+    expect(source).not.toContain("setUpsellCycle({state:'eligible'})\n    setCart(receipt.lines)")
+  })
+})
 
 describe('receipt discount input ownership',()=>{
   const firstCustomer={id:'customer-1',name:'Первый клиент',phone:'+7 900 000-00-01',discountPercent:10}
