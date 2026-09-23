@@ -256,6 +256,11 @@ export type PrintJobSummary = {
   printedAt?:string
 }
 
+export type HeldReceiptUpsell =
+  | { state:'eligible' }
+  | { state:'pending'; triggerItem:string; candidate:UpsellCandidate }
+  | { state:'accepted' | 'dismissed' }
+
 export type HeldReceipt = {
   id: string
   label: string
@@ -264,6 +269,8 @@ export type HeldReceipt = {
   discountPercent: number
   reviewCount?: number
   manualDiscount?: ManualDiscount | null
+  /** Absent on legacy held receipts; restore treats them as dismissed. */
+  upsell?: HeldReceiptUpsell
   totalMinor?: number
   createdAt: string
 }
