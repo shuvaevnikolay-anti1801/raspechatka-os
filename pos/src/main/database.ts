@@ -317,9 +317,9 @@ export class PosDatabase {
     if(existing)return existing
     const key=this.cashDrawerKey(pointId,workplaceId)
     const owner=(this.db.prepare("SELECT value FROM app_state WHERE key='cash_drawer_legacy_owner_v1'").get() as {value:string}|undefined)?.value
-    const hasLegacy=this.hasLegacyCashFacts()
-    if(hasLegacy&&(!owner||owner===key)){
-      if(!owner)this.db.prepare("INSERT INTO app_state (key,value) VALUES ('cash_drawer_legacy_owner_v1',?)").run(key)
+    const claimsLegacy=!owner||owner===key
+    if(!owner)this.db.prepare("INSERT INTO app_state (key,value) VALUES ('cash_drawer_legacy_owner_v1',?)").run(key)
+    if(this.hasLegacyCashFacts()&&claimsLegacy){
       return this.insertCashDrawerState(pointId,workplaceId,this.legacyCashDrawerEvidence())
     }
     return this.insertCashDrawerState(pointId,workplaceId,{
