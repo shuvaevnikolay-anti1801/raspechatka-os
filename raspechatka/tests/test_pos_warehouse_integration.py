@@ -346,6 +346,26 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			frappe.db.count("Point Supply Request", {"source_pos_event": event["id"]}), 1
 		)
 
+		forged_quantity = {
+			"id": f"POS-NEED-FORGED-QTY-{uuid4().hex}",
+			"eventType": "point.supply.requested",
+			"payload": {
+				"cashierId": self.employee,
+				"productId": self.item,
+				"itemName": "Подмена",
+				"quantity": 999,
+				"comment": "Проверка server-owned quantity",
+			},
+		}
+		self.assertEqual(
+			self._push(forged_quantity),
+			{"accepted": [forged_quantity["id"]], "errors": []},
+		)
+		forged_request = frappe.get_last_doc(
+			"Point Supply Request", filters={"source_pos_event": forged_quantity["id"]}
+		)
+		self.assertEqual(float(forged_request.quantity), 1)
+
 		empty_comment = {
 			"id": f"POS-NEED-EMPTY-{uuid4().hex}",
 			"eventType": "point.supply.requested",
