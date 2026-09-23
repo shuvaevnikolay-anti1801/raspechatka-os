@@ -427,9 +427,7 @@ def _order_source_receipt(point_name, source_sale_id):
 def _apply_order_created(event_id, workplace, payload):
 	if not _doctype_exists("POS Order"):
 		frappe.throw("POS Order недоступен для синхронизации")
-	existing_point = frappe.db.get_value(
-		"POS Order", {"source_pos_event": event_id}, "business_point"
-	)
+	existing_point = frappe.db.get_value("POS Order", {"source_pos_event": event_id}, "business_point")
 	if existing_point:
 		if existing_point != workplace.business_point:
 			frappe.throw("Событие заказа принадлежит другой точке", frappe.PermissionError)
@@ -498,16 +496,19 @@ def _apply_order_updated(event_id, workplace, payload):
 	# remain compatible but are excluded from generic manual retry.
 	updated_at = payload.get("updatedAt")
 	if updated_at:
-		frappe.db.sql("select name from `tabPOS Order` where name=%s and business_point=%s for update",
-			(name, workplace.business_point))
+		frappe.db.sql(
+			"select name from `tabPOS Order` where name=%s and business_point=%s for update",
+			(name, workplace.business_point),
+		)
 	doc = frappe.get_doc("POS Order", name)
 	if updated_at:
 		if doc.last_pos_update_event == event_id:
 			return
 		incoming = get_datetime(updated_at)
 		current = get_datetime(doc.last_pos_update_at) if doc.last_pos_update_at else None
-		if current and (incoming < current or
-			(incoming == current and event_id <= (doc.last_pos_update_event or ""))):
+		if current and (
+			incoming < current or (incoming == current and event_id <= (doc.last_pos_update_event or ""))
+		):
 			return
 		doc.last_pos_update_at = updated_at
 		doc.last_pos_update_event = event_id
