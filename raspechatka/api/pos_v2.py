@@ -27,6 +27,7 @@ from raspechatka.time_contract import (
 
 _POS_INSTANT_FIELDS = (
 	"createdAt",
+	"updatedAt",
 	"openedAt",
 	"closedAt",
 	"postingDatetime",
@@ -592,7 +593,7 @@ def _ingest_cash_count(event_id, payload, connection, cashier_id):
 	doc = frappe.get_doc("Sales Shift", shift)
 	if doc.cashier != cashier_id:
 		frappe.throw(_("Пересчёт наличных выполнен не кассиром смены"), frappe.PermissionError)
-	if frappe.db.exists("Cashier Action", {"external_id": event_id}):
+	if _existing_pos_document("Cashier Action", "external_id", event_id, connection.business_point):
 		return
 	count_type = str(payload.get("countType") or "")
 	amount = flt(payload.get("totalMinor")) / 100
@@ -636,8 +637,25 @@ _POS_WRITE_OFF_REASONS = {"Брак", "Внутренние нужды", "Обу
 _POS_SUPPLY_REQUEST_COMPAT_QUANTITY = 1
 
 
+def _existing_pos_document(doctype, key, event_id, point, submitted=False):
+	"""A global event key may only acknowledge a completed document at its original point."""
+	row = frappe.db.get_value(
+		doctype,
+		{key: event_id},
+		["business_point", "docstatus"] if submitted else "business_point",
+		as_dict=submitted,
+	)
+	if not row:
+		return False
+	if (row.business_point if submitted else row) != point:
+		frappe.throw(_("Событие принадлежит другой точке"), frappe.PermissionError)
+	if submitted and cint(row.docstatus) != 1:
+		frappe.throw(_("Документ события не завершён"), frappe.ValidationError)
+	return True
+
+
 def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
-	if frappe.db.exists("Stock Write Off", {"external_id": event_id}):
+	if _existing_pos_document("Stock Write Off", "external_id", event_id, connection.business_point, True):
 		return
 	point, warehouse = _point_stock_context(connection)
 	item_id = str(payload.get("productId") or "").strip()
@@ -648,13 +666,13 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 		frappe.throw(_("Товар недоступен для складского контекста этой точки"), frappe.PermissionError)
 	quantity = flt(payload.get("quantity"))
 	if quantity <= 0:
-		frappe.throw(_("Количество списания должно быть больше нуля"))
+		frappe.throw(_("Количество списания должно быть больше нуля"), PermanentPosEventError)
 	reason = str(payload.get("reason") or "").strip()
 	if reason not in _POS_WRITE_OFF_REASONS:
-		frappe.throw(_("Недопустимая причина списания"))
+		frappe.throw(_("Недопустимая причина списания"), PermanentPosEventError)
 	comment = str(payload.get("comment") or "").strip()
 	if not comment:
-		frappe.throw(_("Комментарий обязателен"))
+		frappe.throw(_("Комментарий обязателен"), PermanentPosEventError)
 	doc = frappe.get_doc(
 		{
 			"doctype": "Stock Write Off",
@@ -693,7 +711,9 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 
 
 def _ingest_supply_request(event_id, payload, connection, cashier_id):
-	if frappe.db.exists("Point Supply Request", {"source_pos_event": event_id}):
+	if _existing_pos_document(
+		"Point Supply Request", "source_pos_event", event_id, connection.business_point
+	):
 		return
 	point, warehouse = _point_stock_context(connection)
 	item_id = str(payload.get("productId") or "").strip() or None
@@ -734,14 +754,14 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 
 
 def _ingest_stock_receipt(event_id, payload, connection, cashier_id):
-	if frappe.db.exists("Stock Receipt", {"external_id": event_id}):
+	if _existing_pos_document("Stock Receipt", "external_id", event_id, connection.business_point, True):
 		return
 	purchase_order_id = str(payload.get("purchaseOrderId") or "").strip()
 	if not purchase_order_id:
 		frappe.throw(_("Не указан заказ поставщику"))
 	lines = payload.get("lines") or []
 	if not isinstance(lines, list) or not lines:
-		frappe.throw(_("В приёмке нет товаров"))
+		frappe.throw(_("В приёмке нет товаров"), PermanentPosEventError)
 	if len(lines) > 500:
 		frappe.throw(_("В одной приёмке слишком много строк"))
 
@@ -778,7 +798,7 @@ def _ingest_stock_receipt(event_id, payload, connection, cashier_id):
 		if not row_id or quantity <= 0:
 			frappe.throw(_("У каждой строки приёмки должны быть строка заказа и количество больше нуля"))
 		if row_id in requested:
-			frappe.throw(_("Одна строка заказа указана в приёмке дважды"))
+			frappe.throw(_("Одна строка заказа указана в приёмке дважды"), PermanentPosEventError)
 		requested[row_id] = quantity
 
 	order_rows = frappe.get_all(
@@ -916,7 +936,7 @@ def _ingest_cleaner_payment(payload, connection, cashier_id):
 		or len(set(str(value) for value in visit_ids)) != n
 		or any(not isinstance(value, str) or not value.strip() for value in visit_ids)
 	):
-		frappe.throw(_("Некорректная ссылка выплаты уборки"), frappe.ValidationError)
+		frappe.throw(_("Некорректная ссылка выплаты уборки"), PermanentPosEventError)
 	locked = frappe.db.sql(
 		"select name from `tabBusiness Point` where name=%s and active=1 for update",
 		(connection.business_point,),
@@ -997,6 +1017,10 @@ _SUPPORTED_PUSH_EVENT_TYPES = {
 }
 
 
+class PermanentPosEventError(frappe.ValidationError):
+	"""A payload that cannot become valid by waiting for another server event."""
+
+
 def _push_event_error_message(exc):
 	"""Return a concise client-safe validation message without internal details."""
 	safe_types = tuple(
@@ -1009,6 +1033,8 @@ def _push_event_error_message(exc):
 	)
 	message = str(exc) if safe_types and isinstance(exc, safe_types) else _("Не удалось обработать событие")
 	message = " ".join(str(message or "").split())
+	if isinstance(exc, PermanentPosEventError):
+		message = f"Invalid event: {message}"
 	return (message or _("Событие отклонено"))[:300]
 
 

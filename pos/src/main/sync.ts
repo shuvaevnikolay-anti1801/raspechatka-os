@@ -158,33 +158,46 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
   }else{
     try{
       let guard=0
-      while(database.pendingSyncCount()>0&&guard<100){
+      while(guard<100){
         const events=database.pendingEvents(100)
         if(!events.length)break
-        const result=await pushEvents(config,events)
-        successfulContact=true
+        const ids=events.map((event)=>event.id)
+        // Persist the attempt before I/O: a lost reply is still an actual server attempt.
+        database.recordEventsAttempted(ids)
+        let result
+        try{
+          result=await pushEvents(config,events)
+          successfulContact=true
+        }catch(error){
+          database.recordEventFailure(ids,'temporary','transport')
+          throw error
+        }
 
-        if(result.accepted.length){
-          database.markEventsSent(result.accepted)
+        const sent=new Set(ids)
+        const accepted=[...new Set(result.accepted)].filter((id)=>sent.has(id))
+        if(accepted.length){
+          database.markEventsSent(accepted)
           acceptedAny=true
         }
 
-        // A partial rejection is a terminal condition for this sync cycle.
-        // Accepted IDs are durable and may be read back canonically below, while
-        // rejected IDs remain pending for a later cycle instead of hot-looping.
-        const acceptedIds=new Set(result.accepted)
-        const errors=result.errors.length?result.errors:events
-          .filter((event)=>!acceptedIds.has(event.id))
-          .map((event)=>({
-            id:event.id,
-            eventType:event.eventType,
-            message:'Сервер не подтвердил событие',
-          }))
-        if(errors.length){
-          outboxError=outboxEventErrorsText(errors)
-          break
+        const acceptedIds=new Set(accepted)
+        const errors=result.errors.filter((error)=>sent.has(error.id)&&!acceptedIds.has(error.id))
+        const failedIds=new Set<string>()
+        for(const error of errors){
+          if(failedIds.has(error.id))continue
+          failedIds.add(error.id)
+          // Only explicit unsupported/validation responses are permanent.
+          const kind=/^(?:Неподдерживаемый тип события|Unsupported event(?: type)?|ValidationError:|Invalid event:)/i.test(error.message)
+            ?'problem':'temporary'
+          database.recordEventFailure([error.id],kind,kind==='problem'
+            &&/^(?:Неподдерживаемый тип события|Unsupported event)/i.test(error.message)?'unsupported':'validation')
         }
-
+        const unconfirmed=ids.filter((id)=>!acceptedIds.has(id)&&!failedIds.has(id))
+        database.recordEventFailure(unconfirmed,'temporary','unconfirmed')
+        if(errors.length||unconfirmed.length)outboxError=outboxEventErrorsText(errors.length?errors:unconfirmed.map((id)=>({
+          id,eventType:events.find((event)=>event.id===id)?.eventType||'unknown',
+          message:'Сервер не подтвердил событие',
+        })))
         guard++
       }
       database.setState('outbox_error',outboxError)

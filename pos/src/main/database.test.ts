@@ -55,6 +55,77 @@ afterEach(()=>{
 })
 
 describe('PosDatabase',()=>{
+
+  it('migrates legacy unsent rows without changing IDs, payload or trusted context',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-legacy-'))
+    folders.push(folder)
+    const path=join(folder,'legacy.sqlite')
+    const raw=new DatabaseSync(path)
+    raw.exec(`CREATE TABLE outbox(id TEXT PRIMARY KEY,event_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,created_at TEXT NOT NULL,sent_at TEXT)`)
+    raw.prepare('INSERT INTO outbox VALUES (?,?,?,?,?)').run(
+      'stable-id','order.created',JSON.stringify({cashierId:'trusted',pointId:'point-a'}),
+      '2026-09-01T00:00:00.000Z',null)
+    raw.prepare('INSERT INTO outbox VALUES (?,?,?,?,?)').run(
+      'already-sent','order.created','{}','2026-09-01T00:00:01.000Z','2026-09-01T00:01:00.000Z')
+    raw.close()
+    const database=new PosDatabase(path)
+    databases.push(database)
+    expect(database.getState('outbox_schema_version')).toBe('2')
+    expect(database.listPendingQueue()).toMatchObject([{
+      id:'stable-id',eventType:'order.created',payload:{cashierId:'trusted',pointId:'point-a'},
+      attemptCount:0,status:'pending',
+    }])
+    expect(database.pendingEvents().map((event)=>event.id)).toEqual(['stable-id'])
+    database.close()
+    databases.splice(databases.indexOf(database),1)
+    const reopened=new PosDatabase(path)
+    databases.push(reopened)
+    expect(reopened.listPendingQueue()[0].payload).toEqual({cashierId:'trusted',pointId:'point-a'})
+  })
+
+  it('retains backoff across restart, counts actual attempts once and never replays accepted IDs',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-backoff-'))
+    folders.push(folder)
+    const path=join(folder,'backoff.sqlite')
+    const first=new PosDatabase(path)
+    first.openShift({id:'shift-retry',openedAt:'2026-09-01T00:00:00.000Z',cashierName:'Test'})
+    const id=first.pendingEvents()[0].id
+    const attemptedAt='2026-09-01T00:00:00.000Z'
+    first.recordEventsAttempted([id],attemptedAt)
+    first.recordEventFailure([id],'temporary','transport',attemptedAt)
+    expect(first.pendingEvents(100,'2026-09-01T00:00:04.999Z')).toEqual([])
+    first.close()
+    const database=new PosDatabase(path)
+    databases.push(database)
+    expect(database.listPendingQueue()[0]).toMatchObject({
+      id,attemptCount:1,lastAttemptAt:attemptedAt,nextAttemptAt:'2026-09-01T00:00:05.000Z',
+    })
+    expect(database.pendingEvents(100,'2026-09-01T00:00:04.999Z')).toEqual([])
+    expect(database.pendingEvents(100,'2026-09-01T00:00:05.000Z')).toHaveLength(1)
+    database.recordEventsAttempted([id],'2026-09-01T00:00:05.000Z')
+    database.recordEventFailure([id],'temporary','transport','2026-09-01T00:00:05.000Z')
+    expect(database.listPendingQueue()[0]).toMatchObject({
+      attemptCount:2,nextAttemptAt:'2026-09-01T00:00:15.000Z',
+    })
+    database.markEventsSent([id])
+    expect(database.pendingEvents(100,'2026-09-02T00:00:00.000Z')).toEqual([])
+    expect(database.pendingSyncCount()).toBe(0)
+  })
+
+  it('holds explicitly classified problem events with sanitized errors',()=>{
+    const database=createDatabase()
+    database.openShift({id:'shift-problem',openedAt:'2026-09-01T00:00:00.000Z',cashierName:'Test'})
+    const id=database.pendingEvents()[0].id
+    database.recordEventsAttempted([id])
+    database.recordEventFailure([id],'problem','secret=https://example.test/token')
+    expect(database.listProblemQueue()[0]).toMatchObject({
+      id,status:'problem',attemptCount:1,lastError:'Сервер отклонил данные события',
+    })
+    expect(database.pendingEvents()).toEqual([])
+    expect(database.pendingSyncCount()).toBe(1)
+  })
+
   it('creates the local catalog and holds a receipt',()=>{
     const database=createDatabase()
     expect(database.listProducts().length).toBeGreaterThan(0)

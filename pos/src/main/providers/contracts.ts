@@ -2,7 +2,7 @@ import type { BankingEvidence, BootState, CartLine, PaymentMethod, PaymentPart, 
 
 export type DeviceHealth = {
   ready: boolean
-  status: 'ready' | 'offline' | 'busy' | 'error' | 'not_configured'
+  status: 'ready' | 'offline' | 'busy' | 'error' | 'not_configured' | 'unknown' | 'not_available'
   message: string
   details?: Record<string, unknown>
 }
@@ -125,6 +125,7 @@ export interface PaymentProvider {
 
 export interface FiscalProvider {
   healthCheck(): Promise<DeviceHealth>
+  ofdDeliveryHealth?(): Promise<DeviceHealth>
   getShiftStatus(): Promise<FiscalShiftStatus>
   openShift(operatorName?:string): Promise<void>
   closeShift(operatorName?:string): Promise<{message:string;reportNumber?:string}>

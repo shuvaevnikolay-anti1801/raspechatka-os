@@ -1,3 +1,4 @@
+import { operatorError } from './operator-message'
 import { useState } from 'react'
 import type {
   DeliveryNotice, OperationalCatalogItem, Product, StockReceiptRequest, StockWriteOffRequest,
@@ -169,13 +170,13 @@ export default function WorkPage({products:_products,data,shiftOpen,onChanged,no
               const r=await window.raspechatkaPos.recordCleanerVisit()
               await onChanged()
               notify(r.paymentDueMinor?'Цикл уборки завершён. Требуется изъятие '+formatMoney(r.paymentDueMinor)+(online?'':'. Ожидает отправки в ОС'):'Посещение сохранено на кассе'+(online?'':'. Ожидает отправки в ОС'))
-            }catch(e){notify(e instanceof Error?e.message:String(e))}
+            }catch(e){notify(operatorError(e,'work'))}
             finally{setVisitBusy(false)}
           }}>Отметить сегодняшнюю уборку</PosButton>}
         {due&&<PosButton className="pay-cleaner" variant="secondary" size="touch" disabled={!shiftOpen||payoutBusy||!cleaner.cycleId||!onRequestCleanerPayout} onClick={async()=>{
           if(payoutBusy||!cleaner.cycleId||!onRequestCleanerPayout)return
           setPayoutBusy(true)
-          try{await onRequestCleanerPayout(cleaner.cycleId)}catch(e){notify(e instanceof Error?e.message:String(e))}
+          try{await onRequestCleanerPayout(cleaner.cycleId)}catch(e){notify(operatorError(e,'work'))}
           finally{setPayoutBusy(false)}
         }}>Выплатить {formatMoney(amount)}</PosButton>}
         {due&&!shiftOpen&&<p>Для изъятия откройте смену.</p>}
@@ -237,7 +238,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
         setWriteOff(false)
         await onChanged()
         notify('Списание поставлено в очередь и уйдёт в OS при синхронизации')
-      }catch(e){notify(e instanceof Error?e.message:String(e))}
+      }catch(e){notify(operatorError(e,'work'))}
     }}/>}
 
     {need&&<SupplyRequestModal products={catalog} onClose={()=>setNeed(false)} onComplete={async(request)=>{
@@ -246,7 +247,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
         setNeed(false)
         await onChanged()
         notify('Заказ для точки сохранён на кассе и будет передан в OS при синхронизации')
-      }catch(e){notify(e instanceof Error?e.message:String(e))}
+      }catch(e){notify(operatorError(e,'work'))}
     }}/>}
 
     {receiveOrder&&<ReceiveModal order={receiveOrder} onClose={()=>setReceiveOrder(null)} onComplete={async(request)=>{
@@ -255,7 +256,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
         setReceiveOrder(null)
         await onChanged()
         notify('Приёмка сохранена на кассе и будет передана в OS при синхронизации')
-      }catch(e){notify(e instanceof Error?e.message:String(e))}
+      }catch(e){notify(operatorError(e,'work'))}
     }}/>}
   </div>
 }

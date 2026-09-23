@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 
 import frappe
+from frappe import _
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
 from raspechatka.access_contract import access_contract
@@ -427,7 +428,10 @@ def _order_source_receipt(point_name, source_sale_id):
 def _apply_order_created(event_id, workplace, payload):
 	if not _doctype_exists("POS Order"):
 		frappe.throw("POS Order недоступен для синхронизации")
-	if frappe.db.exists("POS Order", {"source_pos_event": event_id}):
+	existing_point = frappe.db.get_value("POS Order", {"source_pos_event": event_id}, "business_point")
+	if existing_point:
+		if existing_point != workplace.business_point:
+			frappe.throw(_("Событие заказа принадлежит другой точке"), frappe.PermissionError)
 		return
 	status = {
 		"new": "New",
@@ -447,6 +451,7 @@ def _apply_order_created(event_id, workplace, payload):
 			"customer_name": payload.get("customerName"),
 			"business_point": workplace.business_point,
 			"source_pos_event": event_id,
+			"last_pos_update_at": payload.get("updatedAt") or None,
 			"source_sale_id": source_sale_id,
 			"fiscal_number": payload.get("fiscalNumber"),
 			"total_amount": flt(payload.get("totalMinor")) / 100,
@@ -488,7 +493,26 @@ def _apply_order_updated(event_id, workplace, payload):
 	)
 	if not name:
 		frappe.throw(f"Заказ {payload.get('orderNumber') or 'без номера'} не найден на текущей точке")
+	# Timestamped v2 updates serialize on the canonical order row. Older updates
+	# remain compatible but are excluded from generic manual retry.
+	updated_at = payload.get("updatedAt")
+	if updated_at:
+		frappe.db.sql(
+			"select name from `tabPOS Order` where name=%s and business_point=%s for update",
+			(name, workplace.business_point),
+		)
 	doc = frappe.get_doc("POS Order", name)
+	if updated_at:
+		if doc.last_pos_update_event == event_id:
+			return
+		incoming = get_datetime(updated_at)
+		current = get_datetime(doc.last_pos_update_at) if doc.last_pos_update_at else None
+		if current and (
+			incoming < current or (incoming == current and event_id <= (doc.last_pos_update_event or ""))
+		):
+			return
+		doc.last_pos_update_at = updated_at
+		doc.last_pos_update_event = event_id
 	if "phone" in payload:
 		doc.phone = payload.get("phone")
 	if "contactMethod" in payload:

@@ -1,3 +1,4 @@
+import { operatorError } from './operator-message'
 import { useEffect, useRef, useState } from 'react'
 import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
 import { formatMoney } from './money'
@@ -7,7 +8,7 @@ import { PosIcon } from './ui/PosIcon'
 
 const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата'}
 export const paymentSummary=(payments:readonly PaymentPart[])=>
-  payments.map((payment)=>paymentNames[payment.method]||payment.method).join(' + ')||'—'
+  payments.map((payment)=>paymentNames[payment.method]||'Другой способ').join(' + ')||'—'
 
 type Payload={
   result:CompleteSaleResult
@@ -67,8 +68,8 @@ export default function SaleSuccessOverlay(){
     try{
       await window.raspechatkaPos.printSale(result.saleId,'commodity')
       setPayload((current)=>current?.result.saleId===result.saleId?null:current)
-    }catch{
-      setPrintError('Не удалось напечатать товарный чек. Попробуйте ещё раз.')
+    }catch(error){
+      setPrintError(operatorError(error,'print'))
     }finally{
       printingRef.current=false
       setPrinting(false)

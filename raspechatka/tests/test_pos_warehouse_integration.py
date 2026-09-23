@@ -6,7 +6,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_v2
+from raspechatka.api import sales as sales_ingest
 
 
 class TestPosWarehouseRoundTrip(FrappeTestCase):
@@ -18,11 +20,13 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			"Business Point",
 			f"TEST-POINT-{suffix}",
 			business_entity=self.entity,
+			active=1,
 		)
 		self.foreign_point = self._raw(
 			"Business Point",
 			f"TEST-POINT-FOREIGN-{suffix}",
 			business_entity=self.entity,
+			active=1,
 		)
 		self.warehouse = self._raw(
 			"Catalog Warehouse",
@@ -133,6 +137,90 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			or 0
 		)
 
+	def test_cross_point_duplicate_ids_are_rejected_for_money_stock_and_requests(self):
+		foreign_connection = SimpleNamespace(business_point=self.foreign_point)
+		local_connection = SimpleNamespace(business_point=self.point)
+		cases = (
+			("Sales Receipt", "external_id", sales_ingest._ingest_receipt, True),
+			("Cash Movement", "external_id", sales_ingest._ingest_cash, True),
+			("Stock Receipt", "external_id", pos_v2._ingest_stock_receipt, True),
+			("Stock Write Off", "external_id", pos_v2._ingest_stock_write_off, True),
+			("Point Supply Request", "source_pos_event", pos_v2._ingest_supply_request, False),
+		)
+		for doctype, field, ingest, submitted in cases:
+			with self.subTest(doctype=doctype):
+				event_id = f"DEV177-{doctype.replace(' ', '-')}-{uuid4().hex}"
+				self._raw(
+					doctype,
+					f"RAW-{uuid4().hex}",
+					**{
+						field: event_id,
+						"business_point": self.point,
+						**({"docstatus": 1} if submitted else {}),
+					},
+				)
+				with self.assertRaises(frappe.PermissionError):
+					if doctype in ("Sales Receipt", "Cash Movement"):
+						ingest(
+							{"external_id": event_id},
+							foreign_connection,
+							{"created": 0, "duplicates": 0, "errors": []},
+						)
+					else:
+						ingest(event_id, {}, foreign_connection, self.employee)
+				if doctype in ("Sales Receipt", "Cash Movement"):
+					stats = {"created": 0, "duplicates": 0, "errors": []}
+					ingest({"external_id": event_id}, local_connection, stats)
+					self.assertEqual(stats["duplicates"], 1)
+				else:
+					ingest(event_id, {}, local_connection, self.employee)
+
+	def test_shift_and_order_create_replay_cannot_claim_another_point(self):
+		shift_id = f"SHIFT-{uuid4().hex}"
+		shift_name = self._raw(
+			"Sales Shift",
+			f"RAW-SHIFT-{uuid4().hex}",
+			business_point=self.point,
+			external_id=shift_id,
+			cashier=self.employee,
+		)
+		order_event = f"ORDER-{uuid4().hex}"
+		self._raw(
+			"POS Order",
+			f"RAW-ORDER-{uuid4().hex}",
+			business_point=self.point,
+			source_pos_event=order_event,
+			order_number=f"ORD-{uuid4().hex}",
+			phone="+79000000000",
+		)
+		foreign = SimpleNamespace(business_point=self.foreign_point)
+		with self.assertRaises(frappe.PermissionError):
+			sales_ingest._ingest_shift(
+				{"external_id": shift_id}, foreign, {"created": 0, "duplicates": 0, "errors": []}
+			)
+		with self.assertRaises(frappe.PermissionError):
+			legacy_pos._apply_order_created(order_event, foreign, {})
+		self.assertEqual(frappe.db.get_value("Sales Shift", shift_name, "business_point"), self.point)
+
+	def test_cleaner_visit_replay_is_serialized_and_cross_point_key_is_denied(self):
+		event_id = f"VISIT-{uuid4().hex}"
+		self._raw(
+			"Cleaner Visit",
+			f"RAW-VISIT-{uuid4().hex}",
+			business_point=self.point,
+			visit_date="2026-09-23",
+			source_pos_event=event_id,
+		)
+		created_at = "2026-09-23T09:00:00+03:00"
+		pos_v2._ingest_cleaner_visit(
+			event_id, {}, SimpleNamespace(business_point=self.point), self.employee, created_at
+		)
+		self.assertEqual(frappe.db.count("Cleaner Visit", {"source_pos_event": event_id}), 1)
+		with self.assertRaises(frappe.PermissionError):
+			pos_v2._ingest_cleaner_visit(
+				event_id, {}, SimpleNamespace(business_point=self.foreign_point), self.employee, created_at
+			)
+
 	def test_real_purchase_order_receipt_partial_full_replay_and_foreign_rejection(self):
 		order = self._purchase_order()
 		row = order.items[0]
@@ -199,9 +287,7 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			"payload": {
 				"cashierId": self.employee,
 				"purchaseOrderId": foreign_order.name,
-				"lines": [
-					{"purchaseOrderItemId": foreign_order.items[0].name, "quantity": 1}
-				],
+				"lines": [{"purchaseOrderItemId": foreign_order.items[0].name, "quantity": 1}],
 			},
 		}
 		foreign_result = self._push(foreign_event)
@@ -262,7 +348,6 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		self.assertEqual(foreign_result["errors"][0]["id"], foreign_event["id"])
 		self.assertIn("складского контекста этой точки", foreign_result["errors"][0]["message"])
 		self.assertFalse(frappe.db.exists("Stock Write Off", {"external_id": foreign_event["id"]}))
-
 
 	def test_real_write_off_rejects_invalid_reason_empty_comment_and_foreign_cashier(self):
 		self._opening_stock(self.item, self.warehouse, self.point)
@@ -329,9 +414,7 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		self.assertNotIn("quantity", event["payload"])
 		self.assertEqual(self._push(event), {"accepted": [event["id"]], "errors": []})
 
-		request = frappe.get_last_doc(
-			"Point Supply Request", filters={"source_pos_event": event["id"]}
-		)
+		request = frappe.get_last_doc("Point Supply Request", filters={"source_pos_event": event["id"]})
 		self.assertEqual(request.business_entity, self.entity)
 		self.assertEqual(request.business_point, self.point)
 		self.assertEqual(request.warehouse, self.warehouse)
@@ -342,9 +425,7 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		self.assertEqual(request.comment, "Нужен запас бумаги к выходным")
 
 		self.assertEqual(self._push(event), {"accepted": [event["id"]], "errors": []})
-		self.assertEqual(
-			frappe.db.count("Point Supply Request", {"source_pos_event": event["id"]}), 1
-		)
+		self.assertEqual(frappe.db.count("Point Supply Request", {"source_pos_event": event["id"]}), 1)
 
 		forged_quantity = {
 			"id": f"POS-NEED-FORGED-QTY-{uuid4().hex}",
@@ -378,6 +459,4 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		result = self._push(empty_comment)
 		self.assertEqual(result["accepted"], [])
 		self.assertIn("Комментарий обязателен", result["errors"][0]["message"])
-		self.assertFalse(
-			frappe.db.exists("Point Supply Request", {"source_pos_event": empty_comment["id"]})
-		)
+		self.assertFalse(frappe.db.exists("Point Supply Request", {"source_pos_event": empty_comment["id"]}))

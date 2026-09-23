@@ -319,6 +319,34 @@ export type ShiftSummary = {
 }
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
+export type OutboxQueueItem = OutboxEvent & {
+  status: 'pending' | 'problem' | 'sent'
+  attemptCount: number
+  lastAttemptAt: string | null
+  nextAttemptAt: string | null
+  lastError: string | null
+  sentAt: string | null
+}
+
+export type SyncQueueItem = {
+  id:string
+  eventType:string
+  label:string
+  createdAt:string
+  status:'pending'|'problem'
+  attemptCount:number
+  nextAttemptAt:string|null
+  lastError:string|null
+  canRetry:boolean
+  canCancel:false
+}
+export type SyncQueueSnapshot = {
+  items:SyncQueueItem[]
+  total:number
+  problemCount:number
+  problemCountTruncated:boolean
+}
+export type SyncRetryResult = {message:string}
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
 export type WorkScheduleEntry = {
@@ -397,9 +425,20 @@ export type CreateUnpaidOrderRequest = { phone:string; contactMethod?:string; li
 export type CreateOrderFromSaleRequest = { saleId:string; phone:string; contactMethod?:string; comment:string; dueAt:string }
 export type UpdateOrderRequest = { id:string; phone?:string; contactMethod?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
-export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
+export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured'|'unknown'|'not_available';message:string;details?:Record<string,unknown>}
 export type ShiftDeviceStatus = {ready:boolean;localOpen:boolean;fiscalOpen?:boolean;message:string}
-export type DeviceStatuses = { os:HardwareStatus; fiscal:HardwareStatus; payment:HardwareStatus; printer:HardwareStatus; shift:ShiftDeviceStatus }
+export type DeviceStatuses = {
+  os:HardwareStatus
+  fiscal:HardwareStatus
+  /** KKT/FN to OFD delivery. Never derived from generic Internet availability. */
+  ofd:HardwareStatus
+  payment:HardwareStatus
+  remotePayment:HardwareStatus
+  printer:HardwareStatus
+  shift:ShiftDeviceStatus
+  /** Channel capability; fiscal readiness is a separate global sale gate. */
+  paymentMethods:{cash:boolean;card:boolean;qr:boolean;remote_payment:boolean}
+}
 export type InpasSettings = {enabled:boolean;executablePath:string;terminalId:string;currencyCode:string;timeoutMs:number;qrMode:'terminal_choice'}
 export type PaymentServiceResult = {message:string;receipt?:string;raw?:unknown}
 export type PrinterInfo = {name:string;isDefault:boolean}
@@ -459,6 +498,9 @@ export type PosApi = {
   getSelectedPrinter: () => Promise<string|undefined>
   setSelectedPrinter: (name:string) => Promise<void>
   getDeviceStatuses: () => Promise<DeviceStatuses>
+  getPosVersion: () => Promise<string>
+  listSyncQueue: () => Promise<SyncQueueSnapshot>
+  retrySyncEvent: (id:string,adminCode:string) => Promise<SyncRetryResult>
   listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
   recoverOperation: (id:string) => Promise<RecoveryResult>
   listDiagnosticEvents: (limit?:number) => Promise<DiagnosticEvent[]>

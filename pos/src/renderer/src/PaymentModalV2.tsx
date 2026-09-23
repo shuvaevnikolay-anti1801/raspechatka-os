@@ -1,3 +1,4 @@
+import { operatorError, operatorTerminalMessage } from './operator-message'
 import { useEffect, useState } from 'react'
 import type { BootState, PaymentMethod, PaymentPart, RemotePaymentConfirmation } from '../../shared/contracts'
 import './checkout.css'
@@ -31,11 +32,11 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
     window.raspechatkaPos.getDeviceStatuses().then((devices)=>{
       if(!active)return
       setTerminalReady(devices.payment.ready)
-      setTerminalMessage(devices.payment.message)
+      setTerminalMessage(operatorTerminalMessage(devices.payment))
     }).catch((error)=>{
       if(!active)return
       setTerminalReady(false)
-      setTerminalMessage(error instanceof Error?error.message:String(error))
+      setTerminalMessage(operatorError(error,'terminal'))
     })
     return()=>{active=false}
   },[])

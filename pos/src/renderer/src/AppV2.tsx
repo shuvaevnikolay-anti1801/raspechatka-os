@@ -7,6 +7,7 @@ import SaleCatalog, { FAVORITES_CATEGORY, SaleCategories } from './SaleCatalog'
 import CurrentReceipt from './CurrentReceipt'
 import { formatPersonShortName } from './person-name'
 import { formatMoney } from './money'
+import { operatorError, operatorSyncMessage } from './operator-message'
 import { shiftPaymentRows } from '../../shared/payment-methods'
 import { findUpsellRuleForProduct, resolveUpsellAfterCart, selectUpsellCandidate, type UpsellCycle } from '../../shared/upsell'
 import OrdersPage from './OrdersPage'
@@ -35,15 +36,7 @@ const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,a
 const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},scheduleCurrentMonth:{month:'',days:0,employees:[],entries:[]},scheduleNextMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
-export const manualSyncMessage=(result:BootState)=>{
-  if(result.documentQueueError){
-    const master=result.masterDataError?` Справочники не обновлены: ${result.masterDataError}.`:' Справочники обновлены.'
-    return `Связь с сервером есть.${master} Очередь документов не отправлена: ${result.documentQueueError}. Осталось: ${result.pendingSync}`
-  }
-  if(result.pendingSync>0)return `Сервер доступен, но в очереди осталось документов: ${result.pendingSync}`
-  if(result.masterDataError)return `Документы отправлены, но справочники не обновлены: ${result.masterDataError}`
-  return 'Данные обновлены'
-}
+export const manualSyncMessage=(result:BootState)=>operatorSyncMessage(result)
 export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
 export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer,reviewCount:customer?state.reviewCount:0})
 export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
@@ -109,7 +102,7 @@ export default function AppV2(){
     setAuth(nextAuth)
     return result[4]
   }
-  useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
+  useEffect(()=>{refresh().catch((e)=>setMessage(operatorError(e,'sync')))},[])
   useEffect(()=>{
     if(!customer)return
     let cancelled=false
@@ -186,12 +179,12 @@ export default function AppV2(){
       const result=await window.raspechatkaPos.syncNow();await refresh()
       if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer))
       setMessage(manualSyncMessage(result))
-    }catch{
+    }catch(error){
       await refresh().catch(()=>undefined)
-      setMessage('Не удалось связаться с Распечатка OS — продолжаем работать локально')
+      setMessage(operatorError(error,'sync'))
     }finally{setSyncing(false)}
   }
-  const openShift=async()=>{try{await window.raspechatkaPos.openShift();const openedSummary=await refresh();setCashCountOpen({type:'opening',expectedMinor:openedSummary.expectedCashMinor});setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
+  const openShift=async()=>{try{await window.raspechatkaPos.openShift();const openedSummary=await refresh();setCashCountOpen({type:'opening',expectedMinor:openedSummary.expectedCashMinor});setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(operatorError(e,'shift'))}}
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
@@ -238,11 +231,11 @@ export default function AppV2(){
       clear();setPayment(null);await refresh()
       const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
       setMessage(baseMessage)
-    }catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
+    }catch(e){setMessage(operatorError(e,'payment'))}finally{setBusy(false)}
   }
   const startReturn=async(sale:SaleSummary)=>{
     if(!boot?.shift){setMessage('Для возврата сначала откройте смену');return}
-    try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
+    try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(operatorError(e,'receipts'))}
   }
   const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setReviewCount(next.reviewCount);setCustomerOpen(false)}
 
@@ -321,12 +314,12 @@ export default function AppV2(){
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} online={boot.online} onChanged={async()=>{await refresh()}} notify={setMessage} onRequestCleanerPayout={async(cycleId)=>{const payout=await window.raspechatkaPos.prepareCleanerPayout(cycleId);setCleaningPayout(payout);setCashOperation('withdrawal');await refresh()}}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
-    {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
-    {cashOperation&&<CashOperationModal type={cashOperation} initialAmountMinor={cleaningPayout?.amountMinor} initialReason={cleaningPayout?'Уборка':''} locked={Boolean(cleaningPayout)} busy={cashOperationBusy} onClose={()=>{if(!cashOperationBusy){setCashOperation(null);setCleaningPayout(null)}}} onComplete={async(amount,reason)=>{if(cashOperationBusy)return;setCashOperationBusy(true);try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason,cleaningPayout?.id);setCashOperation(null);setCleaningPayout(null);await refresh();setMessage('Изъятие сохранено на кассе'+(boot.online?'':'. Ожидает отправки в ОС'))}catch(e){setMessage(e instanceof Error?e.message:String(e));await refresh().catch(()=>undefined)}finally{setCashOperationBusy(false)}}}/>}  
+    {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(operatorError(e,'fiscal'))}finally{setBusy(false)}}}/>} 
+    {cashOperation&&<CashOperationModal type={cashOperation} initialAmountMinor={cleaningPayout?.amountMinor} initialReason={cleaningPayout?'Уборка':''} locked={Boolean(cleaningPayout)} busy={cashOperationBusy} onClose={()=>{if(!cashOperationBusy){setCashOperation(null);setCleaningPayout(null)}}} onComplete={async(amount,reason)=>{if(cashOperationBusy)return;setCashOperationBusy(true);try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason,cleaningPayout?.id);setCashOperation(null);setCleaningPayout(null);await refresh();setMessage('Изъятие сохранено на кассе'+(boot.online?'':'. Ожидает отправки в ОС'))}catch(e){setMessage(operatorError(e,'work'));await refresh().catch(()=>undefined)}finally{setCashOperationBusy(false)}}}/>}  
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>} 
     {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>} 
     {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>} 
-    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>}
+    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(operatorError(e,'shift'))}}}/>}
   </div>
 }
 
@@ -361,19 +354,19 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   const resetEmployeeId=cashierResetEmployeeId(auth,employeeId)
   const openWorkShift=Boolean(auth.openShiftCashierId||auth.openShiftCashierName)
   const canSwitchCashier=lockedCashierCanSwitch(auth)
-  const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setNotice(null);if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}}
+  const choose=async(id:string)=>{setEmployeeId(id);setPin('');setConfirmation('');setNotice(null);if(id){try{setSetup((await window.raspechatkaPos.beginCashierLogin(id)).requiresPinSetup)}catch(e){setNotice({severity:'error',message:operatorError(e,'auth')})}}}
   useEffect(()=>{if(forced)void choose(forced)},[forced])
   const submit=async()=>{try{
     if(auth.status==='locked')await window.raspechatkaPos.unlockCashier(pin)
     else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)
     else await window.raspechatkaPos.loginCashier(employeeId,pin)
     await onAuthenticated()
-  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)});setPin('');setConfirmation('')}}
+  }catch(e){setNotice({severity:'error',message:operatorError(e,'auth')});setPin('');setConfirmation('')}}
   const reset=async()=>{try{
     if(!resetEmployeeId)throw new Error('Не удалось определить кассира для сброса PIN')
     await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)
     setAdminReset(false);setAdminCode('');setSetup(false);setNotice({severity:'success',message:'PIN изменён. Теперь войдите с новым PIN.'});setPin('');setConfirmation('')
-  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
+  }catch(e){setNotice({severity:'error',message:operatorError(e,'auth')})}}
   const switchCashier=async()=>{try{
     await runLockedCashierSwitch(
       ()=>window.raspechatkaPos.logoutCashier(),
@@ -382,7 +375,7 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
         await onAuthenticated()
       },
     )
-  }catch(e){setNotice({severity:'error',message:e instanceof Error?e.message:String(e)})}}
+  }catch(e){setNotice({severity:'error',message:operatorError(e,'auth')})}}
   const footerLeft=<PosButton className="settings-open-trigger" variant="quiet" type="button" icon={<PosIcon name="settings"/>}>Настройки кассы</PosButton>
   const footerRight=!setup&&!adminReset
     ?<PosButton className="cashier-forgot-pin" variant="quiet" type="button" onClick={()=>{setAdminReset(true);setPin('');setConfirmation('');setNotice(null)}}>Забыли PIN?</PosButton>

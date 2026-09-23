@@ -1,9 +1,9 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, SaleDetails, Shift, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest
+  ReturnResult, SaleDetails, Shift, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest, SyncQueueSnapshot
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -12,8 +12,10 @@ import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performConfigurationSync, performSync } from './sync'
+import { collectDeviceStatuses } from './health'
+import { canCancelSyncQueueEvent, canRetrySyncQueueEvent, syncEventLabels } from './sync-queue-policy'
 import { PosTransactionEngine } from './transaction-engine'
-import { CashierAuthSession } from './cashier-auth'
+import { CashierAuthSession, verifyAdminCode } from './cashier-auth'
 import { PosLifecycleStore } from './pos-lifecycle'
 import { getPointReceipt } from './frappe'
 
@@ -154,48 +156,48 @@ export function registerIpcHandlers(dependencies:{
     await printProvider.setSelectedPrinter(name)
     diagnostics.record({source:'printer',eventType:'printer.selected',message:name?`Выбран товарный принтер: ${name}`:'Товарный принтер отключён'})
   })
-  ipcMain.handle('pos:get-device-statuses',async()=>{
-    const boot=bootState()
-    let fiscalShiftOpen:boolean|undefined
-    let fiscalShiftMessage='Состояние фискальной смены не проверено'
-    let fiscalExpired=false
-    try{
-      const state=await fiscalProvider.getShiftStatus()
-      fiscalShiftOpen=state.open
-      fiscalExpired=state.state==='expired'
-      fiscalShiftMessage=state.message
-    }catch(error){
-      fiscalShiftMessage=errorMessage(error)
-    }
-    const localOpen=Boolean(database.currentShift())
-    const shiftReady=fiscalShiftOpen!==undefined&&localOpen===fiscalShiftOpen&&!fiscalExpired
-    const [fiscal,payment,printer]=await Promise.all([
-      fiscalProvider.healthCheck(),paymentProvider.healthCheck(),printProvider.healthCheck()
-    ])
+  ipcMain.handle('pos:get-device-statuses',()=>collectDeviceStatuses({
+    boot:bootState(),
+    connectionConfigured:Boolean(connectionStore.load()),
+    localOpen:Boolean(database.currentShift()),
+    fiscal:fiscalProvider,payment:paymentProvider,printer:printProvider,
+  }))
+
+  ipcMain.handle('pos:get-pos-version',()=>app.getVersion())
+  const queueSnapshot=():SyncQueueSnapshot=>{
+    const problems=database.listProblemQueue(1001)
+    const pending=database.listPendingQueue(1000)
+    const blocked=transactionEngine.hasBlockingOperation()||database.getState('outbox_paused')==='1'
     return {
-      os:{
-        ready:boot.online,
-        status:boot.online?'ready':'offline',
-        message:boot.online?`OS на связи · к отправке ${boot.pendingSync}`:`Локальный режим · к отправке ${boot.pendingSync}`,
-        details:{pendingSync:boot.pendingSync,lastSyncAt:boot.lastSyncAt}
-      },
-      fiscal,
-      payment,
-      printer,
-      shift:{
-        ready:shiftReady,
-        localOpen,
-        fiscalOpen:fiscalShiftOpen,
-        message:fiscalExpired
-          ?'Фискальная смена АТОЛ истекла — продажи заблокированы до закрытия и открытия новой смены'
-          :fiscalShiftOpen===undefined
-            ?`ККТ: ${fiscalShiftMessage}`
-            :localOpen===fiscalShiftOpen
-              ?(localOpen?'Локальная и фискальная смены открыты':'Локальная и фискальная смены закрыты')
-              :`Несоответствие смен: локальная ${localOpen?'открыта':'закрыта'}, ККТ ${fiscalShiftOpen?'открыта':'закрыта'}`
-      }
+      items:[...problems.slice(0,1000),...pending].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(0,1000)
+        .map((event)=>({
+          id:event.id,eventType:event.eventType,
+          label:syncEventLabels[event.eventType]??'Документ точки',
+          createdAt:event.createdAt,status:event.status as 'pending'|'problem',
+          attemptCount:event.attemptCount,nextAttemptAt:event.nextAttemptAt,
+          lastError:event.lastError,canRetry:canRetrySyncQueueEvent(event,blocked),canCancel:canCancelSyncQueueEvent(event),
+        })),
+      total:database.pendingSyncCount(),
+      problemCount:Math.min(problems.length,1000),
+      problemCountTruncated:problems.length>1000,
     }
+  }
+  ipcMain.handle('pos:list-sync-queue',queueSnapshot)
+  ipcMain.handle('pos:retry-sync-event',async(_event,id:string,adminCode:string)=>{
+    if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
+    const cashier=assertCashierAccess()
+    if(transactionEngine.hasBlockingOperation())throw new Error('Сначала завершите восстановление незавершённой операции')
+    if(database.getState('outbox_paused')==='1')throw new Error('Отправка очереди приостановлена')
+    const event=database.listPendingQueue(1000).find((row)=>row.id===id)
+    if(!event||!canRetrySyncQueueEvent(event,false))throw new Error('Повтор этого события сейчас недоступен')
+    // Normal sync retains the immutable ID/payload and server-side deduplication.
+    // It may also deliver other due events; no external payment/fiscal operation is retried here.
+    await performSync(database,connectionStore,cashier.id)
+    diagnostics.record({source:'sync',eventType:'sync.manual_event_requested',
+      message:'Запрошена повторная отправка события',details:{id,eventType:event.eventType}})
+    return {message:'Отправка выполнена. Проверьте состояние документа в очереди'}
   })
+
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
   ipcMain.handle('pos:recover-operation',async(_event,id:string)=>{
     diagnostics.record({source:'recovery',level:'warning',eventType:'operation.recovery_started',message:'Начата проверка незавершённой операции',operationId:id})
@@ -341,6 +343,9 @@ export function registerIpcHandlers(dependencies:{
     }
 
     const hasRemote=request.payments.some((x)=>x.method==='remote_payment')
+    if(hasRemote&&(!connectionStore.load()||!boot.online)){
+      throw new Error('Удалённая оплата недоступна без связи с Распечатка OS')
+    }
     if(hasRemote&&!request.remotePaymentConfirmation?.confirmed){
       throw new Error('Для удалённой оплаты кассир должен отдельно подтвердить, что получение денег проверено.')
     }

@@ -96,6 +96,9 @@ const api: ExtendedPosApi = {
   setSelectedPrinter: (name: string) =>
     ipcRenderer.invoke("pos:set-selected-printer", name),
   getDeviceStatuses: () => ipcRenderer.invoke("pos:get-device-statuses"),
+  getPosVersion: () => ipcRenderer.invoke("pos:get-pos-version"),
+  listSyncQueue: () => ipcRenderer.invoke("pos:list-sync-queue"),
+  retrySyncEvent: (id: string, adminCode: string) => ipcRenderer.invoke("pos:retry-sync-event", id, adminCode),
   listUnresolvedOperations: () =>
     ipcRenderer.invoke("pos:list-unresolved-operations"),
   recoverOperation: (id: string) =>

@@ -105,6 +105,28 @@ export type NativeAtolDriverBridgeOptions = {
   fiscalOperationTimeoutMs?: number;
 };
 
+/** FN readiness requires positive evidence; OFD delivery is a separate channel. */
+export function healthFromAtolStatus(status: AtolDriverStatus): DeviceHealth {
+  const ready = Boolean(
+    status.connected &&
+    (status.shiftState === 'opened' || status.shiftState === 'closed') &&
+    status.paperPresent !== false &&
+    !status.coverOpened &&
+    !status.printerConnectionLost &&
+    !status.printerError &&
+    status.fnPresent === true &&
+    !status.invalidFn &&
+    !status.deviceBlocked
+  );
+  return {
+    ready,
+    status: ready ? 'ready' : 'error',
+    message: ready ? 'АТОЛ подключён'
+      : status.fnPresent !== true ? 'Готовность ФН не подтверждена'
+        : status.errorDescription ?? 'АТОЛ требует внимания',
+  };
+}
+
 export class NativeAtolDriverBridge implements AtolDriverBridge {
   private child?: ChildProcessWithoutNullStreams;
   private readonly pending = new Map<
@@ -223,24 +245,7 @@ export class NativeAtolDriverBridge implements AtolDriverBridge {
   async health(): Promise<DeviceHealth> {
     try {
       const status = await this.request<AtolDriverStatus>('status');
-      const ready =
-        status.connected &&
-        status.shiftState !== 'expired' &&
-        status.paperPresent !== false &&
-        !status.coverOpened &&
-        !status.printerConnectionLost &&
-        !status.printerError &&
-        status.fnPresent !== false &&
-        !status.invalidFn &&
-        !status.deviceBlocked;
-
-      return {
-        ready,
-        status: ready ? 'ready' : 'error',
-        message: ready
-          ? 'АТОЛ подключён'
-          : status.errorDescription ?? 'АТОЛ требует внимания',
-      } as DeviceHealth;
+      return healthFromAtolStatus(status);
     } catch (error) {
       return {
         ready: false,

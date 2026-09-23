@@ -173,6 +173,9 @@ class TestInternalOrdersApi(TestCase):
 			def exists(self, doctype, filters):
 				return False
 
+			def get_value(self, doctype, filters, fields, as_dict=False):
+				return None
+
 		class PosFrappe:
 			db = PosDb()
 

@@ -133,10 +133,10 @@ class TestPosOperationalWarehouseContract(TestCase):
 
 class TestPosLocalWarehouseTruth(TestCase):
 	def test_stock_receipt_queues_without_optimistically_mutating_delivery_cache(self):
-		source = (
-			Path(__file__).resolve().parents[2] / "pos" / "src" / "main" / "database.ts"
-		).read_text(encoding="utf-8")
-		method = source[source.index("  createStockReceipt("):source.index("  recordCleanerVisit(")]
+		source = (Path(__file__).resolve().parents[2] / "pos" / "src" / "main" / "database.ts").read_text(
+			encoding="utf-8"
+		)
+		method = source[source.index("  createStockReceipt(") : source.index("  recordCleanerVisit(")]
 		self.assertIn("this.queue('stock.receipt.requested'", method)
 		self.assertNotIn("data.deliveries=", method)
 		self.assertNotIn("this.setWorkplaceData(data)", method)
@@ -198,6 +198,8 @@ class TestPosWarehouseIngestion(TestCase):
 		doc = MagicMock()
 
 		def get_value(doctype, name_or_filters, fieldname, **kwargs):
+			if doctype == "Stock Receipt":
+				return None
 			if doctype == "Purchase Order":
 				return order
 			if doctype == "Catalog Item Storage":
@@ -257,7 +259,7 @@ class TestPosWarehouseIngestion(TestCase):
 
 	def test_foreign_purchase_order_is_rejected_by_point_lock(self):
 		with (
-			patch.object(pos_v2.frappe.db, "exists", return_value=False),
+			patch.object(pos_v2.frappe.db, "get_value", return_value=None),
 			patch.object(pos_v2.frappe.db, "sql", return_value=[]) as sql,
 		):
 			with self.assertRaises(Exception):
@@ -283,6 +285,7 @@ class TestPosWarehouseIngestion(TestCase):
 
 		with (
 			patch.object(pos_v2.frappe.db, "exists", side_effect=exists),
+			patch.object(pos_v2.frappe.db, "get_value", return_value=None),
 			patch.object(
 				pos_v2,
 				"_point_stock_context",
@@ -295,19 +298,24 @@ class TestPosWarehouseIngestion(TestCase):
 				pos_v2._ingest_stock_write_off(
 					"EVENT-FOREIGN",
 					{
-					"productId": "ITEM-FOREIGN",
-					"quantity": 1,
-					"reason": "Брак",
-					"comment": "Чужой товар",
-				},
+						"productId": "ITEM-FOREIGN",
+						"quantity": 1,
+						"reason": "Брак",
+						"comment": "Чужой товар",
+					},
 					SimpleNamespace(business_point="POINT-A"),
 					"EMP-1",
 				)
 		get_doc.assert_not_called()
 
 	def test_duplicate_warehouse_events_are_noops(self):
+		def existing(doctype, filters, fields, **kwargs):
+			if doctype == "Point Supply Request":
+				return "POINT-A"
+			return SimpleNamespace(business_point="POINT-A", docstatus=1)
+
 		with (
-			patch.object(pos_v2.frappe.db, "exists", return_value=True),
+			patch.object(pos_v2.frappe.db, "get_value", side_effect=existing),
 			patch.object(pos_v2.frappe, "get_doc") as get_doc,
 		):
 			pos_v2._ingest_stock_write_off(

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
-  BankingEvidence, CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
+  BankingEvidence, CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent, OutboxQueueItem,
   CashCount, CashCountLine, CashDrawerState, CleanerPayout, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
   SaleDetails, SaleSummary, Shift, ShiftSummary, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, WorkScheduleMonth,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
@@ -171,7 +171,9 @@ export class PosDatabase {
       CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS outbox (
         id TEXT PRIMARY KEY, event_type TEXT NOT NULL, payload_json TEXT NOT NULL,
-        created_at TEXT NOT NULL, sent_at TEXT
+        created_at TEXT NOT NULL, sent_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0, last_attempt_at TEXT, next_attempt_at TEXT,
+        status TEXT NOT NULL DEFAULT 'pending', last_error TEXT
       );
       CREATE TABLE IF NOT EXISTS cash_counts (
         id TEXT PRIMARY KEY, shift_id TEXT NOT NULL, count_type TEXT NOT NULL,
@@ -238,6 +240,17 @@ export class PosDatabase {
       CREATE INDEX IF NOT EXISTS idx_receipt_mirror_point_created ON receipt_mirror(point_id,created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at DESC);
     `)
+    // Outbox v2 is additive: legacy IDs, payloads and trusted cashier evidence stay intact.
+    this.ensureColumn('outbox','attempt_count','INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('outbox','last_attempt_at','TEXT')
+    this.ensureColumn('outbox','next_attempt_at','TEXT')
+    this.ensureColumn('outbox','status',"TEXT NOT NULL DEFAULT 'pending'")
+    this.ensureColumn('outbox','last_error','TEXT')
+    this.db.exec(`UPDATE outbox SET status='sent' WHERE sent_at IS NOT NULL AND status!='sent';
+      UPDATE outbox SET status='pending' WHERE sent_at IS NULL AND status='sent';
+      CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox(status,next_attempt_at,created_at);`)
+    this.db.prepare(`INSERT INTO app_state(key,value) VALUES ('outbox_schema_version','2')
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run()
     this.ensureColumn('sale_payments', 'banking_evidence_json', 'TEXT')
     this.ensureColumn('return_payments', 'banking_evidence_json', 'TEXT')
     this.ensureColumn('products', 'item_type', "TEXT NOT NULL DEFAULT 'service'")
@@ -1362,10 +1375,58 @@ export class PosDatabase {
       :value&&shift?.cashierId?{...value,cashierId:shift.cashierId}:payload
     this.db.prepare('INSERT INTO outbox (id,event_type,payload_json,created_at) VALUES (?,?,?,?)').run(eventId,eventType,JSON.stringify(securedPayload),createdAt)
   }
-  pendingEvents(limit=100):OutboxEvent[]{return (this.db.prepare(`SELECT id,event_type eventType,payload_json payload,created_at createdAt
-    FROM outbox WHERE sent_at IS NULL ORDER BY created_at LIMIT ?`).all(limit) as Array<{id:string;eventType:string;payload:string;createdAt:string}>)
-    .map((x)=>({...x,payload:JSON.parse(x.payload)}))}
-  markEventsSent(ids:string[]):void {if(!ids.length)return;const mark=this.db.prepare('UPDATE outbox SET sent_at=? WHERE id=?');const now=new Date().toISOString();this.db.exec('BEGIN');try{ids.forEach((id)=>mark.run(now,id));this.db.exec('COMMIT')}catch(error){this.db.exec('ROLLBACK');throw error}}
+  /** Only pending events whose durable delay has elapsed may be sent. */
+  pendingEvents(limit=100,now=new Date().toISOString()):OutboxEvent[]{
+    return this.listQueue('pending',limit,now).map(({id,eventType,payload,createdAt})=>({id,eventType,payload,createdAt}))
+  }
+  listPendingQueue(limit=100):OutboxQueueItem[]{return this.listQueue('pending',limit)}
+  listProblemQueue(limit=100):OutboxQueueItem[]{return this.listQueue('problem',limit)}
+  private listQueue(status:'pending'|'problem',limit:number,dueAt?:string):OutboxQueueItem[]{
+    const rows=this.db.prepare(`SELECT id,event_type eventType,payload_json payload,created_at createdAt,
+      status,attempt_count attemptCount,last_attempt_at lastAttemptAt,next_attempt_at nextAttemptAt,
+      last_error lastError,sent_at sentAt FROM outbox
+      WHERE status=? AND sent_at IS NULL ${dueAt?"AND (next_attempt_at IS NULL OR next_attempt_at<=?)":""}
+      ORDER BY created_at,id LIMIT ?`).all(...(dueAt?[status,dueAt,limit]:[status,limit])) as
+      Array<Omit<OutboxQueueItem,'payload'>&{payload:string}>
+    return rows.map((row)=>({...row,payload:JSON.parse(row.payload)}))
+  }
+  recordEventsAttempted(ids:string[],at=new Date().toISOString()):void{
+    if(!ids.length)return
+    const update=this.db.prepare(`UPDATE outbox SET attempt_count=attempt_count+1,last_attempt_at=?
+      WHERE id=? AND status='pending' AND sent_at IS NULL`)
+    this.db.exec('BEGIN')
+    try{ids.forEach((id)=>update.run(at,id));this.db.exec('COMMIT')}
+    catch(error){this.db.exec('ROLLBACK');throw error}
+  }
+  recordEventFailure(ids:string[],kind:'temporary'|'problem',message:string,at=new Date().toISOString()):void{
+    if(!ids.length)return
+    // Store an operator-safe category only; server exceptions, URLs and credentials never persist here.
+    const safeError=kind==='problem'
+      ?(message==='unsupported'?'Неподдерживаемый тип события':'Сервер отклонил данные события')
+      :'Не удалось подтвердить событие. Повтор будет выполнен позже'
+    const update=this.db.prepare(`UPDATE outbox SET status=?,last_error=?,next_attempt_at=?
+      WHERE id=? AND status='pending' AND sent_at IS NULL`)
+    const attempts=this.db.prepare('SELECT attempt_count attemptCount FROM outbox WHERE id=?')
+    this.db.exec('BEGIN')
+    try{
+      ids.forEach((id)=>{
+        const count=(attempts.get(id) as {attemptCount:number}|undefined)?.attemptCount??1
+        const delay=Math.min(60*60*1000,5000*2**Math.min(Math.max(0,count-1),10))
+        update.run(kind==='problem'?'problem':'pending',safeError,
+          kind==='problem'?null:new Date(Date.parse(at)+delay).toISOString(),id)
+      })
+      this.db.exec('COMMIT')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
+  }
+  markEventsSent(ids:string[]):void {
+    if(!ids.length)return
+    const mark=this.db.prepare(`UPDATE outbox SET sent_at=?,status='sent',next_attempt_at=NULL,last_error=NULL
+      WHERE id=? AND sent_at IS NULL`)
+    const now=new Date().toISOString()
+    this.db.exec('BEGIN')
+    try{ids.forEach((id)=>mark.run(now,id));this.db.exec('COMMIT')}
+    catch(error){this.db.exec('ROLLBACK');throw error}
+  }
   pendingSyncCount():number{return (this.db.prepare('SELECT COUNT(*) count FROM outbox WHERE sent_at IS NULL').get() as {count:number}).count}
   setState(key:string,value:string):void{this.db.prepare('INSERT INTO app_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,value)}
   getState(key:string):string|undefined{return (this.db.prepare('SELECT value FROM app_state WHERE key=?').get(key) as {value:string}|undefined)?.value}

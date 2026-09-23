@@ -533,10 +533,12 @@ def push_batch(device_id, token, payload):
 def _ingest_shift(row, connection, result, update_existing=False):
 	external_id = _required(row, "external_id")
 	name = frappe.db.get_value("Sales Shift", {"external_id": external_id}, "name")
+	doc = frappe.get_doc("Sales Shift", name) if name else frappe.new_doc("Sales Shift")
+	if name and doc.business_point != connection.business_point:
+		frappe.throw(_("Событие смены принадлежит другой точке"), frappe.PermissionError)
 	if name and not update_existing:
 		result["duplicates"] += 1
 		return
-	doc = frappe.get_doc("Sales Shift", name) if name else frappe.new_doc("Sales Shift")
 	if not name:
 		doc.external_id = external_id
 	_set_shift_scope(doc, connection)
@@ -569,7 +571,12 @@ def _ingest_shift(row, connection, result, update_existing=False):
 
 def _ingest_receipt(row, connection, result):
 	external_id = _required(row, "external_id")
-	if frappe.db.exists("Sales Receipt", {"external_id": external_id}):
+	existing = frappe.db.get_value(
+		"Sales Receipt", {"external_id": external_id}, ["business_point", "docstatus"], as_dict=True
+	)
+	if existing:
+		if existing.business_point != connection.business_point or cint(existing.docstatus) != 1:
+			frappe.throw(_("Чек события недоступен для этой точки"), frappe.PermissionError)
 		result["duplicates"] += 1
 		return
 	doc = frappe.new_doc("Sales Receipt")
@@ -639,7 +646,12 @@ def _ingest_receipt(row, connection, result):
 
 def _ingest_cash(row, connection, result):
 	external_id = _required(row, "external_id")
-	if frappe.db.exists("Cash Movement", {"external_id": external_id}):
+	existing = frappe.db.get_value(
+		"Cash Movement", {"external_id": external_id}, ["business_point", "docstatus"], as_dict=True
+	)
+	if existing:
+		if existing.business_point != connection.business_point or cint(existing.docstatus) != 1:
+			frappe.throw(_("Движение наличных недоступно для этой точки"), frappe.PermissionError)
 		result["duplicates"] += 1
 		return
 	doc = frappe.new_doc("Cash Movement")

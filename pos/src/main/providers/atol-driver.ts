@@ -78,6 +78,12 @@ export class AtolDriverFiscalProvider implements FiscalProvider {
     }
   }
 
+  async ofdDeliveryHealth():Promise<DeviceHealth> {
+    // Current Driver bridge status has no verified OFD delivery counters/state.
+    // Internet or backend reachability says nothing about the FN's OFD backlog.
+    return {ready:false,status:"unknown",message:"Нет подтверждённых данных ККТ о передаче в ОФД"};
+  }
+
   async getShiftStatus():Promise<FiscalShiftStatus> {
     await this.ensureConnected();
     const status=await this.bridge.getStatus();

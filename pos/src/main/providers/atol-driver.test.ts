@@ -20,6 +20,15 @@ const settings = {
 };
 
 describe("AtolDriverFiscalProvider", () => {
+  it("reports OFD delivery unknown without Driver evidence, without probing a fiscal action", async () => {
+    const bridge = { getStatus: vi.fn() } as unknown as AtolDriverBridge;
+    const provider = new AtolDriverFiscalProvider(bridge, { load: () => settings } as AtolSettingsStore);
+    await expect(provider.ofdDeliveryHealth()).resolves.toMatchObject({
+      ready: false, status: "unknown",
+    });
+    expect(bridge.getStatus).not.toHaveBeenCalled();
+  });
+
   it("sends one JSON fiscal command and uses fiscal document identity", async () => {
     const executeJson = vi.fn(async () => ({
       fiscalParams: {

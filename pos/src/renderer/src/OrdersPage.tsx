@@ -1,3 +1,4 @@
+import { operatorError } from './operator-message'
 import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
@@ -155,7 +156,7 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
         notify(status==='ready'?'Заказ готов к выдаче':'Заказ выдан')
         return true
       }catch(error){
-        notify(error instanceof Error?error.message:String(error))
+        notify(operatorError(error,'orders'))
         return false
       }finally{
         setStatusPending(order.id,false)
@@ -255,7 +256,7 @@ export function EditOrder({order,close,saved}:{order:Order;close:()=>void;saved:
       await window.raspechatkaPos.updateOrder({id:order.id,...toOrderFormPayload(draft)})
       await saved()
     }catch(reason){
-      setError(reason instanceof Error?reason.message:String(reason))
+      setError(operatorError(reason,'orders'))
     }
   }
 
@@ -282,7 +283,7 @@ export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;
     window.raspechatkaPos.listSales().then((rows)=>{
       if(cancelled)return
       setSales(eligibleOrderSales(rows,orders))
-    }).catch((reason)=>{if(!cancelled)setError(reason instanceof Error?reason.message:String(reason))})
+    }).catch((reason)=>{if(!cancelled)setError(operatorError(reason,'orders'))})
       .finally(()=>{if(!cancelled)setLoading(false)})
     return()=>{cancelled=true}
   },[orders])
@@ -299,7 +300,7 @@ export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;
         return
       }
       setSelectedSale(sale)
-    }).catch((reason)=>{if(!cancelled)setError(reason instanceof Error?reason.message:String(reason))})
+    }).catch((reason)=>{if(!cancelled)setError(operatorError(reason,'orders'))})
       .finally(()=>{if(!cancelled)setDetailLoading(false)})
     return()=>{cancelled=true}
   },[selectedSaleId])
@@ -321,7 +322,7 @@ export function CreateOrder({orders,close,saved}:{orders:Order[];close:()=>void;
       await window.raspechatkaPos.createOrderFromSale(buildOrderFromSaleRequest(selectedSale,draft))
       await saved()
     }catch(reason){
-      setError(reason instanceof Error?reason.message:String(reason))
+      setError(operatorError(reason,'orders'))
     }
   }
 
