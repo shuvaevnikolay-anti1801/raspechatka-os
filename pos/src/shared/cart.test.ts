@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateDiscountBreakdown, calculateTotalMinor } from './cart'
+import { calculateDiscountBreakdown, calculatePayableMinor, calculateTotalMinor } from './cart'
 
 describe('calculateTotalMinor', () => {
   it('sums prices in minor currency units', () => {
@@ -46,7 +46,7 @@ describe('calculateDiscountBreakdown',()=>{
 
   it('caps the combined discount and keeps a fiscal amount of one kopeck',()=>{
     expect(calculateDiscountBreakdown(lines,{...rules,maxDiscountPercent:100},80,10,{type:'amount',value:50000})).toMatchObject({
-      totalDiscountMinor:9999,totalMinor:1,
+      totalDiscountMinor:9999,totalMinor:1,roundingAdjustmentMinor:1,payableMinor:0,
     })
   })
 
@@ -55,6 +55,41 @@ describe('calculateDiscountBreakdown',()=>{
       ...lines,{productId:'b',name:'B',quantity:1,unitPriceMinor:5000,preventDiscounts:true},
     ],rules,10,0)
     expect(result).toMatchObject({discountableSubtotalMinor:0,clubDiscountMinor:0,totalMinor:15000})
+  })
+
+  it('rounds 100, 101, 199 and 200 kopecks exactly once',()=>{
+    for(const [amount,payable,adjustment] of [[100,100,0],[101,100,1],[199,100,99],[200,200,0]]){
+      const result=calculateDiscountBreakdown(
+        [{productId:'x',name:'Печать',quantity:1,unitPriceMinor:amount}],rules
+      )
+      expect(result).toMatchObject({
+        totalMinor:amount,payableMinor:payable,roundingAdjustmentMinor:adjustment,totalDiscountMinor:0,
+      })
+      expect(calculatePayableMinor(amount)).toBe(payable)
+    }
+  })
+
+  it('keeps stacked ordinary discounts and rounding separate',()=>{
+    const result=calculateDiscountBreakdown(
+      [{productId:'x',name:'Печать',quantity:1,unitPriceMinor:10002}],
+      {allowDiscounts:true,maxDiscountPercent:30,reviewDiscountPerReviewMinor:101},
+      10,1,{type:'amount',value:100}
+    )
+    expect(result).toMatchObject({
+      clubDiscountMinor:1000,reviewDiscountMinor:101,manualDiscountMinor:100,
+      totalDiscountMinor:1201,totalMinor:8801,payableMinor:8800,roundingAdjustmentMinor:1,
+    })
+  })
+
+  it('rounds a protected check without applying receipt discounts',()=>{
+    const result=calculateDiscountBreakdown(
+      [{productId:'x',name:'Печать',quantity:1,unitPriceMinor:199,preventDiscounts:true}],
+      rules,10,2,{type:'amount',value:100}
+    )
+    expect(result).toMatchObject({
+      discountableSubtotalMinor:0,totalDiscountMinor:0,totalMinor:199,
+      payableMinor:100,roundingAdjustmentMinor:99,
+    })
   })
 
   it('disables every receipt discount when the rule is off',()=>{

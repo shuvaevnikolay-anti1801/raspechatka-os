@@ -68,7 +68,7 @@ export default function PaymentModalV2({choice,total,rules,busy,onChoice,onClose
     (!mixedUsesTerminal||terminalReady)
   )
   const cashValid=choice!=='cash'||cashMinor===0||cashMinor>=total
-  const canSubmit=!busy&&cashValid&&mixedValid&&(!terminalChoice||terminalReady)&&(!remoteChoice||remoteConfirmed)
+  const canSubmit=Number.isSafeInteger(total)&&total>0&&!busy&&cashValid&&mixedValid&&(!terminalChoice||terminalReady)&&(!remoteChoice||remoteConfirmed)
 
   useEffect(()=>{
     const handler=(event:KeyboardEvent)=>{

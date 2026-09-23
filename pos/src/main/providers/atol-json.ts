@@ -16,7 +16,19 @@ export function allocateFiscalAmounts(
   lines: CartLine[],
   totalMinor: number
 ): number[] {
-  if (!lines.length) return [];
+  if (!Number.isSafeInteger(totalMinor) || totalMinor < 0)
+    throw new Error("Некорректная сумма фискального чека");
+  if (!lines.length) {
+    if (totalMinor !== 0) throw new Error("В чеке отсутствуют фискальные позиции");
+    return [];
+  }
+  const persisted = lines.map((line) => (line as CartLine & { lineTotalMinor?: number }).lineTotalMinor);
+  if (persisted.some((value) => value !== undefined)) {
+    if (persisted.some((value) => !Number.isSafeInteger(value) || value! < 0) ||
+        persisted.reduce<number>((sum, value) => sum + (value ?? 0), 0) !== totalMinor)
+      throw new Error("Сохранённые суммы позиций не совпадают с фискальным итогом");
+    return persisted as number[];
+  }
   const raw = lines.map((line) =>
     Math.max(
       0,
@@ -31,13 +43,16 @@ export function allocateFiscalAmounts(
   if (rawTotal <= 0)
     throw new Error("Сумма фискальных позиций должна быть больше нуля");
 
+  // Cumulative allocation avoids a negative final line on many small items.
+  let cumulativeRaw = 0;
   let allocated = 0;
   const result = raw.map((value, index) => {
-    const amount =
-      index === raw.length - 1
-        ? totalMinor - allocated
-        : Math.round((totalMinor * value) / rawTotal);
-    allocated += amount;
+    cumulativeRaw += value;
+    const target = index === raw.length - 1
+      ? totalMinor
+      : Math.round((totalMinor * cumulativeRaw) / rawTotal);
+    const amount = target - allocated;
+    allocated = target;
     return amount;
   });
   if (
@@ -58,7 +73,9 @@ export function buildAtolReceiptJson(
     (sum, payment) => sum + payment.amountMinor,
     0
   );
-  if (paymentTotal !== options.amountMinor)
+  if (!Number.isSafeInteger(options.amountMinor) || options.amountMinor <= 0 ||
+      options.payments.some((payment) => !Number.isSafeInteger(payment.amountMinor) || payment.amountMinor < 0) ||
+      paymentTotal !== options.amountMinor)
     throw new Error("Сумма оплат не совпадает с итогом фискального чека");
 
   const payments = new Map<"cash" | "electronically", number>();

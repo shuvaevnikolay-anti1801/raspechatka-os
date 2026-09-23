@@ -4,6 +4,16 @@ import { PosDatabase } from './database'
 import { loadBootstrap, pushEvents } from './frappe'
 
 const LEGACY_POINT_TIMEZONE = 'Europe/Moscow'
+const LEGACY_CLEANING = { payoutAmountMinor: 200000, everyNVisits: 4 }
+
+export function normalizeCleaningConfig(value?:Partial<BootState['cleaning']>):BootState['cleaning']{
+  const amount=value?.payoutAmountMinor
+  const visits=value?.everyNVisits
+  return {
+    payoutAmountMinor:typeof amount==='number'&&Number.isSafeInteger(amount)&&amount>0?amount:LEGACY_CLEANING.payoutAmountMinor,
+    everyNVisits:typeof visits==='number'&&Number.isSafeInteger(visits)&&visits>=1?visits:LEGACY_CLEANING.everyNVisits,
+  }
+}
 
 export function buildBootState(database:PosDatabase):BootState{
   const cached=database.getState('bootstrap')
@@ -18,6 +28,7 @@ export function buildBootState(database:PosDatabase):BootState{
   return {
     pointId:remote.pointId??'demo-point',pointName:remote.pointName??'Тестовая точка',
     pointTimezone:remote.pointTimezone??LEGACY_POINT_TIMEZONE,
+    cleaning:normalizeCleaningConfig(remote.cleaning),
     workplaceId:remote.workplaceId??'demo-workplace',workstationName:remote.workstationName??'Касса 1',
     cashierId:undefined,cashierName:'Выберите сотрудника',employees,
     accessRevoked:false,
@@ -48,8 +59,9 @@ async function applyBootstrap(
   database.replaceServerOrders(remote.point.id,remote.workplaceData.orders||[],remote.retentionDays||60)
   database.setWorkplaceData(remote.workplaceData)
   const pointTimezone=remote.point.timezone||LEGACY_POINT_TIMEZONE
+  const cleaning=normalizeCleaningConfig(remote.point.cleaning)
   database.setState('bootstrap',JSON.stringify({
-    pointId:remote.point.id,pointName:remote.point.name,pointTimezone,workplaceId:remote.workplace.id,
+    pointId:remote.point.id,pointName:remote.point.name,pointTimezone,cleaning,workplaceId:remote.workplace.id,
     workstationName:remote.workplace.name,employees:remote.employees||[],online:true,lastSyncAt:buildBootState(database).lastSyncAt,
     source:'frappe',rules:{...remote.rules,acceptsRemotePayment:true},
     upsellRules:remote.upsellRules||[]

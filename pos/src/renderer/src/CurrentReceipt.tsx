@@ -12,7 +12,7 @@ type CurrentReceiptProps={
   reviewUnitMinor:number;reviewCount:number;reviewDiscountMinor:number;maxReviews:number;
   onReviewCountChange:(count:number)=>void;manualDiscount:ManualDiscount|null;manualDiscountMinor:number;
   onOpenManualDiscount:()=>void;clubDiscountMinor:number;hasProtectedItems:boolean;subtotalMinor:number;
-  totalDiscountMinor:number;totalMinor:number;shiftOpen:boolean;onOpenShift:()=>void;onHold:()=>void;
+  totalDiscountMinor:number;roundingAdjustmentMinor:number;totalMinor:number;shiftOpen:boolean;onOpenShift:()=>void;onHold:()=>void;
   onCreateOrder:()=>void;onPay:()=>void
 }
 
@@ -21,7 +21,7 @@ export default function CurrentReceipt({
   onOverridePrice,onChangeQuantity,onSetQuantity,upsell,onAcceptUpsell,onDismissUpsell,
   allowDiscounts,reviewUnitMinor,reviewCount,reviewDiscountMinor,maxReviews,onReviewCountChange,
   manualDiscount,manualDiscountMinor,onOpenManualDiscount,clubDiscountMinor,
-  hasProtectedItems,subtotalMinor,totalDiscountMinor,totalMinor,shiftOpen,
+  hasProtectedItems,subtotalMinor,totalDiscountMinor,roundingAdjustmentMinor,totalMinor,shiftOpen,
   onOpenShift,onHold,onCreateOrder,onPay,
 }:CurrentReceiptProps){
   return <aside className="receipt current-receipt">
@@ -52,6 +52,7 @@ export default function CurrentReceipt({
         </div>)}
     </div>
 
+    <div className="receipt-fixed">
     {upsell&&<div className="receipt-upsell">
       <div className="receipt-upsell-copy">
         <small>ПРЕДЛОЖИТЕ ПОКУПАТЕЛЮ</small>
@@ -67,13 +68,12 @@ export default function CurrentReceipt({
     <footer className="receipt-total current-receipt-footer">
       <div className="receipt-service-block">
       <div className="receipt-service-row receipt-customer">
-        <div><span>Покупатель</span><small>{customer?'Скидка клуба '+clubPercent+'%':'Клубная скидка и история покупок'}</small></div>
+        <div className="receipt-service-label"><span>Покупатель</span>{customer&&<button className="receipt-service-remove" onClick={onRemoveCustomer}>Убрать</button>}</div>
         <button className="receipt-service-action" onClick={onOpenCustomer}>{customer?.name||'Найти по телефону'}</button>
-        <strong>{customer?<button className="receipt-service-remove" onClick={onRemoveCustomer}>Убрать</button>:'—'}</strong>
+        <strong>{customer?`${clubPercent}% · − ${formatMoney(clubDiscountMinor)}`:'—'}</strong>
       </div>
-      {clubDiscountMinor>0&&<div className="subtotal"><span>Скидка клуба {clubPercent}%</span><strong>− {formatMoney(clubDiscountMinor)}</strong></div>}
       <div className={'receipt-service-row '+(!allowDiscounts?'disabled':'')}>
-        <div><span>Отзывы</span><small>{reviewUnitMinor>0?formatMoney(reviewUnitMinor)+' за отзыв':'Скидка не настроена'}</small></div>
+        <div className="receipt-service-label"><span>Отзывы</span></div>
         <div className="review-count">
           <button disabled={!allowDiscounts||reviewCount<=0} onClick={()=>onReviewCountChange(Math.max(0,reviewCount-1))}>−</button>
           <input aria-label="Количество отзывов" type="number" min="0" max={maxReviews} step="1" value={reviewCount} disabled={!allowDiscounts||reviewUnitMinor<=0} onChange={(event)=>onReviewCountChange(Math.max(0,Math.floor(Number(event.target.value)||0)))}/>
@@ -82,19 +82,21 @@ export default function CurrentReceipt({
         <strong>{reviewDiscountMinor?'− '+formatMoney(reviewDiscountMinor):'—'}</strong>
       </div>
       <div className="receipt-service-row">
-        <div><span>Доп. скидка{manualDiscount?.type==='percent'?' '+manualDiscount.value+'%':''}</span><small>Ограничена настройками точки</small></div>
+        <div className="receipt-service-label"><span>Доп. скидка{manualDiscount?.type==='percent'?' '+manualDiscount.value+'%':''}</span></div>
         <button className="receipt-service-action receipt-manual-discount" disabled={!allowDiscounts} onClick={onOpenManualDiscount}>{manualDiscount?'Изменить':'Скидка'}</button>
         <strong>{manualDiscountMinor?'− '+formatMoney(manualDiscountMinor):'—'}</strong>
       </div>
       {hasProtectedItems&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}
-      {totalDiscountMinor>0&&<>
+      {(totalDiscountMinor>0||roundingAdjustmentMinor>0)&&<>
         <div className="subtotal"><span>Без скидок</span><strong>{formatMoney(subtotalMinor)}</strong></div>
+        {roundingAdjustmentMinor>0&&<div className="subtotal"><span>Округление</span><strong>− {formatMoney(roundingAdjustmentMinor)}</strong></div>}
         <div className="subtotal"><span>Скидка составила</span><strong>− {formatMoney(totalDiscountMinor)}</strong></div>
       </>}
       </div>
       {!shiftOpen
         ? <PosButton className="receipt-open-shift" variant="primary" size="touch" onClick={onOpenShift}>Открыть смену</PosButton>
-        : <PosButton className="pos-v2-pay" variant="primary" size="touch" disabled={!lines.length} onClick={onPay}>К оплате · {formatMoney(totalMinor)}</PosButton>}
+        : <PosButton className="pos-v2-pay" variant="primary" size="touch" disabled={!lines.length||totalMinor<=0} onClick={onPay}>К оплате · {formatMoney(totalMinor)}</PosButton>}
     </footer>
+    </div>
   </aside>
 }

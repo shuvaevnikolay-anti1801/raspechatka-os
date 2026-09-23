@@ -6,12 +6,7 @@
 .settings-gate small,.settings-hub-header small{color:var(--pos-muted);font-size:var(--pos-type-label);font-weight:var(--pos-weight-medium)}
 .settings-gate h2{margin:0;font-size:var(--pos-type-modal)}
 .settings-gate p{margin:0;color:var(--pos-muted);font-size:var(--pos-type-body)}
-.settings-gate .pin-input{position:relative;width:100%;min-height:72px;margin:var(--pos-space-2) 0 0}
-.settings-gate .pin-input-control{position:absolute;inset:0;z-index:2;width:100%;height:100%;opacity:0;cursor:text;letter-spacing:normal;padding:0;border:0;background:transparent}
-.settings-gate .pin-input:focus-within{outline:0;box-shadow:var(--pos-focus)}
-.settings-gate .pin-input-slots{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--pos-space-2);width:100%;height:72px}
-.settings-gate .pin-input-slots span{display:grid;place-items:center;border:var(--pos-border-emphasis);background:var(--pos-surface);color:var(--pos-ink);font-size:var(--pos-type-kpi);line-height:1}
-.settings-gate .pin-input-slots span.filled{border-color:var(--pos-ink);background:var(--pos-brand)}
+.settings-gate .pin-input{margin:var(--pos-space-2) 0 0}
 .settings-gate .pin-entry-footer{display:grid;grid-template-columns:1fr 1fr;align-items:end;gap:var(--pos-space-3);width:100%}
 .settings-gate .pin-entry-footer-left{justify-self:start}
 .settings-gate .pin-entry-footer-right{justify-self:end}

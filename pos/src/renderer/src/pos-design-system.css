@@ -56,6 +56,13 @@
   --rp-shadow:var(--pos-shadow);
 }
 
+.pin-input{position:relative;width:100%;min-height:calc(var(--pos-control-touch) + var(--pos-space-6))}
+.pin-input-control{position:absolute;inset:0;z-index:2;width:100%;height:100%;opacity:0;cursor:text;letter-spacing:normal;padding:0;border:0;background:transparent}
+.pin-input:focus-within{outline:0;box-shadow:var(--pos-focus)}
+.pin-input-slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--pos-space-2);width:100%;height:calc(var(--pos-control-touch) + var(--pos-space-6))}
+.pin-input-slots span{display:grid;place-items:center;border:var(--pos-border-emphasis);background:var(--pos-surface);color:var(--pos-ink);font-size:var(--pos-type-kpi);line-height:1}
+.pin-input-slots span.filled{border-color:var(--pos-ink);background:var(--pos-brand)}
+
 .pos-icon{width:20px;height:20px;display:block;flex:0 0 auto;color:inherit}
 .pos-button{min-height:var(--pos-control);display:inline-flex;align-items:center;justify-content:center;gap:var(--pos-space-2);padding:0 var(--pos-space-4);border:var(--pos-border-emphasis);border-radius:var(--pos-radius);background:var(--pos-surface);color:var(--pos-graphite);font-size:var(--pos-type-body);font-weight:var(--pos-weight-medium);line-height:1.2}
 .pos-button:focus-visible,.pos-field :is(input,select,textarea):focus-visible{outline:0;box-shadow:var(--pos-focus)}
@@ -113,18 +120,17 @@
 .cashier-login-card>small{color:var(--pos-muted);font-size:var(--pos-type-meta);font-weight:var(--pos-weight-strong)}
 .cashier-login-card h1{margin:var(--pos-space-2) 0 var(--pos-space-3);font-size:var(--pos-type-page)}
 .cashier-login-card .cashier-list{gap:var(--pos-space-2);margin:var(--pos-space-6) 0}
-.cashier-login-card .cashier-list button{min-height:var(--pos-control-touch);padding:var(--pos-space-4);border-color:var(--pos-border);background:var(--pos-surface);font-size:var(--pos-type-body)}
-.cashier-login-card .cashier-list button.active{border-color:var(--pos-ink);background:var(--pos-brand)}
+.cashier-login-card .cashier-employee-card{min-height:var(--pos-control-touch);padding:var(--pos-space-4);border:1px solid var(--pos-brand);background:var(--pos-surface);color:var(--pos-ink);font-size:var(--pos-type-body)}
+.cashier-login-card .cashier-employee-card:hover:not(:disabled){border-color:var(--pos-ink)}
+.cashier-login-card .cashier-employee-card:focus-visible{outline:0;box-shadow:var(--pos-focus)}
+.cashier-login-card .cashier-employee-card.active{border-color:var(--pos-ink);background:var(--pos-brand);font-weight:var(--pos-weight-medium)}
+.cashier-login-card .cashier-employee-card:disabled{border-color:var(--pos-border);background:var(--pos-canvas);color:var(--pos-muted);opacity:.6;cursor:default}
 .cashier-login-card form.cashier-pin-form{margin-top:var(--pos-space-5)}
 .cashier-login-card .pin-entry-layout{gap:var(--pos-space-5)}
 .cashier-login-card .cashier-pin-fields{gap:var(--pos-space-4)}
 .cashier-login-card label{gap:var(--pos-space-2);font-size:var(--pos-type-label)}
-.cashier-login-card .pin-input:focus-within{outline:0;box-shadow:var(--pos-focus)}
-.cashier-login-card .pin-input-slots{gap:var(--pos-space-2)}
-.cashier-login-card .pin-input-slots span{border-color:var(--pos-border-strong);background:var(--pos-surface);color:var(--pos-ink)}
-.cashier-login-card .pin-input-slots span.filled{border-color:var(--pos-ink);background:var(--pos-brand)}
 .cashier-login-card .pin-entry-footer{gap:var(--pos-space-4)}
-.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{padding-inline:0;color:var(--pos-graphite);font-size:var(--pos-type-label)}
+.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:var(--pos-control-touch);padding-inline:var(--pos-space-4);color:var(--pos-graphite);font-size:var(--pos-type-label)}
 .cashier-login-card .cashier-switch-cashier{font-size:var(--pos-type-body)}
 .cashier-login-card .cashier-switch-blocked{color:var(--pos-muted);font-size:var(--pos-type-body)}
 .cashier-login-notice{padding:var(--pos-space-3);font-size:var(--pos-type-label)}
@@ -147,10 +153,15 @@
 @media (max-height:760px){
   .app-shell{grid-template-rows:56px minmax(0,1fr)}
   .pos-header-nav>.pos-button{min-height:56px}
+  .pin-input{min-height:calc(var(--pos-control-touch) + var(--pos-space-3))}
+  .pin-input-slots{height:calc(var(--pos-control-touch) + var(--pos-space-3))}
   .cashier-login-screen{padding:var(--pos-space-3)}
   .cashier-login-card{min-height:calc(100vh - 24px);padding:var(--pos-space-5)}
   .cashier-login-card .cashier-list{margin:var(--pos-space-3) 0}
   .cashier-login-card form.cashier-pin-form{margin-top:var(--pos-space-3)}
   .cashier-login-card .pin-entry-layout,.cashier-login-card .cashier-pin-fields{gap:var(--pos-space-3)}
-  .cashier-login-card .pin-input,.cashier-login-card .pin-input-slots{min-height:60px;height:60px}
 }
+
+.pos-header-nav .cash-warning,.shift-actions .cash-warning{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pos-danger);color:var(--pos-surface);font-size:var(--pos-type-label);font-weight:var(--pos-weight-strong);line-height:1}
+.pos-header-nav>.pos-button.active .cash-warning{background:var(--pos-danger);color:var(--pos-surface)}
+.shift-actions .cash-count-pending{border-color:var(--pos-danger);color:var(--pos-danger)}

@@ -135,8 +135,9 @@ const api: ExtendedPosApi = {
   addCashOperation: (
     type: CashOperationType,
     amountMinor: number,
-    reason: string
-  ) => ipcRenderer.invoke("pos:add-cash-operation", type, amountMinor, reason),
+    reason: string,
+    cleaningPayoutId?: string
+  ) => ipcRenderer.invoke("pos:add-cash-operation", type, amountMinor, reason, cleaningPayoutId),
   getWorkplaceData: () => ipcRenderer.invoke("pos:get-workplace-data"),
   reportStockWriteOff: (request: StockWriteOffRequest) =>
     ipcRenderer.invoke("pos:report-stock-write-off", request),
@@ -145,6 +146,7 @@ const api: ExtendedPosApi = {
   createStockReceipt: (request: StockReceiptRequest) =>
     ipcRenderer.invoke("pos:create-stock-receipt", request),
   recordCleanerVisit: () => ipcRenderer.invoke("pos:record-cleaner-visit"),
+  prepareCleanerPayout: (cycleId: string) => ipcRenderer.invoke("pos:prepare-cleaner-payout", cycleId),
   payCleaner: (amountMinor: number) =>
     ipcRenderer.invoke("pos:pay-cleaner", amountMinor),
   saveCashCount: (countType: CashCount["countType"], lines: CashCountLine[]) =>

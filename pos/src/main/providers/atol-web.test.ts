@@ -44,7 +44,7 @@ describe('allocateFiscalAmounts',()=>{
       {productId:'b',name:'B',quantity:1,unitPriceMinor:100,discountPercent:0},
       {productId:'c',name:'C',quantity:1,unitPriceMinor:100,discountPercent:0}
     ],100)
-    expect(amounts).toEqual([33,33,34])
+    expect(amounts).toEqual([33,34,33])
     expect(amounts.reduce((sum,value)=>sum+value,0)).toBe(100)
   })
 })

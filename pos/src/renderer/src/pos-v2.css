@@ -28,10 +28,6 @@
 .cashier-login-card .pin-entry-main{display:grid;align-content:center;justify-items:center;min-height:0}
 .cashier-login-card .cashier-pin-fields{display:grid;width:100%;justify-items:stretch}
 .cashier-login-card label{display:grid}
-.cashier-login-card .pin-input{position:relative;width:100%;min-height:72px}
-.cashier-login-card .pin-input-control{position:absolute;inset:0;width:100%;height:100%;z-index:2;opacity:0;cursor:text;padding:0;border:0;background:transparent}
-.cashier-login-card .pin-input-slots{display:grid;grid-template-columns:repeat(4,1fr);width:100%;height:72px}
-.cashier-login-card .pin-input-slots span{display:grid;place-items:center;font-size:36px;line-height:1}
 .cashier-login-card .pin-entry-footer{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:end;width:100%}
 .cashier-login-card .pin-entry-footer-left{justify-self:start}
 .cashier-login-card .pin-entry-footer-right{justify-self:end;text-align:right}

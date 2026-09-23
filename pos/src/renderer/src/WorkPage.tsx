@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type {
   DeliveryNotice, OperationalCatalogItem, Product, StockReceiptRequest, StockWriteOffRequest,
-  SupplyRequestInput, WorkplaceData, WorkScheduleEntry,
+  SupplyRequestInput, UpcomingShift, WorkplaceData, WorkScheduleEntry, WorkScheduleMonth,
 } from '../../shared/contracts'
 import { formatMoney } from './money'
 import { formatPersonShortName } from './person-name'
@@ -38,80 +38,120 @@ export const scheduleCellPresentation=(entries:Array<Pick<WorkScheduleEntry,'shi
   return {label:labels.join(' · ')||'—',className:entries.length?'schedule-mark schedule-shift-other':''}
 }
 
+export const upcomingShiftLabel=(entries:Array<Pick<WorkScheduleEntry,'shiftCode'|'shiftName'>>)=>{
+  const codes=new Set(entries.map((entry)=>entry.shiftCode?.trim().toUpperCase()).filter(Boolean))
+  if(codes.has('U')&&codes.has('V'))return 'Утро / вечер'
+  if(codes.size===1&&codes.has('U'))return 'Утро'
+  if(codes.size===1&&codes.has('V'))return 'Вечер'
+  const labels=[...new Set(entries.map((entry)=>entry.shiftName).filter(Boolean))]
+  return labels.join(' / ')||'Смена'
+}
+
+export const groupUpcomingShifts=(entries:UpcomingShift[])=>{
+  const grouped=new Map<string,UpcomingShift[]>()
+  entries.forEach((entry)=>grouped.set(entry.date,[...(grouped.get(entry.date)||[]),entry]))
+  return [...grouped.entries()].map(([date,dayEntries])=>({date,entries:dayEntries}))
+}
+
+const monthHeading=(month:string,fallback:string)=>{
+  if(!/^\d{4}-\d{2}$/.test(month))return fallback
+  return new Date(month+'-01T00:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'})
+}
+
+function ScheduleMonthCard({scheduleMonth,fallback}:{scheduleMonth:WorkScheduleMonth;fallback:string}){
+  const days=Array.from({length:scheduleMonth.days||0},(_,index)=>index+1)
+  const label=monthHeading(scheduleMonth.month,fallback)
+  const gridColumns='clamp(176px,15vw,228px) repeat('+days.length+',minmax(clamp(40px,2.45vw,52px),1fr)) minmax(68px,76px)'
+  const entriesFor=(employeeId:string,day:number)=>scheduleMonth.entries.filter((entry)=>entry.employeeId===employeeId&&Number(entry.date.slice(-2))===day)
+
+  return <section className="work-card schedule-month">
+    <header>
+      <div><h3>{label}</h3><p>График точки</p></div>
+      <small>Только просмотр</small>
+    </header>
+    {days.length>0&&scheduleMonth.employees.length
+      ?<div className="schedule-grid-scroll">
+        <div className="schedule-grid">
+          <div className="schedule-grid-row schedule-grid-header" style={{gridTemplateColumns:gridColumns}}>
+            <strong>Сотрудник</strong>
+            {days.map((day)=>{
+              const date=new Date(scheduleMonth.month+'-'+String(day).padStart(2,'0')+'T00:00:00')
+              return <span key={day}>{date.toLocaleDateString('ru-RU',{weekday:'short'}).replace('.','')}<b>{day}</b></span>
+            })}
+            <strong>Часы</strong>
+          </div>
+          {scheduleMonth.employees.map((employee)=>{
+            const entries=days.map((day)=>entriesFor(employee.id,day))
+            const hours=entries.flat().reduce((sum,entry)=>sum+entry.plannedHours,0)
+            return <div className="schedule-grid-row" key={employee.id} style={{gridTemplateColumns:gridColumns}}>
+              <strong title={employee.name}>{formatPersonShortName(employee.name)}</strong>
+              {entries.map((dayEntries,dayIndex)=>{
+                const presentation=scheduleCellPresentation(dayEntries)
+                const title=dayEntries.map((entry)=>entry.shiftName+' · '+entry.startTime.slice(0,5)+'–'+entry.endTime.slice(0,5)).join(' | ')
+                return <span key={dayIndex} className={presentation.className} title={dayEntries.length?title:undefined}>{presentation.label}</span>
+              })}
+              <b>{hours} ч.</b>
+            </div>
+          })}
+        </div>
+      </div>
+      :<p>На {label} опубликованного графика пока нет.</p>}
+  </section>
+}
+
 type WorkPageProps={
   products:Product[]
   data:WorkplaceData
   shiftOpen:boolean
   onChanged:()=>Promise<void>
   notify:(text:string)=>void
+  online?:boolean
+  initialTab?:'schedule'|'stock'|'cleaner'
+  onRequestCleanerPayout?:(cycleId:string)=>Promise<void>
 }
 
-export default function WorkPage({products:_products,data,shiftOpen,onChanged,notify}:WorkPageProps){
-  const [tab,setTab]=useState<'schedule'|'stock'|'cleaner'>('schedule')
-  const scheduleMonth=data.scheduleMonth
-  const days=Array.from({length:scheduleMonth.days||0},(_,index)=>index+1)
-  const monthLabel=scheduleMonth.month
-    ?new Date(scheduleMonth.month+'-01T00:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'})
-    :'Текущий месяц'
-  const gridColumns='clamp(176px,15vw,228px) repeat('+days.length+',minmax(clamp(40px,2.45vw,52px),1fr)) minmax(68px,76px)'
-  const entriesFor=(employeeId:string,day:number)=>scheduleMonth.entries.filter((entry)=>entry.employeeId===employeeId&&Number(entry.date.slice(-2))===day)
+export const cleanerNeedsPayout=(state:WorkplaceData['cleaner'])=>state.payoutState==='due'||state.payoutState==='withdrawal_pending'
+
+export default function WorkPage({products:_products,data,shiftOpen,onChanged,notify,online=true,initialTab='schedule',onRequestCleanerPayout}:WorkPageProps){
+  const [tab,setTab]=useState<'schedule'|'stock'|'cleaner'>(initialTab)
+  const [visitBusy,setVisitBusy]=useState(false)
+  const [payoutBusy,setPayoutBusy]=useState(false)
+  const cleaner=data.cleaner
+  const everyN=cleaner.everyNVisits??4
+  const amount=cleaner.paymentDueMinor||cleaner.payoutAmountMinor||200000
+  const needsPayout=cleanerNeedsPayout(cleaner)
+  const due=needsPayout||cleaner.visitsSincePayment>=everyN
+  const upcomingDays=groupUpcomingShifts(data.myUpcomingShifts)
+  const currentScheduleMonth=data.scheduleCurrentMonth||data.scheduleMonth
+  const nextScheduleMonth=data.scheduleNextMonth
 
   return <main className="page">
     <div className="page-heading"><div><h1>Рабочее место</h1></div></div>
     <div className="work-tabs" role="tablist" aria-label="Раздел рабочего места">
       <PosButton role="tab" aria-selected={tab==='schedule'} variant={tab==='schedule'?'primary':'quiet'} size="compact" className={tab==='schedule'?'work-tab active':'work-tab'} onClick={()=>setTab('schedule')}>График работы</PosButton>
       <PosButton role="tab" aria-selected={tab==='stock'} variant={tab==='stock'?'primary':'quiet'} size="compact" className={tab==='stock'?'work-tab active':'work-tab'} onClick={()=>setTab('stock')}>Товары и склад</PosButton>
-      <PosButton role="tab" aria-selected={tab==='cleaner'} variant={tab==='cleaner'?'primary':'quiet'} size="compact" className={tab==='cleaner'?'work-tab active':'work-tab'} onClick={()=>setTab('cleaner')}>Уборка{data.cleaner.paymentDueMinor>0&&<b>!</b>}</PosButton>
+      <PosButton role="tab" aria-selected={tab==='cleaner'} variant={tab==='cleaner'?'primary':'quiet'} size="compact" className={tab==='cleaner'?'work-tab active':'work-tab'} onClick={()=>setTab('cleaner')}>Уборка{needsPayout&&<b aria-label="Ожидается выплата за уборку">!</b>}</PosButton>
     </div>
 
     {tab==='schedule'&&<div className="work-schedule">
-      <section className="work-card schedule-month">
-        <header>
-          <div><h3>График точки</h3><p>{monthLabel}</p></div>
-          <small>Только просмотр</small>
-        </header>
-        {days.length>0&&scheduleMonth.employees.length
-          ?<div className="schedule-grid-scroll">
-            <div className="schedule-grid">
-              <div className="schedule-grid-row schedule-grid-header" style={{gridTemplateColumns:gridColumns}}>
-                <strong>Сотрудник</strong>
-                {days.map((day)=>{
-                  const date=new Date(scheduleMonth.month+'-'+String(day).padStart(2,'0')+'T00:00:00')
-                  return <span key={day}>{date.toLocaleDateString('ru-RU',{weekday:'short'}).replace('.','')}<b>{day}</b></span>
-                })}
-                <strong>Часы</strong>
-              </div>
-              {scheduleMonth.employees.map((employee)=>{
-                const entries=days.map((day)=>entriesFor(employee.id,day))
-                const hours=entries.flat().reduce((sum,entry)=>sum+entry.plannedHours,0)
-                return <div className="schedule-grid-row" key={employee.id} style={{gridTemplateColumns:gridColumns}}>
-                  <strong title={employee.name}>{formatPersonShortName(employee.name)}</strong>
-                  {entries.map((dayEntries,dayIndex)=>{
-                    const presentation=scheduleCellPresentation(dayEntries)
-                    const title=dayEntries.map((entry)=>entry.shiftName+' · '+entry.startTime.slice(0,5)+'–'+entry.endTime.slice(0,5)).join(' | ')
-                    return <span key={dayIndex} className={presentation.className} title={dayEntries.length?title:undefined}>{presentation.label}</span>
-                  })}
-                  <b>{hours} ч.</b>
-                </div>
-              })}
-            </div>
-          </div>
-          :<p>Опубликованный график точки пока не загружен.</p>}
-      </section>
       <section className="work-card schedule-upcoming">
         <h3>Мои ближайшие 5 смен</h3>
-        {data.myUpcomingShifts.length
-          ?data.myUpcomingShifts.map((entry)=>{
-            const presentation=scheduleCellPresentation([entry])
-            return <article className="upcoming-shift" key={entry.id}>
-              <time dateTime={entry.date}>{new Date(entry.date+'T00:00:00').toLocaleDateString('ru-RU',{weekday:'short',day:'numeric',month:'short'})}</time>
-              <span className={presentation.className}>{presentation.label}</span>
-              <strong>{entry.startTime.slice(0,5)}–{entry.endTime.slice(0,5)}</strong>
-              <small>{entry.plannedHours} ч.</small>
+        {upcomingDays.length
+          ?upcomingDays.map(({date,entries})=>{
+            const presentation=scheduleCellPresentation(entries)
+            const value=new Date(date+'T00:00:00')
+            return <article className="upcoming-shift" key={date}>
+              <time dateTime={date}>
+                <span>{value.toLocaleDateString('ru-RU',{weekday:'long'})}</span>
+                <b>{value.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</b>
+              </time>
+              <span className={presentation.className}>{upcomingShiftLabel(entries)}</span>
             </article>
           })
-          :<p>Ближайших опубликованных смен нет.</p>}
+          :<p>Ближайших опубликованных смен пока нет.</p>}
       </section>
+      <ScheduleMonthCard scheduleMonth={currentScheduleMonth} fallback="Текущий месяц"/>
+      <ScheduleMonthCard scheduleMonth={nextScheduleMonth} fallback="Следующий месяц"/>
     </div>}
 
     {tab==='stock'&&<WarehouseWorkspace data={data} onChanged={onChanged} notify={notify}/>}
@@ -119,22 +159,27 @@ export default function WorkPage({products:_products,data,shiftOpen,onChanged,no
     {tab==='cleaner'&&<div className="work-grid">
       <section className="work-card hero-card">
         <small>УБОРОК ДО ВЫПЛАТЫ</small>
-        <h2>{Math.min(data.cleaner.visitsSincePayment,4)} из 4</h2>
-        <p>Каждое посещение отмечается один раз.</p>
-        <PosButton variant="primary" size="touch" onClick={async()=>{
-          try{
-            const r=await window.raspechatkaPos.recordCleanerVisit()
-            await onChanged()
-            notify(r.paymentDueMinor?'Четыре уборки отмечены — можно выплатить 2 000 ₽':'Посещение уборщицы отмечено')
-          }catch(e){notify(String(e))}
-        }}>Отметить сегодняшнюю уборку</PosButton>
-        {data.cleaner.paymentDueMinor>0&&<PosButton className="pay-cleaner" variant="secondary" size="touch" disabled={!shiftOpen} onClick={async()=>{
-          try{
-            await window.raspechatkaPos.payCleaner(data.cleaner.paymentDueMinor)
-            await onChanged()
-            notify('Выплата уборщице проведена как изъятие из кассы')
-          }catch(e){notify(e instanceof Error?e.message:String(e))}
-        }}>Выплатить {formatMoney(data.cleaner.paymentDueMinor)} из кассы</PosButton>}
+        <h2>{Math.min(cleaner.visitsSincePayment,everyN)} из {everyN}</h2>
+        <p>Выплата за цикл: {formatMoney(amount)}. Каждое посещение отмечается один раз за день.</p>
+        {due?<p role="status">{cleaner.payoutState==='withdrawal_pending'?'Изъятие подготовлено. Выплата ожидает подтверждённого изъятия.':'Пора выплатить за уборку. Новое посещение станет доступно после изъятия.'}</p>
+          :<PosButton variant="primary" size="touch" disabled={visitBusy} onClick={async()=>{
+            if(visitBusy)return
+            setVisitBusy(true)
+            try{
+              const r=await window.raspechatkaPos.recordCleanerVisit()
+              await onChanged()
+              notify(r.paymentDueMinor?'Цикл уборки завершён. Требуется изъятие '+formatMoney(r.paymentDueMinor)+(online?'':'. Ожидает отправки в ОС'):'Посещение сохранено на кассе'+(online?'':'. Ожидает отправки в ОС'))
+            }catch(e){notify(e instanceof Error?e.message:String(e))}
+            finally{setVisitBusy(false)}
+          }}>Отметить сегодняшнюю уборку</PosButton>}
+        {due&&<PosButton className="pay-cleaner" variant="secondary" size="touch" disabled={!shiftOpen||payoutBusy||!cleaner.cycleId||!onRequestCleanerPayout} onClick={async()=>{
+          if(payoutBusy||!cleaner.cycleId||!onRequestCleanerPayout)return
+          setPayoutBusy(true)
+          try{await onRequestCleanerPayout(cleaner.cycleId)}catch(e){notify(e instanceof Error?e.message:String(e))}
+          finally{setPayoutBusy(false)}
+        }}>Выплатить {formatMoney(amount)}</PosButton>}
+        {due&&!shiftOpen&&<p>Для изъятия откройте смену.</p>}
+        {!online&&<p role="status">Локальный режим: данные уборки ожидают синхронизации с ОС.</p>}
       </section>
       <section className="work-card">
         <h3>Последние посещения</h3>
@@ -158,7 +203,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
   return <div className="warehouse-workspace">
     <div className="warehouse-actions" data-workplace-block="actions">
       <PosButton variant="danger" size="touch" className="warehouse-action warehouse-action-writeoff" onClick={()=>setWriteOff(true)}>Списать брак</PosButton>
-      <PosButton variant="primary" size="touch" className="warehouse-action warehouse-action-need" onClick={()=>setNeed(true)}>Потребность точки</PosButton>
+      <PosButton variant="primary" size="touch" className="warehouse-action warehouse-action-need" onClick={()=>setNeed(true)}>Заказать</PosButton>
     </div>
 
     <section className="work-card delivery-list warehouse-deliveries" data-workplace-block="deliveries">
@@ -172,13 +217,13 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
 
     <section className="work-card stock-list warehouse-stock" data-workplace-block="stock">
       <PosField label="Поиск" className="warehouse-search">
-        <input value={stockQuery} onChange={(e)=>setStockQuery(e.target.value)} placeholder="Название, ID или код"/>
+        <input value={stockQuery} onChange={(e)=>setStockQuery(e.target.value)} placeholder="Название товара"/>
       </PosField>
       <div className="stock-table-scroll">
         <header><span>Товар</span><span>Остаток</span><span>Где лежит</span></header>
         {stockRows.length
           ?stockRows.map((item)=><div key={item.id}>
-            <div><b title={item.name}>{item.name}</b><small>{item.itemCode||item.id}</small></div>
+            <div><b title={item.name}>{item.name}</b></div>
             <strong className={(item.stock??0)<=0?'low':''}>{item.stock??'—'} {item.uom}</strong>
             <span>{item.storageAddress||'Адрес ещё не указан'}</span>
           </div>)
@@ -200,7 +245,7 @@ export function WarehouseWorkspace({data,onChanged,notify}:{data:WorkplaceData;o
         await window.raspechatkaPos.createSupplyRequest(request)
         setNeed(false)
         await onChanged()
-        notify('Потребность точки сохранена на кассе и будет передана в OS при синхронизации')
+        notify('Заказ для точки сохранён на кассе и будет передан в OS при синхронизации')
       }catch(e){notify(e instanceof Error?e.message:String(e))}
     }}/>}
 
@@ -232,7 +277,6 @@ function DeliveryCard({order,onReceive}:{order:DeliveryNotice;onReceive:()=>void
       <div>
         <small>ПОСТАВЩИК</small>
         <strong title={order.supplier}>{order.supplier}</strong>
-        <b>Заказ № {order.id}</b>
       </div>
       <div className="delivery-status">
         <span>{order.expectedDate?new Date(order.expectedDate+'T00:00:00').toLocaleDateString('ru-RU'):'Дата не назначена'}</span>
@@ -244,7 +288,7 @@ function DeliveryCard({order,onReceive}:{order:DeliveryNotice;onReceive:()=>void
     <div className="delivery-lines">
       <strong>Осталось принять: {remaining.length} поз.</strong>
       {remaining.map((item)=><div key={item.purchaseOrderItemId}>
-        <span><b title={item.itemName}>{item.itemName}</b><small>{item.itemCode||item.itemId}</small></span>
+        <span><b title={item.itemName}>{item.itemName}</b></span>
         <b>{item.remainingQuantity} {item.uom}</b>
       </div>)}
     </div>
@@ -253,10 +297,13 @@ function DeliveryCard({order,onReceive}:{order:DeliveryNotice;onReceive:()=>void
 }
 
 export function WriteOffModal({products,onClose,onComplete}:{products:OperationalCatalogItem[];onClose:()=>void;onComplete:(request:StockWriteOffRequest)=>Promise<void>}){
-  const [productId,setProductId]=useState(products[0]?.id||'')
+  const [productId,setProductId]=useState('')
+  const [productQuery,setProductQuery]=useState('')
   const [quantity,setQuantity]=useState('1')
   const [reason,setReason]=useState<StockWriteOffRequest['reason']>('Брак')
   const [comment,setComment]=useState('')
+  const productOptions=products.filter((item)=>warehouseItemMatches(item,productQuery)).slice(0,8)
+  const selectProduct=(item:OperationalCatalogItem)=>{setProductId(item.id);setProductQuery(item.name)}
 
   return <PosModal
     open
@@ -266,27 +313,45 @@ export function WriteOffModal({products,onClose,onComplete}:{products:Operationa
     className="warehouse-modal warehouse-writeoff-modal"
     footer={<>
       <PosButton variant="secondary" onClick={onClose}>Отмена</PosButton>
-      <PosButton variant="danger" size="touch" className="warehouse-confirm" disabled={!productId||Number(quantity)<=0} onClick={()=>onComplete({productId,quantity:Number(quantity),reason,comment})}>Подтвердить списание</PosButton>
+      <PosButton variant="danger" size="touch" className="warehouse-confirm" disabled={!productId||Number(quantity)<=0||!comment.trim()} onClick={()=>onComplete({productId,quantity:Number(quantity),reason,comment:comment.trim()})}>Подтвердить списание</PosButton>
     </>}
   >
     <p className="warehouse-modal-intro">Списание изменит фактический остаток товара.</p>
     <div className="warehouse-warning" role="note">Проверьте товар, количество и причину перед подтверждением.</div>
     <div className="warehouse-form">
-      <PosField label="Товар" className="warehouse-field-wide">
-        <select value={productId} onChange={(e)=>setProductId(e.target.value)}>
-          {products.map((x)=><option key={x.id} value={x.id}>{x.name} · остаток {x.stock??0}</option>)}
-        </select>
-      </PosField>
+      <div className="warehouse-field-wide warehouse-product-picker">
+        <PosField label="Товар" helper={productId?'Товар выбран':'Выберите товар из списка'}>
+          <input
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={productOptions.length>0}
+            value={productQuery}
+            onChange={(e)=>{setProductQuery(e.target.value);setProductId('')}}
+            placeholder="Начните вводить название товара"
+          />
+        </PosField>
+        {productOptions.length>0&&<div className="warehouse-product-options" role="listbox" aria-label="Товары">
+          {productOptions.map((item)=><PosButton
+            key={item.id}
+            variant="quiet"
+            size="control"
+            className="warehouse-product-option"
+            role="option"
+            aria-selected={item.id===productId}
+            onClick={()=>selectProduct(item)}
+          ><span>{item.name}</span><small>Остаток {item.stock??0} {item.uom}</small></PosButton>)}
+        </div>}
+      </div>
       <PosField label="Количество">
         <input type="number" min="0.001" step="0.001" value={quantity} onChange={(e)=>setQuantity(e.target.value)}/>
       </PosField>
       <PosField label="Причина">
         <select value={reason} onChange={(e)=>setReason(e.target.value as StockWriteOffRequest['reason'])}>
-          <option>Брак</option><option>Внутренние нужды</option><option>Обучение</option><option>Другое</option>
+          <option>Брак</option><option>Внутренние нужды</option><option>Обучение</option>
         </select>
       </PosField>
-      <PosField label="Комментарий" helper="необязательно" size="textarea" className="warehouse-field-wide">
-        <textarea value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Что произошло — коротко"/>
+      <PosField label="Комментарий" helper="обязательно" size="textarea" className="warehouse-field-wide">
+        <textarea required value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Что произошло — коротко"/>
       </PosField>
     </div>
   </PosModal>
@@ -295,37 +360,33 @@ export function WriteOffModal({products,onClose,onComplete}:{products:Operationa
 export function SupplyRequestModal({products,onClose,onComplete}:{products:OperationalCatalogItem[];onClose:()=>void;onComplete:(request:SupplyRequestInput)=>Promise<void>}){
   const [productId,setProductId]=useState('')
   const [itemName,setItemName]=useState('')
-  const [quantity,setQuantity]=useState('1')
   const [comment,setComment]=useState('')
   const select=(id:string)=>{setProductId(id);setItemName(products.find((x)=>x.id===id)?.name||'')}
 
   return <PosModal
     open
-    title="Потребность точки"
+    title="Заказать"
     onClose={onClose}
     layout="form"
     className="warehouse-modal warehouse-supply-modal"
     footer={<>
       <PosButton variant="secondary" onClick={onClose}>Отмена</PosButton>
-      <PosButton variant="primary" size="touch" className="warehouse-confirm" disabled={!itemName.trim()||Number(quantity)<=0} onClick={()=>onComplete({productId:productId||undefined,itemName:itemName.trim(),quantity:Number(quantity),comment})}>Потребность точки</PosButton>
+      <PosButton variant="primary" size="touch" className="warehouse-confirm" disabled={!itemName.trim()||!comment.trim()} onClick={()=>onComplete({productId:productId||undefined,itemName:itemName.trim(),comment:comment.trim()})}>Заказать</PosButton>
     </>}
   >
-    <p className="warehouse-modal-intro">Укажите, что и в каком количестве требуется заказать.</p>
+    <p className="warehouse-modal-intro">Укажите, что требуется заказать для точки.</p>
     <div className="warehouse-form">
       <PosField label="Позиция из каталога" className="warehouse-field-wide">
         <select value={productId} onChange={(e)=>select(e.target.value)}>
           <option value="">Другая позиция</option>
-          {products.map((x)=><option key={x.id} value={x.id}>{x.name} · {x.itemCode||x.id}</option>)}
+          {products.map((x)=><option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </PosField>
       <PosField label="Наименование или описание" className="warehouse-field-wide">
-        <input value={itemName} onChange={(e)=>setItemName(e.target.value)} placeholder="Например: бумага А4"/>
+        <input value={itemName} onChange={(e)=>{setItemName(e.target.value);setProductId('')}} placeholder="Например: бумага А4"/>
       </PosField>
-      <PosField label="Количество">
-        <input type="number" min="0.001" step="0.001" value={quantity} onChange={(e)=>setQuantity(e.target.value)}/>
-      </PosField>
-      <PosField label="Комментарий" helper="необязательно" size="textarea" className="warehouse-field-wide">
-        <textarea value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Срочность или уточнение"/>
+      <PosField label="Комментарий" helper="обязательно" size="textarea" className="warehouse-field-wide">
+        <textarea required value={comment} onChange={(e)=>setComment(e.target.value)} placeholder="Срочность или уточнение"/>
       </PosField>
     </div>
   </PosModal>

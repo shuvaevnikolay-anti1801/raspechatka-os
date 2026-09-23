@@ -218,3 +218,6 @@ h1,h2,h3,p { margin:0; }
 .order-modal-compact-fields{display:grid;grid-template-columns:1fr 1fr;gap:var(--pos-space-3)}
 @media (min-width:1100px) and (max-width:1279px){.order-modal-form{gap:var(--pos-space-3)}}
 @media (max-height:760px){.order-modal-form{gap:var(--pos-space-2)}.order-modal-form .pos-field textarea{min-height:80px}}
+
+.shift-page .shift-card{justify-content:flex-start}
+.shift-cashier-action{display:flex;margin-top:var(--pos-space-4)}
