@@ -14,12 +14,39 @@ const emptySummary=():ShiftSummary=>({
   depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0,paymentBreakdown:[]
 })
 
+const scheduleMonthValue=(date:Date):string=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`
+const adjacentScheduleMonth=(month:string,offset:number):string=>{
+  const match=/^(\d{4})-(\d{2})$/.exec(month)
+  if(!match)return scheduleMonthValue(new Date())
+  const index=Number(match[1])*12+Number(match[2])-1+offset
+  const year=Math.floor(index/12)
+  const monthNumber=index-year*12+1
+  return `${year}-${String(monthNumber).padStart(2,'0')}`
+}
+const emptyScheduleMonth=(month:string):WorkScheduleMonth=>{
+  const match=/^(\d{4})-(\d{2})$/.exec(month)
+  const days=match?new Date(Number(match[1]),Number(match[2]),0).getDate():0
+  return {month,days,employees:[],entries:[]}
+}
+const normalizeScheduleMonth=(value:Partial<WorkScheduleMonth>|null|undefined,fallback:WorkScheduleMonth):WorkScheduleMonth=>{
+  const month=value||{}
+  return {
+    ...fallback,
+    ...month,
+    employees:Array.isArray(month.employees)?month.employees:[],
+    entries:Array.isArray(month.entries)?month.entries:[],
+  }
+}
+
 export const emptyWorkplaceData=():WorkplaceData=>{
-  const now=new Date()
-  const month=now.toISOString().slice(0,7)
+  const month=scheduleMonthValue(new Date())
+  const current=emptyScheduleMonth(month)
+  const next=emptyScheduleMonth(adjacentScheduleMonth(month,1))
   return {
     schedule:[],
-    scheduleMonth:{month,days:new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),employees:[],entries:[]},
+    scheduleMonth:current,
+    scheduleCurrentMonth:current,
+    scheduleNextMonth:next,
     myUpcomingShifts:[],
     operationalCatalog:[],
     deliveries:[],
@@ -31,17 +58,21 @@ export const emptyWorkplaceData=():WorkplaceData=>{
 export const normalizeWorkplaceData=(value:Partial<WorkplaceData>|null|undefined):WorkplaceData=>{
   const defaults=emptyWorkplaceData()
   const incoming=value||{}
-  const month:Partial<WorkScheduleMonth>=incoming.scheduleMonth||{}
+  const current=normalizeScheduleMonth(
+    incoming.scheduleCurrentMonth||incoming.scheduleMonth,
+    defaults.scheduleCurrentMonth,
+  )
+  const next=normalizeScheduleMonth(
+    incoming.scheduleNextMonth,
+    emptyScheduleMonth(adjacentScheduleMonth(current.month,1)),
+  )
   return {
     ...defaults,
     ...incoming,
     schedule:Array.isArray(incoming.schedule)?incoming.schedule:[],
-    scheduleMonth:{
-      ...defaults.scheduleMonth,
-      ...month,
-      employees:Array.isArray(month.employees)?month.employees:[],
-      entries:Array.isArray(month.entries)?month.entries:[],
-    },
+    scheduleMonth:current,
+    scheduleCurrentMonth:current,
+    scheduleNextMonth:next,
     myUpcomingShifts:Array.isArray(incoming.myUpcomingShifts)?incoming.myUpcomingShifts:[],
     operationalCatalog:Array.isArray(incoming.operationalCatalog)?incoming.operationalCatalog:[],
     deliveries:Array.isArray(incoming.deliveries)?incoming.deliveries.map((delivery)=>({
@@ -787,7 +818,7 @@ export class PosDatabase {
     if(!raw)return emptyWorkplaceData()
     try{return normalizeWorkplaceData(JSON.parse(raw) as Partial<WorkplaceData>)}catch{return emptyWorkplaceData()}
   }
-  setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(normalizeWorkplaceData(value)))}
+  setWorkplaceData(value:Partial<WorkplaceData>):void{this.setState('workplace_data',JSON.stringify(normalizeWorkplaceData(value)))}
   clearConfirmedPointData():void {
     this.db.exec('BEGIN')
     try {
@@ -808,12 +839,15 @@ export class PosDatabase {
     if(!product)throw new Error('Товар не найден в оперативном каталоге')
     if(!product.trackInventory||!['Product','Variant'].includes(product.itemType))throw new Error('Для этой позиции складское списание недоступно')
     if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
+    if(!['Брак','Внутренние нужды','Обучение'].includes(String(request.reason||'')))throw new Error('Недопустимая причина списания')
+    const comment=String(request.comment||'').trim()
+    if(!comment)throw new Error('Комментарий обязателен')
     this.queue('stock.write_off.requested',{
       cashierId,
       productId:request.productId,
       quantity:request.quantity,
       reason:request.reason,
-      comment:request.comment,
+      comment,
     },undefined,cashierId)
   }
   createSupplyRequest(request:SupplyRequestInput,cashierId:string):void {
@@ -822,13 +856,13 @@ export class PosDatabase {
     if(request.productId&&!product)throw new Error('Товар не найден в оперативном каталоге')
     const itemName=(product?.name||request.itemName||'').trim()
     if(!itemName)throw new Error('Укажите, что требуется точке')
-    if(!Number.isFinite(request.quantity)||request.quantity<=0)throw new Error('Количество должно быть больше нуля')
+    const comment=String(request.comment||'').trim()
+    if(!comment)throw new Error('Комментарий обязателен')
     this.queue('point.supply.requested',{
       cashierId,
       productId:product?.id,
       itemName,
-      quantity:request.quantity,
-      comment:request.comment,
+      comment,
     },undefined,cashierId)
   }
   createStockReceipt(request:StockReceiptRequest,cashierId:string):void {

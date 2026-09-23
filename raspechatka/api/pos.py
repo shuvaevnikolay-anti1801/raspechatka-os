@@ -733,9 +733,13 @@ def _receipt_comment(payload):
 
 
 def _get_workplace_data(employee, point, workplace):
+	current_schedule_month = _get_schedule_month(point.name)
+	next_schedule_month = _get_schedule_month(point.name, _schedule_month_value(1))
 	return {
 		"schedule": _get_employee_schedule(employee, point.name),
-		"scheduleMonth": _get_schedule_month(point.name),
+		"scheduleMonth": current_schedule_month,
+		"scheduleCurrentMonth": current_schedule_month,
+		"scheduleNextMonth": next_schedule_month,
 		"myUpcomingShifts": _get_upcoming_shifts(employee, point.name),
 		"operationalCatalog": _get_operational_catalog(point.name),
 		"deliveries": _get_delivery_notices(point.name),
@@ -915,13 +919,15 @@ def _schedule_employees(point_name):
 	]
 
 
-def _schedule_month_value():
-	today = nowdate()
-	return f"{today[:7]}-01"
+def _schedule_month_value(month_offset=0):
+	today = getdate(nowdate())
+	month_index = today.year * 12 + today.month - 1 + int(month_offset)
+	year, zero_based_month = divmod(month_index, 12)
+	return f"{year:04d}-{zero_based_month + 1:02d}-01"
 
 
-def _get_schedule_month(point_name):
-	month = _schedule_month_value()
+def _get_schedule_month(point_name, month=None):
+	month = month or _schedule_month_value()
 	year, month_number = int(month[:4]), int(month[5:7])
 	rows = _schedule_rows(point_name, month=month)
 	return {

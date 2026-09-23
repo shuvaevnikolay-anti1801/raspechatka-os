@@ -590,6 +590,10 @@ def _employee_user(employee_id):
 	return frappe.db.get_value("Employee", employee_id, "user") or None
 
 
+_POS_WRITE_OFF_REASONS = {"Брак", "Внутренние нужды", "Обучение"}
+_POS_SUPPLY_REQUEST_COMPAT_QUANTITY = 1
+
+
 def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 	if frappe.db.exists("Stock Write Off", {"external_id": event_id}):
 		return
@@ -603,6 +607,12 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 	quantity = flt(payload.get("quantity"))
 	if quantity <= 0:
 		frappe.throw(_("Количество списания должно быть больше нуля"))
+	reason = str(payload.get("reason") or "").strip()
+	if reason not in _POS_WRITE_OFF_REASONS:
+		frappe.throw(_("Недопустимая причина списания"))
+	comment = str(payload.get("comment") or "").strip()
+	if not comment:
+		frappe.throw(_("Комментарий обязателен"))
 	doc = frappe.get_doc(
 		{
 			"doctype": "Stock Write Off",
@@ -610,7 +620,7 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 			"business_entity": point.business_entity,
 			"business_point": point.name,
 			"warehouse": warehouse,
-			"reason": str(payload.get("reason") or "Другое").strip() or "Другое",
+			"reason": reason,
 			"cashier": cashier_id,
 			"source": "POS",
 			"external_id": event_id,
@@ -618,11 +628,11 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 				{
 					"productId": item_id,
 					"quantity": quantity,
-					"reason": payload.get("reason"),
-					"comment": payload.get("comment"),
+					"reason": reason,
+					"comment": comment,
 				}
 			),
-			"remarks": str(payload.get("comment") or "").strip(),
+			"remarks": comment,
 			"items": [
 				{
 					"item": item_id,
@@ -644,9 +654,6 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 	if frappe.db.exists("Point Supply Request", {"source_pos_event": event_id}):
 		return
 	point, warehouse = _point_stock_context(connection)
-	quantity = flt(payload.get("quantity"))
-	if quantity <= 0:
-		frappe.throw(_("Количество потребности должно быть больше нуля"))
 	item_id = str(payload.get("productId") or "").strip() or None
 	item_name = str(payload.get("itemName") or "").strip()
 	if item_id:
@@ -661,6 +668,9 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 		item_name = item.item_name or item_name
 	if not item_name:
 		frappe.throw(_("Укажите, что требуется точке"))
+	comment = str(payload.get("comment") or "").strip()
+	if not comment:
+		frappe.throw(_("Комментарий обязателен"))
 	frappe.get_doc(
 		{
 			"doctype": "Point Supply Request",
@@ -670,8 +680,10 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 			"warehouse": warehouse,
 			"item": item_id,
 			"item_name": item_name,
-			"quantity": quantity,
-			"comment": str(payload.get("comment") or "").strip(),
+			# Point Supply Request keeps quantity required for canonical compatibility.
+			# POS requests are intentionally quantity-less, so the server owns this value.
+			"quantity": _POS_SUPPLY_REQUEST_COMPAT_QUANTITY,
+			"comment": comment,
 			"requested_by_employee": cashier_id,
 			"requested_by": _employee_user(cashier_id),
 			"source_pos_event": event_id,

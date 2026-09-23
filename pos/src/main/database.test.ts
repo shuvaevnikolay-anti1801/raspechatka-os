@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PosDatabase } from './database'
-import type { CreateUnpaidOrderRequest, UpdateOrderRequest } from '../shared/contracts'
+import type { CreateUnpaidOrderRequest, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
 const folders:string[]=[]
 const databases:PosDatabase[]=[]
@@ -302,8 +302,14 @@ describe('PosDatabase',()=>{
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
     expect(count).toMatchObject({totalMinor:200000,differenceMinor:0})
     expect(database.getShiftSummary().expectedCashMinor).toBe(200000)
-    database.reportStockWriteOff({productId:'paper-hidden',quantity:1,reason:'Брак',comment:'Замята упаковка'},'EMP-1')
-    database.createSupplyRequest({productId:'paper-hidden',itemName:'Клиент не должен переименовать',quantity:10},'EMP-1')
+    database.reportStockWriteOff({
+      productId:'paper-hidden',quantity:1,reason:'Брак',comment:'Замята упаковка',
+      cashierId:'FORGED-RENDERER'
+    } as StockWriteOffRequest & {cashierId:string},'EMP-1')
+    database.createSupplyRequest({
+      productId:'paper-hidden',itemName:'Клиент не должен переименовать',comment:'Нужен запас бумаги',
+      quantity:999,cashierId:'FORGED-RENDERER'
+    } as SupplyRequestInput & {quantity:number;cashierId:string},'EMP-1')
     database.createStockReceipt({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]},'EMP-1')
     for(let index=0;index<4;index+=1)database.recordCleanerVisit('Николай')
     expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(200000)
@@ -318,8 +324,14 @@ describe('PosDatabase',()=>{
     const writeOff=events.find((x)=>x.eventType==='stock.write_off.requested')?.payload as Record<string,unknown>
     const need=events.find((x)=>x.eventType==='point.supply.requested')?.payload as Record<string,unknown>
     const receipt=events.find((x)=>x.eventType==='stock.receipt.requested')?.payload as Record<string,unknown>
-    expect(writeOff.cashierId).toBe('EMP-1')
-    expect(need).toMatchObject({cashierId:'EMP-1',productId:'paper-hidden',itemName:'Бумага служебная'})
+    expect(writeOff).toMatchObject({
+      cashierId:'EMP-1',productId:'paper-hidden',reason:'Брак',comment:'Замята упаковка'
+    })
+    expect(writeOff.cashierId).not.toBe('FORGED-RENDERER')
+    expect(need).toEqual({
+      cashierId:'EMP-1',productId:'paper-hidden',itemName:'Бумага служебная',comment:'Нужен запас бумаги'
+    })
+    expect(need).not.toHaveProperty('quantity')
     expect(receipt).toEqual({
       cashierId:'EMP-1',
       purchaseOrderId:'PO-1',
@@ -328,6 +340,33 @@ describe('PosDatabase',()=>{
     expect(JSON.stringify(receipt)).not.toContain('rate')
     expect(receipt.cashierId).not.toBe('SHIFT-EMP')
     expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
+  })
+
+  it('rejects unsafe warehouse request input before it reaches the outbox',()=>{
+    const database=createDatabase()
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[{
+        id:'paper-hidden',name:'Бумага служебная',itemCode:'PAPER-HIDDEN',itemType:'Product',uom:'пачка',
+        trackInventory:true,stock:5,storageAddress:'Шкаф 3'
+      }],
+      deliveries:[],supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+
+    expect(()=>database.reportStockWriteOff({
+      productId:'paper-hidden',quantity:1,reason:'Другое',comment:'Комментарий'
+    } as unknown as StockWriteOffRequest,'EMP-1')).toThrow('Недопустимая причина списания')
+    expect(()=>database.reportStockWriteOff({
+      productId:'paper-hidden',quantity:1,reason:'Брак',comment:'   '
+    },'EMP-1')).toThrow('Комментарий обязателен')
+    expect(()=>database.createSupplyRequest({
+      productId:'paper-hidden',itemName:'Бумага',comment:'   '
+    },'EMP-1')).toThrow('Комментарий обязателен')
+    expect(database.pendingEvents()).toHaveLength(0)
   })
 
   it('keeps a partially received purchase order unchanged until canonical sync',()=>{
@@ -676,4 +715,29 @@ describe('PosDatabase',()=>{
     const nextMorning=database.openShift({id:'shift-next-day',openedAt:'2026-09-07T06:00:00.000Z',cashierName:'Анна'})
     expect(nextMorning.shiftType).toBe('Утро')
   })
+  it('normalizes an old cached workplace snapshot into the two-month schedule shape',()=>{
+    const database=createDatabase()
+    database.setState('workplace_data',JSON.stringify({
+      schedule:[],
+      scheduleMonth:{
+        month:'2026-12',days:31,
+        employees:[{id:'EMP-1',name:'Анна'}],
+        entries:[{
+          id:'WS-1',date:'2026-12-31',employeeId:'EMP-1',employeeName:'Анна',
+          shiftTemplate:'SHIFT-U',shiftCode:'U',shiftName:'Утро',startTime:'09:00:00',endTime:'15:00:00',plannedHours:6
+        }]
+      },
+      myUpcomingShifts:[],
+      operationalCatalog:[],
+      deliveries:[],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    }))
+    const data=database.getWorkplaceData()
+    expect(data.scheduleCurrentMonth).toEqual(data.scheduleMonth)
+    expect(data.scheduleCurrentMonth.month).toBe('2026-12')
+    expect(data.scheduleNextMonth).toEqual({month:'2027-01',days:31,employees:[],entries:[]})
+  })
+
 })

@@ -21,6 +21,11 @@ class StockWriteOff(Document):
 		validate_warehouse_header(self.business_entity, self.business_point, self.warehouse)
 		if not (self.reason or "").strip():
 			frappe.throw(_("Укажите причину списания."))
+		if self.source == "POS":
+			if self.reason not in {"Брак", "Внутренние нужды", "Обучение"}:
+				frappe.throw(_("Недопустимая причина списания."))
+			if not (self.remarks or "").strip():
+				frappe.throw(_("Комментарий обязателен."))
 		if not self.items:
 			frappe.throw(_("Добавьте хотя бы один товар."))
 		for row in self.items:

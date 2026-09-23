@@ -337,6 +337,8 @@ export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number;
 export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth
+  scheduleCurrentMonth:WorkScheduleMonth
+  scheduleNextMonth:WorkScheduleMonth
   myUpcomingShifts:UpcomingShift[]
   operationalCatalog:OperationalCatalogItem[]
   deliveries:DeliveryNotice[]
@@ -344,8 +346,8 @@ export type WorkplaceData = {
   cleaner:CleanerStatus
   orders:Order[]
 }
-export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'|'Другое'; comment?:string }
-export type SupplyRequestInput = { productId?:string; itemName:string; quantity:number; comment?:string }
+export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'; comment:string }
+export type SupplyRequestInput = { productId?:string; itemName:string; comment:string }
 export type StockReceiptRequest = {
   purchaseOrderId:string
   lines:Array<{purchaseOrderItemId:string;quantity:number}>

@@ -119,11 +119,6 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 				"_point_employees",
 				return_value=[{"id": self.employee, "name": "Тестовый кассир"}],
 			),
-			patch.object(
-				pos_v2,
-				"_trusted_event_cashier",
-				return_value={"id": self.employee, "name": "Тестовый кассир"},
-			),
 			patch.object(pos_v2.base_pos, "_touch"),
 		):
 			return pos_v2.push_events("TEST-DEVICE", "TEST-TOKEN", events=[event], app_version="test")
@@ -258,7 +253,8 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 				"cashierId": self.employee,
 				"productId": self.foreign_item,
 				"quantity": 1,
-				"reason": "Другое",
+				"reason": "Брак",
+				"comment": "Попытка списать чужой остаток",
 			},
 		}
 		foreign_result = self._push(foreign_event)
@@ -266,3 +262,122 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 		self.assertEqual(foreign_result["errors"][0]["id"], foreign_event["id"])
 		self.assertIn("складского контекста этой точки", foreign_result["errors"][0]["message"])
 		self.assertFalse(frappe.db.exists("Stock Write Off", {"external_id": foreign_event["id"]}))
+
+
+	def test_real_write_off_rejects_invalid_reason_empty_comment_and_foreign_cashier(self):
+		self._opening_stock(self.item, self.warehouse, self.point)
+		cases = [
+			(
+				"invalid-reason",
+				{
+					"cashierId": self.employee,
+					"productId": self.item,
+					"quantity": 1,
+					"reason": "Другое",
+					"comment": "Комментарий есть",
+				},
+				"Недопустимая причина списания",
+			),
+			(
+				"empty-comment",
+				{
+					"cashierId": self.employee,
+					"productId": self.item,
+					"quantity": 1,
+					"reason": "Брак",
+					"comment": "   ",
+				},
+				"Комментарий обязателен",
+			),
+			(
+				"foreign-cashier",
+				{
+					"cashierId": f"FOREIGN-EMP-{uuid4().hex[:8]}",
+					"productId": self.item,
+					"quantity": 1,
+					"reason": "Обучение",
+					"comment": "Проверка кассира",
+				},
+				None,
+			),
+		]
+		for suffix, payload, message in cases:
+			with self.subTest(case=suffix):
+				event = {
+					"id": f"POS-WO-REJECT-{suffix}-{uuid4().hex}",
+					"eventType": "stock.write_off.requested",
+					"payload": payload,
+				}
+				result = self._push(event)
+				self.assertEqual(result["accepted"], [])
+				self.assertEqual(result["errors"][0]["id"], event["id"])
+				if message:
+					self.assertIn(message, result["errors"][0]["message"])
+				self.assertFalse(frappe.db.exists("Stock Write Off", {"external_id": event["id"]}))
+
+	def test_real_quantity_less_supply_request_maps_canonical_employee_item_comment_and_replays_once(self):
+		event = {
+			"id": f"POS-NEED-{uuid4().hex}",
+			"eventType": "point.supply.requested",
+			"payload": {
+				"cashierId": self.employee,
+				"productId": self.item,
+				"itemName": "Подменённое название",
+				"comment": "Нужен запас бумаги к выходным",
+			},
+		}
+		self.assertNotIn("quantity", event["payload"])
+		self.assertEqual(self._push(event), {"accepted": [event["id"]], "errors": []})
+
+		request = frappe.get_last_doc(
+			"Point Supply Request", filters={"source_pos_event": event["id"]}
+		)
+		self.assertEqual(request.business_entity, self.entity)
+		self.assertEqual(request.business_point, self.point)
+		self.assertEqual(request.warehouse, self.warehouse)
+		self.assertEqual(request.requested_by_employee, self.employee)
+		self.assertEqual(request.item, self.item)
+		self.assertEqual(request.item_name, "Тестовая бумага")
+		self.assertEqual(float(request.quantity), 1)
+		self.assertEqual(request.comment, "Нужен запас бумаги к выходным")
+
+		self.assertEqual(self._push(event), {"accepted": [event["id"]], "errors": []})
+		self.assertEqual(
+			frappe.db.count("Point Supply Request", {"source_pos_event": event["id"]}), 1
+		)
+
+		forged_quantity = {
+			"id": f"POS-NEED-FORGED-QTY-{uuid4().hex}",
+			"eventType": "point.supply.requested",
+			"payload": {
+				"cashierId": self.employee,
+				"productId": self.item,
+				"itemName": "Подмена",
+				"quantity": 999,
+				"comment": "Проверка server-owned quantity",
+			},
+		}
+		self.assertEqual(
+			self._push(forged_quantity),
+			{"accepted": [forged_quantity["id"]], "errors": []},
+		)
+		forged_request = frappe.get_last_doc(
+			"Point Supply Request", filters={"source_pos_event": forged_quantity["id"]}
+		)
+		self.assertEqual(float(forged_request.quantity), 1)
+
+		empty_comment = {
+			"id": f"POS-NEED-EMPTY-{uuid4().hex}",
+			"eventType": "point.supply.requested",
+			"payload": {
+				"cashierId": self.employee,
+				"productId": self.item,
+				"comment": " ",
+			},
+		}
+		result = self._push(empty_comment)
+		self.assertEqual(result["accepted"], [])
+		self.assertIn("Комментарий обязателен", result["errors"][0]["message"])
+		self.assertFalse(
+			frappe.db.exists("Point Supply Request", {"source_pos_event": empty_comment["id"]})
+		)
