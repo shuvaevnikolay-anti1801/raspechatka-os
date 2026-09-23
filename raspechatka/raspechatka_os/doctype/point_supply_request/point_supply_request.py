@@ -10,3 +10,8 @@ class PointSupplyRequest(Document):
 			frappe.throw("Укажите, что требуется точке")
 		if self.quantity <= 0:
 			frappe.throw("Количество должно быть больше нуля")
+		if self.source_pos_event:
+			if self.quantity != 1:
+				frappe.throw("Количество POS-запроса задаётся сервером")
+			if not (self.comment or "").strip():
+				frappe.throw("Комментарий обязателен")
