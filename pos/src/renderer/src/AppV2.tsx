@@ -333,7 +333,7 @@ export const lockedCashierCanSwitch=(auth:CashierAuthState):boolean=>
 
 export async function runLockedCashierSwitch(
   logoutCashier:()=>Promise<unknown>,
-  refresh:()=>Promise<void>,
+  refresh:()=>Promise<unknown>,
 ):Promise<void>{
   await logoutCashier()
   await refresh()
@@ -342,7 +342,7 @@ export async function runLockedCashierSwitch(
 export type CashierPinNoticeSeverity='error'|'success'
 export const cashierPinNoticeClass=(severity:CashierPinNoticeSeverity)=>`cashier-login-notice cashier-login-${severity}`
 
-export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<void>}){
+export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:CashierAuthState;onAuthenticated:()=>Promise<unknown>}){
   const forced=auth.openShiftCashierId
   const [employeeId,setEmployeeId]=useState(forced||'')
   const [pin,setPin]=useState('')
@@ -436,7 +436,7 @@ function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClo
   const [visible,setVisible]=useState<Customer[]>([])
   const [searching,setSearching]=useState(false)
   const digits=query.replace(/\D/g,'')
-  useEffect(()=>{let cancelled=false;if(digits.length<4){setVisible([]);setSearching(false);return};const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(digits);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)}},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[digits])
+  useEffect(()=>{let cancelled=false;if(digits.length<4){setVisible([]);setSearching(false);return};const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(digits);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[digits])
   const overflow=visible.length>50
   const rows=visible.slice(0,50)
   return <PosModal open title="Выбрать покупателя" className="customer-modal" layout="matrix" onClose={onClose}>
@@ -497,7 +497,7 @@ export function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:Cas
 
 export const NAV_ICON_MAP:Record<Screen|'settings',PosIconName>={sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings'}
 export function Nav({active,icon,label,badge,warning=false,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;warning?:boolean;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{warning&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}{badge?<b>{badge}</b>:null}</PosButton>}
-export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined/>}
+export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>}
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className={title==='Текущая смена'?'page shift-page':'page'}><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
 function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i><PosIcon name="plus"/></i><b>{title}</b><span>{text}</span></div>}
