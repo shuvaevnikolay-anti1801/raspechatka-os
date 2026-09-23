@@ -506,9 +506,7 @@ export class PosDatabase {
     }
   }
 
-  closeShift():ShiftSummary {
-    const current=this.currentShift();if(!current)throw new Error('Нет открытой смены')
-    const summary=this.getShiftSummary()
+  private closingCountForShift(current:Shift,summary:ShiftSummary):{id:string;totalMinor:number;expectedMinor:number;expectedVerified:number;createdAt:string}|undefined {
     const closing=this.db.prepare(`SELECT id,total_minor totalMinor,expected_minor expectedMinor,
       expected_verified expectedVerified,created_at createdAt
       FROM cash_counts WHERE shift_id=? AND count_type='closing' ORDER BY created_at DESC,rowid DESC LIMIT 1`)
@@ -517,6 +515,18 @@ export class PosDatabase {
     if(closing&&(closing.expectedMinor!==summary.expectedCashMinor||Boolean(closing.expectedVerified)!==Boolean(summary.expectedCashVerified))){
       throw new Error('После закрывающего пересчёта движение наличных изменилось. Выполните закрывающий пересчёт ещё раз.')
     }
+    return closing
+  }
+
+  assertShiftReadyToClose():void {
+    const current=this.currentShift();if(!current)throw new Error('Нет открытой смены')
+    this.closingCountForShift(current,this.getShiftSummary())
+  }
+
+  closeShift():ShiftSummary {
+    const current=this.currentShift();if(!current)throw new Error('Нет открытой смены')
+    const summary=this.getShiftSummary()
+    const closing=this.closingCountForShift(current,summary)
     const closedAt=new Date().toISOString()
     this.db.exec('BEGIN IMMEDIATE')
     try {
