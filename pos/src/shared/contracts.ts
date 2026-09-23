@@ -91,6 +91,7 @@ export type Shift = {
   drawerWorkplaceId?:string
   openingExpectedMinor?:number
   openingExpectedVerified?:boolean
+  accountingBaselineAt?:string
   openingCountPending?:boolean
 }
 export type PointEmployee = { id:string; name:string }
