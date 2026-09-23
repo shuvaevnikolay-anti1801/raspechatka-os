@@ -746,7 +746,7 @@ def _get_workplace_data(employee, point, workplace):
 		"operationalCatalog": _get_operational_catalog(point.name),
 		"deliveries": _get_delivery_notices(point.name),
 		"supplyRequests": _get_supply_requests(point.name),
-		"cleaner": _get_cleaner_status(point.name),
+		"cleaner": _get_cleaner_status(point.name, point),
 		"orders": _get_orders(point.name),
 	}
 
@@ -1083,9 +1083,18 @@ def _get_supply_requests(point_name):
 	]
 
 
-def _get_cleaner_status(point_name):
+def _cleaning_config(point):
+	amount = flt(point.get("cleaning_payout_amount")) if point else 0
+	visits = point.get("cleaning_every_n_visits") if point else None
+	amount = amount if amount > 0 else 2000
+	visits = int(visits) if visits and str(visits).isdigit() and int(visits) >= 1 else 4
+	return {"payoutAmountMinor": round(amount * 100), "everyNVisits": visits}
+
+
+def _get_cleaner_status(point_name, point=None):
+	config = _cleaning_config(point or frappe.get_doc("Business Point", point_name))
 	if not _doctype_exists("Cleaner Visit"):
-		return {"visitsSincePayment": 0, "paymentDueMinor": 0, "recentVisits": []}
+		return {"visitsSincePayment": 0, "paymentDueMinor": 0, "recentVisits": [], **config}
 	rows = frappe.get_all(
 		"Cleaner Visit",
 		filters={"business_point": point_name},
@@ -1096,7 +1105,7 @@ def _get_cleaner_status(point_name):
 	unpaid = frappe.db.count("Cleaner Visit", {"business_point": point_name, "paid": 0})
 	return {
 		"visitsSincePayment": unpaid,
-		"paymentDueMinor": 200000 if unpaid >= 4 else 0,
+		"paymentDueMinor": config["payoutAmountMinor"] if unpaid >= config["everyNVisits"] else 0,
 		"recentVisits": [
 			{
 				"id": row.name,
@@ -1106,8 +1115,8 @@ def _get_cleaner_status(point_name):
 			}
 			for row in rows
 		],
+		**config,
 	}
-
 
 def _point_context(workplace):
 	point = frappe.get_doc("Business Point", workplace.business_point)

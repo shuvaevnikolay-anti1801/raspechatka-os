@@ -127,11 +127,14 @@ export type PointRules = {
   reviewDiscountPerReviewMinor?: number
 }
 
+export type CleaningConfig = { payoutAmountMinor:number; everyNVisits:number }
+
 export type BootState = {
   pointId: string
   pointName: string
   /** Business Point timezone; optional for compatibility with older cached boot state. */
   pointTimezone?: string
+  cleaning?: CleaningConfig
   workplaceId: string
   workstationName: string
   cashierId?: string
@@ -339,7 +342,7 @@ export type DeliveryNotice = {
 }
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
-export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
+export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[]; payoutAmountMinor?:number; everyNVisits?:number }
 export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth

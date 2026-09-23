@@ -223,6 +223,8 @@ function newReference() {
 			twogis_reviews_url: "",
 			timezone: "Europe/Moscow",
 			working_hours: emptyHours(),
+			cleaning_payout_amount: 2000,
+			cleaning_every_n_visits: 4,
 		});
 	}
 }
@@ -236,6 +238,10 @@ async function openReference(row) {
 		});
 		detail.value = result;
 		resetObject(form, JSON.parse(JSON.stringify(result)));
+		if (reference.value === "points") {
+			form.cleaning_payout_amount ||= 2000;
+			form.cleaning_every_n_visits ||= 4;
+		}
 		resetObject(bankForm, {
 			name: "",
 			settlement_account: "",
@@ -731,6 +737,13 @@ onMounted(loadOptions);
 								:disabled="!day.is_working"
 							/>
 						</div>
+					</div>
+				</div>
+				<div class="form-section">
+					<h3>Уборка</h3>
+					<div class="form-grid">
+						<label>Выплата за уборку, ₽<input v-model.number="form.cleaning_payout_amount" type="number" min="0.01" step="0.01" required /></label>
+						<label>Выплачивать каждые N уборок<input v-model.number="form.cleaning_every_n_visits" type="number" min="1" step="1" required /></label>
 					</div>
 				</div>
 				<p v-if="formError" class="form-error">{{ formError }}</p>

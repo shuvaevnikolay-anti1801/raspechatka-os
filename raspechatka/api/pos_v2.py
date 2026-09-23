@@ -338,6 +338,7 @@ def get_bootstrap(device_id, token, cashier_id=None):
 				"id": point.name,
 				"name": point.point_name,
 				"timezone": resolve_point_timezone(point.timezone, get_effective_site_timezone()),
+				"cleaning": legacy_pos._cleaning_config(point),
 			},
 			"workplace": {"id": workplace.name, "name": workplace.workplace_name},
 			"employee": selected,
