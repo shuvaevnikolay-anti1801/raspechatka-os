@@ -112,7 +112,7 @@ export default function AppV2(){
   }
   const pricedCart=cart.map((line)=>({...line,preventDiscounts:Boolean(productById.get(line.productId)?.preventDiscounts)}))
   const breakdown=calculateDiscountBreakdown(pricedCart,discountRules,customer?.discountPercent??0,reviewCount,manualDiscount)
-  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,totalMinor:total}=breakdown
+  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,totalMinor:discountedTotal,roundingAdjustmentMinor,payableMinor:total}=breakdown
   const reviewUnitMinor=discountRules.allowDiscounts?discountRules.reviewDiscountPerReviewMinor:0
   const safeReviewCount=breakdown.reviewCount
   const maxReviews=reviewUnitMinor>0?Math.floor(Math.max(0,subtotal-clubDiscountMinor-1)/reviewUnitMinor):0
