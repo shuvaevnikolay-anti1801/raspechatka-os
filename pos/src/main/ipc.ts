@@ -12,6 +12,7 @@ import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performConfigurationSync, performSync } from './sync'
+import { collectDeviceStatuses } from './health'
 import { PosTransactionEngine } from './transaction-engine'
 import { CashierAuthSession } from './cashier-auth'
 import { PosLifecycleStore } from './pos-lifecycle'
@@ -154,48 +155,13 @@ export function registerIpcHandlers(dependencies:{
     await printProvider.setSelectedPrinter(name)
     diagnostics.record({source:'printer',eventType:'printer.selected',message:name?`Выбран товарный принтер: ${name}`:'Товарный принтер отключён'})
   })
-  ipcMain.handle('pos:get-device-statuses',async()=>{
-    const boot=bootState()
-    let fiscalShiftOpen:boolean|undefined
-    let fiscalShiftMessage='Состояние фискальной смены не проверено'
-    let fiscalExpired=false
-    try{
-      const state=await fiscalProvider.getShiftStatus()
-      fiscalShiftOpen=state.open
-      fiscalExpired=state.state==='expired'
-      fiscalShiftMessage=state.message
-    }catch(error){
-      fiscalShiftMessage=errorMessage(error)
-    }
-    const localOpen=Boolean(database.currentShift())
-    const shiftReady=fiscalShiftOpen!==undefined&&localOpen===fiscalShiftOpen&&!fiscalExpired
-    const [fiscal,payment,printer]=await Promise.all([
-      fiscalProvider.healthCheck(),paymentProvider.healthCheck(),printProvider.healthCheck()
-    ])
-    return {
-      os:{
-        ready:boot.online,
-        status:boot.online?'ready':'offline',
-        message:boot.online?`OS на связи · к отправке ${boot.pendingSync}`:`Локальный режим · к отправке ${boot.pendingSync}`,
-        details:{pendingSync:boot.pendingSync,lastSyncAt:boot.lastSyncAt}
-      },
-      fiscal,
-      payment,
-      printer,
-      shift:{
-        ready:shiftReady,
-        localOpen,
-        fiscalOpen:fiscalShiftOpen,
-        message:fiscalExpired
-          ?'Фискальная смена АТОЛ истекла — продажи заблокированы до закрытия и открытия новой смены'
-          :fiscalShiftOpen===undefined
-            ?`ККТ: ${fiscalShiftMessage}`
-            :localOpen===fiscalShiftOpen
-              ?(localOpen?'Локальная и фискальная смены открыты':'Локальная и фискальная смены закрыты')
-              :`Несоответствие смен: локальная ${localOpen?'открыта':'закрыта'}, ККТ ${fiscalShiftOpen?'открыта':'закрыта'}`
-      }
-    }
-  })
+  ipcMain.handle('pos:get-device-statuses',()=>collectDeviceStatuses({
+    boot:bootState(),
+    connectionConfigured:Boolean(connectionStore.load()),
+    localOpen:Boolean(database.currentShift()),
+    fiscal:fiscalProvider,payment:paymentProvider,printer:printProvider,
+  }))
+
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
   ipcMain.handle('pos:recover-operation',async(_event,id:string)=>{
     diagnostics.record({source:'recovery',level:'warning',eventType:'operation.recovery_started',message:'Начата проверка незавершённой операции',operationId:id})
@@ -341,6 +307,9 @@ export function registerIpcHandlers(dependencies:{
     }
 
     const hasRemote=request.payments.some((x)=>x.method==='remote_payment')
+    if(hasRemote&&(!connectionStore.load()||!boot.online)){
+      throw new Error('Удалённая оплата недоступна без связи с Распечатка OS')
+    }
     if(hasRemote&&!request.remotePaymentConfirmation?.confirmed){
       throw new Error('Для удалённой оплаты кассир должен отдельно подтвердить, что получение денег проверено.')
     }
