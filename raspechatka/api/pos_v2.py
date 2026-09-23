@@ -451,6 +451,11 @@ def _sale_receipt(payload, cashier_id, connection):
 	lines = payload.get("lines") or []
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
+	declared_payable = payload.get("payableMinor")
+	if declared_payable is not None and round(flt(declared_payable)) != paid_total:
+		frappe.throw(_("Сумма оплат не совпадает с сохранённой суммой к оплате"))
+	# payable is already after ordinary discounts and rounding; do not treat the
+	# rounding adjustment as another discount on the server mirror.
 	gross, raw, allocated = _allocate_final_amounts(lines, paid_total)
 	(
 		review_count,
