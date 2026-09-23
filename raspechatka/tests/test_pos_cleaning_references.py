@@ -1,10 +1,9 @@
-from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
 import frappe
 
-from raspechatka.api import references
+from raspechatka.api import pos_v2, references
 
 
 class _Point:
@@ -74,3 +73,28 @@ class TestPointCleaningReferences(TestCase):
 			result = references.get_reference_detail("points", "POINT-A")
 			access.assert_called_with("page.references.points", "read")
 			self.assertEqual((result["cleaning_payout_amount"], result["cleaning_every_n_visits"]), (2000, 4))
+
+
+class TestPointCleaningBootstrap(TestCase):
+	def test_bootstrap_carries_point_cleaning_config(self):
+		point = frappe._dict(
+			name="POINT-A", point_name="Point", timezone="Europe/Moscow", active=1,
+			cleaning_payout_amount=3250.5, cleaning_every_n_visits=6,
+		)
+		connection = frappe._dict(business_point="POINT-A")
+		workplace = frappe._dict(name="POS-A", workplace_name="Касса")
+		with patch.object(pos_v2.base_pos, "_authenticate", return_value=connection), patch.object(
+			pos_v2.frappe, "get_doc", return_value=point
+		), patch.object(pos_v2.base_pos, "_workplace", return_value=workplace), patch.object(
+			pos_v2.base_pos, "_point_employees", return_value=[]
+		), patch.object(pos_v2.base_pos, "_bootstrap_employee", return_value=None), patch.object(
+			pos_v2.base_pos, "_touch"
+		), patch.object(pos_v2, "_products", return_value=[]), patch.object(
+			pos_v2, "_customers", return_value=[]
+		), patch.object(pos_v2, "_rules", return_value={}), patch.object(
+			pos_v2, "_upsell_rules", return_value=[]
+		), patch.object(pos_v2, "_receipt_mirror", return_value=[]), patch.object(
+			pos_v2.legacy_pos, "_get_workplace_data", return_value={}
+		), patch.object(pos_v2, "get_effective_site_timezone", return_value="Europe/Moscow"):
+			result = pos_v2.get_bootstrap("device", "token")
+			self.assertEqual(result["point"]["cleaning"], {"payoutAmountMinor": 325050, "everyNVisits": 6})
