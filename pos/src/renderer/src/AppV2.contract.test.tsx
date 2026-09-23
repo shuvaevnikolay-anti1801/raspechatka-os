@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
@@ -308,5 +308,40 @@ describe('DEV-169 stage 3 operational modal contracts',()=>{
     expect(css).toContain('.denominations{display:grid;grid-template-columns:1fr 1fr')
     expect(css).toContain('.cash-count-modal .pos-modal__body')
     expect(css).toContain('.denomination-row{min-height:52px}')
+  })
+})
+
+
+describe('DEV-173 stage 3 cash UI',()=>{
+  it('keeps expected cash frozen in the opening count and renders the counted total separately',()=>{
+    const markup=renderToStaticMarkup(<CashCountModal type="opening" expectedMinor={12345} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(markup).toContain('Ожидается</span><b>123,45 ₽')
+    expect(markup).toContain('Насчитано</span><b>0 ₽')
+    expect(markup).toContain('Расхождение</span><strong>-123,45 ₽')
+    expect(markup).toContain('aria-label="Закрыть"')
+    const lines=buildCashCountLines({500:3})
+    expect(cashCountTotal(lines)).toBe(1500)
+    expect(markup).toContain('Ожидается</span><b>123,45')
+  })
+
+  it('marks pending counts on Shift navigation and keeps the reason blank by default',()=>{
+    const nav=renderToStaticMarkup(<Nav active={false} icon="shift" label="Смена" warning onClick={()=>undefined}/>)
+    expect(nav).toContain('cash-warning')
+    expect(nav).toContain('Ожидается пересчёт на начало смены')
+    const operation=renderToStaticMarkup(<CashOperationModal type="deposit" onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(operation).toContain('Основание')
+    expect(operation).not.toContain('placeholder=')
+    expect(operation).not.toContain('Без комментария')
+  })
+
+  it('routes closing only through a saved count and leaves dismissal pending',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('saveCashCount(cashCountOpen.type,lines)')
+    expect(source).toContain("if(count.countType==='closing'){await closeShift()}")
+    expect(source).toContain('onClose={()=>setCashCountOpen(null)}')
+    expect(source).toContain("openCashCount(summary.openingCountPending?'opening':'control')")
+    expect(source).toContain('expectedMinor:summary.expectedCashMinor')
+    expect(source).not.toContain("type==='opening'?total:expectedMinor")
+    expect(source).toContain('addCashOperation(cashOperation,amount,reason)')
   })
 })
