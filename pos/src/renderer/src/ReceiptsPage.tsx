@@ -1,3 +1,4 @@
+import { operatorError, operatorPrintMessage } from './operator-message'
 import { PosButton } from './ui/PosButton'
 import { PosModal } from './ui/PosModal'
 import { PosIcon } from './ui/PosIcon'
@@ -285,7 +286,7 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
         setDetail({kind:'cached',value:await window.raspechatkaPos.getSale(row.cached.id)})
       }
     }catch(error){
-      notify(error instanceof Error?error.message:String(error))
+      notify(operatorError(error,'receipts'))
     }finally{
       setDetailLoading(false)
     }
@@ -298,9 +299,9 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
         :row.server
           ?await window.raspechatkaPos.printPointReceiptCommodity(row.server.id)
           :undefined
-      if(result)notify(result.message)
+      if(result)notify(operatorPrintMessage(result))
     }catch(error){
-      notify(error instanceof Error?error.message:String(error))
+      notify(operatorError(error,'print'))
     }
   }
 
@@ -308,9 +309,9 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
     if(!row.cached||row.cached.source!=='local')return
     try{
       const result=await window.raspechatkaPos.printSale(row.cached.id,'fiscal-copy')
-      notify(result.message)
+      notify(operatorPrintMessage(result))
     }catch(error){
-      notify(error instanceof Error?error.message:String(error))
+      notify(operatorError(error,'receipts'))
     }
   }
 
