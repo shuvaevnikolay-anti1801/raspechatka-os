@@ -424,6 +424,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
 
   const retrySyncEvent = async (id:string) => {
     if(!adminCode)return setMessage('Войдите как администратор повторно')
+    setSyncQueue(null)
     setBusy(true)
     try {
       const result=await pos().retrySyncEvent(id,adminCode)
