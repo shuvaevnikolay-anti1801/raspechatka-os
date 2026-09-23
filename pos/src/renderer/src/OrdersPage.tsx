@@ -1,23 +1,55 @@
 import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { CreateOrderFromSaleRequest, Order, SaleDetails, SaleSummary } from '../../shared/contracts'
 import { formatMoney } from './money'
 import {
   emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, orderFormDraftFromOrder,
   toOrderFormPayload, type OrderFormDraft,
 } from './OrderFormFields'
+import './orders-table.css'
 
-const short=(phone:string)=>{const digits=phone.replace(/\D/g,'');return digits.slice(-4)||'—'}
 const statusName=(status:Order['status'])=>status==='ready'?'Готов к выдаче':status==='issued'?'Выдан':status==='cancelled'?'Отменён':'В работе'
 const overdue=(order:Order)=>Boolean(order.dueAt&&new Date(order.dueAt).getTime()<Date.now()&&!['ready','issued','cancelled'].includes(order.status))
 const dueTime=(order:Order)=>order.dueAt?new Date(order.dueAt).getTime():Number.MAX_SAFE_INTEGER
+const pad2=(value:number)=>String(value).padStart(2,'0')
+
+export const formatOrderDateTime=(value?:string|null)=>{
+  if(!value)return '—'
+  const date=new Date(value)
+  if(Number.isNaN(date.getTime()))return '—'
+  return `${pad2(date.getDate())}.${pad2(date.getMonth()+1)}.${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
+export type OrderTableColumnKey='status'|'orderNumber'|'phone'|'contactMethod'|'description'|'payment'|'createdAt'|'dueAt'|'issuedAt'|'actions'
+export type OrderTableColumn={key:OrderTableColumnKey;label:string;defaultWidth:number;minWidth:number;maxWidth:number}
+export const ORDER_TABLE_COLUMNS:readonly OrderTableColumn[]=[
+  {key:'status',label:'Статус',defaultWidth:150,minWidth:120,maxWidth:240},
+  {key:'orderNumber',label:'Заказ',defaultWidth:180,minWidth:130,maxWidth:300},
+  {key:'phone',label:'Телефон',defaultWidth:175,minWidth:150,maxWidth:280},
+  {key:'contactMethod',label:'Способ связи',defaultWidth:185,minWidth:130,maxWidth:360},
+  {key:'description',label:'Описание заказа',defaultWidth:280,minWidth:200,maxWidth:560},
+  {key:'payment',label:'Оплата',defaultWidth:190,minWidth:160,maxWidth:280},
+  {key:'createdAt',label:'Создан',defaultWidth:165,minWidth:145,maxWidth:230},
+  {key:'dueAt',label:'Дата выдачи',defaultWidth:165,minWidth:145,maxWidth:230},
+  {key:'issuedAt',label:'Выдан',defaultWidth:165,minWidth:145,maxWidth:230},
+  {key:'actions',label:'Действие',defaultWidth:210,minWidth:180,maxWidth:340},
+]
+export type OrderColumnWidths=Record<OrderTableColumnKey,number>
+export const defaultOrderColumnWidths=()=>Object.fromEntries(
+  ORDER_TABLE_COLUMNS.map((column)=>[column.key,column.defaultWidth]),
+) as OrderColumnWidths
+export const clampOrderColumnWidth=(key:OrderTableColumnKey,width:number)=>{
+  const column=ORDER_TABLE_COLUMNS.find((candidate)=>candidate.key===key)
+  if(!column)return Math.round(width)
+  return Math.min(column.maxWidth,Math.max(column.minWidth,Math.round(width)))
+}
+export const orderTableGridTemplate=(widths:OrderColumnWidths)=>
+  ORDER_TABLE_COLUMNS.map((column)=>`${widths[column.key]}px`).join(' ')
 
 export const orderReceiptCustomerName=(sale:Pick<SaleSummary,'customerName'>)=>sale.customerName?.trim()||'Розничный покупатель'
-export const formatOrderReceiptDate=(value:string)=>new Date(value).toLocaleString('ru-RU',{
-  day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',
-})
+export const formatOrderReceiptDate=(value:string)=>formatOrderDateTime(value)
 export const eligibleOrderSales=(sales:SaleSummary[],orders:Order[])=>{
   const used=new Set(orders.map((order)=>order.sourceSaleId).filter(Boolean))
   return sales.filter((sale)=>sale.status==='completed'&&!used.has(sale.id))
@@ -52,10 +84,13 @@ export function OrderReceiptPreview({sale}:{sale:SaleDetails}){
 }
 
 type Props={orders:Order[];onChanged:()=>Promise<void>;notify:(text:string)=>void}
+type ResizeState={key:OrderTableColumnKey;pointerId:number;startX:number;startWidth:number}
 
 export default function OrdersPage({orders,onChanged,notify}:Props){
   const [editing,setEditing]=useState<Order|null>(null)
   const [creating,setCreating]=useState(false)
+  const [columnWidths,setColumnWidths]=useState<OrderColumnWidths>(()=>defaultOrderColumnWidths())
+  const [resizing,setResizing]=useState<ResizeState|null>(null)
   const active=useMemo(()=>orders
     .filter((order)=>order.paymentStatus==='paid'&&['new','in_progress','ready'].includes(order.status))
     .sort((a,b)=>{
@@ -66,6 +101,7 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
       const due=dueTime(a)-dueTime(b)
       return due||a.createdAt.localeCompare(b.createdAt)
     }),[orders])
+  const gridTemplateColumns=orderTableGridTemplate(columnWidths)
 
   const update=async(order:Order,status:Order['status'])=>{
     try{
@@ -77,6 +113,22 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
     }
   }
 
+  const beginResize=(key:OrderTableColumnKey,event:ReactPointerEvent<HTMLSpanElement>)=>{
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setResizing({key,pointerId:event.pointerId,startX:event.clientX,startWidth:columnWidths[key]})
+  }
+  const moveResize=(key:OrderTableColumnKey,event:ReactPointerEvent<HTMLSpanElement>)=>{
+    if(!resizing||resizing.key!==key||resizing.pointerId!==event.pointerId)return
+    const width=clampOrderColumnWidth(key,resizing.startWidth+event.clientX-resizing.startX)
+    setColumnWidths((current)=>current[key]===width?current:{...current,[key]:width})
+  }
+  const endResize=(event:ReactPointerEvent<HTMLSpanElement>)=>{
+    if(!resizing||resizing.pointerId!==event.pointerId)return
+    if(event.currentTarget.hasPointerCapture?.(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)
+    setResizing(null)
+  }
+
   return <main className="page records-page orders-page">
     <div className="page-heading orders-heading">
       <div><h1>Заказы</h1><p>Оплаченные работы, которые нужно изготовить и выдать клиенту.</p></div>
@@ -84,21 +136,34 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
     </div>
 
     <div className="data-table orders-table">
-      <header>
-        <span>Заказ</span><span>Телефон</span><span>Описание заказа</span><span>Оплата</span>
-        <span>Создан</span><span>Дата выдачи</span><span>Статус</span><span>Действие</span>
+      <header style={{gridTemplateColumns}}>
+        {ORDER_TABLE_COLUMNS.map((column)=><span className="orders-column-heading" key={column.key}>
+          <span>{column.label}</span>
+          <span
+            className={resizing?.key===column.key?'orders-column-resizer resizing':'orders-column-resizer'}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={`Изменить ширину колонки «${column.label}»`}
+            onPointerDown={(event)=>beginResize(column.key,event)}
+            onPointerMove={(event)=>moveResize(column.key,event)}
+            onPointerUp={endResize}
+            onPointerCancel={endResize}
+          />
+        </span>)}
       </header>
-      {active.length?active.map((order)=><div key={order.id} className={overdue(order)?'order-row order-overdue':'order-row'}>
-        <b className="order-number">№ {short(order.phone)}<small>{order.orderNumber}</small></b>
-        <span className="order-phone">{order.phone}</span>
-        <span className="order-description">{order.comment||'Без описания'}</span>
-        <span className="order-payment"><b>Оплачено · {formatMoney(order.totalMinor)}</b>{order.fiscalNumber&&<small>чек {order.fiscalNumber}</small>}</span>
-        <span>{new Date(order.createdAt).toLocaleString('ru-RU')}</span>
+      {active.length?active.map((order)=><div key={order.id} className={overdue(order)?'order-row order-overdue':'order-row'} style={{gridTemplateColumns}}>
+        <span className={'order-status '+order.status}>{statusName(order.status)}</span>
+        <strong className="order-number" title={order.orderNumber}>{order.orderNumber}</strong>
+        <span className="order-phone" title={order.phone}>{order.phone}</span>
+        <span className="order-contact" title={order.contactMethod||''}>{order.contactMethod||'—'}</span>
+        <span className="order-description" title={order.comment||''}>{order.comment||'Без описания'}</span>
+        <span className="order-payment"><b>Оплачено · {formatMoney(order.totalMinor)}</b></span>
+        <time className="order-created" dateTime={order.createdAt}>{formatOrderDateTime(order.createdAt)}</time>
         <span className={overdue(order)?'order-due overdue':'order-due'}>
-          {order.dueAt?new Date(order.dueAt).toLocaleString('ru-RU'):'Дата не указана'}
+          <time dateTime={order.dueAt}>{formatOrderDateTime(order.dueAt)}</time>
           {overdue(order)&&<small>Просрочен</small>}
         </span>
-        <span className={'order-status '+order.status}>{statusName(order.status)}</span>
+        <time className="order-issued-at" dateTime={order.issuedAt}>{formatOrderDateTime(order.issuedAt)}</time>
         <div className="order-actions">
           <PosButton variant="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, способ связи, описание или дату выдачи">Изменить</PosButton>
           {order.status==='ready'
