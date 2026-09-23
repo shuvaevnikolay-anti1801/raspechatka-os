@@ -227,7 +227,7 @@ class TestInternalOrdersApi(TestCase):
 				"warehouse": "WH-1",
 				"item": None,
 				"item_name": "Фотобумага A4",
-				"quantity": 3.0,
+				"quantity": 1,
 				"comment": "Заканчивается на точке",
 				"requested_by_employee": "EMP-1",
 				"requested_by": "cashier@example.test",
