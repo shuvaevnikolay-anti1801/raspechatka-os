@@ -405,9 +405,20 @@ export type CreateUnpaidOrderRequest = { phone:string; contactMethod?:string; li
 export type CreateOrderFromSaleRequest = { saleId:string; phone:string; contactMethod?:string; comment:string; dueAt:string }
 export type UpdateOrderRequest = { id:string; phone?:string; contactMethod?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
-export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
+export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured'|'unknown'|'not_available';message:string;details?:Record<string,unknown>}
 export type ShiftDeviceStatus = {ready:boolean;localOpen:boolean;fiscalOpen?:boolean;message:string}
-export type DeviceStatuses = { os:HardwareStatus; fiscal:HardwareStatus; payment:HardwareStatus; printer:HardwareStatus; shift:ShiftDeviceStatus }
+export type DeviceStatuses = {
+  os:HardwareStatus
+  fiscal:HardwareStatus
+  /** KKT/FN to OFD delivery. Never derived from generic Internet availability. */
+  ofd:HardwareStatus
+  payment:HardwareStatus
+  remotePayment:HardwareStatus
+  printer:HardwareStatus
+  shift:ShiftDeviceStatus
+  /** Channel capability; fiscal readiness is a separate global sale gate. */
+  paymentMethods:{cash:boolean;card:boolean;qr:boolean;remote_payment:boolean}
+}
 export type InpasSettings = {enabled:boolean;executablePath:string;terminalId:string;currencyCode:string;timeoutMs:number;qrMode:'terminal_choice'}
 export type PaymentServiceResult = {message:string;receipt?:string;raw?:unknown}
 export type PrinterInfo = {name:string;isDefault:boolean}
