@@ -282,6 +282,7 @@ export type HeldReceipt = {
 }
 export type CashOperationType = 'deposit' | 'withdrawal'
 export type CashOperation = { id: string; type: CashOperationType; amountMinor: number; reason: string; createdAt: string }
+export type ShiftPaymentBreakdownItem = { method:string; amountMinor:number }
 export type ShiftSummary = {
   receipts: number
   revenueMinor: number
@@ -295,6 +296,7 @@ export type ShiftSummary = {
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
+  paymentBreakdown?: ShiftPaymentBreakdownItem[]
   expectedCashVerified?: boolean
   openingCountPending?: boolean
 }
