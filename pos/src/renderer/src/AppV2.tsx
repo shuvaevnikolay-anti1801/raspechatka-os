@@ -300,7 +300,7 @@ export default function AppV2(){
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
     {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>}
     {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>}
-    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen.type,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
+    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
 }
 
@@ -453,6 +453,12 @@ function PriceOverrideModal({line,minimumMinor,onClose,onApply}:{line:CartLine;m
   return <PosModal open title="Изменить цену" className="compact-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={()=>onApply(price)}>Применить · {formatMoney(price)}</PosButton>}>
     <p className="modal-context-name">{line.name}</p><PosField label="Цена за единицу, ₽" error={!valid?'Минимальная цена: '+formatMoney(minimumMinor):undefined}><input autoFocus type="number" min={minimumMinor/100} step="0.01" value={input} onChange={(event)=>setInput(event.target.value)}/></PosField>
   </PosModal>
+}
+
+export const saveCountThenClose=async(type:CashCount['countType'],lines:CashCountLine[],save:(type:CashCount['countType'],lines:CashCountLine[])=>Promise<CashCount>,close:()=>Promise<void>):Promise<CashCount>=>{
+  const count=await save(type,lines)
+  if(count.countType==='closing')await close()
+  return count
 }
 
 export const CASH_COUNT_DENOMINATIONS=[500000,100000,50000,10000,5000,1000,500,200,100] as const
