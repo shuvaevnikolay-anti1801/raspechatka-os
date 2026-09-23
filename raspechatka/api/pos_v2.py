@@ -319,9 +319,9 @@ def _upsell_rules(products):
 
 
 # Guest transport is required for POS devices; _authenticate validates the device token before data access.
-@frappe.whitelist(
+@frappe.whitelist(  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 	allow_guest=True, methods=["POST"]
-)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+)
 @access_contract(auth="pos_token", action="read", scope="pos_point")
 def get_bootstrap(device_id: str, token: str, cashier_id: str | None = None):
 	"""Point-scoped POS bootstrap with point catalog groups and club metadata."""
@@ -1013,9 +1013,9 @@ def _push_event_error_message(exc):
 
 
 # Guest transport is required for POS devices; _authenticate validates the device token before event handling.
-@frappe.whitelist(
+@frappe.whitelist(  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 	allow_guest=True, methods=["POST"]
-)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+)
 @access_contract(auth="pos_token", action="create", scope="pos_point")
 def push_events(
 	device_id: str,
