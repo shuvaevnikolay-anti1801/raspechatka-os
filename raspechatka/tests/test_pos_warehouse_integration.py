@@ -6,6 +6,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_v2
 from raspechatka.api import sales as sales_ingest
 
@@ -165,6 +166,22 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 					self.assertEqual(stats["duplicates"], 1)
 				else:
 					ingest(event_id, {}, local_connection, self.employee)
+
+	def test_shift_and_order_create_replay_cannot_claim_another_point(self):
+		shift_id = f"SHIFT-{uuid4().hex}"
+		shift_name = self._raw("Sales Shift", f"RAW-SHIFT-{uuid4().hex}",
+			business_point=self.point, external_id=shift_id, cashier=self.employee)
+		order_event = f"ORDER-{uuid4().hex}"
+		self._raw("POS Order", f"RAW-ORDER-{uuid4().hex}",
+			business_point=self.point, source_pos_event=order_event,
+			order_number=f"ORD-{uuid4().hex}", phone="+79000000000")
+		foreign = SimpleNamespace(business_point=self.foreign_point)
+		with self.assertRaises(frappe.PermissionError):
+			sales_ingest._ingest_shift({"external_id": shift_id}, foreign,
+				{"created": 0, "duplicates": 0, "errors": []})
+		with self.assertRaises(frappe.PermissionError):
+			legacy_pos._apply_order_created(order_event, foreign, {})
+		self.assertEqual(frappe.db.get_value("Sales Shift", shift_name, "business_point"), self.point)
 
 	def test_cleaner_visit_replay_is_serialized_and_cross_point_key_is_denied(self):
 		event_id = f"VISIT-{uuid4().hex}"
