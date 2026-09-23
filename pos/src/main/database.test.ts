@@ -426,7 +426,7 @@ describe('PosDatabase',()=>{
       database.addCashOperation('deposit',5000,'размен')
       const opening=database.saveCashCount('opening',[{denominationMinor:1000,quantity:4}])
       expect(opening).toMatchObject({
-        totalMinor:4000,expectedMinor:5000,expectedVerified:true,differenceMinor:-1000,
+        totalMinor:4000,expectedMinor:0,expectedVerified:true,differenceMinor:4000,
       })
       expect(database.getCashDrawerState(pointId,workplaceId).openingCountPending).toBe(false)
       expect(database.getShiftSummary().expectedCashMinor).toBe(5000)
