@@ -257,6 +257,25 @@ describe('read-after-write and truthful queue state',()=>{
     expect(database.markEventsSent).toHaveBeenCalledTimes(1)
     expect(mocks.loadBootstrap).toHaveBeenCalledTimes(3)
   })
+
+  it('continues into later batches after a partial rejection',async()=>{
+    const events=Array.from({length:101},(_,index)=>({
+      id:`event-${index}`,eventType:index===0?'future.event':'order.created',payload:{},
+    }))
+    const {database,events:remaining}=createDatabase(0,events)
+    mocks.loadBootstrap.mockResolvedValue(bootstrapPayload([]))
+    mocks.pushEvents
+      .mockResolvedValueOnce({
+        accepted:events.slice(1,100).map((event)=>event.id),
+        errors:[{id:'event-0',eventType:'future.event',message:'Неподдерживаемый тип события: future.event'}],
+      })
+      .mockResolvedValueOnce({accepted:['event-100'],errors:[]})
+    await performSync(database,connectionStore,'cashier')
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(2)
+    expect(remaining()).toMatchObject([{id:'event-0',status:'problem'}])
+    expect(database.markEventsSent).toHaveBeenCalledWith(['event-100'])
+  })
+
   it('persists one attempt for a transport failure and skips it while not due',async()=>{
     const {database,events}=createDatabase(1)
     mocks.loadBootstrap.mockResolvedValue(bootstrapPayload([]))
