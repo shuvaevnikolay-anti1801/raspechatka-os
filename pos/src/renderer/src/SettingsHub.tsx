@@ -144,7 +144,7 @@ export function SettingsSyncQueue({queue,busy,onRetry}:{queue:SyncQueueSnapshot|
                 {syncQueue?.total===0 ? <div className="settings-ok">Все документы отправлены.</div>
                   : <>
                     <div className="settings-queue-summary">
-                      {syncQueue ? `Ожидают: ${syncQueue.total - syncQueue.problemCount} · Требуют исправления: ${syncQueue.problemCount}${syncQueue.problemCountTruncated ? '+' : ''}` : 'Загрузка очереди…'}
+                      {syncQueue ? syncQueue.problemCountTruncated ? `В очереди: ${syncQueue.total} · Проблем: не менее ${syncQueue.problemCount}` : `Ожидают: ${syncQueue.total - syncQueue.problemCount} · Требуют исправления: ${syncQueue.problemCount}` : 'Загрузка очереди…'}
                     </div>
                     <div className="settings-sync-list">
                       {syncQueue?.items.map((item)=><article key={item.id}>
@@ -156,7 +156,7 @@ export function SettingsSyncQueue({queue,busy,onRetry}:{queue:SyncQueueSnapshot|
                         {item.canRetry&&<PosButton disabled={busy} onClick={()=>onRetry(item.id)}>Повторить отправку</PosButton>}
                       </article>)}
                     </div>
-                    {syncQueue&&syncQueue.total>syncQueue.items.length&&<div className="settings-warning">Показана часть очереди. Остальные документы ожидают отправки.</div>}
+                    {syncQueue&&syncQueue.total>syncQueue.items.length&&<div className="settings-warning">Показана часть очереди. Остальные документы также остаются в очереди.</div>}
                   </>}
               </section>
   );
@@ -241,6 +241,8 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       nextPrintJobs,
       nextDiagnostics,
       nextAtolDriver,
+      nextSyncQueue,
+      nextPosVersion,
     ] = await Promise.all([
       pos().getBootState(),
       pos().getConnectionStatus(),
@@ -256,6 +258,8 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
         installed: false,
         error: error instanceof Error ? error.message : String(error),
       })),
+      pos().listSyncQueue(),
+      pos().getPosVersion(),
     ]);
     setBoot(nextBoot);
     setConnection(nextConnection);
