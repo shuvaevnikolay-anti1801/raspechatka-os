@@ -1,3 +1,4 @@
+import { operatorError } from './operator-message'
 import { useEffect, useRef, useState } from 'react'
 import type { CompleteSaleResult, PaymentPart } from '../../shared/contracts'
 import { formatMoney } from './money'
@@ -67,8 +68,8 @@ export default function SaleSuccessOverlay(){
     try{
       await window.raspechatkaPos.printSale(result.saleId,'commodity')
       setPayload((current)=>current?.result.saleId===result.saleId?null:current)
-    }catch{
-      setPrintError('Не удалось напечатать товарный чек. Попробуйте ещё раз.')
+    }catch(error){
+      setPrintError(operatorError(error,'print'))
     }finally{
       printingRef.current=false
       setPrinting(false)
