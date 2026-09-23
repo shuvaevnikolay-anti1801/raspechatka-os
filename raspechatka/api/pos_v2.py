@@ -468,6 +468,7 @@ def _sale_receipt(payload, cashier_id, connection):
 		receipt_other_discount,
 		club_discount_percent,
 	) = _review_breakdown(payload, connection, sum(raw), ordinary_paid_total)
+	# Ordinary line discount excludes the payable rounding adjustment.
 	line_discount = sum(gross) - sum(raw)
 
 	items = []
