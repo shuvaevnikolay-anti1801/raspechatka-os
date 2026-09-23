@@ -12,7 +12,7 @@ type CurrentReceiptProps={
   reviewUnitMinor:number;reviewCount:number;reviewDiscountMinor:number;maxReviews:number;
   onReviewCountChange:(count:number)=>void;manualDiscount:ManualDiscount|null;manualDiscountMinor:number;
   onOpenManualDiscount:()=>void;clubDiscountMinor:number;hasProtectedItems:boolean;subtotalMinor:number;
-  totalDiscountMinor:number;totalMinor:number;shiftOpen:boolean;onOpenShift:()=>void;onHold:()=>void;
+  totalDiscountMinor:number;roundingAdjustmentMinor:number;totalMinor:number;shiftOpen:boolean;onOpenShift:()=>void;onHold:()=>void;
   onCreateOrder:()=>void;onPay:()=>void
 }
 
@@ -21,7 +21,7 @@ export default function CurrentReceipt({
   onOverridePrice,onChangeQuantity,onSetQuantity,upsell,onAcceptUpsell,onDismissUpsell,
   allowDiscounts,reviewUnitMinor,reviewCount,reviewDiscountMinor,maxReviews,onReviewCountChange,
   manualDiscount,manualDiscountMinor,onOpenManualDiscount,clubDiscountMinor,
-  hasProtectedItems,subtotalMinor,totalDiscountMinor,totalMinor,shiftOpen,
+  hasProtectedItems,subtotalMinor,totalDiscountMinor,roundingAdjustmentMinor,totalMinor,shiftOpen,
   onOpenShift,onHold,onCreateOrder,onPay,
 }:CurrentReceiptProps){
   return <aside className="receipt current-receipt">
@@ -87,14 +87,15 @@ export default function CurrentReceipt({
         <strong>{manualDiscountMinor?'− '+formatMoney(manualDiscountMinor):'—'}</strong>
       </div>
       {hasProtectedItems&&<div className="discount-warning">На отмеченные позиции скидка не применяется.</div>}
-      {totalDiscountMinor>0&&<>
+      {(totalDiscountMinor>0||roundingAdjustmentMinor>0)&&<>
         <div className="subtotal"><span>Без скидок</span><strong>{formatMoney(subtotalMinor)}</strong></div>
+        {roundingAdjustmentMinor>0&&<div className="subtotal"><span>Округление</span><strong>− {formatMoney(roundingAdjustmentMinor)}</strong></div>}
         <div className="subtotal"><span>Скидка составила</span><strong>− {formatMoney(totalDiscountMinor)}</strong></div>
       </>}
       </div>
       {!shiftOpen
         ? <PosButton className="receipt-open-shift" variant="primary" size="touch" onClick={onOpenShift}>Открыть смену</PosButton>
-        : <PosButton className="pos-v2-pay" variant="primary" size="touch" disabled={!lines.length} onClick={onPay}>К оплате · {formatMoney(totalMinor)}</PosButton>}
+        : <PosButton className="pos-v2-pay" variant="primary" size="touch" disabled={!lines.length||totalMinor<=0} onClick={onPay}>К оплате · {formatMoney(totalMinor)}</PosButton>}
     </footer>
     </div>
   </aside>

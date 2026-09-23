@@ -10,6 +10,7 @@ import { registerHardwareSettingsIpc } from "./hardware-ipc";
 import { WindowsPrintProvider } from "./providers/print";
 import { AtolSettingsStore } from "./providers/atol-web";
 import { createFiscalProvider } from "./providers/fiscal-provider-factory";
+import { formatPersonShortName } from "../shared/person-name";
 import {
   isAtolBridgeExecutableAvailable,
   NativeAtolDriverBridge,
@@ -169,9 +170,10 @@ if (!hasLock) {
       settingsStore: atolSettingsStore,
       webManager: trainingMode ? undefined : atolManager,
       driverBridge: atolDriverBridge,
-      currentOperator: () =>
+      currentOperator: () => formatPersonShortName(
         cashierAuth.state().employee?.name ||
-        database?.currentShift()?.cashierName,
+        database?.currentShift()?.cashierName
+      ),
       diagnostics,
     });
     const printProvider = new WindowsPrintProvider(

@@ -1,8 +1,14 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
+// JSONL pipes carry UTF-8 regardless of the Windows console code page.
+Console.InputEncoding = new UTF8Encoding(false);
+Console.OutputEncoding = new UTF8Encoding(false);
+Console.ErrorEncoding = new UTF8Encoding(false);
 
 var jsonOptions = new JsonSerializerOptions {
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

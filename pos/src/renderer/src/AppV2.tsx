@@ -134,7 +134,7 @@ export default function AppV2(){
   }
   const pricedCart=cart.map((line)=>({...line,preventDiscounts:Boolean(productById.get(line.productId)?.preventDiscounts)}))
   const breakdown=calculateDiscountBreakdown(pricedCart,discountRules,customer?.discountPercent??0,reviewCount,manualDiscount)
-  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,totalMinor:total}=breakdown
+  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,roundingAdjustmentMinor,payableMinor:total}=breakdown
   const reviewUnitMinor=discountRules.allowDiscounts?discountRules.reviewDiscountPerReviewMinor:0
   const safeReviewCount=breakdown.reviewCount
   const maxReviews=reviewUnitMinor>0?Math.floor(Math.max(0,subtotal-clubDiscountMinor-1)/reviewUnitMinor):0
@@ -225,7 +225,7 @@ export default function AppV2(){
         }
       }
       const result=await window.raspechatkaPos.completeSale({
-        clientRequestId:crypto.randomUUID(),payments,lines:cart,customer,
+        clientRequestId:crypto.randomUUID(),payableMinor:total,roundingAdjustmentMinor,discountBreakdown:breakdown,payments,lines:cart,customer,
         receiptDiscountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,clubDiscountPercent:clubPercent,
         clubDiscountMinor,reviewCount,reviewDiscountMinor,manualDiscount,
         manualDiscountType:manualDiscount?.type??null,manualDiscountValue:manualDiscount?.value??0,
@@ -300,12 +300,13 @@ export default function AppV2(){
         hasProtectedItems={cart.some((line)=>productById.get(line.productId)?.preventDiscounts)}
         subtotalMinor={subtotal}
         totalDiscountMinor={breakdown.totalDiscountMinor}
+        roundingAdjustmentMinor={roundingAdjustmentMinor}
         totalMinor={total}
         shiftOpen={Boolean(boot.shift)}
         onOpenShift={openShift}
         onHold={holdReceipt}
         onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
-        onPay={()=>setPayment(preferredPayment)}
+        onPay={()=>{if(total>0)setPayment(preferredPayment)}}
       />}
     />}
 
@@ -408,7 +409,7 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
 
 export function OrderModal({draft,total,onChange,onClose,onPay}:{draft:OrderFormDraft;total:number;onChange:(draft:OrderFormDraft)=>void;onClose:()=>void;onPay:()=>void}){
   const valid=isOrderFormComplete(draft)
-  return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
+  return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid||total<=0} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
     <OrderFormFields draft={draft} onChange={onChange} autoFocusPhone className="order-form-compact"/>
   </PosModal>
 }

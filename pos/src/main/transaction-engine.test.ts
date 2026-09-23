@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { calculateDiscountBreakdown } from '../shared/cart'
 import type { CompleteSaleRequest } from '../shared/contracts'
 import type {
   DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult,
@@ -13,6 +14,7 @@ import { PosTransactionEngine } from './transaction-engine'
 
 class TestPaymentProvider implements PaymentProvider {
   chargeCalls=0
+  charges:PaymentRequest[]=[]
   refundCalls=0
   statusCalls=0
   nextCharge:PaymentResult={status:'approved',transactionId:'bank-1'}
@@ -21,6 +23,7 @@ class TestPaymentProvider implements PaymentProvider {
 
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
   async charge(_request:PaymentRequest):Promise<PaymentResult>{
+    this.charges.push(_request)
     this.chargeCalls++
     if(this.throwOnCharge)throw new Error('connection lost')
     return this.nextCharge
@@ -33,7 +36,9 @@ class TestPaymentProvider implements PaymentProvider {
 
 class TestFiscalProvider implements FiscalProvider {
   saleCalls=0
+  sales:FiscalRequest[]=[]
   returnCalls=0
+  returns:FiscalReturnRequest[]=[]
   statusCalls=0
   snapshotCalls=0
   throwOnSnapshot=false
@@ -45,8 +50,8 @@ class TestFiscalProvider implements FiscalProvider {
   async getShiftStatus(){return {open:true,state:'opened' as const,message:'open'}}
   async openShift(){return}
   async closeShift(){return {message:'closed'}}
-  async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
-  async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
+  async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.sales.push(_request);this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
+  async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returns.push(_request);this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
   async getOperationStatus(_request:{
     operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:unknown
   }):Promise<FiscalOperationStatus>{
@@ -259,6 +264,145 @@ describe('PosTransactionEngine safety',()=>{
     expect(fiscal.statusCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()[0].state).toBe('fiscal_status_unknown')
+    const fiscalHash=journal.getLatestFiscalAttempt(engine.listUnresolved()[0].id)?.requestHash
+    journal.close()
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+    expect(journal.getLatestFiscalAttempt(engine.listUnresolved()[0].id)?.requestHash).toBe(fiscalHash)
+    const afterRestart=await engine.recover(engine.listUnresolved()[0].id)
+    expect(afterRestart.status).toBe('attention')
+    expect(fiscal.saleCalls).toBe(1)
   })
+
+  const roundedRequest=(payments:CompleteSaleRequest['payments'],id:string):CompleteSaleRequest=>{
+    const lines=[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:299}]
+    const discountRules={allowDiscounts:false,maxDiscountPercent:0,reviewDiscountPerReviewMinor:0}
+    return {
+      clientRequestId:id,lines,payments,discountRules,
+      discountBreakdown:calculateDiscountBreakdown(lines,discountRules),
+      payableMinor:200,
+    }
+  }
+
+  it.each([
+    ['card',[{method:'card' as const,amountMinor:200}]],
+    ['cash',[{method:'cash' as const,amountMinor:200}]],
+    ['qr',[{method:'qr' as const,amountMinor:200}]],
+    ['remote_payment',[{method:'remote_payment' as const,amountMinor:200}]],
+    ['mixed',[{method:'cash' as const,amountMinor:50},{method:'card' as const,amountMinor:150}]],
+  ])('persists one payable for %s across payment, journal, fiscal and sale',async(method,parts)=>{
+    const input=roundedRequest(parts,'rounded-'+method)
+    if(method==='remote_payment')input.remotePaymentConfirmation={
+      confirmed:true,confirmedAt:'2026-09-10T12:00:00.000Z'
+    }
+    if(method==='cash')input.cashReceivedMinor=300
+    const result=await engine.completeSale(input,shiftId)
+    const operation=journal.getByClientRequestId(input.clientRequestId)!
+    expect(operation.amountMinor).toBe(200)
+    expect((operation.request as CompleteSaleRequest).discountBreakdown).toMatchObject({
+      totalMinor:299,roundingAdjustmentMinor:99,payableMinor:200,
+    })
+    expect(operation.confirmedPayments.reduce((sum,p)=>sum+p.amountMinor,0)).toBe(200)
+    expect(payment.charges.map((p)=>p.amountMinor)).toEqual(parts.filter(p=>p.method!=='cash'&&p.method!=='remote_payment').map(p=>p.amountMinor))
+    expect(fiscal.sales[0].amountMinor).toBe(200)
+    expect(result.totalMinor).toBe(200)
+    expect(database.getSale(result.saleId).payments.reduce((sum,p)=>sum+p.amountMinor,0)).toBe(200)
+    expect(result.changeMinor).toBe(method==='cash'?100:0)
+  })
+
+  it('rejects mismatched payable, evidence, parts and legacy total before side effects',async()=>{
+    const valid=roundedRequest([{method:'card',amountMinor:200}],'invalid-payable')
+    await expect(engine.completeSale({...valid,payableMinor:299},shiftId)).rejects.toThrow(/Сумма к оплате/)
+    await expect(engine.completeSale({...valid,discountBreakdown:{...valid.discountBreakdown!,roundingAdjustmentMinor:0}},shiftId)).rejects.toThrow(/Расчёт скидок/)
+    await expect(engine.completeSale({...valid,payments:[{method:'card',amountMinor:299}]},shiftId)).rejects.toThrow(/не совпадает/)
+    await expect(engine.completeSale(valid,shiftId,299)).rejects.toThrow(/Итог чека/)
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('keeps rounded attempt hash and UNKNOWN blocker across journal restart',async()=>{
+    const input=roundedRequest([{method:'card',amountMinor:200}],'rounded-unknown')
+    payment.throwOnCharge=true
+    await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
+    const operation=journal.getByClientRequestId(input.clientRequestId)!
+    const hash=journal.getLatestPaymentAttempt(operation.id)?.requestHash
+    expect(hash).toBeTruthy()
+    expect(journal.getLatestPaymentAttempt(operation.id)?.amountMinor).toBe(200)
+    journal.close()
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+    expect(journal.get(operation.id)?.amountMinor).toBe(200)
+    expect(journal.getLatestPaymentAttempt(operation.id)?.requestHash).toBe(hash)
+    await expect(engine.completeSale({...input,payableMinor:300},shiftId)).rejects.toThrow(/Сумма к оплате/)
+    await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/защиты|провер|восстанов|заверш/)
+    expect(payment.chargeCalls).toBe(1)
+    expect(fiscal.saleCalls).toBe(0)
+  })
+
+  it('refunds the remaining persisted amount after a partial rounded sale return',async()=>{
+    const lines=[{productId:'print-bw-a4',name:'Печать',quantity:3,unitPriceMinor:133}]
+    const rules={allowDiscounts:false,maxDiscountPercent:0,reviewDiscountPerReviewMinor:0}
+    const original=await engine.completeSale({
+      clientRequestId:'split-return-source',lines,
+      payments:[{method:'cash',amountMinor:300}],discountRules:rules,
+      discountBreakdown:calculateDiscountBreakdown(lines,rules),payableMinor:300,
+    },shiftId)
+    const sale=database.getSale(original.saleId)
+    const item=sale.lines[0]
+    expect(item.lineTotalMinor).toBe(300)
+    await engine.createReturn({
+      clientRequestId:'split-return-first',saleId:sale.id,
+      lines:[{saleItemId:item.id,quantity:1}],payments:[{method:'cash',amountMinor:100}],
+    },shiftId,100,sale)
+    const remainder=database.getSale(original.saleId)
+    const full=await engine.createReturn({
+      clientRequestId:'split-return-final',saleId:sale.id,
+      lines:[{saleItemId:item.id,quantity:2}],payments:[{method:'cash',amountMinor:200}],
+    },shiftId,200,remainder)
+    expect(full.totalMinor).toBe(200)
+    expect(fiscal.returns.map((row)=>row.amountMinor)).toEqual([100,200])
+    expect(fiscal.returns.map((row)=>(row.lines[0] as {lineTotalMinor?:number}).lineTotalMinor)).toEqual([100,200])
+    expect(database.getSale(sale.id).returnedMinor).toBe(300)
+  })
+
+  it('returns a legacy pre-rounding sale from its stored kopeck total',async()=>{
+    database.saveSale({
+      id:'legacy-sale',clientRequestId:'legacy-sale-request',shiftId,totalMinor:199,
+      paymentMethod:'cash',fiscalNumber:'FD-legacy',createdAt:new Date().toISOString(),
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:199}],
+      payments:[{method:'cash',amountMinor:199}],
+    })
+    const sale=database.getSale('legacy-sale')
+    const result=await engine.createReturn({
+      clientRequestId:'legacy-return',saleId:sale.id,
+      lines:[{saleItemId:sale.lines[0].id,quantity:1}],
+      payments:[{method:'cash',amountMinor:199}],
+    },shiftId,199,sale)
+    expect(result.totalMinor).toBe(199)
+    expect(fiscal.returns[0].amountMinor).toBe(199)
+    expect((fiscal.returns[0].lines[0] as {lineTotalMinor?:number}).lineTotalMinor).toBe(199)
+    expect(database.getSale(sale.id).returnedMinor).toBe(199)
+  })
+
+  it('uses persisted paid line allocation for full and partial historical returns',async()=>{
+    const sale=await engine.completeSale(request([{method:'cash',amountMinor:2000}],'return-source'),shiftId)
+    const persisted=database.getSale(sale.saleId)
+    const first=persisted.lines[0]
+    const partial=await engine.createReturn({
+      clientRequestId:'partial-return',saleId:sale.saleId,
+      lines:[{saleItemId:first.id,quantity:0.5}],
+      payments:[{method:'cash',amountMinor:1000}],
+    },shiftId,1000,persisted)
+    expect(partial.totalMinor).toBe(1000)
+    expect((fiscal.returns[0].lines[0] as {lineTotalMinor?:number}).lineTotalMinor).toBe(1000)
+    await expect(engine.createReturn({
+      clientRequestId:'over-return',saleId:sale.saleId,
+      lines:[{saleItemId:first.id,quantity:0.6}],
+      payments:[{method:'cash',amountMinor:1200}],
+    },shiftId,1200,database.getSale(sale.saleId))).rejects.toThrow(/доступно|превышает/)
+  })
+
 
 })
