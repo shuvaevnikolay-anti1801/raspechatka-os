@@ -229,6 +229,33 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents().filter((x)=>x.eventType==='cash.deposited')).toHaveLength(0)
   })
 
+  it('rejects unsafe warehouse request input before it reaches the outbox',()=>{
+    const database=createDatabase()
+    database.setWorkplaceData({
+      schedule:[],
+      scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+      myUpcomingShifts:[],
+      operationalCatalog:[{
+        id:'paper-hidden',name:'Бумага служебная',itemCode:'PAPER-HIDDEN',itemType:'Product',uom:'пачка',
+        trackInventory:true,stock:5,storageAddress:'Шкаф 3'
+      }],
+      deliveries:[],supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    })
+
+    expect(()=>database.reportStockWriteOff({
+      productId:'paper-hidden',quantity:1,reason:'Другое',comment:'Комментарий'
+    } as unknown as StockWriteOffRequest,'EMP-1')).toThrow('Недопустимая причина списания')
+    expect(()=>database.reportStockWriteOff({
+      productId:'paper-hidden',quantity:1,reason:'Брак',comment:'   '
+    },'EMP-1')).toThrow('Комментарий обязателен')
+    expect(()=>database.createSupplyRequest({
+      productId:'paper-hidden',itemName:'Бумага',comment:'   '
+    },'EMP-1')).toThrow('Комментарий обязателен')
+    expect(database.pendingEvents()).toHaveLength(0)
+  })
+
   it('keeps a partially received purchase order unchanged until canonical sync',()=>{
     const database=createDatabase()
     database.setWorkplaceData({
