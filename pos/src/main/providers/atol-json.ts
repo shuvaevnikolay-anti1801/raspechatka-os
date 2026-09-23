@@ -31,13 +31,16 @@ export function allocateFiscalAmounts(
   if (rawTotal <= 0)
     throw new Error("Сумма фискальных позиций должна быть больше нуля");
 
+  // Cumulative allocation avoids a negative final line on many small items.
+  let cumulativeRaw = 0;
   let allocated = 0;
   const result = raw.map((value, index) => {
-    const amount =
-      index === raw.length - 1
-        ? totalMinor - allocated
-        : Math.round((totalMinor * value) / rawTotal);
-    allocated += amount;
+    cumulativeRaw += value;
+    const target = index === raw.length - 1
+      ? totalMinor
+      : Math.round((totalMinor * cumulativeRaw) / rawTotal);
+    const amount = target - allocated;
+    allocated = target;
     return amount;
   });
   if (
