@@ -22,8 +22,9 @@ export const filterSaleProducts=<T extends SearchableProduct>(
     const inCategory=category===FAVORITES_CATEGORY
       ? favoriteIds.has(product.id)
       : product.category===category
-    const matchesSearch=!text||(product.name+' '+product.sku+' '+(product.barcode||'')).toLocaleLowerCase('ru').includes(text)
-    return inCategory&&matchesSearch
+    return text
+      ? product.name.toLocaleLowerCase('ru').includes(text)
+      : inCategory
   })
 }
 
@@ -54,7 +55,7 @@ export default function SaleCatalog({
   const visible=filterSaleProducts(products,category,query,favoriteProductIds)
   const favoriteIds=new Set(favoriteProductIds)
   return <section className="catalog">
-    <div className="catalog-toolbar"><label className="search"><PosIcon name="search"/><input autoFocus value={query} onChange={(event)=>onQueryChange(event.target.value)} placeholder="Товар, услуга, артикул или штрихкод"/><kbd>F2</kbd></label></div>
+    <div className="catalog-toolbar"><label className="search"><PosIcon name="search"/><input autoFocus value={query} onChange={(event)=>onQueryChange(event.target.value)} placeholder="Поиск по наименованию"/></label></div>
     {!visible.length&&category===FAVORITES_CATEGORY
       ? <div className="favorites-empty"><PosIcon name="star"/><strong>В избранном пока пусто</strong><p>Нажмите звезду на карточке товара, чтобы он появился здесь.</p></div>
       : <div className="product-grid">{visible.map((product)=>{
