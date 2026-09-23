@@ -254,6 +254,7 @@ def _hydrate_reference_labels(reference, rows):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_reference_detail(reference, name):
 	config = _get_config(reference)
 	require_access(AREA_BY_REFERENCE[reference], "read")
