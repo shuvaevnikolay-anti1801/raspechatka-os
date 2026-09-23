@@ -69,7 +69,8 @@ export default function AppV2(){
   const [customerOpen,setCustomerOpen]=useState(false)
   const [manualDiscountOpen,setManualDiscountOpen]=useState(false)
   const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
-  const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
+  const [cashCountOpen,setCashCountOpen]=useState<{type:CashCount['countType'];expectedMinor:number}|null>(null)
+  const openCashCount=(type:CashCount['countType'])=>setCashCountOpen({type,expectedMinor:summary.expectedCashMinor})
   const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
 
   const refresh=async()=>{
@@ -164,7 +165,7 @@ export default function AppV2(){
       setMessage('Не удалось связаться с Распечатка OS — продолжаем работать локально')
     }finally{setSyncing(false)}
   }
-  const openShift=async()=>{try{await window.raspechatkaPos.openShift();await refresh();setCashCountOpen('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
+  const openShift=async()=>{try{await window.raspechatkaPos.openShift();await refresh();openCashCount('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
@@ -227,7 +228,7 @@ export default function AppV2(){
         <Nav active={screen==='sale'} icon={NAV_ICON_MAP.sale} label="Продажа" onClick={()=>setScreen('sale')}/>
         <Nav active={screen==='receipts'} icon={NAV_ICON_MAP.receipts} label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
         <Nav active={screen==='orders'} icon={NAV_ICON_MAP.orders} label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
-        <Nav active={screen==='shift'} icon={NAV_ICON_MAP.shift} label="Смена" onClick={()=>setScreen('shift')}/>
+        <Nav active={screen==='shift'} icon={NAV_ICON_MAP.shift} label="Смена" warning={Boolean(summary.openingCountPending)} onClick={()=>setScreen('shift')}/>
         <Nav active={screen==='work'} icon={NAV_ICON_MAP.work} label="Работа" onClick={()=>setScreen('work')}/>
         <SettingsNavTrigger/>
       </nav>
@@ -287,9 +288,9 @@ export default function AppV2(){
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label={EXPECTED_CASH_LABEL} value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
-      <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}</div>{!boot.shift&&<PosButton variant="primary" onClick={openShift}>Открыть смену</PosButton>}</section>
-      {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section className="shift-cash"><div className="shift-cash-heading"><h3>Движения наличных</h3><div className="shift-actions"><PosButton variant="secondary" onClick={()=>setCashCountOpen('control')}>Пересчитать кассу</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('deposit')}>Внести деньги</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</PosButton></div></div>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason} · {new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p className="shift-empty">Операций пока нет</p>}</section></div>}
-    {boot.shift&&<div className="shift-close"><PosButton variant="danger" onClick={()=>setCashCountOpen('closing')}>Закрыть смену</PosButton></div>}
+      <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}<div className="shift-cashier-action">{boot.shift?<PosButton variant="danger" onClick={()=>openCashCount('closing')}>Закрыть смену</PosButton>:<PosButton variant="primary" onClick={openShift}>Открыть смену</PosButton>}</div></div></section>
+      {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl><div><dt>Наличные продажи</dt><dd>{formatMoney(summary.cashMinor)}</dd></div><div><dt>Карта</dt><dd>{formatMoney(summary.cardMinor)}</dd></div><div><dt>QR / СБП</dt><dd>{formatMoney(summary.qrMinor)}</dd></div><div><dt>Удалённая оплата</dt><dd>{formatMoney(summary.remotePaymentMinor??0)}</dd></div><div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section className="shift-cash"><div className="shift-cash-heading"><h3>Движения наличных</h3><div className="shift-actions"><PosButton variant="secondary" className={summary.openingCountPending?'cash-count-pending':undefined} onClick={()=>openCashCount(summary.openingCountPending?'opening':'control')}>Пересчитать кассу{summary.openingCountPending&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('deposit')}>Внести деньги</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</PosButton></div></div>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason?x.reason+' · ':''}{new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p className="shift-empty">Операций пока нет</p>}</section></div>}
+
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
@@ -298,7 +299,7 @@ export default function AppV2(){
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
     {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>}
     {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>}
-    {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
+    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen.type,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
 }
 
@@ -407,10 +408,10 @@ function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boole
   </PosModal>
 }
 
-function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;onClose:()=>void;onComplete:(amount:number,reason:string)=>Promise<void>}){
+export function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;onClose:()=>void;onComplete:(amount:number,reason:string)=>Promise<void>}){
   const [amount,setAmount]=useState('');const [reason,setReason]=useState('')
   return <PosModal open title={type==='deposit'?'Внесение':'Изъятие'} className="compact-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</PosButton>}>
-    <div className="modal-field-stack"><PosField label="Сумма"><input autoFocus inputMode="decimal" value={amount} onChange={(e)=>setAmount(e.target.value)}/></PosField><PosField label="Основание"><input value={reason} onChange={(e)=>setReason(e.target.value)} placeholder={type==='deposit'?'Размен в начале смены':'Инкассация'}/></PosField></div>
+    <div className="modal-field-stack"><PosField label="Сумма"><input autoFocus inputMode="decimal" value={amount} onChange={(e)=>setAmount(e.target.value)}/></PosField><PosField label="Основание"><input value={reason} onChange={(e)=>setReason(e.target.value)}/></PosField></div>
   </PosModal>
 }
 
@@ -459,21 +460,21 @@ export const buildCashCountLines=(quantities:Record<number,number>):CashCountLin
 export const cashCountTotal=(lines:CashCountLine[]):number=>
   lines.reduce((sum,line)=>sum+line.denominationMinor*line.quantity,0)
 
-function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount['countType'];expectedMinor:number;onClose:()=>void;onComplete:(lines:CashCountLine[])=>Promise<void>}){
+export function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:CashCount['countType'];expectedMinor:number;onClose:()=>void;onComplete:(lines:CashCountLine[])=>Promise<void>}){
   const [quantities,setQuantities]=useState<Record<number,number>>({})
   const lines=buildCashCountLines(quantities)
   const total=cashCountTotal(lines)
-  const expected=type==='opening'?total:expectedMinor
+  const expected=expectedMinor
   const difference=total-expected
   const title=type==='opening'?'Наличные на начало смены':type==='closing'?'Перед закрытием смены':'Контроль кассы'
   return <PosModal open title={title} className="cash-count-modal" layout="matrix" onClose={onClose} footer={<PosButton variant="primary" size="touch" onClick={()=>onComplete(lines)}>Сохранить пересчёт{type==='closing'?' и закрыть смену':''}</PosButton>}>
     <div className="denominations">{CASH_COUNT_DENOMINATIONS.map((x)=><div className="denomination-row" key={x}><span className="denomination-badge">{formatMoney(x)}</span><PosField label="Количество"><input type="number" min="0" step="1" inputMode="numeric" aria-label={'Количество купюр или монет '+formatMoney(x)} value={quantities[x]||''} onChange={(e)=>setQuantities({...quantities,[x]:Math.max(0,Math.floor(Number(e.target.value)||0))})}/></PosField><b>{formatMoney(x*(quantities[x]||0))}</b></div>)}</div>
-    <div className="cash-reconcile"><div><span>{type==='opening'?'Стартовый остаток':'Ожидается'}</span><b>{formatMoney(expected)}</b></div><div><span>Посчитано</span><b>{formatMoney(total)}</b></div><div className={difference===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(difference)}</strong></div></div>
+    <div className="cash-reconcile"><div><span>Ожидается</span><b>{formatMoney(expected)}</b></div><div><span>Насчитано</span><b>{formatMoney(total)}</b></div><div className={difference===0?'match':'mismatch'}><span>Расхождение</span><strong>{formatMoney(difference)}</strong></div></div>
   </PosModal>
 }
 
 export const NAV_ICON_MAP:Record<Screen|'settings',PosIconName>={sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings'}
-export function Nav({active,icon,label,badge,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{badge?<b>{badge}</b>:null}</PosButton>}
+export function Nav({active,icon,label,badge,warning=false,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;warning?:boolean;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{warning&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}{badge?<b>{badge}</b>:null}</PosButton>}
 export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className={title==='Текущая смена'?'page shift-page':'page'}><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
