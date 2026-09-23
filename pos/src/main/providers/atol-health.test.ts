@@ -13,6 +13,8 @@ describe('ATOL KKT and FN readiness',()=>{
       {...connected,invalidFn:true},
       {...connected,deviceBlocked:true},
       {...connected,shiftState:'expired'},
+      {...connected,shiftState:undefined},
+      {...connected,shiftState:'unexpected'},
       {...connected,coverOpened:true},
       {...connected,paperPresent:false},
       {...connected,connected:false},
