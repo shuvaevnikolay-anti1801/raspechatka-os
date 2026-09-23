@@ -105,10 +105,22 @@ type WorkPageProps={
   shiftOpen:boolean
   onChanged:()=>Promise<void>
   notify:(text:string)=>void
+  online?:boolean
+  initialTab?:'schedule'|'stock'|'cleaner'
+  onRequestCleanerPayout?:(cycleId:string)=>Promise<void>
 }
 
-export default function WorkPage({products:_products,data,shiftOpen,onChanged,notify}:WorkPageProps){
-  const [tab,setTab]=useState<'schedule'|'stock'|'cleaner'>('schedule')
+export const cleanerNeedsPayout=(state:WorkplaceData['cleaner'])=>state.payoutState==='due'||state.payoutState==='withdrawal_pending'
+
+export default function WorkPage({products:_products,data,shiftOpen,onChanged,notify,online=true,initialTab='schedule',onRequestCleanerPayout}:WorkPageProps){
+  const [tab,setTab]=useState<'schedule'|'stock'|'cleaner'>(initialTab)
+  const [visitBusy,setVisitBusy]=useState(false)
+  const [payoutBusy,setPayoutBusy]=useState(false)
+  const cleaner=data.cleaner
+  const everyN=cleaner.everyNVisits??4
+  const amount=cleaner.paymentDueMinor||cleaner.payoutAmountMinor||200000
+  const needsPayout=cleanerNeedsPayout(cleaner)
+  const due=needsPayout||cleaner.visitsSincePayment>=everyN
   const upcomingDays=groupUpcomingShifts(data.myUpcomingShifts)
   const currentScheduleMonth=data.scheduleCurrentMonth||data.scheduleMonth
   const nextScheduleMonth=data.scheduleNextMonth
@@ -118,7 +130,7 @@ export default function WorkPage({products:_products,data,shiftOpen,onChanged,no
     <div className="work-tabs" role="tablist" aria-label="Раздел рабочего места">
       <PosButton role="tab" aria-selected={tab==='schedule'} variant={tab==='schedule'?'primary':'quiet'} size="compact" className={tab==='schedule'?'work-tab active':'work-tab'} onClick={()=>setTab('schedule')}>График работы</PosButton>
       <PosButton role="tab" aria-selected={tab==='stock'} variant={tab==='stock'?'primary':'quiet'} size="compact" className={tab==='stock'?'work-tab active':'work-tab'} onClick={()=>setTab('stock')}>Товары и склад</PosButton>
-      <PosButton role="tab" aria-selected={tab==='cleaner'} variant={tab==='cleaner'?'primary':'quiet'} size="compact" className={tab==='cleaner'?'work-tab active':'work-tab'} onClick={()=>setTab('cleaner')}>Уборка{data.cleaner.paymentDueMinor>0&&<b>!</b>}</PosButton>
+      <PosButton role="tab" aria-selected={tab==='cleaner'} variant={tab==='cleaner'?'primary':'quiet'} size="compact" className={tab==='cleaner'?'work-tab active':'work-tab'} onClick={()=>setTab('cleaner')}>Уборка{needsPayout&&<b aria-label="Ожидается выплата за уборку">!</b>}</PosButton>
     </div>
 
     {tab==='schedule'&&<div className="work-schedule">
@@ -147,22 +159,27 @@ export default function WorkPage({products:_products,data,shiftOpen,onChanged,no
     {tab==='cleaner'&&<div className="work-grid">
       <section className="work-card hero-card">
         <small>УБОРОК ДО ВЫПЛАТЫ</small>
-        <h2>{Math.min(data.cleaner.visitsSincePayment,4)} из 4</h2>
-        <p>Каждое посещение отмечается один раз.</p>
-        <PosButton variant="primary" size="touch" onClick={async()=>{
-          try{
-            const r=await window.raspechatkaPos.recordCleanerVisit()
-            await onChanged()
-            notify(r.paymentDueMinor?'Четыре уборки отмечены — можно выплатить 2 000 ₽':'Посещение уборщицы отмечено')
-          }catch(e){notify(String(e))}
-        }}>Отметить сегодняшнюю уборку</PosButton>
-        {data.cleaner.paymentDueMinor>0&&<PosButton className="pay-cleaner" variant="secondary" size="touch" disabled={!shiftOpen} onClick={async()=>{
-          try{
-            await window.raspechatkaPos.payCleaner(data.cleaner.paymentDueMinor)
-            await onChanged()
-            notify('Выплата уборщице проведена как изъятие из кассы')
-          }catch(e){notify(e instanceof Error?e.message:String(e))}
-        }}>Выплатить {formatMoney(data.cleaner.paymentDueMinor)} из кассы</PosButton>}
+        <h2>{Math.min(cleaner.visitsSincePayment,everyN)} из {everyN}</h2>
+        <p>Выплата за цикл: {formatMoney(amount)}. Каждое посещение отмечается один раз за день.</p>
+        {due?<p role="status">{cleaner.payoutState==='withdrawal_pending'?'Изъятие подготовлено. Выплата ожидает подтверждённого изъятия.':'Пора выплатить за уборку. Новое посещение станет доступно после изъятия.'}</p>
+          :<PosButton variant="primary" size="touch" disabled={visitBusy} onClick={async()=>{
+            if(visitBusy)return
+            setVisitBusy(true)
+            try{
+              const r=await window.raspechatkaPos.recordCleanerVisit()
+              await onChanged()
+              notify(r.paymentDueMinor?'Цикл уборки завершён. Требуется изъятие '+formatMoney(r.paymentDueMinor)+(online?'':'. Ожидает отправки в ОС'):'Посещение сохранено на кассе'+(online?'':'. Ожидает отправки в ОС'))
+            }catch(e){notify(e instanceof Error?e.message:String(e))}
+            finally{setVisitBusy(false)}
+          }}>Отметить сегодняшнюю уборку</PosButton>}
+        {due&&<PosButton className="pay-cleaner" variant="secondary" size="touch" disabled={!shiftOpen||payoutBusy||!cleaner.cycleId||!onRequestCleanerPayout} onClick={async()=>{
+          if(payoutBusy||!cleaner.cycleId||!onRequestCleanerPayout)return
+          setPayoutBusy(true)
+          try{await onRequestCleanerPayout(cleaner.cycleId)}catch(e){notify(e instanceof Error?e.message:String(e))}
+          finally{setPayoutBusy(false)}
+        }}>Выплатить {formatMoney(amount)}</PosButton>}
+        {due&&!shiftOpen&&<p>Для изъятия откройте смену.</p>}
+        {!online&&<p role="status">Локальный режим: данные уборки ожидают синхронизации с ОС.</p>}
       </section>
       <section className="work-card">
         <h3>Последние посещения</h3>

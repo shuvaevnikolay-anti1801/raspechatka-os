@@ -12,6 +12,7 @@ import WorkPage, {
   SupplyRequestModal,
   warehouseItemMatches,
   WarehouseWorkspace,
+  cleanerNeedsPayout,
   WriteOffModal,
 } from './WorkPage'
 
@@ -377,5 +378,29 @@ describe('Warehouse operational modals',()=>{
     expect(css).toContain('.warehouse-modal.pos-modal{width:min(720px,calc(100vw - 32px))}')
     expect(css).toContain('.warehouse-receive-modal.pos-modal{width:min(860px,calc(100vw - 32px))}')
     expect(css).toContain('.receive-lines{max-height:min(46vh,480px);overflow:auto')
+  })
+})
+
+describe('DEV-175 cleaning UI',()=>{
+  const cleaning=(overrides:Partial<WorkplaceData['cleaner']>):WorkplaceData=>({...workplace,cleaner:{...workplace.cleaner,...overrides}})
+  const render=(data:WorkplaceData,online=true)=>renderToStaticMarkup(
+    <WorkPage products={[]} data={data} shiftOpen onChanged={async()=>undefined} notify={()=>undefined} online={online} initialTab="cleaner" onRequestCleanerPayout={async()=>undefined}/>
+  )
+  it('shows configured progress and amount with no visit while due or pending',()=>{
+    const due=cleaning({visitsSincePayment:2,everyNVisits:2,payoutAmountMinor:325050,paymentDueMinor:325050,payoutState:'due',cycleId:'cycle'})
+    const markup=render(due)
+    expect(markup).toContain('2 из 2')
+    expect(markup).toMatch(/3.250,50 ₽/)
+    expect(markup).toContain('Ожидается выплата за уборку')
+    expect(markup).not.toContain('Отметить сегодняшнюю уборку')
+    expect(cleanerNeedsPayout(due.cleaner)).toBe(true)
+    const pending=render(cleaning({...due.cleaner,payoutState:'withdrawal_pending'}),false)
+    expect(pending).toContain('Изъятие подготовлено')
+    expect(pending).toContain('Ожидает отправки')
+    expect(pending).not.toContain('Отметить сегодняшнюю уборку')
+  })
+  it('allows the visit before threshold and clears the warning after payout',()=>{
+    expect(render(cleaning({visitsSincePayment:1,everyNVisits:2,payoutAmountMinor:325050,payoutState:'not_due'}))).toContain('Отметить сегодняшнюю уборку')
+    expect(cleanerNeedsPayout(cleaning({visitsSincePayment:0,payoutState:'paid'}).cleaner)).toBe(false)
   })
 })
