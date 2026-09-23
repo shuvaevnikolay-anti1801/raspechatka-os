@@ -149,6 +149,8 @@ export type PosLifecycleStatus = {
 
 export type CompleteSaleRequest = {
   clientRequestId: string
+  /** Cashier-visible amount after ruble rounding; validated again in main. */
+  payableMinor?: number
   payments: PaymentPart[]
   lines: CartLine[]
   customer?: Customer | null
