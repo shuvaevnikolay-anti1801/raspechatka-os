@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PosDatabase } from './database'
 import type { CreateUnpaidOrderRequest, UpdateOrderRequest } from '../shared/contracts'
@@ -40,6 +41,57 @@ describe('PosDatabase',()=>{
     const again=database.updateOrder({id:order.id,status:'ready'})
     expect(again.readyAt).toBe(first.readyAt)
     expect(database.updateOrder({id:order.id,status:'issued'}).issuedAt).toBeTruthy()
+  })
+
+  it('round-trips contact method through local storage and both order events',()=>{
+    const database=createDatabase()
+    const order=database.createUnpaidOrder({
+      phone:'+7 900 123-45-67',
+      contactMethod:' Telegram @client ',
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      comment:'Связаться перед готовностью'
+    },'cashier-contact')
+    expect(order.contactMethod).toBe('Telegram @client')
+    expect(database.listOrders().find((row)=>row.id===order.id)?.contactMethod).toBe('Telegram @client')
+
+    const updated=database.updateOrder({id:order.id,contactMethod:' WhatsApp '},'cashier-contact')
+    expect(updated.contactMethod).toBe('WhatsApp')
+    expect(database.listOrders().find((row)=>row.id===order.id)?.contactMethod).toBe('WhatsApp')
+
+    const events=database.pendingEvents().filter((event)=>event.eventType.startsWith('order.'))
+    expect(events).toHaveLength(2)
+    expect(events[0].payload).toEqual(expect.objectContaining({contactMethod:'Telegram @client',cashierId:'cashier-contact'}))
+    expect(events[1].payload).toEqual(expect.objectContaining({contactMethod:'WhatsApp',cashierId:'cashier-contact'}))
+  })
+
+  it('adds contact_method to legacy order storage idempotently and reads old rows as null',()=>{
+    const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-legacy-order-'))
+    folders.push(folder)
+    const filePath=join(folder,'test.sqlite')
+    const legacy=new DatabaseSync(filePath)
+    legacy.exec(`CREATE TABLE orders (
+      id TEXT PRIMARY KEY, order_number TEXT NOT NULL UNIQUE, phone TEXT NOT NULL,
+      customer_id TEXT, customer_name TEXT, lines_json TEXT NOT NULL,
+      total_minor INTEGER NOT NULL, paid_minor INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'new', comment TEXT, due_at TEXT,
+      source_sale_id TEXT, fiscal_number TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`)
+    legacy.prepare(`INSERT INTO orders
+      (id,order_number,phone,lines_json,total_minor,paid_minor,status,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        'legacy-order','ORD-LEGACY','+7 900 000-00-01','[]',0,0,'new','2026-09-01T10:00:00.000Z','2026-09-01T10:00:00.000Z'
+      )
+    legacy.close()
+
+    const migrated=new PosDatabase(filePath)
+    databases.push(migrated)
+    expect(migrated.listOrders().find((row)=>row.id==='legacy-order')).toMatchObject({contactMethod:null})
+    migrated.close()
+    databases.splice(databases.indexOf(migrated),1)
+
+    const reopened=new PosDatabase(filePath)
+    databases.push(reopened)
+    expect(reopened.listOrders().find((row)=>row.id==='legacy-order')).toMatchObject({contactMethod:null})
   })
 
   it('never creates a second order for the same paid receipt',()=>{
@@ -93,7 +145,7 @@ describe('PosDatabase',()=>{
       lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:2000}]
     })
     expect(database.listOrders().find((order)=>order.id===legacy.id)).toMatchObject({
-      status:'new',readyAt:null,issuedAt:null
+      status:'new',contactMethod:null,readyAt:null,issuedAt:null
     })
   })
 

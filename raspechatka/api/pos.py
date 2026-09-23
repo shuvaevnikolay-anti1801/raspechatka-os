@@ -442,6 +442,7 @@ def _apply_order_created(event_id, workplace, payload):
 			"doctype": "POS Order",
 			"order_number": payload.get("orderNumber"),
 			"phone": payload.get("phone"),
+			"contact_method": payload.get("contactMethod") or None,
 			"customer_name": payload.get("customerName"),
 			"business_point": workplace.business_point,
 			"source_pos_event": event_id,
@@ -491,6 +492,8 @@ def _apply_order_updated(event_id, workplace, payload):
 	doc = frappe.get_doc("POS Order", name)
 	if "phone" in payload:
 		doc.phone = payload.get("phone")
+	if "contactMethod" in payload:
+		doc.contact_method = payload.get("contactMethod") or None
 	if "comment" in payload:
 		doc.comment = payload.get("comment")
 	if "dueAt" in payload:
@@ -752,6 +755,7 @@ def _get_orders(point_name):
 			"name",
 			"order_number",
 			"phone",
+			"contact_method",
 			"customer_name",
 			"total_amount",
 			"paid_amount",
@@ -796,6 +800,7 @@ def _get_orders(point_name):
 			"id": x.name,
 			"orderNumber": x.order_number,
 			"phone": x.phone,
+			"contactMethod": x.contact_method,
 			"customerName": x.customer_name,
 			"lines": items.get(x.name, []),
 			"totalMinor": int(flt(x.total_amount) * 100),

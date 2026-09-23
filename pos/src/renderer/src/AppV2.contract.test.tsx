@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { OrderFormFields, isOrderFormComplete, toOrderFormPayload } from './OrderFormFields'
 import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
@@ -148,7 +149,7 @@ describe('cashier workplace micro-contract',()=>{
     expect(locked).toContain('Забыли PIN?')
     const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
     expect(source).toContain('const footerRight=!setup&&!adminReset')
-    expect(source).toContain('setAdminReset(true);setPin(\'\');setConfirmation(\'\');setNotice(null)')
+    expect(source).toContain("setAdminReset(true);setPin('');setConfirmation('');setNotice(null)")
     const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
     expect(css).toContain('.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:var(--pos-control-touch);padding-inline:var(--pos-space-4)')
   })
@@ -366,18 +367,35 @@ describe('DEV-169 POS foundation contract',()=>{
 
 describe('DEV-169 stage 3 operational modal contracts',()=>{
   const appSource=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+  const orderFormSource=readFileSync(new URL('./OrderFormFields.tsx',import.meta.url),'utf8')
+  const ordersSource=readFileSync(new URL('./OrdersPage.tsx',import.meta.url),'utf8')
   const shiftSource=readFileSync(new URL('./ShiftCloseGuard.tsx',import.meta.url),'utf8')
   const css=readFileSync(new URL('./checkout.css',import.meta.url),'utf8')
 
-  it('blocks clearly incomplete order phones and keeps all required fields',()=>{
+  it('uses one complete order form contract in Sale create, Orders create and Orders edit',()=>{
     expect(isCompleteOrderPhone('+7 900 000-00-00')).toBe(true)
     expect(isCompleteOrderPhone('90000')).toBe(false)
     expect(isCompleteOrderPhone('+7 900 000-00')).toBe(false)
-    expect(appSource).toContain("isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)")
-    expect(appSource).toContain('title="Оформить заказ"')
-    expect(appSource).not.toContain('ОБЯЗАТЕЛЬСТВО КЛИЕНТУ')
-    expect(appSource).not.toContain('Заказ появится в работе только после успешной оплаты')
-    expect(appSource).toContain('className="order-description-field"')
+    const draft={phone:'+7 900 000-00-00',contactMethod:'  Telegram @client  ',dueAt:'2026-09-24T18:30',comment:'  Фотокнига  '}
+    expect(isOrderFormComplete(draft)).toBe(true)
+    expect(toOrderFormPayload(draft)).toEqual({
+      phone:'+7 900 000-00-00',contactMethod:'Telegram @client',dueAt:'2026-09-24T18:30',comment:'Фотокнига',
+    })
+    const markup=renderToStaticMarkup(<OrderFormFields draft={draft} onChange={()=>undefined}/>)
+    const labels=['Телефон *','Способ связи','Дата выдачи *','Описание заказа *']
+    const positions=labels.map((label)=>markup.indexOf(label))
+    expect(positions.every((position)=>position>=0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a,b)=>a-b))
+    expect(markup).not.toContain('Срок готовности')
+    expect(orderFormSource).toContain('Введите полный номер из 11 цифр')
+    expect(orderFormSource).toContain('className="order-description-field"')
+    expect(appSource.match(/<OrderFormFields/g)?.length).toBe(1)
+    expect(ordersSource.match(/<OrderFormFields/g)?.length).toBe(2)
+    expect(appSource).toContain('order:orderDraft?toOrderFormPayload(orderDraft):undefined')
+    expect(ordersSource).toContain('updateOrder({id:order.id,...toOrderFormPayload(draft)})')
+    expect(ordersSource).toContain('createOrderFromSale({saleId,...toOrderFormPayload(draft)})')
+    expect(appSource).not.toContain('Срок готовности')
+    expect(ordersSource).not.toContain('Срок готовности')
   })
 
   it('uses shared modal, field, and button primitives for every mounted inline modal',()=>{

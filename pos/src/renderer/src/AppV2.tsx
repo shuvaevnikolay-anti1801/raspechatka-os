@@ -16,11 +16,16 @@ import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
 import { PosIcon, type PosIconName } from './ui/PosIcon'
 import WorkPage from './WorkPage'
+import {
+  emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, toOrderFormPayload, type OrderFormDraft,
+} from './OrderFormFields'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
   Customer, HeldReceipt, HeldReceiptUpsell, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary, WorkplaceData
 } from '../../shared/contracts'
+
+export { isCompleteOrderPhone } from './OrderFormFields'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
@@ -84,7 +89,7 @@ export default function AppV2(){
   const [manualDiscountOpen,setManualDiscountOpen]=useState(false)
   const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
   const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
-  const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
+  const [orderDraft,setOrderDraft]=useState<OrderFormDraft|null>(null)
 
   const refresh=async()=>{
     const nextAuth=await window.raspechatkaPos.getCashierAuthState()
@@ -223,7 +228,7 @@ export default function AppV2(){
         manualDiscountType:manualDiscount?.type??null,manualDiscountValue:manualDiscount?.value??0,
         manualDiscountMinor:breakdown.manualDiscountMinor,totalDiscountMinor:breakdown.totalDiscountMinor,
         discountRules,discountBreakdown:breakdown,
-        cashReceivedMinor,remotePaymentConfirmation,order:orderDraft||undefined
+        cashReceivedMinor,remotePaymentConfirmation,order:orderDraft?toOrderFormPayload(orderDraft):undefined
       })
       clear();setPayment(null);await refresh()
       const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
@@ -296,12 +301,12 @@ export default function AppV2(){
         shiftOpen={Boolean(boot.shift)}
         onOpenShift={openShift}
         onHold={holdReceipt}
-        onCreateOrder={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}
+        onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
         onPay={()=>setPayment(preferredPayment)}
       />}
     />}
 
-    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>}
+    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>} 
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label={EXPECTED_CASH_LABEL} value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
@@ -313,9 +318,9 @@ export default function AppV2(){
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
-    {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
-    {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>}
-    {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>}
+    {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>} 
+    {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>} 
+    {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>} 
     {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
 }
@@ -399,16 +404,10 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   </section></main>
 }
 
-export const isCompleteOrderPhone=(value:string)=>value.replace(/\D/g,'').length===11
-
-function OrderModal({draft,total,onChange,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onChange:(draft:{phone:string;comment?:string;dueAt?:string})=>void;onClose:()=>void;onPay:()=>void}){
-  const valid=isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
+export function OrderModal({draft,total,onChange,onClose,onPay}:{draft:OrderFormDraft;total:number;onChange:(draft:OrderFormDraft)=>void;onClose:()=>void;onPay:()=>void}){
+  const valid=isOrderFormComplete(draft)
   return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
-    <div className="order-form-compact">
-      <PosField label="Телефон *" error={draft.phone&&!isCompleteOrderPhone(draft.phone)?'Введите полный номер из 11 цифр':undefined}><input autoFocus inputMode="tel" value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></PosField>
-      <PosField label="Срок готовности *"><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></PosField>
-      <PosField label="Описание заказа *" size="textarea" className="order-description-field"><textarea value={draft.comment||''} onChange={(e)=>onChange({...draft,comment:e.target.value})} placeholder="Что нужно изготовить"/></PosField>
-    </div>
+    <OrderFormFields draft={draft} onChange={onChange} autoFocusPhone className="order-form-compact"/>
   </PosModal>
 }
 
