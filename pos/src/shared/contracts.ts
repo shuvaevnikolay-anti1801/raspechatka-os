@@ -319,6 +319,14 @@ export type ShiftSummary = {
 }
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
+export type OutboxQueueItem = OutboxEvent & {
+  status: 'pending' | 'problem' | 'sent'
+  attemptCount: number
+  lastAttemptAt: string | null
+  nextAttemptAt: string | null
+  lastError: string | null
+  sentAt: string | null
+}
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
 export type WorkScheduleEntry = {
