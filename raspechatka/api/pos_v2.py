@@ -469,10 +469,19 @@ def _sale_receipt(payload, cashier_id, connection):
 	declared_total = round(flt(payload.get("totalMinor")))
 	if not lines or paid_total <= 0 or declared_total != paid_total:
 		frappe.throw(_("Итог чека не совпадает с суммой оплат"))
-	if any(flt(payment.get("amountMinor")) < 0 or flt(payment.get("amountMinor")) != round(flt(payment.get("amountMinor"))) for payment in payments_payload):
+	if any(
+		flt(payment.get("amountMinor")) < 0
+		or flt(payment.get("amountMinor")) != round(flt(payment.get("amountMinor")))
+		for payment in payments_payload
+	):
 		frappe.throw(_("Некорректная сумма оплаты"))
 	discount_breakdown = payload.get("discountBreakdown") or {}
-	rounding_adjustment = max(0, round(flt(payload.get("roundingAdjustmentMinor", discount_breakdown.get("roundingAdjustmentMinor", 0)))))
+	rounding_adjustment = max(
+		0,
+		round(
+			flt(payload.get("roundingAdjustmentMinor", discount_breakdown.get("roundingAdjustmentMinor", 0)))
+		),
+	)
 	ordinary_paid_total = paid_total + rounding_adjustment
 	declared_payable = payload.get("payableMinor")
 	if declared_payable is not None and round(flt(declared_payable)) != paid_total:
@@ -852,9 +861,7 @@ def _ingest_cleaner_visit(event_id, payload, connection, cashier_id, created_at)
 	)
 	if not locked:
 		frappe.throw(_("Точка продаж недоступна"), frappe.PermissionError)
-	existing_event = frappe.db.get_value(
-		"Cleaner Visit", {"source_pos_event": event_id}, "business_point"
-	)
+	existing_event = frappe.db.get_value("Cleaner Visit", {"source_pos_event": event_id}, "business_point")
 	if existing_event:
 		if existing_event != connection.business_point:
 			frappe.throw(_("Событие уборки относится к другой точке"), frappe.PermissionError)
@@ -867,7 +874,9 @@ def _ingest_cleaner_visit(event_id, payload, connection, cashier_id, created_at)
 	expected_claim = instant.date().isoformat() if legacy_event else visit_date
 	if claimed_date != expected_claim:
 		frappe.throw(_("Дата уборки не совпадает с датой события точки"), frappe.ValidationError)
-	if frappe.db.exists("Cleaner Visit", {"business_point": connection.business_point, "visit_date": visit_date}):
+	if frappe.db.exists(
+		"Cleaner Visit", {"business_point": connection.business_point, "visit_date": visit_date}
+	):
 		frappe.throw(_("Уборка за эту дату уже отмечена"), frappe.ValidationError)
 	frappe.get_doc(
 		{
@@ -912,9 +921,19 @@ def _ingest_cleaner_payment(payload, connection, cashier_id):
 	if not locked:
 		frappe.throw(_("Точка продаж недоступна"), frappe.PermissionError)
 	movement = frappe.db.get_value(
-		"Cash Movement", {"external_id": payload.get("id")},
-		["name", "business_point", "movement_type", "amount", "cashier", "docstatus",
-		 "cleaning_payout_id", "cleaning_cycle_id"], as_dict=True,
+		"Cash Movement",
+		{"external_id": payload.get("id")},
+		[
+			"name",
+			"business_point",
+			"movement_type",
+			"amount",
+			"cashier",
+			"docstatus",
+			"cleaning_payout_id",
+			"cleaning_cycle_id",
+		],
+		as_dict=True,
 	)
 	if (
 		not movement
@@ -930,7 +949,14 @@ def _ingest_cleaner_payment(payload, connection, cashier_id):
 	visits = frappe.get_all(
 		"Cleaner Visit",
 		filters={"business_point": connection.business_point, "source_pos_event": ["in", visit_ids]},
-		fields=["name", "source_pos_event", "paid", "payment_pos_event", "cleaning_cycle_id", "cleaning_payout_id"],
+		fields=[
+			"name",
+			"source_pos_event",
+			"paid",
+			"payment_pos_event",
+			"cleaning_cycle_id",
+			"cleaning_payout_id",
+		],
 		limit_page_length=n + 1,
 	)
 	if len(visits) != n or {row.source_pos_event for row in visits} != set(visit_ids):
@@ -1022,13 +1048,18 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 					sales_api._ingest_shift(base_pos._shift(payload, selected["id"]), connection, stats)
 				elif event_type == "shift.closed":
 					sales_api._ingest_shift(
-						base_pos._shift(payload, selected["id"], True), connection, stats, update_existing=True
+						base_pos._shift(payload, selected["id"], True),
+						connection,
+						stats,
+						update_existing=True,
 					)
 				elif event_type == "sale.completed":
 					receipt, review_count = _sale_receipt(payload, selected["id"], connection)
 					sales_api._ingest_receipt(receipt, connection, stats)
 					if review_count:
-						name = frappe.db.get_value("Sales Receipt", {"external_id": payload.get("id")}, "name")
+						name = frappe.db.get_value(
+							"Sales Receipt", {"external_id": payload.get("id")}, "name"
+						)
 						if name:
 							doc = frappe.get_doc("Sales Receipt", name)
 							log_cashier_action(
@@ -1043,15 +1074,19 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 						base_pos._return_receipt(payload, selected["id"]), connection, stats
 					)
 				elif event_type == "cash.deposited":
-					sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Deposit"), connection, stats)
+					sales_api._ingest_cash(
+						base_pos._cash(payload, selected["id"], "Deposit"), connection, stats
+					)
 				elif event_type == "cash.withdrawn":
 					cash_row = base_pos._cash(payload, selected["id"], "Withdrawal")
 					if payload.get("cleaningPayoutId"):
-						cash_row.update({
-							"withdrawal_purpose": "Expense",
-							"cleaning_payout_id": payload["cleaningPayoutId"],
-							"cleaning_cycle_id": payload.get("cleaningCycleId"),
-						})
+						cash_row.update(
+							{
+								"withdrawal_purpose": "Expense",
+								"cleaning_payout_id": payload["cleaningPayoutId"],
+								"cleaning_cycle_id": payload.get("cleaningCycleId"),
+							}
+						)
 					sales_api._ingest_cash(cash_row, connection, stats)
 					if payload.get("cleaningPayoutId"):
 						_ingest_cleaner_payment(payload, connection, selected["id"])
@@ -1064,7 +1099,9 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 				elif event_type == "stock.receipt.requested":
 					_ingest_stock_receipt(event_id, payload, connection, selected["id"])
 				elif event_type == "cleaner.visit.recorded":
-					_ingest_cleaner_visit(event_id, payload, connection, selected["id"], event.get("createdAt"))
+					_ingest_cleaner_visit(
+						event_id, payload, connection, selected["id"], event.get("createdAt")
+					)
 				elif event_type in ("order.created", "order.updated"):
 					base_pos._ingest_order(event_type, event_id, connection, payload)
 				accepted.append(event_id)
