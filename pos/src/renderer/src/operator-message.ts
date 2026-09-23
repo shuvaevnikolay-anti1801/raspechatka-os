@@ -1,7 +1,7 @@
 import type { BootState, HardwareStatus, PrintResult, RecoveryResult } from '../../shared/contracts'
 
 type Domain='general'|'sync'|'settings'|'orders'|'work'|'receipts'|'print'|'terminal'|'payment'|'fiscal'|'shift'|'auth'
-type SafeError={code?:unknown;message?:unknown;safeForOperator?:unknown;operatorSafe?:unknown}
+type SafeError={code?:unknown;message?:unknown;safeForOperator?:unknown;operatorSafe?:unknown;safe?:unknown}
 
 const unsafeText=/(?:[a-z]:[\\/]|\\\\|\/(?:home|users|workspace|tmp|opt|var|etc)\/|https?:\/\/|\b[0-9a-f]{8}-[0-9a-f-]{16,}\b|\b(?:Error|Exception|Traceback|TypeError|RangeError|ECONN\w*|ENOENT|EACCES|HTTP|IPC|DCConsole|processJson|exitCode|statusCode)\b|\b[a-z][a-z0-9_]*\.[a-z][a-z0-9_.]*\b|\b(?:код|code)\s*[:№#-]?\s*\d{2,}\b|\b(?:-o\d+|cmd(?:\.exe)?|curl)\b|[{}\[\]]|\n|\r|\b0x[0-9a-f]+\b)/i
 const safeCodes=new Set(['VALIDATION_ERROR','BUSINESS_RULE','INVALID_INPUT','POINT_RULE'])
@@ -10,7 +10,7 @@ const safeCodes=new Set(['VALIDATION_ERROR','BUSINESS_RULE','INVALID_INPUT','POI
 export function safeValidationText(error:unknown):string|undefined{
   if(!error||typeof error!=='object')return undefined
   const value=error as SafeError
-  if(value.safeForOperator!==true&&value.operatorSafe!==true)return undefined
+  if(value.safeForOperator!==true&&value.operatorSafe!==true&&value.safe!==true)return undefined
   if(typeof value.code!=='string'||!safeCodes.has(value.code.toUpperCase()))return undefined
   if(typeof value.message!=='string')return undefined
   const message=value.message.trim()
