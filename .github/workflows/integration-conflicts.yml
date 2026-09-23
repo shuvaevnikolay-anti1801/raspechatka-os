@@ -1,4 +1,4 @@
-name: Integration conflict inspector
+name: Integration DEV-173 merger
 
 on:
   push:
@@ -6,39 +6,98 @@ on:
       - codex/integration-dev-170-176-final
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect-dev173:
+  merge-dev173:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build DEV-173 conflict snapshot
+      - name: Merge DEV-173 with reviewed conflict resolution
         shell: bash
         run: |
-          set -uo pipefail
-          git config user.name integration-inspector
-          git config user.email integration-inspector@users.noreply.github.com
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git fetch origin codex/dev-173-pos-cash-drawer
+          if git merge-base --is-ancestor origin/codex/dev-173-pos-cash-drawer HEAD; then
+            echo "DEV-173 already integrated"
+            exit 0
+          fi
           set +e
           git merge --no-commit --no-ff origin/codex/dev-173-pos-cash-drawer
           merge_rc=$?
           set -e
-          mkdir -p integration-conflicts/base integration-conflicts/ours integration-conflicts/theirs integration-conflicts/merged
-          git diff --name-only --diff-filter=U | tee integration-conflicts/conflicts.txt
-          while IFS= read -r file; do
-            [ -n "$file" ] || continue
-            mkdir -p "integration-conflicts/base/$(dirname "$file")" "integration-conflicts/ours/$(dirname "$file")" "integration-conflicts/theirs/$(dirname "$file")" "integration-conflicts/merged/$(dirname "$file")"
-            git show ":1:$file" > "integration-conflicts/base/$file" || true
-            git show ":2:$file" > "integration-conflicts/ours/$file" || true
-            git show ":3:$file" > "integration-conflicts/theirs/$file" || true
-            cp "$file" "integration-conflicts/merged/$file" || true
-          done < integration-conflicts/conflicts.txt
-          printf '%s\n' "$merge_rc" > integration-conflicts/merge-exit-code.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: integration-conflicts-dev173
-          path: integration-conflicts
-          if-no-files-found: error
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U | sort)
+          expected=(
+            "pos/src/renderer/src/AppV2.contract.test.tsx"
+            "pos/src/renderer/src/AppV2.tsx"
+          )
+          if [ "$merge_rc" -ne 0 ]; then
+            if [ "${conflicts[*]}" != "${expected[*]}" ]; then
+              printf 'Unexpected conflicts:\n%s\n' "${conflicts[*]}"
+              exit 1
+            fi
+            python - <<'PY'
+          from pathlib import Path
+
+          app = Path('pos/src/renderer/src/AppV2.tsx')
+          s = app.read_text()
+          replacements = {
+          """<<<<<<< HEAD
+            // Legacy payloads lack upsell state. Resolve them once as dismissed; never reselect a candidate.
+          =======
+          >>>>>>> origin/codex/dev-173-pos-cash-drawer
+          """: """  // Legacy payloads lack upsell state. Resolve them once as dismissed; never reselect a candidate.\n""",
+          """<<<<<<< HEAD
+            const [cashCountOpen,setCashCountOpen]=useState<CashCount['countType']|null>(null)
+          =======
+            const [cashCountOpen,setCashCountOpen]=useState<{type:CashCount['countType'];expectedMinor:number}|null>(null)
+            const openCashCount=(type:CashCount['countType'])=>setCashCountOpen({type,expectedMinor:summary.expectedCashMinor})
+          >>>>>>> origin/codex/dev-173-pos-cash-drawer
+          """: """  const [cashCountOpen,setCashCountOpen]=useState<{type:CashCount['countType'];expectedMinor:number}|null>(null)\n  const openCashCount=(type:CashCount['countType'])=>setCashCountOpen({type,expectedMinor:summary.expectedCashMinor})\n""",
+          """<<<<<<< HEAD
+
+          =======
+          >>>>>>> origin/codex/dev-173-pos-cash-drawer
+          """: "\n",
+          """<<<<<<< HEAD
+              {cashCountOpen&&<CashCountModal type={cashCountOpen} expectedMinor={summary.expectedCashMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await window.raspechatkaPos.saveCashCount(cashCountOpen,lines);setCashCountOpen(null);await refresh();if(count.countType==='closing'){await closeShift()}else setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
+          =======
+              {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
+          >>>>>>> origin/codex/dev-173-pos-cash-drawer
+          """: """    {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} \n""",
+          }
+          for old, new in replacements.items():
+              if old not in s:
+                  raise SystemExit(f'missing reviewed AppV2 conflict block: {old[:80]!r}')
+              s = s.replace(old, new, 1)
+          if '<<<<<<<' in s or '>>>>>>>' in s or '\n=======\n' in s:
+              raise SystemExit('unresolved AppV2 conflict marker')
+          app.write_text(s)
+
+          test = Path('pos/src/renderer/src/AppV2.contract.test.tsx')
+          t = test.read_text()
+          old = """<<<<<<< HEAD
+          import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+          import { OrderFormFields, isOrderFormComplete, toOrderFormPayload } from './OrderFormFields'
+          =======
+          import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, saveCountThenClose, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+          >>>>>>> origin/codex/dev-173-pos-cash-drawer
+          """
+          new = """import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, saveCountThenClose, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'\nimport { OrderFormFields, isOrderFormComplete, toOrderFormPayload } from './OrderFormFields'\n"""
+          if old not in t:
+              raise SystemExit('missing reviewed AppV2.contract.test import conflict block')
+          t = t.replace(old, new, 1)
+          if '<<<<<<<' in t or '>>>>>>>' in t or '\n=======\n' in t:
+              raise SystemExit('unresolved test conflict marker')
+          test.write_text(t)
+          PY
+          fi
+          git rm -f --ignore-unmatch .github/workflows/dev173-integration-fix.yml .integration-trigger-173
+          git add -A
+          git diff --cached --check
+          git commit -m "integrate: DEV-173 cash drawer lifecycle"
+          git push origin HEAD:codex/integration-dev-170-176-final
