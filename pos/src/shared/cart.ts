@@ -29,12 +29,12 @@ export function calculateDiscountBreakdown(
   // Existing POS contract: one protected item blocks receipt-level discounts for the whole check.
   const discountableSubtotalMinor = lines.some((line)=>line.preventDiscounts) ? 0 : subtotalMinor
   if (!rules.allowDiscounts || subtotalMinor <= 0) {
+    const payableMinor = calculatePayableMinor(subtotalMinor)
     return {
       subtotalMinor, discountableSubtotalMinor, clubDiscountPercent: 0, clubDiscountMinor: 0,
       reviewCount: 0, reviewDiscountMinor: 0, manualDiscountValue: 0, manualDiscountMinor: 0,
       totalDiscountMinor: 0, totalMinor: subtotalMinor,
-      roundingAdjustmentMinor: subtotalMinor - calculatePayableMinor(subtotalMinor),
-      payableMinor: calculatePayableMinor(subtotalMinor),
+      roundingAdjustmentMinor: subtotalMinor - payableMinor, payableMinor,
     }
   }
 
