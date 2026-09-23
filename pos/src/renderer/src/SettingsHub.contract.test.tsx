@@ -127,6 +127,10 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(markup).not.toContain('raw-order-uuid-123')
     expect(markup).not.toContain('raw-fiscal-uuid-456')
     expect(markup).not.toContain('order.created')
+    const legacy=renderToStaticMarkup(<SettingsSyncQueue queue={{...queue,items:[{...queue.items[0],lastError:'TypeError: /workspace/private/token.json {secret}'}]}} busy={false} onRetry={()=>undefined}/> )
+    expect(legacy).toContain('Откройте диагностику')
+    expect(legacy).not.toContain('/workspace/private/token.json')
+    expect(legacy).not.toContain('TypeError')
   })
 
   it('rejects unsafe, delayed and unversioned retries by the main policy',()=>{
