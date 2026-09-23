@@ -109,7 +109,7 @@ export type NativeAtolDriverBridgeOptions = {
 export function healthFromAtolStatus(status: AtolDriverStatus): DeviceHealth {
   const ready = Boolean(
     status.connected &&
-    status.shiftState !== 'expired' &&
+    (status.shiftState === 'opened' || status.shiftState === 'closed') &&
     status.paperPresent !== false &&
     !status.coverOpened &&
     !status.printerConnectionLost &&
