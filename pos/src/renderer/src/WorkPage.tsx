@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type {
   DeliveryNotice, OperationalCatalogItem, Product, StockReceiptRequest, StockWriteOffRequest,
-  SupplyRequestInput, WorkplaceData, WorkScheduleEntry,
+  SupplyRequestInput, UpcomingShift, WorkplaceData, WorkScheduleEntry, WorkScheduleMonth,
 } from '../../shared/contracts'
 import { formatMoney } from './money'
 import { formatPersonShortName } from './person-name'
@@ -38,6 +38,67 @@ export const scheduleCellPresentation=(entries:Array<Pick<WorkScheduleEntry,'shi
   return {label:labels.join(' · ')||'—',className:entries.length?'schedule-mark schedule-shift-other':''}
 }
 
+export const upcomingShiftLabel=(entries:Array<Pick<WorkScheduleEntry,'shiftCode'|'shiftName'>>)=>{
+  const codes=new Set(entries.map((entry)=>entry.shiftCode?.trim().toUpperCase()).filter(Boolean))
+  if(codes.has('U')&&codes.has('V'))return 'Утро / вечер'
+  if(codes.size===1&&codes.has('U'))return 'Утро'
+  if(codes.size===1&&codes.has('V'))return 'Вечер'
+  const labels=[...new Set(entries.map((entry)=>entry.shiftName).filter(Boolean))]
+  return labels.join(' / ')||'Смена'
+}
+
+export const groupUpcomingShifts=(entries:UpcomingShift[])=>{
+  const grouped=new Map<string,UpcomingShift[]>()
+  entries.forEach((entry)=>grouped.set(entry.date,[...(grouped.get(entry.date)||[]),entry]))
+  return [...grouped.entries()].map(([date,dayEntries])=>({date,entries:dayEntries}))
+}
+
+const monthHeading=(month:string,fallback:string)=>{
+  if(!/^\d{4}-\d{2}$/.test(month))return fallback
+  return new Date(month+'-01T00:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'})
+}
+
+function ScheduleMonthCard({scheduleMonth,fallback}:{scheduleMonth:WorkScheduleMonth;fallback:string}){
+  const days=Array.from({length:scheduleMonth.days||0},(_,index)=>index+1)
+  const label=monthHeading(scheduleMonth.month,fallback)
+  const gridColumns='clamp(176px,15vw,228px) repeat('+days.length+',minmax(clamp(40px,2.45vw,52px),1fr)) minmax(68px,76px)'
+  const entriesFor=(employeeId:string,day:number)=>scheduleMonth.entries.filter((entry)=>entry.employeeId===employeeId&&Number(entry.date.slice(-2))===day)
+
+  return <section className="work-card schedule-month">
+    <header>
+      <div><h3>{label}</h3><p>График точки</p></div>
+      <small>Только просмотр</small>
+    </header>
+    {days.length>0&&scheduleMonth.employees.length
+      ?<div className="schedule-grid-scroll">
+        <div className="schedule-grid">
+          <div className="schedule-grid-row schedule-grid-header" style={{gridTemplateColumns:gridColumns}}>
+            <strong>Сотрудник</strong>
+            {days.map((day)=>{
+              const date=new Date(scheduleMonth.month+'-'+String(day).padStart(2,'0')+'T00:00:00')
+              return <span key={day}>{date.toLocaleDateString('ru-RU',{weekday:'short'}).replace('.','')}<b>{day}</b></span>
+            })}
+            <strong>Часы</strong>
+          </div>
+          {scheduleMonth.employees.map((employee)=>{
+            const entries=days.map((day)=>entriesFor(employee.id,day))
+            const hours=entries.flat().reduce((sum,entry)=>sum+entry.plannedHours,0)
+            return <div className="schedule-grid-row" key={employee.id} style={{gridTemplateColumns:gridColumns}}>
+              <strong title={employee.name}>{formatPersonShortName(employee.name)}</strong>
+              {entries.map((dayEntries,dayIndex)=>{
+                const presentation=scheduleCellPresentation(dayEntries)
+                const title=dayEntries.map((entry)=>entry.shiftName+' · '+entry.startTime.slice(0,5)+'–'+entry.endTime.slice(0,5)).join(' | ')
+                return <span key={dayIndex} className={presentation.className} title={dayEntries.length?title:undefined}>{presentation.label}</span>
+              })}
+              <b>{hours} ч.</b>
+            </div>
+          })}
+        </div>
+      </div>
+      :<p>На {label} опубликованного графика пока нет.</p>}
+  </section>
+}
+
 type WorkPageProps={
   products:Product[]
   data:WorkplaceData
@@ -48,13 +109,9 @@ type WorkPageProps={
 
 export default function WorkPage({products:_products,data,shiftOpen,onChanged,notify}:WorkPageProps){
   const [tab,setTab]=useState<'schedule'|'stock'|'cleaner'>('schedule')
-  const scheduleMonth=data.scheduleMonth
-  const days=Array.from({length:scheduleMonth.days||0},(_,index)=>index+1)
-  const monthLabel=scheduleMonth.month
-    ?new Date(scheduleMonth.month+'-01T00:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'})
-    :'Текущий месяц'
-  const gridColumns='clamp(176px,15vw,228px) repeat('+days.length+',minmax(clamp(40px,2.45vw,52px),1fr)) minmax(68px,76px)'
-  const entriesFor=(employeeId:string,day:number)=>scheduleMonth.entries.filter((entry)=>entry.employeeId===employeeId&&Number(entry.date.slice(-2))===day)
+  const upcomingDays=groupUpcomingShifts(data.myUpcomingShifts)
+  const currentScheduleMonth=data.scheduleCurrentMonth||data.scheduleMonth
+  const nextScheduleMonth=data.scheduleNextMonth
 
   return <main className="page">
     <div className="page-heading"><div><h1>Рабочее место</h1></div></div>
@@ -65,53 +122,24 @@ export default function WorkPage({products:_products,data,shiftOpen,onChanged,no
     </div>
 
     {tab==='schedule'&&<div className="work-schedule">
-      <section className="work-card schedule-month">
-        <header>
-          <div><h3>График точки</h3><p>{monthLabel}</p></div>
-          <small>Только просмотр</small>
-        </header>
-        {days.length>0&&scheduleMonth.employees.length
-          ?<div className="schedule-grid-scroll">
-            <div className="schedule-grid">
-              <div className="schedule-grid-row schedule-grid-header" style={{gridTemplateColumns:gridColumns}}>
-                <strong>Сотрудник</strong>
-                {days.map((day)=>{
-                  const date=new Date(scheduleMonth.month+'-'+String(day).padStart(2,'0')+'T00:00:00')
-                  return <span key={day}>{date.toLocaleDateString('ru-RU',{weekday:'short'}).replace('.','')}<b>{day}</b></span>
-                })}
-                <strong>Часы</strong>
-              </div>
-              {scheduleMonth.employees.map((employee)=>{
-                const entries=days.map((day)=>entriesFor(employee.id,day))
-                const hours=entries.flat().reduce((sum,entry)=>sum+entry.plannedHours,0)
-                return <div className="schedule-grid-row" key={employee.id} style={{gridTemplateColumns:gridColumns}}>
-                  <strong title={employee.name}>{formatPersonShortName(employee.name)}</strong>
-                  {entries.map((dayEntries,dayIndex)=>{
-                    const presentation=scheduleCellPresentation(dayEntries)
-                    const title=dayEntries.map((entry)=>entry.shiftName+' · '+entry.startTime.slice(0,5)+'–'+entry.endTime.slice(0,5)).join(' | ')
-                    return <span key={dayIndex} className={presentation.className} title={dayEntries.length?title:undefined}>{presentation.label}</span>
-                  })}
-                  <b>{hours} ч.</b>
-                </div>
-              })}
-            </div>
-          </div>
-          :<p>Опубликованный график точки пока не загружен.</p>}
-      </section>
       <section className="work-card schedule-upcoming">
         <h3>Мои ближайшие 5 смен</h3>
-        {data.myUpcomingShifts.length
-          ?data.myUpcomingShifts.map((entry)=>{
-            const presentation=scheduleCellPresentation([entry])
-            return <article className="upcoming-shift" key={entry.id}>
-              <time dateTime={entry.date}>{new Date(entry.date+'T00:00:00').toLocaleDateString('ru-RU',{weekday:'short',day:'numeric',month:'short'})}</time>
-              <span className={presentation.className}>{presentation.label}</span>
-              <strong>{entry.startTime.slice(0,5)}–{entry.endTime.slice(0,5)}</strong>
-              <small>{entry.plannedHours} ч.</small>
+        {upcomingDays.length
+          ?upcomingDays.map(({date,entries})=>{
+            const presentation=scheduleCellPresentation(entries)
+            const value=new Date(date+'T00:00:00')
+            return <article className="upcoming-shift" key={date}>
+              <time dateTime={date}>
+                <span>{value.toLocaleDateString('ru-RU',{weekday:'long'})}</span>
+                <b>{value.toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</b>
+              </time>
+              <span className={presentation.className}>{upcomingShiftLabel(entries)}</span>
             </article>
           })
-          :<p>Ближайших опубликованных смен нет.</p>}
+          :<p>Ближайших опубликованных смен пока нет.</p>}
       </section>
+      <ScheduleMonthCard scheduleMonth={currentScheduleMonth} fallback="Текущий месяц"/>
+      <ScheduleMonthCard scheduleMonth={nextScheduleMonth} fallback="Следующий месяц"/>
     </div>}
 
     {tab==='stock'&&<WarehouseWorkspace data={data} onChanged={onChanged} notify={notify}/>}
