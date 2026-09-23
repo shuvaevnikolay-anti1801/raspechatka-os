@@ -55,7 +55,7 @@ class TestPosOrders(TestCase):
 		self.assertEqual(doc.status, "Ready")
 		doc.save.assert_called_once_with(ignore_permissions=True)
 
-	def test_order_update_replay_keeps_first_issued_time(self):
+	def test_order_update_ready_to_issued_and_replay_keep_first_issued_time(self):
 		get_value = Mock(return_value="POS-ORDER-1")
 		doc = SimpleNamespace(
 			phone="+79000000000",
@@ -63,10 +63,10 @@ class TestPosOrders(TestCase):
 			comment="Описание",
 			due_at="2026-09-20 12:00:00",
 			ready_at="2026-09-20 10:30:00",
-			issued_at="2026-09-20 11:00:00",
+			issued_at=None,
 			source_receipt="SALE-RECEIPT-1",
 			source_sale_id="SALE-1",
-			status="Issued",
+			status="Ready",
 			save=Mock(),
 		)
 		fake_frappe = SimpleNamespace(
@@ -78,6 +78,18 @@ class TestPosOrders(TestCase):
 			patch.object(pos, "frappe", fake_frappe),
 		):
 			pos._apply_order_updated(
+				"EVENT-ISSUED",
+				SimpleNamespace(business_point="POINT-1"),
+				{
+					"orderNumber": "ORD-1",
+					"status": "issued",
+					"issuedAt": "2026-09-20T11:00:00.000Z",
+				},
+			)
+			self.assertEqual(doc.issued_at, "2026-09-20T11:00:00.000Z")
+			self.assertEqual(doc.status, "Issued")
+
+			pos._apply_order_updated(
 				"EVENT-ISSUED-REPLAY",
 				SimpleNamespace(business_point="POINT-1"),
 				{
@@ -87,11 +99,11 @@ class TestPosOrders(TestCase):
 				},
 			)
 
-		self.assertEqual(doc.issued_at, "2026-09-20 11:00:00")
+		self.assertEqual(doc.issued_at, "2026-09-20T11:00:00.000Z")
 		self.assertEqual(doc.status, "Issued")
 		self.assertEqual(doc.source_receipt, "SALE-RECEIPT-1")
 		self.assertEqual(doc.source_sale_id, "SALE-1")
-		doc.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(doc.save.call_count, 2)
 
 	def test_order_create_rejects_when_canonical_doctype_is_unavailable(self):
 		def throw(message, exception=None):
