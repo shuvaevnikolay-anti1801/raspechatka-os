@@ -152,7 +152,7 @@ export function SettingsSyncQueue({queue,busy,onRetry}:{queue:SyncQueueSnapshot|
                         <div>
                           <b>{item.label}</b>
                           <span>{new Date(item.createdAt).toLocaleString('ru-RU')} · {queueState(item)} · Попыток: {item.attemptCount}</span>
-                          {item.lastError&&<span>{item.lastError}</span>}
+                          {item.lastError&&<span>{['Неподдерживаемый тип события','Сервер отклонил данные события','Не удалось подтвердить событие. Повтор будет выполнен позже'].includes(item.lastError) ? item.lastError : 'Не удалось подтвердить документ. Откройте диагностику.'}</span>}
                         </div>
                         {item.canRetry&&<PosButton disabled={busy} onClick={()=>onRetry(item.id)}>Повторить отправку</PosButton>}
                       </article>)}
