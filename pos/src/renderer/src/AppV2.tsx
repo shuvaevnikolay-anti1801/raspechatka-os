@@ -18,7 +18,7 @@ import { PosIcon, type PosIconName } from './ui/PosIcon'
 import WorkPage from './WorkPage'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
-  Customer, HeldReceipt, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
+  Customer, HeldReceipt, HeldReceiptUpsell, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary, WorkplaceData
 } from '../../shared/contracts'
 
@@ -41,6 +41,19 @@ export const manualSyncMessage=(result:BootState)=>{
 export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
 export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer})
 export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
+export const heldUpsellSnapshot=(cycle:UpsellCycle,outcome:'accepted'|'dismissed'|null):HeldReceiptUpsell=>{
+  if(cycle.state==='showing'&&cycle.candidate&&cycle.triggerItem)
+    return {state:'pending',triggerItem:cycle.triggerItem,candidate:cycle.candidate}
+  if(cycle.state==='eligible')return {state:'eligible'}
+  return {state:outcome==='accepted'?'accepted':'dismissed'}
+}
+export const restoreHeldUpsell=(upsell:HeldReceipt['upsell']):{cycle:UpsellCycle;outcome:'accepted'|'dismissed'|null}=>{
+  // Legacy payloads lack upsell state. Resolve them once as dismissed; never reselect a candidate.
+  if(upsell?.state==='pending'&&upsell.triggerItem&&upsell.candidate?.item)
+    return {cycle:{state:'showing',triggerItem:upsell.triggerItem,candidate:upsell.candidate},outcome:null}
+  if(upsell?.state==='eligible')return {cycle:{state:'eligible'},outcome:null}
+  return {cycle:{state:'resolved'},outcome:upsell?.state==='accepted'?'accepted':'dismissed'}
+}
 export default function AppV2(){
   const [boot,setBoot]=useState<BootState|null>(null)
   const [auth,setAuth]=useState<CashierAuthState|null>(null)
@@ -57,6 +70,7 @@ export default function AppV2(){
   const [category,setCategory]=useState(FAVORITES_CATEGORY)
   const [cart,setCart]=useState<CartLine[]>([])
   const [upsellCycle,setUpsellCycle]=useState<UpsellCycle>({state:'eligible'})
+  const [upsellOutcome,setUpsellOutcome]=useState<'accepted'|'dismissed'|null>(null)
   const [customer,setCustomer]=useState<Customer|null>(null)
   const [reviewCount,setReviewCount]=useState(0)
   const [manualDiscount,setManualDiscount]=useState<ManualDiscount|null>(null)
@@ -136,14 +150,19 @@ export default function AppV2(){
   }
   const updateCart=(next:CartLine[])=>{
     setCart(next)
-    setUpsellCycle((current)=>resolveUpsellAfterCart(current,next))
+    setUpsellCycle((current)=>{
+      const resolved=resolveUpsellAfterCart(current,next)
+      if(current.state==='showing'&&resolved.state==='resolved')setUpsellOutcome('dismissed')
+      return resolved
+    })
   }
   const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
-  const dismissUpsell=()=>setUpsellCycle({state:'resolved'})
+  const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'});setUpsellOutcome(null)}
+  const dismissUpsell=()=>{setUpsellOutcome('dismissed');setUpsellCycle({state:'resolved'})}
   const acceptUpsell=()=>{
     const target=upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)
+    setUpsellOutcome('accepted')
     setUpsellCycle({state:'resolved'})
     if(target)add(target,{suppressUpsell:true})
   }
@@ -168,12 +187,13 @@ export default function AppV2(){
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
-    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,totalMinor:total,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount})
+    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,totalMinor:total,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount,upsell:heldUpsellSnapshot(upsellCycle,upsellOutcome)})
     clear();await refresh();setMessage('Чек отложен')
   }
   const restoreReceipt=async(receipt:HeldReceipt)=>{
     const fresh=await resolveCurrentCustomer(receipt.customer,window.raspechatkaPos.getCustomer)
-    setUpsellCycle({state:'eligible'})
+    const savedUpsell=restoreHeldUpsell(receipt.upsell)
+    setUpsellCycle(savedUpsell.cycle);setUpsellOutcome(savedUpsell.outcome)
     setCart(receipt.lines);setCustomer(fresh);setReviewCount(receipt.reviewCount??0);setManualDiscount(receipt.manualDiscount??null)
     await window.raspechatkaPos.deleteHeldReceipt(receipt.id);await refresh();setScreen('sale')
     const restored=calculateDiscountBreakdown(
