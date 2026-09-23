@@ -88,7 +88,7 @@ describe('DEV-172 stage 3 paid receipt selector',()=>{
     expect(markup).toContain('× 3')
     expect(markup).toContain('Переплёт')
     expect(markup).toContain('× 1.5')
-    expect(markup).toContain('125,00')
+    expect(markup).toContain('125 ₽')
     expect(markup).not.toContain(':37')
     expect(markup).not.toContain('internal-sale-preview')
     expect(markup).not.toContain('TECH-A')
