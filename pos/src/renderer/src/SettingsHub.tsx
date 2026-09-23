@@ -17,6 +17,7 @@ import type {
   AtolSettings,
 } from "../../shared/contracts";
 import { formatPersonShortName } from "./person-name";
+import { operatorError, operatorPrintMessage, operatorRecoveryMessage } from "./operator-message";
 import { PinEntryLayout, PinInput } from "./PinEntry";
 import { PosButton, PosIconButton } from "./ui/PosButton";
 import { PosField } from "./ui/PosField";
@@ -256,7 +257,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       pos().listDiagnosticEvents(80),
       pos().getAtolDriverInfo().catch((error) => ({
         installed: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: operatorError(error, 'settings'),
       })),
       pos().listSyncQueue(),
       pos().getPosVersion(),
@@ -285,7 +286,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
   useEffect(() => {
     if (!open) return;
     void refresh().catch((error) =>
-      setMessage(error instanceof Error ? error.message : String(error))
+      setMessage(operatorError(error, 'settings'))
     );
     const timer = window.setInterval(
       () => void refresh().catch(() => undefined),
@@ -325,7 +326,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       await refresh();
       setMessage("Касса подключена к точке " + next.pointName);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(operatorError(error, 'settings'));
     } finally {
       setBusy(false);
     }
@@ -339,7 +340,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       await refresh();
       setMessage("Конфигурация и справочники обновлены");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(operatorError(error, 'settings'));
     } finally {
       setBusy(false);
     }
@@ -350,7 +351,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       setAtolDevices(found);
       setMessage(found.length ? "ККТ АТОЛ найдены" : "ККТ АТОЛ не найдены");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(operatorError(error, 'settings'));
     }
   };
   const saveAtol = async () => {
@@ -361,15 +362,16 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       setAtol(await pos().saveAtolSettings({ ...atol, adapter: "driver" }));
       setMessage("ККТ АТОЛ сохранена по серийному номеру");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(operatorError(e, 'settings'));
     }
   };
   const testAtol = async () => {
     try {
-      setAtolStatus(await pos().testAtolDriverDevice());
-      setMessage("Связь с выбранной ККТ проверена");
+      const status=await pos().testAtolDriverDevice();
+      setAtolStatus(status);
+      setMessage(status.connected ? 'Связь с выбранной ККТ проверена' : 'Связь с ККТ не подтверждена. Проверьте подключение.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(operatorError(error, 'settings'));
     }
   };
   const saveInpas = async () => {
@@ -378,7 +380,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       setMessage("Настройки INPAS сохранены");
       await refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(operatorError(e, 'settings'));
     }
   };
   const selectPrinter = async (name: string) => {
@@ -388,37 +390,36 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
       setMessage("Принтер сохранён");
       await refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(operatorError(e, 'settings'));
     }
   };
   const terminal = async (kind: "test" | "reconcile") => {
     try {
-      const result =
-        kind === "test"
-          ? await pos().testPaymentTerminal()
-          : await pos().reconcilePaymentTerminal();
-      setMessage(result.message);
+      await (kind === "test"
+          ? pos().testPaymentTerminal()
+          : pos().reconcilePaymentTerminal());
+      setMessage(kind === 'test' ? 'Связь с терминалом проверена.' : 'Сверка терминала завершена. Проверьте итог на терминале.');
       await refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(operatorError(e, 'terminal'));
     }
   };
   const recover = async (id: string) => {
     try {
       const result = await pos().recoverOperation(id);
-      setMessage(result.message);
+      setMessage(operatorRecoveryMessage(result));
       await refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(operatorError(e, 'payment'));
     }
   };
   const retryPrint = async (id: string) => {
     try {
       const result = await pos().retryPrintJob(id);
-      setMessage(result.message);
+      setMessage(operatorPrintMessage(result));
       await refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
+      setMessage(operatorError(e, 'print'));
     }
   };
 
@@ -427,9 +428,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     setSyncQueue(null)
     setBusy(true)
     try {
-      const result=await pos().retrySyncEvent(id,adminCode)
+      await pos().retrySyncEvent(id,adminCode)
       await refresh()
-      setMessage(result.message)
+      setMessage('Отправка запрошена. Проверьте состояние документа в очереди')
     } catch {
       await refresh().catch(()=>undefined)
       setMessage('Повтор не завершён. Проверьте состояние документа в очереди')
@@ -588,7 +589,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 )
               )}
               {connection?.lastError && (
-                <div className="settings-error">{connection.lastError}</div>
+                <div className="settings-error">{operatorError(connection.lastError,'sync')}</div>
               )}
             </section>
 
@@ -604,7 +605,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 </label>
               </div>
               <div className="settings-form-grid">
-                <label><span>Драйвер ККТ 10</span><strong className={atolDriver?.installed ? "settings-indicator ready" : "settings-indicator warning"}>{atolDriver?.installed ? `Найден${atolDriver.version ? ` · ${atolDriver.version}` : ""}` : `${atolDriver?.error || "Не найден"}`}</strong></label>
+                <label><span>Драйвер ККТ 10</span><strong className={atolDriver?.installed ? "settings-indicator ready" : "settings-indicator warning"}>{atolDriver?.installed ? `Найден${atolDriver.version ? ` · ${atolDriver.version}` : ""}` : `${atolDriver?.installed ? "Найден" : "Не найден"}`}</strong></label>
                 <PosField label="ККТ"><select value={atol.direct?.selectedDevice?.serialNumber || ""}
                     onChange={(e) => {
                       const device = atolDevices.find((x) => x.serialNumber === e.target.value);
@@ -624,7 +625,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 <PosField label="НДС"><select value={atol.taxType} onChange={(e) => setAtol({ ...atol, taxType: e.target.value })}>
                   <option value="none">Без НДС</option><option value="vat0">0%</option><option value="vat5">5%</option><option value="vat7">7%</option><option value="vat10">10%</option><option value="vat20">20%</option><option value="vat22">22%</option>
                 </select></PosField>
-                {atolStatus && <label><span>Статус ККТ</span><strong>{atolStatus.connected ? `Подключена · смена: ${atolStatus.shiftState ?? "неизвестно"}` : atolStatus.errorDescription || "Нет связи"}</strong></label>}
+                {atolStatus && <label><span>Статус ККТ</span><strong>{atolStatus.connected ? `Подключена · смена: ${atolStatus.shiftState ?? "неизвестно"}` : "Нет связи"}</strong></label>}
               </div>
               <div className="settings-actions">
                 <PosButton onClick={() => void refreshAtolDevices()}>Обновить</PosButton>
@@ -731,7 +732,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                           {x.state}
                         </b>
                         <span>
-                          {x.lastError || "Операция сохранена локально"}
+                          {x.lastError ? operatorError({code:x.state,message:x.lastError},'payment') : "Операция сохранена локально"}
                         </span>
                       </div>
                       <PosButton onClick={() => void recover(x.id)}>
@@ -743,7 +744,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                     <article key={x.id}>
                       <div>
                         <b>Товарный чек · {x.state}</b>
-                        <span>{x.lastError || "Ожидает печати"}</span>
+                        <span>{x.lastError ? operatorError(x.lastError,'print') : "Ожидает печати"}</span>
                       </div>
                       <PosButton onClick={() => void retryPrint(x.id)}>
                         Повторить печать
