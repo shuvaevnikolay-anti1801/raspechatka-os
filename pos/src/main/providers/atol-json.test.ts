@@ -82,7 +82,7 @@ describe("ATOL JSON builder", () => {
       receipt("sell"),
       receipt("sellReturn"),
     ]) {
-      const wire = Buffer.from(JSON.stringify({ protocolVersion: 1, id: "1", command: "executeJson", args: { json: JSON.stringify(command) } }) + "\\n", "utf8");
+      const wire = Buffer.from(JSON.stringify({ protocolVersion: 1, id: "1", command: "executeJson", args: { json: JSON.stringify(command) } }) + "\n", "utf8");
       const parsed = JSON.parse(wire.toString("utf8").trim());
       expect(JSON.parse(parsed.args.json).operator).toEqual({ name: "Иванова А. С." });
     }
