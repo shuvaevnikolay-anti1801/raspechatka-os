@@ -176,7 +176,7 @@ export type CompleteSaleRequest = {
   discountRules?: DiscountRulesSnapshot
   cashReceivedMinor?: number
   remotePaymentConfirmation?: RemotePaymentConfirmation
-  order?: { phone:string; comment?:string; dueAt?:string }
+  order?: { phone:string; contactMethod?:string; comment?:string; dueAt?:string }
 }
 
 export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order }
@@ -269,6 +269,11 @@ export type PrintJobSummary = {
   printedAt?:string
 }
 
+export type HeldReceiptUpsell =
+  | { state:'eligible' }
+  | { state:'pending'; triggerItem:string; candidate:UpsellCandidate }
+  | { state:'accepted' | 'dismissed' }
+
 export type HeldReceipt = {
   id: string
   label: string
@@ -277,6 +282,8 @@ export type HeldReceipt = {
   discountPercent: number
   reviewCount?: number
   manualDiscount?: ManualDiscount | null
+  /** Absent on legacy held receipts; restore treats them as dismissed. */
+  upsell?: HeldReceiptUpsell
   totalMinor?: number
   createdAt: string
 }
@@ -368,10 +375,10 @@ export type CashDrawerState = {
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
-export type Order = { id:string; orderNumber:string; phone:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
-export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }
-export type CreateOrderFromSaleRequest = { saleId:string; phone:string; comment:string; dueAt:string }
-export type UpdateOrderRequest = { id:string; phone?:string; comment?:string; status?:OrderStatus; dueAt?:string }
+export type Order = { id:string; orderNumber:string; phone:string; contactMethod?:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
+export type CreateUnpaidOrderRequest = { phone:string; contactMethod?:string; lines:CartLine[]; comment?:string; dueAt?:string }
+export type CreateOrderFromSaleRequest = { saleId:string; phone:string; contactMethod?:string; comment:string; dueAt:string }
+export type UpdateOrderRequest = { id:string; phone?:string; contactMethod?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
 export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
 export type ShiftDeviceStatus = {ready:boolean;localOpen:boolean;fiscalOpen?:boolean;message:string}
