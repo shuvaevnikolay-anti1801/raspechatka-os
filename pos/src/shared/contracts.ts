@@ -127,11 +127,14 @@ export type PointRules = {
   reviewDiscountPerReviewMinor?: number
 }
 
+export type CleaningConfig = { payoutAmountMinor:number; everyNVisits:number }
+
 export type BootState = {
   pointId: string
   pointName: string
   /** Business Point timezone; optional for compatibility with older cached boot state. */
   pointTimezone?: string
+  cleaning?: CleaningConfig
   workplaceId: string
   workstationName: string
   cashierId?: string
@@ -294,7 +297,8 @@ export type HeldReceipt = {
   createdAt: string
 }
 export type CashOperationType = 'deposit' | 'withdrawal'
-export type CashOperation = { id: string; type: CashOperationType; amountMinor: number; reason: string; createdAt: string }
+export type CashOperation = { id: string; type: CashOperationType; amountMinor: number; reason: string; createdAt: string; cleaningPayoutId?: string }
+export type CleanerPayout = { id:string; cycleId:string; amountMinor:number; everyNVisits:number; visitEventIds:string[]; cashOperationId?:string; status:'withdrawal_pending'|'paid' }
 export type ShiftPaymentBreakdownItem = { method:string; amountMinor:number }
 export type ShiftSummary = {
   receipts: number
@@ -339,7 +343,12 @@ export type DeliveryNotice = {
 }
 export type PointSupplyRequest = { id:string; createdAt:string; itemName:string; quantity:number; status:string; comment?:string }
 export type CleanerVisit = { id:string; visitDate:string; recordedBy:string; paid:boolean }
-export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[] }
+export type CleanerPayoutState = 'not_due'|'due'|'withdrawal_pending'|'paid'
+export type CleanerStatus = {
+  visitsSincePayment:number; paymentDueMinor:number; recentVisits:CleanerVisit[]
+  payoutAmountMinor?:number; everyNVisits?:number
+  schemaVersion?:1; cycleId?:string; payoutState?:CleanerPayoutState; payoutId?:string
+}
 export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth
@@ -470,12 +479,13 @@ export type PosApi = {
   closeShift: () => Promise<ShiftSummary>
   getShiftSummary: () => Promise<ShiftSummary>
   listCashOperations: () => Promise<CashOperation[]>
-  addCashOperation: (type: CashOperationType, amountMinor: number, reason: string) => Promise<CashOperation>
+  addCashOperation: (type: CashOperationType, amountMinor: number, reason: string, cleaningPayoutId?:string) => Promise<CashOperation>
   getWorkplaceData: () => Promise<WorkplaceData>
   reportStockWriteOff: (request:StockWriteOffRequest) => Promise<void>
   createSupplyRequest: (request:SupplyRequestInput) => Promise<void>
   createStockReceipt: (request:StockReceiptRequest) => Promise<void>
   recordCleanerVisit: () => Promise<CleanerVisitResult>
+  prepareCleanerPayout: (cycleId:string) => Promise<CleanerPayout>
   payCleaner: (amountMinor:number) => Promise<CashOperation>
   saveCashCount: (countType:CashCount['countType'], lines:CashCountLine[]) => Promise<CashCount>
   getLastCashCount: () => Promise<CashCount|null>

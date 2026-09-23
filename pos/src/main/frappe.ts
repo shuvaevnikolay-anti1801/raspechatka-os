@@ -2,7 +2,7 @@ import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee,
 import { normalizeWorkplaceData } from './database'
 
 type BootstrapResponse = {
-  point: { id:string; name:string; timezone?:string }
+  point: { id:string; name:string; timezone?:string; cleaning?: BootState['cleaning'] }
   workplace: { id:string; name:string }
   employee?: PointEmployee|null
   employees: PointEmployee[]

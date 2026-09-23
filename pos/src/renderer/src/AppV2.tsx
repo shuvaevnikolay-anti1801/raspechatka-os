@@ -16,12 +16,12 @@ import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
 import { PosIcon, type PosIconName } from './ui/PosIcon'
-import WorkPage from './WorkPage'
+import WorkPage, { cleanerNeedsPayout } from './WorkPage'
 import {
   emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, toOrderFormPayload, type OrderFormDraft,
 } from './OrderFormFields'
 import type {
-  BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
+  BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType, CleanerPayout,
   Customer, HeldReceipt, HeldReceiptUpsell, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary, WorkplaceData
 } from '../../shared/contracts'
@@ -86,6 +86,8 @@ export default function AppV2(){
   const [payment,setPayment]=useState<PaymentChoice|null>(null)
   const [returnSale,setReturnSale]=useState<SaleDetails|null>(null)
   const [cashOperation,setCashOperation]=useState<CashOperationType|null>(null)
+  const [cleaningPayout,setCleaningPayout]=useState<CleanerPayout|null>(null)
+  const [cashOperationBusy,setCashOperationBusy]=useState(false)
   const [customerOpen,setCustomerOpen]=useState(false)
   const [manualDiscountOpen,setManualDiscountOpen]=useState(false)
   const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
@@ -254,7 +256,7 @@ export default function AppV2(){
         <Nav active={screen==='receipts'} icon={NAV_ICON_MAP.receipts} label="Чеки" badge={held.length} onClick={()=>setScreen('receipts')}/>
         <Nav active={screen==='orders'} icon={NAV_ICON_MAP.orders} label="Заказы" badge={orders.filter((x)=>x.paymentStatus==='paid'&&(x.status==='new'||x.status==='in_progress')).length} onClick={()=>setScreen('orders')}/>
         <Nav active={screen==='shift'} icon={NAV_ICON_MAP.shift} label="Смена" warning={Boolean(summary.openingCountPending)} onClick={()=>setScreen('shift')}/>
-        <Nav active={screen==='work'} icon={NAV_ICON_MAP.work} label="Работа" onClick={()=>setScreen('work')}/>
+        <Nav active={screen==='work'} icon={NAV_ICON_MAP.work} label="Работа" warning={cleanerNeedsPayout(workplace.cleaner)} warningLabel="Ожидается выплата за уборку" onClick={()=>setScreen('work')}/>
         <SettingsNavTrigger/>
       </nav>
       <div className="pos-header-actions">
@@ -317,10 +319,10 @@ export default function AppV2(){
       <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}<div className="shift-cashier-action">{boot.shift?<PosButton variant="danger" onClick={()=>{void openCashCount('closing')}}>Закрыть смену</PosButton>:<PosButton variant="primary" onClick={()=>{void openShift()}}>Открыть смену</PosButton>}</div></div></section>
       {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl>{shiftPaymentRows(boot.rules,summary.paymentBreakdown??[]).map(({method,label,amountMinor})=><div key={method}><dt>{label}</dt><dd>{formatMoney(amountMinor)}</dd></div>)}<div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section className="shift-cash"><div className="shift-cash-heading"><h3>Движения наличных</h3><div className="shift-actions"><PosButton variant="secondary" className={summary.openingCountPending?'cash-count-pending':undefined} onClick={()=>openCashCount(summary.openingCountPending?'opening':'control')}>Пересчитать кассу{summary.openingCountPending&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('deposit')}>Внести деньги</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</PosButton></div></div>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason?x.reason+' · ':''}{new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p className="shift-empty">Операций пока нет</p>}</section></div>}
     </Page>}
-    {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={async()=>{await refresh()}} notify={setMessage}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
+    {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} online={boot.online} onChanged={async()=>{await refresh()}} notify={setMessage} onRequestCleanerPayout={async(cycleId)=>{const payout=await window.raspechatkaPos.prepareCleanerPayout(cycleId);setCleaningPayout(payout);setCashOperation('withdrawal');await refresh()}}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
-    {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
+    {cashOperation&&<CashOperationModal type={cashOperation} initialAmountMinor={cleaningPayout?.amountMinor} initialReason={cleaningPayout?'Уборка':''} locked={Boolean(cleaningPayout)} busy={cashOperationBusy} onClose={()=>{if(!cashOperationBusy){setCashOperation(null);setCleaningPayout(null)}}} onComplete={async(amount,reason)=>{if(cashOperationBusy)return;setCashOperationBusy(true);try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason,cleaningPayout?.id);setCashOperation(null);setCleaningPayout(null);await refresh();setMessage('Изъятие сохранено на кассе'+(boot.online?'':'. Ожидает отправки в ОС'))}catch(e){setMessage(e instanceof Error?e.message:String(e));await refresh().catch(()=>undefined)}finally{setCashOperationBusy(false)}}}/>}  
     {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>} 
     {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>} 
     {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>} 
@@ -427,10 +429,10 @@ function ReturnModal({sale,busy,onClose,onComplete}:{sale:SaleDetails;busy:boole
   </PosModal>
 }
 
-export function CashOperationModal({type,onClose,onComplete}:{type:CashOperationType;onClose:()=>void;onComplete:(amount:number,reason:string)=>Promise<void>}){
-  const [amount,setAmount]=useState('');const [reason,setReason]=useState('')
-  return <PosModal open title={type==='deposit'?'Внесение':'Изъятие'} className="compact-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</PosButton>}>
-    <div className="modal-field-stack"><PosField label="Сумма"><input autoFocus inputMode="decimal" value={amount} onChange={(e)=>setAmount(e.target.value)}/></PosField><PosField label="Основание"><input value={reason} onChange={(e)=>setReason(e.target.value)}/></PosField></div>
+export function CashOperationModal({type,onClose,onComplete,initialAmountMinor,initialReason='',locked=false,busy=false}:{type:CashOperationType;onClose:()=>void;onComplete:(amount:number,reason:string)=>Promise<void>;initialAmountMinor?:number;initialReason?:string;locked?:boolean;busy?:boolean}){
+  const [amount,setAmount]=useState(initialAmountMinor===undefined?'':String(initialAmountMinor/100));const [reason,setReason]=useState(initialReason)
+  return <PosModal open title={type==='deposit'?'Внесение':'Изъятие'} className="compact-modal" closeDisabled={busy} onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={busy||toMinor(amount)<=0} onClick={()=>onComplete(toMinor(amount),reason)}>{type==='deposit'?'Внести':'Изъять'} · {formatMoney(toMinor(amount))}</PosButton>}>
+    <div className="modal-field-stack"><PosField label="Сумма"><input autoFocus inputMode="decimal" readOnly={locked} value={amount} onChange={(e)=>setAmount(e.target.value)}/></PosField><PosField label="Основание"><input readOnly={locked} value={reason} onChange={(e)=>setReason(e.target.value)}/></PosField></div>
   </PosModal>
 }
 
@@ -499,7 +501,7 @@ export function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:Cas
 }
 
 export const NAV_ICON_MAP:Record<Screen|'settings',PosIconName>={sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings'}
-export function Nav({active,icon,label,badge,warning=false,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;warning?:boolean;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{warning&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}{badge?<b>{badge}</b>:null}</PosButton>}
+export function Nav({active,icon,label,badge,warning=false,warningLabel='Ожидается пересчёт на начало смены',className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;warning?:boolean;warningLabel?:string;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{warning&&<span className="cash-warning" aria-label={warningLabel}>!</span>}{badge?<b>{badge}</b>:null}</PosButton>}
 export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>}
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className={title==='Текущая смена'?'page shift-page':'page'}><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}

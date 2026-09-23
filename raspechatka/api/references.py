@@ -1,5 +1,6 @@
 # ruff: noqa: RUF001
 import json
+from decimal import Decimal, InvalidOperation
 
 import frappe
 from frappe import _
@@ -161,9 +162,7 @@ REFERENCE_LINK_DISPLAYS = {
 		"business_point": ("Business Point", "point_name"),
 		"pos_workplace": ("POS Workplace", "workplace_name"),
 	},
-	"financial-articles": {
-		"parent_financial_article": ("Financial Article", "article_name")
-	},
+	"financial-articles": {"parent_financial_article": ("Financial Article", "article_name")},
 	"catalog-groups": {"parent_catalog_group": ("Catalog Group", "group_name")},
 	"entities": {"organization": ("Organization", "organization_name")},
 	"points": {"business_entity": ("Business Entity", "short_name")},
@@ -253,13 +252,17 @@ def _hydrate_reference_labels(reference, rows):
 
 
 @frappe.whitelist()
-def get_reference_detail(reference, name):
+@access_contract(auth="current_user", action="read", scope="point")
+def get_reference_detail(reference: str, name: str):
 	config = _get_config(reference)
 	require_access(AREA_BY_REFERENCE[reference], "read")
 	if not frappe.db.exists(config["doctype"], {"name": name, **_scope_filters(reference)}):
 		frappe.throw(_("Запись недоступна"), frappe.PermissionError)
 	doc = frappe.get_doc(config["doctype"], name)
 	result = doc.as_dict(no_nulls=False)
+	if reference == "points":
+		result["cleaning_payout_amount"] = getattr(doc, "cleaning_payout_amount", None) or 2000
+		result["cleaning_every_n_visits"] = getattr(doc, "cleaning_every_n_visits", None) or 4
 
 	if reference == "entities":
 		result["bank_accounts"] = frappe.get_all(
@@ -390,7 +393,7 @@ def lookup_bank_by_bic(bic):
 
 @frappe.whitelist(methods=["POST"])
 @access_contract(auth="current_user", action="write", scope="entity")
-def save_reference(reference, data):
+def save_reference(reference: str, data: str | dict):
 	data = frappe.parse_json(data)
 	config = _get_config(reference)
 	name = data.get("name")
@@ -434,6 +437,8 @@ def save_reference(reference, data):
 			"whatsapp",
 			"yandex_reviews_url",
 			"twogis_reviews_url",
+			"cleaning_payout_amount",
+			"cleaning_every_n_visits",
 		)
 	elif reference == "clients":
 		allowed = (
@@ -514,6 +519,22 @@ def save_reference(reference, data):
 	if reference == "organizations" and not name:
 		doc.organization_code = frappe.generate_hash(length=10).upper()
 		doc.organization_type = "Franchisee"
+	if reference == "points":
+		for fieldname, default in (("cleaning_payout_amount", 2000), ("cleaning_every_n_visits", 4)):
+			value = data.get(fieldname, default if not name else doc.get(fieldname) or default)
+			try:
+				number = Decimal(str(value))
+			except (InvalidOperation, TypeError, ValueError):
+				frappe.throw(_("Настройки уборки должны быть положительными числами"))
+			if (
+				not number.is_finite()
+				or number <= 0
+				or (fieldname == "cleaning_every_n_visits" and number != number.to_integral_value())
+			):
+				frappe.throw(
+					_("Выплата должна быть больше нуля, количество уборок — целым числом не меньше 1")
+				)
+			data[fieldname] = int(number) if fieldname == "cleaning_every_n_visits" else number
 	for fieldname in allowed:
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))

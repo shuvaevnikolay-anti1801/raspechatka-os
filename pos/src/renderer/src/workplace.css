@@ -11,6 +11,7 @@
 .hero-card>strong{display:block;margin:var(--pos-space-3) 0;font-size:var(--pos-type-kpi);letter-spacing:-.03em}
 .hero-card>.pos-button{width:100%;margin-top:var(--pos-space-3)}
 .pay-cleaner{margin-top:var(--pos-space-2)}
+.work-card [role="status"]{color:var(--pos-danger);font-weight:var(--pos-weight-medium)}
 .work-card article{font-size:var(--pos-type-body)}
 .work-card article small{color:var(--pos-muted);font-size:var(--pos-type-label)}
 

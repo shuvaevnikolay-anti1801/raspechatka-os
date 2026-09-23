@@ -7,7 +7,7 @@ const mocks=vi.hoisted(()=>({
 }))
 vi.mock('./frappe',()=>({loadBootstrap:mocks.loadBootstrap,pushEvents:mocks.pushEvents}))
 
-import { performConfigurationSync, performSync } from './sync'
+import { buildBootState, normalizeCleaningConfig, performConfigurationSync, performSync } from './sync'
 
 const connection={serverUrl:'https://example.test',deviceId:'dev',token:'token'}
 const connectionStore:any={load:()=>connection}
@@ -253,5 +253,25 @@ describe('read-after-write and truthful queue state',()=>{
     expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
     expect(database.markEventsSent).toHaveBeenCalledTimes(1)
     expect(mocks.loadBootstrap).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('point cleaning bootstrap',()=>{
+  it('normalizes an old cached snapshot and invalid values to 2000 ₽ / 4',()=>{
+    const {database,state}=createDatabase()
+    state.set('bootstrap',JSON.stringify({pointId:'point',source:'frappe'}))
+    expect(buildBootState(database).cleaning).toEqual({payoutAmountMinor:200000,everyNVisits:4})
+    expect(normalizeCleaningConfig({payoutAmountMinor:0,everyNVisits:0})).toEqual({payoutAmountMinor:200000,everyNVisits:4})
+  })
+
+  it('stores custom cleaning configuration from the point bootstrap',async()=>{
+    const {database}=createDatabase()
+    mocks.loadBootstrap.mockResolvedValueOnce({
+      ...bootstrapPayload([]),
+      point:{id:'point',name:'Point',cleaning:{payoutAmountMinor:325050,everyNVisits:6}},
+    })
+    const result=await performConfigurationSync(database,connectionStore)
+    expect(result.cleaning).toEqual({payoutAmountMinor:325050,everyNVisits:6})
+    expect(buildBootState(database).cleaning).toEqual(result.cleaning)
   })
 })

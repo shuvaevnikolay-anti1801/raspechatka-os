@@ -32,7 +32,9 @@
   "default_price_type",
   "price_rounding",
   "pos_catalog_groups",
-  "review_discount_per_review"
+  "review_discount_per_review",
+  "cleaning_payout_amount",
+  "cleaning_every_n_visits"
  ],
  "fields": [
   {"fieldname":"main_tab","fieldtype":"Tab Break","label":"Основное"},
@@ -61,7 +63,9 @@
   {"fieldname":"default_price_type","fieldtype":"Link","label":"Вид цены по умолчанию","options":"Catalog Price Type","description":"Используется кассой и документами этой точки."},
   {"fieldname":"price_rounding","fieldtype":"Select","label":"Округление цены","options":"Без округления\nДо 1 рубля\nДо 10 рублей","default":"Без округления"},
   {"fieldname":"pos_catalog_groups","fieldtype":"Table","label":"Группы товаров в кассе","options":"Business Point POS Group","description":"В кассе точки отображаются только товары из выбранных групп. Пустой список означает все активные группы."},
-  {"fieldname":"review_discount_per_review","fieldtype":"Currency","label":"Скидка за 1 отзыв, ₽","default":"50","non_negative":1,"description":"Фиксированная скидка в рублях за один подтверждённый отзыв на этой точке."}
+  {"fieldname":"review_discount_per_review","fieldtype":"Currency","label":"Скидка за 1 отзыв, ₽","default":"50","non_negative":1,"description":"Фиксированная скидка в рублях за один подтверждённый отзыв на этой точке."},
+  {"fieldname":"cleaning_payout_amount","fieldtype":"Currency","label":"Выплата за уборку, ₽","default":"2000"},
+  {"fieldname":"cleaning_every_n_visits","fieldtype":"Int","label":"Выплачивать каждые N уборок","default":"4"}
  ],
  "links": [
   {"link_doctype":"Catalog Warehouse","link_fieldname":"business_point","group":"Склад"},

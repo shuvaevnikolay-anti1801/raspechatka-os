@@ -486,7 +486,7 @@ describe('DEV-173 stage 3 cash UI',()=>{
     expect(source).toContain("openCashCount(summary.openingCountPending?'opening':'control')")
     expect(source).toContain('expectedMinor:summary.expectedCashMinor')
     expect(source).not.toContain("type==='opening'?total:expectedMinor")
-    expect(source).toContain('addCashOperation(cashOperation,amount,reason)')
+    expect(source).toContain('addCashOperation(cashOperation,amount,reason,cleaningPayout?.id)')
   })
 })
 
@@ -497,5 +497,25 @@ describe('DEV-173 stage 4 shift payment rendering',()=>{
     expect(source).toContain('shiftPaymentRows(boot.rules,summary.paymentBreakdown??[])')
     expect(source).not.toContain('<dt>Наличные продажи</dt>')
     expect(source).not.toContain('<dt>Удалённая оплата</dt>')
+  })
+})
+
+describe('DEV-175 standard cleaning withdrawal',()=>{
+  it('uses the same withdrawal modal with an immutable configured prefill',()=>{
+    const markup=renderToStaticMarkup(<CashOperationModal type="withdrawal" initialAmountMinor={325050} initialReason="Уборка" locked onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(markup).toContain('Изъятие')
+    expect(markup).toContain('value="3250.5"')
+    expect(markup).toContain('value="Уборка"')
+    expect(markup.match(/readonly=""/gi)?.length).toBe(2)
+    const normal=renderToStaticMarkup(<CashOperationModal type="withdrawal" onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(normal).not.toMatch(/readonly=""/i)
+  })
+  it('shows a named work warning separate from the cash-count warning',()=>{
+    expect(renderToStaticMarkup(<Nav active={false} icon="work" label="Работа" warning warningLabel="Ожидается выплата за уборку" onClick={()=>undefined}/>)).toContain('Ожидается выплата за уборку')
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('prepareCleanerPayout(cycleId)')
+    expect(source).toContain('warning={cleanerNeedsPayout(workplace.cleaner)}')
+    expect(source).toContain('addCashOperation(cashOperation,amount,reason,cleaningPayout?.id)')
+    expect(source).toContain('if(!cashOperationBusy){setCashOperation(null);setCleaningPayout(null)}')
   })
 })

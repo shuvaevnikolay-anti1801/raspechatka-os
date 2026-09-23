@@ -12,6 +12,8 @@ from raspechatka.access_contract import access_contract
 from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.pos_upsell import (
 	get_pos_upsell_config as read_pos_upsell_config,
+)
+from raspechatka.pos_upsell import (
 	save_pos_upsell_rules as reconcile_pos_upsell_rules,
 )
 from raspechatka.sales import log_cashier_action, update_shift_totals
@@ -645,7 +647,15 @@ def _ingest_cash(row, connection, result):
 	doc.movement_type = _required(row, "movement_type")
 	doc.shift = _shift_name(row.get("shift_external_id"), connection.business_point)
 	_set_doc_scope(doc, connection, doc.shift)
-	for field in ("posting_datetime", "cashier", "amount", "reason"):
+	for field in (
+		"posting_datetime",
+		"cashier",
+		"amount",
+		"reason",
+		"withdrawal_purpose",
+		"cleaning_payout_id",
+		"cleaning_cycle_id",
+	):
 		if field in row:
 			doc.set(field, row.get(field))
 	doc.source = "POS"
@@ -821,18 +831,18 @@ def get_order_options():
 @frappe.whitelist()
 @access_contract(area="page.sales.orders", action="read", scope="point")
 def get_orders(
-	business_entity=None,
-	business_point=None,
-	status=None,
-	search=None,
-	created_from=None,
-	created_to=None,
-	due_from=None,
-	due_to=None,
-	ready_from=None,
-	ready_to=None,
-	overdue=0,
-	limit_page_length=1000,
+	business_entity: str | None = None,
+	business_point: str | None = None,
+	status: str | None = None,
+	search: str | None = None,
+	created_from: str | None = None,
+	created_to: str | None = None,
+	due_from: str | None = None,
+	due_to: str | None = None,
+	ready_from: str | None = None,
+	ready_to: str | None = None,
+	overdue: int | str = 0,
+	limit_page_length: int | str = 1000,
 ):
 	require_access("page.sales.orders", "read")
 	point_names = frappe.get_all(
@@ -903,10 +913,14 @@ def get_orders(
 			continue
 		if not in_range(row.ready_at, ready_from, ready_to):
 			continue
-		if needle and needle not in " ".join(
-			str(row.get(key) or "")
-			for key in ("order_number", "phone", "comment", "fiscal_number", "source_receipt")
-		).lower():
+		if (
+			needle
+			and needle
+			not in " ".join(
+				str(row.get(key) or "")
+				for key in ("order_number", "phone", "comment", "fiscal_number", "source_receipt")
+			).lower()
+		):
 			continue
 		late = is_overdue(row)
 		if cint(overdue) and not late:
@@ -944,6 +958,7 @@ def get_orders(
 	filtered.sort(key=lambda row: row["created_at"] or "", reverse=True)
 	limit = min(max(cint(limit_page_length) or 1000, 1), 5000)
 	return {"rows": filtered[:limit]}
+
 
 def _business_point_filters(business_entity=None, business_point=None):
 	scope = get_scope()
