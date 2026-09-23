@@ -318,9 +318,10 @@ def _upsell_rules(products):
 	return result
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+# Guest transport is required for POS devices; _authenticate validates the device token before data access.
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 @access_contract(auth="pos_token", action="read", scope="pos_point")
-def get_bootstrap(device_id, token, cashier_id=None):
+def get_bootstrap(device_id: str, token: str, cashier_id: str | None = None):
 	"""Point-scoped POS bootstrap with point catalog groups and club metadata."""
 	connection = base_pos._authenticate(device_id, token)
 	try:
@@ -1009,9 +1010,16 @@ def _push_event_error_message(exc):
 	return (message or _("Событие отклонено"))[:300]
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+# Guest transport is required for POS devices; _authenticate validates the device token before event handling.
+@frappe.whitelist(allow_guest=True, methods=["POST"])  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 @access_contract(auth="pos_token", action="create", scope="pos_point")
-def push_events(device_id, token, cashier_id=None, events=None, app_version=None):
+def push_events(
+	device_id: str,
+	token: str,
+	cashier_id: str | None = None,
+	events: str | list | None = None,
+	app_version: str | None = None,
+):
 	"""POS outbox ingestion with event-level rollback and partial acceptance."""
 	connection = base_pos._authenticate(device_id, token)
 	employees = base_pos._point_employees(connection.business_point)
