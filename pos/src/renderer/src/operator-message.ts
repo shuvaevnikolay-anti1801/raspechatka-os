@@ -3,7 +3,7 @@ import type { BootState, HardwareStatus, PrintResult, RecoveryResult } from '../
 type Domain='general'|'sync'|'settings'|'orders'|'work'|'receipts'|'print'|'terminal'|'payment'|'fiscal'|'shift'|'auth'
 type SafeError={code?:unknown;message?:unknown;safeForOperator?:unknown;operatorSafe?:unknown}
 
-const unsafeText=/(?:[a-z]:[\\/]|\\\\|\/(?:home|users|workspace|tmp|opt|var|etc)\/|https?:\/\/|\b[0-9a-f]{8}-[0-9a-f-]{16,}\b|\b(?:Error|Exception|Traceback|TypeError|RangeError|ECONN\w*|ENOENT|EACCES|HTTP|IPC|DCConsole|processJson|exitCode|statusCode)\b|\b(?:sale|order|shift|cash|stock|cleaner|point)\.[a-z_.]+\b|[{}\[\]]|\n|\r|\b0x[0-9a-f]+\b)/i
+const unsafeText=/(?:[a-z]:[\\/]|\\\\|\/(?:home|users|workspace|tmp|opt|var|etc)\/|https?:\/\/|\b[0-9a-f]{8}-[0-9a-f-]{16,}\b|\b(?:Error|Exception|Traceback|TypeError|RangeError|ECONN\w*|ENOENT|EACCES|HTTP|IPC|DCConsole|processJson|exitCode|statusCode)\b|\b[a-z][a-z0-9_]*\.[a-z][a-z0-9_.]*\b|\b(?:код|code)\s*[:№#-]?\s*\d{2,}\b|\b(?:-o\d+|cmd(?:\.exe)?|curl)\b|[{}\[\]]|\n|\r|\b0x[0-9a-f]+\b)/i
 const safeCodes=new Set(['VALIDATION_ERROR','BUSINESS_RULE','INVALID_INPUT','POINT_RULE'])
 
 /** Only explicitly marked business validation crosses into ordinary operator copy. */
