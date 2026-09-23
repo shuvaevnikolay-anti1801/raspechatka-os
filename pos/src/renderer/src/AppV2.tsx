@@ -199,7 +199,7 @@ export default function AppV2(){
         }
       }
       const result=await window.raspechatkaPos.completeSale({
-        clientRequestId:crypto.randomUUID(),payments,lines:cart,customer,
+        clientRequestId:crypto.randomUUID(),payableMinor:total,payments,lines:cart,customer,
         receiptDiscountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,clubDiscountPercent:clubPercent,
         clubDiscountMinor,reviewCount,reviewDiscountMinor,manualDiscount,
         manualDiscountType:manualDiscount?.type??null,manualDiscountValue:manualDiscount?.value??0,
