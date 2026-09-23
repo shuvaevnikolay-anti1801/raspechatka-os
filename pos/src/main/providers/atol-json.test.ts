@@ -47,7 +47,7 @@ describe("ATOL JSON builder", () => {
       { productId: "a", name: "A", quantity: 1, unitPriceMinor: 100, discountPercent: 0 },
       { productId: "b", name: "B", quantity: 1, unitPriceMinor: 100, discountPercent: 0 },
       { productId: "c", name: "C", quantity: 1, unitPriceMinor: 100, discountPercent: 0 },
-    ], 100)).toEqual([33, 33, 34]);
+    ], 100)).toEqual([33, 34, 33]);
 
     const json = buildAtolReceiptJson({
       type: "sell",

@@ -154,7 +154,7 @@ describe('current receipt UX contract',()=>{
   })
 
   it('keeps shift opening and empty-cart guards unchanged',()=>{
-    expect(receiptSource).toContain('disabled={!lines.length} onClick={onPay}')
+    expect(receiptSource).toContain('disabled={!lines.length||totalMinor<=0} onClick={onPay}')
     expect(receiptSource).toContain('onClick={onOpenShift}>Открыть смену</PosButton>')
     expect(receiptSource).toContain('shiftOpen&&<PosIconButton icon="hold"')
     expect(receiptSource).toContain('shiftOpen&&<PosIconButton icon="order"')

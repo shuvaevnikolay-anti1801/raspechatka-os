@@ -797,8 +797,8 @@ export class PosDatabase {
       const remaining=(this.db.prepare(`SELECT COUNT(*) count FROM sale_items WHERE sale_id=? AND quantity>
         COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0)`).get(input.saleId) as {count:number}).count
       const returned=(this.db.prepare('SELECT COALESCE(SUM(total_minor),0) value FROM returns WHERE sale_id=?').get(input.saleId) as {value:number}).value
-      const original=(this.db.prepare('SELECT total_minor value FROM sales WHERE id=?').get(input.saleId) as {value:number}).value
-      this.db.prepare('UPDATE sales SET status=? WHERE id=?').run(!remaining||returned>=original?'returned':'partially_returned',input.saleId)
+      const persistedTotal=(this.db.prepare('SELECT total_minor value FROM sales WHERE id=?').get(input.saleId) as {value:number}).value
+      this.db.prepare('UPDATE sales SET status=? WHERE id=?').run(!remaining||returned>=persistedTotal?'returned':'partially_returned',input.saleId)
       const eventLines=input.lines.map((x)=>{
         const item=this.db.prepare('SELECT product_id productId,name,unit_price_minor unitPriceMinor FROM sale_items WHERE id=?').get(x.saleItemId) as {productId:string;name:string;unitPriceMinor:number}
         return {...x,...item}
