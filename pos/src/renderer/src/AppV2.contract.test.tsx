@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, saveCountThenClose, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import { OrderFormFields, isOrderFormComplete, toOrderFormPayload } from './OrderFormFields'
 import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
@@ -433,5 +433,67 @@ describe('DEV-169 stage 3 operational modal contracts',()=>{
     expect(css).toContain('.denominations{display:grid;grid-template-columns:1fr 1fr')
     expect(css).toContain('.cash-count-modal .pos-modal__body')
     expect(css).toContain('.denomination-row{min-height:52px}')
+  })
+})
+
+
+describe('DEV-173 stage 3 cash UI',()=>{
+  it('keeps expected cash frozen in the opening count and renders the counted total separately',()=>{
+    const markup=renderToStaticMarkup(<CashCountModal type="opening" expectedMinor={12345} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(markup).toContain('Ожидается</span><b>123,45 ₽')
+    expect(markup).toContain('Насчитано</span><b>0 ₽')
+    expect(markup).toContain('Расхождение</span><strong>-123,45 ₽')
+    expect(markup).toContain('aria-label="Закрыть"')
+    const lines=buildCashCountLines({500:3})
+    expect(cashCountTotal(lines)).toBe(1500)
+    expect(markup).toContain('Ожидается</span><b>123,45')
+  })
+
+  it('marks pending counts on Shift navigation and keeps the reason blank by default',()=>{
+    const nav=renderToStaticMarkup(<Nav active={false} icon="shift" label="Смена" warning onClick={()=>undefined}/>)
+    expect(nav).toContain('cash-warning')
+    expect(nav).toContain('Ожидается пересчёт на начало смены')
+    const operation=renderToStaticMarkup(<CashOperationModal type="deposit" onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(operation).toContain('Основание')
+    expect(operation).not.toContain('placeholder=')
+    expect(operation).not.toContain('Без комментария')
+  })
+
+  it('passes the exact count payload and only closes after a successful closing save',async()=>{
+    const events:string[]=[]
+    const lines=buildCashCountLines({1000:2})
+    const save=async(type:'opening'|'control'|'closing',payload:typeof lines)=>{
+      expect(payload).toBe(lines)
+      events.push('save:'+type)
+      return {id:'count',countType:type,lines:payload,totalMinor:2000,expectedMinor:1000,differenceMinor:1000,createdAt:'2026-09-23'}
+    }
+    const close=async()=>{events.push('close')}
+    await saveCountThenClose('opening',lines,save,close)
+    expect(events).toEqual(['save:opening'])
+    await saveCountThenClose('closing',lines,save,close)
+    expect(events).toEqual(['save:opening','save:closing','close'])
+    await expect(saveCountThenClose('closing',lines,async()=>{throw Error('count failed')},close)).rejects.toThrow('count failed')
+    expect(events).toEqual(['save:opening','save:closing','close'])
+  })
+
+  it('routes closing only through a saved count and leaves dismissal pending',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift)')
+    expect(source).toContain("if(count.countType==='closing')await close()")
+    expect(source).toContain('onClose={()=>setCashCountOpen(null)}')
+    expect(source).toContain("openCashCount(summary.openingCountPending?'opening':'control')")
+    expect(source).toContain('expectedMinor:summary.expectedCashMinor')
+    expect(source).not.toContain("type==='opening'?total:expectedMinor")
+    expect(source).toContain('addCashOperation(cashOperation,amount,reason)')
+  })
+})
+
+
+describe('DEV-173 stage 4 shift payment rendering',()=>{
+  it('uses configured rules and actual payment breakdown instead of fixed summary fields',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('shiftPaymentRows(boot.rules,summary.paymentBreakdown??[])')
+    expect(source).not.toContain('<dt>Наличные продажи</dt>')
+    expect(source).not.toContain('<dt>Удалённая оплата</dt>')
   })
 })

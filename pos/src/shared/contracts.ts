@@ -80,7 +80,20 @@ export type PaymentPart = {
   bankingEvidence?: BankingEvidence
 }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
-export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string; shiftType?:'Утро'|'Вечер' }
+export type Shift = {
+  id:string
+  openedAt:string
+  closedAt?:string
+  cashierId?:string
+  cashierName:string
+  shiftType?:'Утро'|'Вечер'
+  drawerPointId?:string
+  drawerWorkplaceId?:string
+  openingExpectedMinor?:number
+  openingExpectedVerified?:boolean
+  accountingBaselineAt?:string
+  openingCountPending?:boolean
+}
 export type PointEmployee = { id:string; name:string }
 export type CashierAuthState = {
   status:'signed_out'|'authenticated'|'locked'
@@ -276,6 +289,7 @@ export type HeldReceipt = {
 }
 export type CashOperationType = 'deposit' | 'withdrawal'
 export type CashOperation = { id: string; type: CashOperationType; amountMinor: number; reason: string; createdAt: string }
+export type ShiftPaymentBreakdownItem = { method:string; amountMinor:number }
 export type ShiftSummary = {
   receipts: number
   revenueMinor: number
@@ -289,6 +303,9 @@ export type ShiftSummary = {
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
+  paymentBreakdown?: ShiftPaymentBreakdownItem[]
+  expectedCashVerified?: boolean
+  openingCountPending?: boolean
 }
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
@@ -334,7 +351,27 @@ export type StockReceiptRequest = {
   lines:Array<{purchaseOrderItemId:string;quantity:number}>
 }
 export type CashCountLine = { denominationMinor:number; quantity:number }
-export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
+export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; expectedVerified?:boolean; differenceMinor:number; createdAt:string }
+export type CashDrawerBaselineSource =
+  | 'fresh_install'
+  | 'legacy_opening_count'
+  | 'legacy_control_count'
+  | 'legacy_closing_count'
+  | 'legacy_unverified'
+  | 'cash_count'
+export type CashDrawerState = {
+  schemaVersion:1
+  pointId:string
+  workplaceId:string
+  baselineMinor:number|null
+  baselineVerified:boolean
+  openingCountPending:boolean
+  baselineSource:CashDrawerBaselineSource
+  baselineSourceId?:string
+  baselineAt?:string
+  migratedAt:string
+  updatedAt:string
+}
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
