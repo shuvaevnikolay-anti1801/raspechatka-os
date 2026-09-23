@@ -150,11 +150,9 @@ export default function AppV2(){
   }
   const updateCart=(next:CartLine[])=>{
     setCart(next)
-    setUpsellCycle((current)=>{
-      const resolved=resolveUpsellAfterCart(current,next)
-      if(current.state==='showing'&&resolved.state==='resolved')setUpsellOutcome('dismissed')
-      return resolved
-    })
+    const resolved=resolveUpsellAfterCart(upsellCycle,next)
+    if(upsellCycle.state==='showing'&&resolved.state==='resolved')setUpsellOutcome('dismissed')
+    setUpsellCycle(resolved)
   }
   const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
