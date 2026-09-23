@@ -39,7 +39,7 @@ export const manualSyncMessage=(result:BootState)=>{
   return 'Данные обновлены'
 }
 export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
-export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer})
+export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer,reviewCount:customer?state.reviewCount:0})
 export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
 export const heldUpsellSnapshot=(cycle:UpsellCycle,outcome:'accepted'|'dismissed'|null):HeldReceiptUpsell=>{
   if(cycle.state==='showing'&&cycle.candidate&&cycle.triggerItem)
@@ -234,7 +234,7 @@ export default function AppV2(){
     if(!boot?.shift){setMessage('Для возврата сначала откройте смену');return}
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
-  const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setCustomerOpen(false)}
+  const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setReviewCount(next.reviewCount);setCustomerOpen(false)}
 
 
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
@@ -441,8 +441,8 @@ function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClo
   const overflow=visible.length>50
   const rows=visible.slice(0,50)
   return <PosModal open title="Выбрать покупателя" className="customer-modal" layout="matrix" onClose={onClose}>
-    <PosField label="Телефон" helper="Введите минимум 4 цифры"><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Последние цифры телефона"/></PosField>
-    <div className="customer-list"><PosButton className={!selected?'active':''} variant="quiet" onClick={()=>onSelect(null)}><span><b>Розничный покупатель</b><small>Без персональной скидки</small></span></PosButton>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><PosButton key={x.id} className={selected?.id===x.id?'active':''} variant="quiet" onClick={()=>onSelect(x)}><span><b>{x.name}</b><small>{x.phone}</small></span><strong className="club-badge">Скидка {x.discountPercent}%</strong></PosButton>)}{!searching&&digits.length<4&&<div className="pilot-empty">Поиск выполняется только по телефону. Введите последние 4 цифры или больше.</div>}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div>
+    <PosField label="Телефон"><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите последние четыре цифры телефона"/></PosField>
+    <div className="customer-list"><PosButton className={!selected?'active':''} variant="quiet" onClick={()=>onSelect(null)}><span><b>Розничный покупатель</b></span></PosButton>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><PosButton key={x.id} className={selected?.id===x.id?'active':''} variant="quiet" onClick={()=>onSelect(x)}><span><b>{x.name}</b><small>{x.phone}</small></span><strong className="club-badge">Скидка {x.discountPercent}%</strong></PosButton>)}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div>
   </PosModal>
 }
 
