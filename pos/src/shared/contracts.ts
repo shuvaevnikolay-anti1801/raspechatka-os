@@ -52,7 +52,10 @@ export type DiscountBreakdown = {
   manualDiscountValue: number
   manualDiscountMinor: number
   totalDiscountMinor: number
+  /** Total after ordinary discounts, before ruble rounding. */
   totalMinor: number
+  roundingAdjustmentMinor: number
+  payableMinor: number
 }
 export type BankingEvidence = {
   provider: 'inpas'
