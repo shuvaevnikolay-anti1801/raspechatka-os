@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 const receiptSource=readFileSync(new URL('./CurrentReceipt.tsx',import.meta.url),'utf8')
 const appSource=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
 const css=readFileSync(new URL('./sale-workspace.css',import.meta.url),'utf8')
+const workspaceSource=readFileSync(new URL('./SaleWorkspace.tsx',import.meta.url),'utf8')
+const catalogSource=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
 
 describe('current receipt UX contract',()=>{
   it('uses one heading and groups semantic receipt actions in the header',()=>{
@@ -116,6 +118,39 @@ describe('current receipt UX contract',()=>{
     expect(receiptSource).toContain('icon="plus"')
     expect(receiptSource).toContain('icon="close"')
     expect(css).toContain('background:var(--pos-brand)')
+  })
+
+  it.each([[1280,720],[1366,768]])('keeps sale data scrolling and fixed actions at %i×%i',(_width,height)=>{
+    expect(workspaceSource).toContain("style={{'--sale-categories-ratio':preferences.layout.categoriesRatio,'--sale-receipt-ratio':preferences.layout.receiptRatio}")
+    expect(workspaceSource).toContain('layout:clampSaleLayout(candidate,bounds.width)')
+    expect(catalogSource).toContain('<div className="product-grid">')
+    expect(receiptSource).toContain('<div className="receipt-lines">')
+    expect(receiptSource).toContain('<div className="receipt-fixed">')
+    expect(css).toContain('.sale-workspace-zone{min-width:0;min-height:0;overflow:hidden')
+    expect(css).toContain('.sale-workspace .catalog-toolbar{flex:0 0 auto;')
+    expect(css).toContain('.sale-workspace .product-grid{flex:1 1 auto;min-height:0;')
+    expect(css).toContain('overflow-y:auto;overflow-x:hidden}')
+    expect(css).toContain('.current-receipt .receipt-lines{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}')
+    expect(css).toContain('.current-receipt .receipt-fixed{flex:0 0 auto;min-height:0}')
+    expect(css).not.toMatch(/!important/)
+    if(height===720){
+      expect(css).toContain('@media (max-height:760px)')
+      expect(css).toContain('.current-receipt .receipt-heading{min-height:56px}')
+      expect(css).toContain('.current-receipt .pos-v2-pay,.current-receipt .receipt-open-shift{min-height:48px}')
+    }else{
+      expect(css).toContain('.current-receipt .receipt-heading{flex:0 0 auto;min-height:64px;')
+      expect(css).toContain('.current-receipt .pos-v2-pay,.current-receipt .receipt-open-shift{width:100%;min-height:56px;')
+    }
+  })
+
+  it('retains the DEV-169 splitter bands while constraining only product and line lists',()=>{
+    expect(css).toContain('minmax(160px,calc((100% - 24px)*var(--sale-categories-ratio)))')
+    expect(css).toContain('minmax(360px,min(520px,calc((100% - 24px)*var(--sale-receipt-ratio))))')
+    expect(css).toContain('@media (min-width:1100px) and (max-width:1279px)')
+    expect(css).toContain('@media (min-width:1600px)')
+    expect(css).toContain('.current-receipt .receipt-service-block{min-height:0}')
+    expect(css).not.toMatch(/\.current-receipt-footer\{[^}]*overflow:/)
+    expect(css).not.toMatch(/\.receipt-service-block\{[^}]*overflow:/)
   })
 
   it('keeps shift opening and empty-cart guards unchanged',()=>{
