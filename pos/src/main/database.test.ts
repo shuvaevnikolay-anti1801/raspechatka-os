@@ -287,4 +287,29 @@ describe('PosDatabase',()=>{
     const nextMorning=database.openShift({id:'shift-next-day',openedAt:'2026-09-07T06:00:00.000Z',cashierName:'Анна'})
     expect(nextMorning.shiftType).toBe('Утро')
   })
+  it('normalizes an old cached workplace snapshot into the two-month schedule shape',()=>{
+    const database=createDatabase()
+    database.setState('workplace_data',JSON.stringify({
+      schedule:[],
+      scheduleMonth:{
+        month:'2026-12',days:31,
+        employees:[{id:'EMP-1',name:'Анна'}],
+        entries:[{
+          id:'WS-1',date:'2026-12-31',employeeId:'EMP-1',employeeName:'Анна',
+          shiftTemplate:'SHIFT-U',shiftCode:'U',shiftName:'Утро',startTime:'09:00:00',endTime:'15:00:00',plannedHours:6
+        }]
+      },
+      myUpcomingShifts:[],
+      operationalCatalog:[],
+      deliveries:[],
+      supplyRequests:[],
+      cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},
+      orders:[],
+    }))
+    const data=database.getWorkplaceData()
+    expect(data.scheduleCurrentMonth).toEqual(data.scheduleMonth)
+    expect(data.scheduleCurrentMonth.month).toBe('2026-12')
+    expect(data.scheduleNextMonth).toEqual({month:'2027-01',days:31,employees:[],entries:[]})
+  })
+
 })
