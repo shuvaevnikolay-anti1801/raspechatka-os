@@ -328,6 +328,26 @@ export type StockReceiptRequest = {
 }
 export type CashCountLine = { denominationMinor:number; quantity:number }
 export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
+export type CashDrawerBaselineSource =
+  | 'fresh_install'
+  | 'legacy_opening_count'
+  | 'legacy_control_count'
+  | 'legacy_closing_count'
+  | 'legacy_unverified'
+  | 'cash_count'
+export type CashDrawerState = {
+  schemaVersion:1
+  pointId:string
+  workplaceId:string
+  baselineMinor:number|null
+  baselineVerified:boolean
+  openingCountPending:boolean
+  baselineSource:CashDrawerBaselineSource
+  baselineSourceId?:string
+  baselineAt?:string
+  migratedAt:string
+  updatedAt:string
+}
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
