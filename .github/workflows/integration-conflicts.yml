@@ -1,0 +1,46 @@
+name: Integration conflict inspector
+
+on:
+  pull_request:
+    branches:
+      - codex/integration-dev-170-176-final
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build conflict snapshot
+        shell: bash
+        run: |
+          set -uo pipefail
+          git config user.name integration-inspector
+          git config user.email integration-inspector@users.noreply.github.com
+          git fetch origin "${{ github.base_ref }}" "${{ github.head_ref }}"
+          git checkout -B integration-inspect "origin/${{ github.base_ref }}"
+          set +e
+          git merge --no-commit --no-ff "origin/${{ github.head_ref }}"
+          merge_rc=$?
+          set -e
+          mkdir -p integration-conflicts/base integration-conflicts/ours integration-conflicts/theirs integration-conflicts/merged
+          git diff --name-only --diff-filter=U | tee integration-conflicts/conflicts.txt
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            mkdir -p "integration-conflicts/base/$(dirname "$file")" "integration-conflicts/ours/$(dirname "$file")" "integration-conflicts/theirs/$(dirname "$file")" "integration-conflicts/merged/$(dirname "$file")"
+            git show ":1:$file" > "integration-conflicts/base/$file" || true
+            git show ":2:$file" > "integration-conflicts/ours/$file" || true
+            git show ":3:$file" > "integration-conflicts/theirs/$file" || true
+            cp "$file" "integration-conflicts/merged/$file" || true
+          done < integration-conflicts/conflicts.txt
+          printf '%s\n' "$merge_rc" > integration-conflicts/merge-exit-code.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integration-conflicts-${{ github.event.pull_request.number }}
+          path: integration-conflicts
+          if-no-files-found: error
