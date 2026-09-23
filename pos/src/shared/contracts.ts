@@ -80,7 +80,19 @@ export type PaymentPart = {
   bankingEvidence?: BankingEvidence
 }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
-export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string; shiftType?:'Утро'|'Вечер' }
+export type Shift = {
+  id:string
+  openedAt:string
+  closedAt?:string
+  cashierId?:string
+  cashierName:string
+  shiftType?:'Утро'|'Вечер'
+  drawerPointId?:string
+  drawerWorkplaceId?:string
+  openingExpectedMinor?:number
+  openingExpectedVerified?:boolean
+  openingCountPending?:boolean
+}
 export type PointEmployee = { id:string; name:string }
 export type CashierAuthState = {
   status:'signed_out'|'authenticated'|'locked'
@@ -282,6 +294,8 @@ export type ShiftSummary = {
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
+  expectedCashVerified?: boolean
+  openingCountPending?: boolean
 }
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
@@ -327,7 +341,7 @@ export type StockReceiptRequest = {
   lines:Array<{purchaseOrderItemId:string;quantity:number}>
 }
 export type CashCountLine = { denominationMinor:number; quantity:number }
-export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
+export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; expectedVerified?:boolean; differenceMinor:number; createdAt:string }
 export type CashDrawerBaselineSource =
   | 'fresh_install'
   | 'legacy_opening_count'
