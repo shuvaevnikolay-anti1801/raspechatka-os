@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { canCancelSyncQueueEvent, canRetrySyncQueueEvent } from '../../main/sync-queue-policy'
+import type { OutboxQueueItem, SyncQueueSnapshot } from '../../shared/contracts'
 import SettingsHub, {
   buildSettingsStatusItems,
   SETTINGS_OPEN_TRIGGER_SELECTOR,
   SettingsAdminGate,
+  SettingsSyncQueue,
   resolveSettingsAdminGate,
   saveConnectionWithConfigurationRefresh,
   settingsGateStateAfterVerification,
@@ -75,15 +78,22 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(markup).not.toContain('Код рабочего места')
   })
 
-  it('keeps only four technical status tiles and leaves shift state out of this grid',()=>{
+  it('shows six independent health channels with unknown OFD distinct from KKT',()=>{
     const items=buildSettingsStatusItems({
-      os:{ready:true,message:'OS'},
-      fiscal:{ready:true,message:'ККТ'},
-      payment:{ready:true,message:'Эквайринг'},
-      printer:{ready:true,message:'Принтер'},
+      os:{ready:false,status:'offline',message:'backend'},
+      fiscal:{ready:true,status:'ready',message:'KKT'},
+      ofd:{ready:false,status:'unknown',message:'no evidence'},
+      payment:{ready:false,status:'offline',message:'PAX'},
+      remotePayment:{ready:false,status:'offline',message:'remote'},
+      printer:{ready:true,status:'ready',message:'printer'},
       shift:{ready:true,message:'Смена открыта'},
     } as any)
-    expect(items.map(([label])=>label)).toEqual(['OS','ККТ','Эквайринг','Принтер'])
+    expect(items.map(([label])=>label)).toEqual([
+      'OS','ККТ и ФН','Передача в ОФД','Эквайринг','Удалённая оплата','Принтер',
+    ])
+    expect(items[0][2]).toBe('Локальный режим')
+    expect(items[1][2]).toBe('Готовы')
+    expect(items[2][2]).toBe('Нет данных')
     expect(items.flat()).not.toContain('Смена')
   })
 
@@ -96,7 +106,41 @@ describe('DEV-163 unified SettingsHub contract',()=>{
   it('keeps diagnostics in the full hub',()=>{
     const markup=renderToStaticMarkup(<SettingsHub initialOpen/>)
     expect(markup).toContain('Диагностика')
-    expect(markup).toContain('Последние технические события приложения.')
+    expect(markup).toContain('Последняя связь с OS')
+    expect(markup).toContain('Техническое состояние каналов')
+  })
+
+  it('shows only human queue data in the operator row and never an unsafe action',()=>{
+    const queue:SyncQueueSnapshot={
+      items:[
+        {id:'raw-order-uuid-123',eventType:'order.created',label:'Новый заказ',createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:2,nextAttemptAt:null,lastError:'Повтор будет выполнен позже',canRetry:true,canCancel:false},
+        {id:'raw-fiscal-uuid-456',eventType:'sale.completed',label:'Продажа',createdAt:'2026-09-23T11:00:00Z',status:'problem',attemptCount:3,nextAttemptAt:null,lastError:'Сервер отклонил данные события',canRetry:false,canCancel:false},
+      ],total:2,problemCount:1,problemCountTruncated:false,
+    }
+    const markup=renderToStaticMarkup(<SettingsSyncQueue queue={queue} busy={false} onRetry={()=>undefined}/> )
+    expect(markup).toContain('Новый заказ')
+    expect(markup).toContain('Требует исправления')
+    expect(markup).toContain('Попыток: 2')
+    expect((markup.match(/Повторить отправку/g)||[]).length).toBe(1)
+    expect(markup).not.toContain('Удалить')
+    expect(markup).not.toContain('Отменить')
+    expect(markup).not.toContain('raw-order-uuid-123')
+    expect(markup).not.toContain('raw-fiscal-uuid-456')
+    expect(markup).not.toContain('order.created')
+  })
+
+  it('rejects unsafe, delayed and unversioned retries by the main policy',()=>{
+    const event:OutboxQueueItem={id:'e',eventType:'order.created',payload:{},createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:1,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null}
+    const now=Date.parse('2026-09-23T12:00:00Z')
+    expect(canRetrySyncQueueEvent(event,false,now)).toBe(true)
+    expect(canRetrySyncQueueEvent({...event,eventType:'sale.completed'},false,now)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,eventType:'cash.withdrawn'},false,now)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,status:'problem'},false,now)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,nextAttemptAt:'2026-09-24T00:00:00Z'},false,now)).toBe(false)
+    expect(canRetrySyncQueueEvent(event,true,now)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated'},false,now)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated',payload:{updatedAt:'2026-09-23T10:00:00Z'}},false,now)).toBe(true)
+    expect(canCancelSyncQueueEvent(event)).toBe(false)
   })
 
   it('uses configuration refresh after admin connection save without full sync',async()=>{
