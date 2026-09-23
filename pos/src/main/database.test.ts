@@ -159,6 +159,33 @@ describe('PosDatabase',()=>{
     expect(database.pendingEvents()).toHaveLength(4)
   })
 
+  it('groups actual payment parts by method while retaining the legacy summary fields',()=>{
+    const database=createDatabase()
+    const shift=database.openShift({id:'payment-breakdown-shift',openedAt:'2026-09-06T10:00:00.000Z',cashierName:'Тест'})
+    database.saveSale({
+      id:'payment-breakdown-sale',clientRequestId:'payment-breakdown-request',shiftId:shift.id,
+      totalMinor:10000,paymentMethod:'mixed',fiscalNumber:'PAYMENT-BREAKDOWN',
+      createdAt:'2026-09-06T10:01:00.000Z',receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:10000}],
+      payments:[{method:'cash',amountMinor:1000},{method:'card',amountMinor:2000},
+        {method:'qr',amountMinor:3000},{method:'remote_payment',amountMinor:4000}],
+    })
+    database.saveSale({
+      id:'payment-breakdown-card',clientRequestId:'payment-breakdown-card-request',shiftId:shift.id,
+      totalMinor:500,paymentMethod:'card',fiscalNumber:'PAYMENT-CARD',
+      createdAt:'2026-09-06T10:02:00.000Z',receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:500}],
+      payments:[{method:'card',amountMinor:500}],
+    })
+    const summary=database.getShiftSummary()
+    expect(summary.paymentBreakdown).toEqual([
+      {method:'card',amountMinor:2500},{method:'cash',amountMinor:1000},
+      {method:'qr',amountMinor:3000},{method:'remote_payment',amountMinor:4000},
+    ])
+    expect(summary).toMatchObject({cashMinor:1000,cardMinor:2500,qrMinor:3000,remotePaymentMinor:4000})
+    expect(summary.paymentBreakdown?.some(({method})=>method==='mixed')).toBe(false)
+  })
+
   it('caches the minimal OS customer directory and updates stock after sale and return',()=>{
     const database=createDatabase()
     database.replaceCustomers([{id:'client-1',name:'Иван',phone:'+7 900 111-22-33',discountPercent:7}])
