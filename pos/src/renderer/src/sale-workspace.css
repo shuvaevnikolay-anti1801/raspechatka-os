@@ -32,7 +32,6 @@
 .sale-workspace .search{height:var(--pos-control);min-width:0;display:flex;flex:1;align-items:center;gap:var(--pos-space-2);padding:0 var(--pos-space-3);border:var(--pos-border-emphasis);background:var(--pos-surface)}
 .sale-workspace .search .pos-icon{color:var(--pos-muted)}
 .sale-workspace .search input{min-width:0;flex:1;border:0;outline:0;background:transparent;font-size:var(--pos-type-body)}
-.sale-workspace .search kbd{padding:var(--pos-space-1) var(--pos-space-2);border:var(--pos-border-base);color:var(--pos-muted);font-size:var(--pos-type-meta)}
 .sale-workspace .product-grid{min-height:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));align-content:start;gap:var(--pos-space-2);padding:var(--pos-space-3);overflow:auto}
 .sale-product-tile{position:relative;height:144px;min-height:144px;max-height:144px;padding:0;overflow:hidden;border:var(--pos-border-base);background:var(--pos-surface);box-shadow:none}
 .sale-product-tile:hover{border-color:var(--pos-border-strong)}
