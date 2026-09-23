@@ -105,7 +105,7 @@ class TestPointCleaningBootstrap(TestCase):
 			cleaning_every_n_visits=6,
 		)
 		connection = frappe._dict(business_point="POINT-A")
-		workplace = frappe._dict(name="POS-A", workplace_name="Касса")
+		workplace = frappe._dict(name="POS-A", workplace_name="Cashier")
 		with (
 			patch.object(pos_v2.base_pos, "_authenticate", return_value=connection),
 			patch.object(pos_v2.frappe, "get_doc", return_value=point),
