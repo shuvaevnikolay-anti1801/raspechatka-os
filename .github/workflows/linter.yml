@@ -23,17 +23,7 @@ jobs:
         with:
           python-version: '3.14'
           cache: pip
-      - name: Install pre-commit
-        run: pip install pre-commit
-
-      - name: Run pre-commit on pull-request changes
-        shell: bash
-        run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          mapfile -d '' files < <(git diff --name-only --diff-filter=ACMR -z "origin/${{ github.base_ref }}...HEAD")
-          if (( ${#files[@]} )); then
-            pre-commit run --show-diff-on-failure --color=always --files "${files[@]}"
-          fi
+      - uses: pre-commit/action@v3.0.0
 
       - name: Download Semgrep rules
         run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
