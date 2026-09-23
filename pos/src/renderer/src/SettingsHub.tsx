@@ -133,6 +133,35 @@ const queueState=(item:SyncQueueItem,now=Date.now())=>
   item.status==='problem'?'Требует исправления':
   item.nextAttemptAt&&Date.parse(item.nextAttemptAt)>now?'Ожидает повторной отправки':'Ожидает отправки';
 
+export function SettingsSyncQueue({queue,busy,onRetry}:{queue:SyncQueueSnapshot|null;busy:boolean;onRetry:(id:string)=>void}){
+  const syncQueue=queue;
+  return (
+              <section className="settings-section">
+                <div className="section-heading">
+                  <h2>Очередь синхронизации</h2>
+                  <b>{syncQueue?.total ?? '—'}</b>
+                </div>
+                {syncQueue?.total===0 ? <div className="settings-ok">Все документы отправлены.</div>
+                  : <>
+                    <div className="settings-queue-summary">
+                      {syncQueue ? `Ожидают: ${syncQueue.total - syncQueue.problemCount} · Требуют исправления: ${syncQueue.problemCount}${syncQueue.problemCountTruncated ? '+' : ''}` : 'Загрузка очереди…'}
+                    </div>
+                    <div className="settings-sync-list">
+                      {syncQueue?.items.map((item)=><article key={item.id}>
+                        <div>
+                          <b>{item.label}</b>
+                          <span>{new Date(item.createdAt).toLocaleString('ru-RU')} · {queueState(item)} · Попыток: {item.attemptCount}</span>
+                          {item.lastError&&<span>{item.lastError}</span>}
+                        </div>
+                        {item.canRetry&&<PosButton disabled={busy} onClick={()=>onRetry(item.id)}>Повторить отправку</PosButton>}
+                      </article>)}
+                    </div>
+                    {syncQueue&&syncQueue.total>syncQueue.items.length&&<div className="settings-warning">Показана часть очереди. Остальные документы ожидают отправки.</div>}
+                  </>}
+              </section>
+  );
+}
+
 const defaultAtol: AtolSettings = {
   version: 2,
   enabled: false,
@@ -674,29 +703,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 </select></PosField>
             </section>
 
-            <section className="settings-section">
-              <div className="section-heading">
-                <h2>Очередь синхронизации</h2>
-                <b>{syncQueue?.total ?? '—'}</b>
-              </div>
-              {syncQueue?.total===0 ? <div className="settings-ok">Все документы отправлены.</div>
-                : <>
-                  <div className="settings-queue-summary">
-                    {syncQueue ? `Ожидают: ${syncQueue.total - syncQueue.problemCount} · Требуют исправления: ${syncQueue.problemCount}${syncQueue.problemCountTruncated ? '+' : ''}` : 'Загрузка очереди…'}
-                  </div>
-                  <div className="settings-sync-list">
-                    {syncQueue?.items.map((item)=><article key={item.id}>
-                      <div>
-                        <b>{item.label}</b>
-                        <span>{new Date(item.createdAt).toLocaleString('ru-RU')} · {queueState(item)} · Попыток: {item.attemptCount}</span>
-                        {item.lastError&&<span>{item.lastError}</span>}
-                      </div>
-                      {item.canRetry&&<PosButton disabled={busy} onClick={()=>void retrySyncEvent(item.id)}>Повторить отправку</PosButton>}
-                    </article>)}
-                  </div>
-                  {syncQueue&&syncQueue.total>syncQueue.items.length&&<div className="settings-warning">Показана часть очереди. Остальные документы ожидают отправки.</div>}
-                </>}
-            </section>
+            <SettingsSyncQueue queue={syncQueue} busy={busy} onRetry={(id)=>void retrySyncEvent(id)}/>
 
             <section className="settings-section">
               <div className="section-heading">
