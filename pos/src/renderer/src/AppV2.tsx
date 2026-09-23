@@ -85,6 +85,7 @@ export default function AppV2(){
     setSummary(result[4]);setCashOperations(result[5])
     setWorkplace(result[6]);setOrders(result[7]);setLastCashCount(result[8])
     setAuth(nextAuth)
+    return result[4]
   }
   useEffect(()=>{refresh().catch((e)=>setMessage(String(e)))},[])
   useEffect(()=>{
@@ -165,7 +166,7 @@ export default function AppV2(){
       setMessage('Не удалось связаться с Распечатка OS — продолжаем работать локально')
     }finally{setSyncing(false)}
   }
-  const openShift=async()=>{try{await window.raspechatkaPos.openShift();await refresh();openCashCount('opening');setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
+  const openShift=async()=>{try{await window.raspechatkaPos.openShift();const openedSummary=await refresh();setCashCountOpen({type:'opening',expectedMinor:openedSummary.expectedCashMinor});setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(e instanceof Error?e.message:String(e))}}
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
