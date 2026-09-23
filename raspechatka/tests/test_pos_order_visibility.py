@@ -48,7 +48,7 @@ class CanonicalStore:
 		if doctype == "POS Order":
 			for name, order in self.orders.items():
 				if all(order.get(key) == value for key, value in filters.items()):
-					return name
+					return order.get(field) if field != "name" else name
 			return None
 		return None
 
@@ -419,6 +419,7 @@ class TestPosOrderFrappeIntegration(TestCase):
 			"comment": "Реальный DB regression",
 			"status": "in_progress",
 			"createdAt": "2026-09-20T09:00:00+03:00",
+			"updatedAt": "2026-09-20T09:00:00+03:00",
 			"dueAt": "2026-09-20T12:00:00+03:00",
 			"sourceSaleId": f"SALE-{self.suffix}",
 			"fiscalNumber": "777",
@@ -438,6 +439,7 @@ class TestPosOrderFrappeIntegration(TestCase):
 			**created_payload,
 			"contactMethod": "WhatsApp +7 900 123-45-67",
 			"status": "ready",
+			"updatedAt": "2026-09-20T10:30:00+03:00",
 			"readyAt": "2026-09-20T10:30:00+03:00",
 		}
 		create_event = {"id": f"CREATE-{self.suffix}", "eventType": "order.created", "payload": created_payload}
@@ -529,6 +531,19 @@ class TestPosOrderFrappeIntegration(TestCase):
 		)
 		order.reload()
 		self.assertEqual(order.contact_method, ready_payload["contactMethod"])
+		self.assertEqual(order.last_pos_update_event, ready_event["id"])
+		stale_event = {
+			"id": f"STALE-{self.suffix}", "eventType": "order.updated",
+			"payload": {**ready_payload, "updatedAt": "2026-09-20T10:00:00+03:00",
+				"contactMethod": "stale", "status": "in_progress"},
+		}
+		for event in (ready_event, stale_event):
+			replayed = pos_v2.push_events(self.device_id, self.token, events=[event])
+			self.assertEqual(replayed["accepted"], [event["id"]])
+		order.reload()
+		self.assertEqual(order.contact_method, ready_payload["contactMethod"])
+		self.assertEqual(order.status, "Ready")
+		self.assertEqual(order.last_pos_update_event, ready_event["id"])
 
 		missing_event = {
 			"id": f"MISSING-{self.suffix}",
