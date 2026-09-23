@@ -346,7 +346,7 @@ export type SyncQueueSnapshot = {
   problemCount:number
   problemCountTruncated:boolean
 }
-export type SyncRetryResult = {sent:boolean;message:string}
+export type SyncRetryResult = {message:string}
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
 export type WorkScheduleEntry = {
