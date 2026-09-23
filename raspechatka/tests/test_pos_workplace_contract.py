@@ -69,14 +69,18 @@ class TestCleaningConfigContract(TestCase):
 			{"payoutAmountMinor": 200000, "everyNVisits": 4},
 		)
 		point = {"cleaning_payout_amount": 3250.5, "cleaning_every_n_visits": 6}
-		with patch.object(pos_api, "_doctype_exists", return_value=True), patch.object(
-			pos_api.frappe, "get_all", return_value=[]
-		), patch.object(pos_api.frappe.db, "count", return_value=5):
+		with (
+			patch.object(pos_api, "_doctype_exists", return_value=True),
+			patch.object(pos_api.frappe, "get_all", return_value=[]),
+			patch.object(pos_api.frappe.db, "count", return_value=5),
+		):
 			status = pos_api._get_cleaner_status("POINT-A", point)
 			self.assertEqual(status["paymentDueMinor"], 0)
-		with patch.object(pos_api, "_doctype_exists", return_value=True), patch.object(
-			pos_api.frappe, "get_all", return_value=[]
-		), patch.object(pos_api.frappe.db, "count", return_value=6):
+		with (
+			patch.object(pos_api, "_doctype_exists", return_value=True),
+			patch.object(pos_api.frappe, "get_all", return_value=[]),
+			patch.object(pos_api.frappe.db, "count", return_value=6),
+		):
 			status = pos_api._get_cleaner_status("POINT-A", point)
 			self.assertEqual(status["paymentDueMinor"], 325050)
 			self.assertEqual(status["everyNVisits"], 6)
