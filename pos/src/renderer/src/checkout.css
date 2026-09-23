@@ -64,14 +64,14 @@
 .error-note{margin-top:var(--pos-space-3);padding:var(--pos-space-3);background:var(--pos-danger-soft);color:var(--pos-danger);font-size:var(--pos-type-label)}
 
 .cash-count-modal{width:min(860px,calc(100vw - 32px))}
-.cash-count-modal .pos-modal__body{display:grid;gap:var(--pos-space-4)}
-.denominations{display:grid;grid-template-columns:1fr 1fr;gap:var(--pos-space-2) var(--pos-space-5)}
+.cash-count-modal .pos-modal__body{display:grid;gap:var(--pos-space-5)}
+.denominations{display:grid;grid-template-columns:1fr 1fr;gap:var(--pos-space-2) var(--pos-space-5);padding-bottom:var(--pos-space-5);border-bottom:var(--pos-border-base)}
 .denomination-row{min-height:60px;display:grid;grid-template-columns:112px minmax(100px,1fr) 120px;align-items:center;gap:var(--pos-space-3);border-bottom:var(--pos-border-base)}
-.denomination-badge{padding:var(--pos-space-2);border:var(--pos-border-emphasis);background:var(--pos-canvas);font-size:var(--pos-type-body);font-weight:var(--pos-weight-strong)}
+.denomination-badge{height:var(--pos-control);display:flex;align-items:center;padding:0 var(--pos-space-2);border:var(--pos-border-emphasis);background:var(--pos-canvas);font-size:var(--pos-type-body);font-weight:var(--pos-weight-strong)}
 .denomination-row .pos-field{grid-template-columns:1fr;gap:var(--pos-space-1)}
-.denomination-row .pos-field__label{font-size:var(--pos-type-meta)}
+.denomination-row .pos-field__label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .denomination-row input{text-align:center}
-.denomination-row>b{text-align:right;font-size:var(--pos-type-body)}
+.denomination-row>b{display:flex;align-items:center;justify-content:flex-end;min-height:var(--pos-control);text-align:right;font-size:var(--pos-type-body);font-variant-numeric:tabular-nums}
 .cash-reconcile{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--pos-space-2)}
 .cash-reconcile>div{min-height:76px;display:flex;flex-direction:column;justify-content:center;gap:var(--pos-space-2);padding:var(--pos-space-3);border:var(--pos-border-base);background:var(--pos-surface);font-size:var(--pos-type-label)}
 .cash-reconcile b,.cash-reconcile strong{font-size:var(--pos-type-section)}
