@@ -50,7 +50,7 @@ describe('sale success overlay contract',()=>{
 
   it('keeps overlay open on print failure with retry copy',()=>{
     const catchBlock=source.slice(source.indexOf('}catch{'),source.indexOf('}finally{'))
-    expect(catchBlock).toContain("setPrintError('Не удалось напечатать товарный чек. Попробуйте ещё раз.')")
+    expect(catchBlock).toContain("setPrintError(operatorError(error,'print'))")
     expect(catchBlock).not.toContain('setPayload(null)')
     expect(source).toContain('className="sale-success-print-error" role="alert"')
   })
