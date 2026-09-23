@@ -47,7 +47,7 @@ export function operatorError(error:unknown,domain:Domain='general'):string{
 }
 
 export function operatorSyncMessage(result:Pick<BootState,'pendingSync'|'documentQueueError'|'masterDataError'|'documentQueueSynced'>):string{
-  const pending=Math.max(0,result.pendingSync||0)
+  const pending=Number.isSafeInteger(result.pendingSync)?Math.max(0,result.pendingSync):0
   if(result.documentQueueError||pending>0||result.documentQueueSynced===false){
     const master=result.masterDataError?' Справочники также не обновлены.':''
     return `Связь с OS есть, но не все документы отправлены. В очереди: ${pending}. Проверьте «Очередь синхронизации».${master}`
