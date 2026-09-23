@@ -63,6 +63,28 @@ UNKNOWN remains exclusively in transaction recovery.
 ## Health model
 Separate at least: Raspechatka OS/backend, KKT/device+FN, KKT↔OFD delivery state when Driver exposes reliable evidence, acquiring terminal, remote-link payment capability, printer/other integrations. A backend outage must not block local workflows that are designed to work offline. Acquiring outage disables only its payment methods. KKT/FN unsafe/unavailable state blocks fiscal sale as today. OFD/Internet-only outage does not defer the fiscal action to POS.
 
+## Stage 3 — independent health channels
+
+`DeviceStatuses` preserves the existing `os`, `fiscal`, `payment`,
+`printer` and `shift` fields and adds `ofd`, `remotePayment` and
+`paymentMethods`. OS status comes from the last bootstrap/sync result;
+fiscal readiness comes from the local KKT and positive FN presence evidence;
+terminal health comes from the selected INPAS provider; printer health is
+local. A failure to read one provider does not erase the other channels.
+
+The present ATOL Driver bridge status contains no verified OFD queue/delivery
+evidence. Direct Driver reports `ofd: unknown`; providers without such a
+channel report `not_available`. Neither OS connectivity nor terminal
+connectivity is used as OFD evidence. The OFD field is never a fiscal gate:
+a ready KKT/FN executes fiscalization now and the FN owns any OFD backlog.
+A missing or unsafe FN, expired fiscal shift, or unavailable KKT remains
+a blocker. UNKNOWN payment/fiscal results stay in their existing recovery path.
+
+Cash follows point rules offline; card and terminal QR require INPAS readiness;
+remote payment follows point configuration and backend availability, with its
+existing explicit cashier confirmation. An INPAS outage does not disable cash
+or remote payment. No generic health state triggers payment/fiscal retries.
+
 ## Settings/diagnostics/notifications
 - Simplify Settings copy without removing proven necessary connection/provider controls.
 - Add a separate sync queue view: human event label, time, status, attempts and human-safe error; safe Retry/Cancel only when contract permits.
