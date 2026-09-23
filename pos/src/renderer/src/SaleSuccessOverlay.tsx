@@ -8,7 +8,7 @@ import { PosIcon } from './ui/PosIcon'
 
 const paymentNames:Record<string,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата'}
 export const paymentSummary=(payments:readonly PaymentPart[])=>
-  payments.map((payment)=>paymentNames[payment.method]||payment.method).join(' + ')||'—'
+  payments.map((payment)=>paymentNames[payment.method]||'Другой способ').join(' + ')||'—'
 
 type Payload={
   result:CompleteSaleResult
