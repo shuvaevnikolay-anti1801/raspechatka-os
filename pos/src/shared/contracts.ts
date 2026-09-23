@@ -343,8 +343,8 @@ export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number;
 export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth
-  scheduleCurrentMonth:WorkScheduleMonth
-  scheduleNextMonth:WorkScheduleMonth
+  scheduleCurrentMonth?:WorkScheduleMonth
+  scheduleNextMonth?:WorkScheduleMonth
   myUpcomingShifts:UpcomingShift[]
   operationalCatalog:OperationalCatalogItem[]
   deliveries:DeliveryNotice[]
