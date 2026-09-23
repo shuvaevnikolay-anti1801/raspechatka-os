@@ -149,7 +149,9 @@ class TestPosOrderVisibility(TestCase):
 			patch.object(pos, "frappe", store),
 			patch.object(pos, "_doctype_exists", return_value=True),
 			patch.object(pos_v2.base_pos, "_authenticate", return_value=connection),
-			patch.object(pos_v2.base_pos, "_point_employees", return_value=[{"id": "EMP-1", "name": "Кассир"}]),
+			patch.object(
+				pos_v2.base_pos, "_point_employees", return_value=[{"id": "EMP-1", "name": "Кассир"}]
+			),
 			patch.object(pos_v2, "_trusted_event_cashier", return_value={"id": "EMP-1", "name": "Кассир"}),
 			patch.object(pos_v2, "_normalize_v2_payload", side_effect=lambda payload: payload),
 			patch.object(pos_v2.base_pos, "_touch"),
@@ -202,7 +204,9 @@ class TestPosOrderVisibility(TestCase):
 		with (
 			patch.object(pos, "frappe", store),
 			patch.object(pos, "_doctype_exists", return_value=True),
-			patch.object(pos, "_pos_datetime_to_utc", side_effect=lambda value: str(value) if value else None),
+			patch.object(
+				pos, "_pos_datetime_to_utc", side_effect=lambda value: str(value) if value else None
+			),
 		):
 			bootstrap_orders = pos._get_orders("POINT-1")
 
@@ -264,7 +268,12 @@ class TestPosOrderVisibility(TestCase):
 					"order.updated",
 					"EVENT-FOREIGN-UPDATE",
 					Row(name="POS-CONNECTION-2", business_point="POINT-2"),
-					{"orderNumber": "ORD-1", "contactMethod": "Email", "comment": "Подменено", "status": "ready"},
+					{
+						"orderNumber": "ORD-1",
+						"contactMethod": "Email",
+						"comment": "Подменено",
+						"status": "ready",
+					},
 				)
 
 		self.assertEqual(order.contact_method, "Telegram")
@@ -304,15 +313,20 @@ class TestPosOrderFrappeIntegration(TestCase):
 	def _valid_inn(seed):
 		base = f"{int(seed, 16) % 10_000_000_000:010d}"
 		digits = [int(value) for value in base]
-		check_11 = sum(
-			weight * value
-			for weight, value in zip((7, 2, 4, 10, 3, 5, 9, 4, 6, 8), digits, strict=True)
-		) % 11 % 10
+		check_11 = (
+			sum(weight * value for weight, value in zip((7, 2, 4, 10, 3, 5, 9, 4, 6, 8), digits, strict=True))
+			% 11
+			% 10
+		)
 		digits.append(check_11)
-		check_12 = sum(
-			weight * value
-			for weight, value in zip((3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8), digits, strict=True)
-		) % 11 % 10
+		check_12 = (
+			sum(
+				weight * value
+				for weight, value in zip((3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8), digits, strict=True)
+			)
+			% 11
+			% 10
+		)
 		return "".join(str(value) for value in (*digits, check_12))
 
 	def _create_fixtures(self):
@@ -442,7 +456,11 @@ class TestPosOrderFrappeIntegration(TestCase):
 			"updatedAt": "2026-09-20T10:30:00+03:00",
 			"readyAt": "2026-09-20T10:30:00+03:00",
 		}
-		create_event = {"id": f"CREATE-{self.suffix}", "eventType": "order.created", "payload": created_payload}
+		create_event = {
+			"id": f"CREATE-{self.suffix}",
+			"eventType": "order.created",
+			"payload": created_payload,
+		}
 		ready_event = {"id": f"READY-{self.suffix}", "eventType": "order.updated", "payload": ready_payload}
 
 		result = pos_v2.push_events(
@@ -533,9 +551,14 @@ class TestPosOrderFrappeIntegration(TestCase):
 		self.assertEqual(order.contact_method, ready_payload["contactMethod"])
 		self.assertEqual(order.last_pos_update_event, ready_event["id"])
 		stale_event = {
-			"id": f"STALE-{self.suffix}", "eventType": "order.updated",
-			"payload": {**ready_payload, "updatedAt": "2026-09-20T10:00:00+03:00",
-				"contactMethod": "stale", "status": "in_progress"},
+			"id": f"STALE-{self.suffix}",
+			"eventType": "order.updated",
+			"payload": {
+				**ready_payload,
+				"updatedAt": "2026-09-20T10:00:00+03:00",
+				"contactMethod": "stale",
+				"status": "in_progress",
+			},
 		}
 		for event in (ready_event, stale_event):
 			replayed = pos_v2.push_events(self.device_id, self.token, events=[event])
