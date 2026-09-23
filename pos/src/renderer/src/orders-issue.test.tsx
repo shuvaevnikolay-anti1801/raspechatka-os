@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -21,6 +22,13 @@ const readyOrder:Order={
 }
 
 describe('DEV-172 stage 5 order issue confirmation',()=>{
+  it('routes the issued action through confirmation instead of mutating immediately',()=>{
+    const source=readFileSync(new URL('./OrdersPage.tsx',import.meta.url),'utf8')
+    expect(source).toContain('onClick={()=>setIssuing(order)}>Выдан</PosButton>')
+    expect(source).toContain('{issuing&&<IssueOrderConfirmation')
+    expect(source).not.toContain("onClick={()=>void update(order,'issued')}")
+  })
+
   it('renders the exact confirmation and disables confirm, cancel and close while pending',()=>{
     const markup=renderToStaticMarkup(
       <IssueOrderConfirmation order={readyOrder} pending={false} onConfirm={()=>undefined} onCancel={()=>undefined}/>,
