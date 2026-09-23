@@ -1,7 +1,7 @@
 import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
-import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { CreateOrderFromSaleRequest, Order, SaleDetails, SaleSummary } from '../../shared/contracts'
 import { formatMoney } from './money'
 import {
@@ -83,14 +83,47 @@ export function OrderReceiptPreview({sale}:{sale:SaleDetails}){
   </section>
 }
 
+export type OrderStatusUpdateResult<T>={started:boolean;value?:T}
+export async function runSingleOrderStatusUpdate<T>(pending:Set<string>,orderId:string,action:()=>Promise<T>):Promise<OrderStatusUpdateResult<T>>{
+  if(pending.has(orderId))return {started:false}
+  pending.add(orderId)
+  try{
+    return {started:true,value:await action()}
+  }finally{
+    pending.delete(orderId)
+  }
+}
+
+export function IssueOrderConfirmation({order,pending,onConfirm,onCancel}:{
+  order:Order;pending:boolean;onConfirm:()=>Promise<void>|void;onCancel:()=>void
+}){
+  return <PosModal
+    open
+    title="Подтвердить выдачу заказа?"
+    layout="action"
+    className="order-issue-confirmation"
+    closeDisabled={pending}
+    onClose={onCancel}
+    footer={<>
+      <PosButton variant="secondary" disabled={pending} onClick={onCancel}>Отмена</PosButton>
+      <PosButton variant="primary" disabled={pending} onClick={()=>void onConfirm()}>Подтверждаю</PosButton>
+    </>}
+  >
+    <p>Заказ {order.orderNumber} будет отмечен как выданный клиенту.</p>
+  </PosModal>
+}
+
 type Props={orders:Order[];onChanged:()=>Promise<void>;notify:(text:string)=>void}
 type ResizeState={key:OrderTableColumnKey;pointerId:number;startX:number;startWidth:number}
 
 export default function OrdersPage({orders,onChanged,notify}:Props){
   const [editing,setEditing]=useState<Order|null>(null)
   const [creating,setCreating]=useState(false)
+  const [issuing,setIssuing]=useState<Order|null>(null)
   const [columnWidths,setColumnWidths]=useState<OrderColumnWidths>(()=>defaultOrderColumnWidths())
   const [resizing,setResizing]=useState<ResizeState|null>(null)
+  const [pendingStatusOrderIds,setPendingStatusOrderIds]=useState<Set<string>>(()=>new Set())
+  const pendingStatusUpdates=useRef(new Set<string>())
   const active=useMemo(()=>orders
     .filter((order)=>order.paymentStatus==='paid'&&['new','in_progress','ready'].includes(order.status))
     .sort((a,b)=>{
@@ -102,15 +135,43 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
       return due||a.createdAt.localeCompare(b.createdAt)
     }),[orders])
   const gridTemplateColumns=orderTableGridTemplate(columnWidths)
+  const issuePending=Boolean(issuing&&pendingStatusOrderIds.has(issuing.id))
+
+  const setStatusPending=(orderId:string,pending:boolean)=>{
+    setPendingStatusOrderIds((current)=>{
+      const next=new Set(current)
+      if(pending)next.add(orderId)
+      else next.delete(orderId)
+      return next
+    })
+  }
 
   const update=async(order:Order,status:Order['status'])=>{
-    try{
-      await window.raspechatkaPos.updateOrder({id:order.id,status})
-      await onChanged()
-      notify(status==='ready'?'Заказ готов к выдаче':'Заказ выдан')
-    }catch(error){
-      notify(error instanceof Error?error.message:String(error))
-    }
+    const result=await runSingleOrderStatusUpdate(pendingStatusUpdates.current,order.id,async()=>{
+      setStatusPending(order.id,true)
+      try{
+        await window.raspechatkaPos.updateOrder({id:order.id,status})
+        await onChanged()
+        notify(status==='ready'?'Заказ готов к выдаче':'Заказ выдан')
+        return true
+      }catch(error){
+        notify(error instanceof Error?error.message:String(error))
+        return false
+      }finally{
+        setStatusPending(order.id,false)
+      }
+    })
+    return result.started?Boolean(result.value):false
+  }
+
+  const confirmIssue=async()=>{
+    if(!issuing)return
+    const target=issuing
+    if(await update(target,'issued'))setIssuing(null)
+  }
+  const cancelIssue=()=>{
+    if(issuePending)return
+    setIssuing(null)
   }
 
   const beginResize=(key:OrderTableColumnKey,event:ReactPointerEvent<HTMLSpanElement>)=>{
@@ -167,12 +228,13 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
         <div className="order-actions">
           <PosButton variant="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, способ связи, описание или дату выдачи">Изменить</PosButton>
           {order.status==='ready'
-            ?<PosButton variant="primary" className="order-issued" onClick={()=>void update(order,'issued')}>Выдан</PosButton>
-            :<PosButton variant="primary" onClick={()=>void update(order,'ready')}>Готово</PosButton>}
+            ?<PosButton variant="primary" className="order-issued" disabled={pendingStatusOrderIds.has(order.id)} onClick={()=>setIssuing(order)}>Выдан</PosButton>
+            :<PosButton variant="primary" disabled={pendingStatusOrderIds.has(order.id)} onClick={()=>void update(order,'ready')}>Готово</PosButton>}
         </div>
       </div>):<div className="page-empty"><b>Активных заказов нет</b><span>Новые оплаченные заказы появятся здесь.</span></div>}
     </div>
 
+    {issuing&&<IssueOrderConfirmation order={issuing} pending={issuePending} onConfirm={confirmIssue} onCancel={cancelIssue}/>} 
     {editing&&<EditOrder order={editing} close={()=>setEditing(null)} saved={async()=>{
       setEditing(null);await onChanged();notify('Заказ сохранён')
     }}/>} 
