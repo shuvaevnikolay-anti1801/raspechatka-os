@@ -45,7 +45,7 @@ const bootstrapPayload=(orders:any[]=[canonicalOrder])=>({
 
 const createDatabase=(initialPending=0,initialEvents?:any[])=>{
   const state=new Map<string,string>()
-  let queuedEvents=initialEvents?[...initialEvents]:Array.from({length:initialPending},(_,index)=>({
+  let queuedEvents:any[]=initialEvents?[...initialEvents]:Array.from({length:initialPending},(_,index)=>({
     id:`event-${index+1}`,eventType:'order.created',payload:{orderNumber:'ORD-1'}
   }))
   const database:any={
@@ -60,7 +60,9 @@ const createDatabase=(initialPending=0,initialEvents?:any[])=>{
     listPointEmployees:()=>[],
     pendingSyncCount:()=>queuedEvents.length,
     currentShift:()=>null,
-    pendingEvents:vi.fn((limit=100)=>queuedEvents.slice(0,limit)),
+    pendingEvents:vi.fn((limit=100)=>queuedEvents.filter((event)=>event.status!=='problem'&&(!event.nextAttemptAt||event.nextAttemptAt<=new Date().toISOString())).slice(0,limit)),
+    recordEventsAttempted:vi.fn((ids:string[])=>queuedEvents.forEach((event)=>{if(ids.includes(event.id))event.attemptCount=(event.attemptCount||0)+1})),
+    recordEventFailure:vi.fn((ids:string[],kind:string)=>queuedEvents.forEach((event)=>{if(ids.includes(event.id)){event.status=kind==='problem'?'problem':'pending';event.nextAttemptAt=kind==='problem'?null:new Date(Date.now()+5000).toISOString()}})),
     markEventsSent:vi.fn((ids:string[])=>{
       const accepted=new Set(ids)
       queuedEvents=queuedEvents.filter((event)=>!accepted.has(event.id))
@@ -71,6 +73,7 @@ const createDatabase=(initialPending=0,initialEvents?:any[])=>{
     database,state,
     pending:()=>queuedEvents.length,
     pendingIds:()=>queuedEvents.map((event)=>event.id),
+    events:()=>queuedEvents,
   }
 }
 
@@ -254,6 +257,34 @@ describe('read-after-write and truthful queue state',()=>{
     expect(database.markEventsSent).toHaveBeenCalledTimes(1)
     expect(mocks.loadBootstrap).toHaveBeenCalledTimes(3)
   })
+  it('persists one attempt for a transport failure and skips it while not due',async()=>{
+    const {database,events}=createDatabase(1)
+    mocks.loadBootstrap.mockResolvedValue(bootstrapPayload([]))
+    mocks.pushEvents.mockRejectedValueOnce(new Error('network'))
+    await performSync(database,connectionStore,'cashier')
+    await performSync(database,connectionStore,'cashier')
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
+    expect(database.recordEventsAttempted).toHaveBeenCalledTimes(1)
+    expect(events()[0]).toMatchObject({attemptCount:1,status:'pending'})
+    expect(events()[0].nextAttemptAt).toBeTruthy()
+  })
+
+  it('marks explicit unsupported responses problem while sending later valid events',async()=>{
+    const {database,events}=createDatabase(0,[
+      {id:'bad',eventType:'future.event',payload:{}},
+      {id:'good',eventType:'order.created',payload:{}},
+    ])
+    mocks.loadBootstrap.mockResolvedValue(bootstrapPayload([]))
+    mocks.pushEvents.mockResolvedValueOnce({
+      accepted:['good'],errors:[{id:'bad',eventType:'future.event',message:'Неподдерживаемый тип события: future.event'}],
+    })
+    await performSync(database,connectionStore,'cashier')
+    expect(database.markEventsSent).toHaveBeenCalledWith(['good'])
+    expect(events()).toMatchObject([{id:'bad',status:'problem',attemptCount:1}])
+    await performSync(database,connectionStore,'cashier')
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
+  })
+
 })
 
 describe('point cleaning bootstrap',()=>{
