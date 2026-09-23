@@ -56,11 +56,38 @@ describe('workstation favorites and product cards',()=>{
     expect(pruneFavoriteProductIds(['p-1','stale'],products.map((product)=>product.id))).toEqual(['p-1'])
   })
 
-  it('searches by name, SKU, and barcode inside Favorites only',()=>{
-    expect(filterSaleProducts(products,FAVORITES_CATEGORY,'photo',['p-1','p-2']).map((product)=>product.id)).toEqual(['p-1'])
-    expect(filterSaleProducts(products,FAVORITES_CATEGORY,'COPY',['p-1','p-2']).map((product)=>product.id)).toEqual(['p-2'])
-    expect(filterSaleProducts(products,FAVORITES_CATEGORY,'200',['p-1','p-2']).map((product)=>product.id)).toEqual(['p-2'])
-    expect(filterSaleProducts(products,FAVORITES_CATEGORY,'poster',['p-1','p-2'])).toEqual([])
+  it('searches globally by name across the selected category and Favorites',()=>{
+    expect(filterSaleProducts(products,'Печать','  кСеРо  ',['p-1']).map((product)=>product.id)).toEqual(['p-2'])
+    expect(filterSaleProducts(products,FAVORITES_CATEGORY,'ПЛАКАТ',['p-1']).map((product)=>product.id)).toEqual(['p-3'])
+  })
+
+  it('restores the selected category or Favorites when the query is cleared',()=>{
+    expect(filterSaleProducts(products,'Печать','ксеро',['p-1']).map((product)=>product.id)).toEqual(['p-2'])
+    expect(filterSaleProducts(products,'Печать','',['p-1']).map((product)=>product.id)).toEqual(['p-1','p-3'])
+    expect(filterSaleProducts(products,FAVORITES_CATEGORY,'',['p-1']).map((product)=>product.id)).toEqual(['p-1'])
+  })
+
+  it('matches product names only, never SKU or barcode',()=>{
+    expect(filterSaleProducts(products,'Копии','photo',[])).toEqual([])
+    expect(filterSaleProducts(products,'Копии','200',[])).toEqual([])
+    expect(filterSaleProducts(products,'Копии','ФОТО',[]).map((product)=>product.id)).toEqual(['p-1'])
+  })
+
+  it('keeps the scanner path separate and F2 focusing the search field',()=>{
+    const catalog=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
+    const app=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    const hotkeys=readFileSync(new URL('./CashierHotkeys.tsx',import.meta.url),'utf8')
+    const css=readFileSync(new URL('./sale-workspace.css',import.meta.url),'utf8')
+    expect(catalog).toContain('placeholder="Поиск по наименованию"')
+    expect(catalog).not.toContain('<kbd>F2</kbd>')
+    expect(css).not.toContain('.search kbd')
+    expect(hotkeys).toContain("if(event.key==='F2')")
+    expect(hotkeys).toContain("document.querySelector<HTMLInputElement>('.catalog-toolbar .search input')")
+    expect(hotkeys).toContain('input?.focus();input?.select()')
+    expect(app).toContain('productIds={saleProductIds}')
+    expect(app).toContain('const saleProductIds=useMemo(()=>products.map((product)=>product.id),[products])')
+    expect(app).toContain('onQueryChange={setQuery} onAdd={add}')
+    expect(app).toContain('onSelect={setCategory}')
   })
 
   it('keeps long names safe and price/stock geometry deterministic',()=>{
