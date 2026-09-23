@@ -17,11 +17,16 @@ import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
 import { PosIcon, type PosIconName } from './ui/PosIcon'
 import WorkPage from './WorkPage'
+import {
+  emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, toOrderFormPayload, type OrderFormDraft,
+} from './OrderFormFields'
 import type {
   BootState, CashierAuthState, CartLine, CashCount, CashCountLine, CashOperation, CashOperationType,
-  Customer, HeldReceipt, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
+  Customer, HeldReceipt, HeldReceiptUpsell, ManualDiscount, Order, PaymentMethod, PaymentPart, Product,
   RemotePaymentConfirmation, SaleDetails, SalePaymentMethod, SaleSummary, ShiftSummary, WorkplaceData
 } from '../../shared/contracts'
+
+export { isCompleteOrderPhone } from './OrderFormFields'
 
 type Screen='sale'|'receipts'|'orders'|'shift'|'work'
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
@@ -40,8 +45,20 @@ export const manualSyncMessage=(result:BootState)=>{
   return 'Данные обновлены'
 }
 export type ReceiptDiscountInputState={customer:Customer|null;reviewCount:number;manualDiscount:ManualDiscount|null}
-export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer})
+export const replaceReceiptCustomer=(state:ReceiptDiscountInputState,customer:Customer|null):ReceiptDiscountInputState=>({...state,customer,reviewCount:customer?state.reviewCount:0})
 export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer:null,reviewCount:0,manualDiscount:null})
+export const heldUpsellSnapshot=(cycle:UpsellCycle,outcome:'accepted'|'dismissed'|null):HeldReceiptUpsell=>{
+  if(cycle.state==='showing'&&cycle.candidate&&cycle.triggerItem)
+    return {state:'pending',triggerItem:cycle.triggerItem,candidate:cycle.candidate}
+  if(cycle.state==='eligible')return {state:'eligible'}
+  return {state:outcome==='accepted'?'accepted':'dismissed'}
+}
+export const restoreHeldUpsell=(upsell:HeldReceipt['upsell']):{cycle:UpsellCycle;outcome:'accepted'|'dismissed'|null}=>{
+  if(upsell?.state==='pending'&&upsell.triggerItem&&upsell.candidate?.item)
+    return {cycle:{state:'showing',triggerItem:upsell.triggerItem,candidate:upsell.candidate},outcome:null}
+  if(upsell?.state==='eligible')return {cycle:{state:'eligible'},outcome:null}
+  return {cycle:{state:'resolved'},outcome:upsell?.state==='accepted'?'accepted':'dismissed'}
+}
 export default function AppV2(){
   const [boot,setBoot]=useState<BootState|null>(null)
   const [auth,setAuth]=useState<CashierAuthState|null>(null)
@@ -58,6 +75,7 @@ export default function AppV2(){
   const [category,setCategory]=useState(FAVORITES_CATEGORY)
   const [cart,setCart]=useState<CartLine[]>([])
   const [upsellCycle,setUpsellCycle]=useState<UpsellCycle>({state:'eligible'})
+  const [upsellOutcome,setUpsellOutcome]=useState<'accepted'|'dismissed'|null>(null)
   const [customer,setCustomer]=useState<Customer|null>(null)
   const [reviewCount,setReviewCount]=useState(0)
   const [manualDiscount,setManualDiscount]=useState<ManualDiscount|null>(null)
@@ -72,7 +90,7 @@ export default function AppV2(){
   const [priceOverrideLine,setPriceOverrideLine]=useState<CartLine|null>(null)
   const [cashCountOpen,setCashCountOpen]=useState<{type:CashCount['countType'];expectedMinor:number}|null>(null)
   const openCashCount=(type:CashCount['countType'])=>setCashCountOpen({type,expectedMinor:summary.expectedCashMinor})
-  const [orderDraft,setOrderDraft]=useState<{phone:string;comment?:string;dueAt?:string}|null>(null)
+  const [orderDraft,setOrderDraft]=useState<OrderFormDraft|null>(null)
 
   const refresh=async()=>{
     const nextAuth=await window.raspechatkaPos.getCashierAuthState()
@@ -139,14 +157,17 @@ export default function AppV2(){
   }
   const updateCart=(next:CartLine[])=>{
     setCart(next)
-    setUpsellCycle((current)=>resolveUpsellAfterCart(current,next))
+    const resolved=resolveUpsellAfterCart(upsellCycle,next)
+    if(upsellCycle.state==='showing'&&resolved.state==='resolved')setUpsellOutcome('dismissed')
+    setUpsellCycle(resolved)
   }
   const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
-  const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'})}
-  const dismissUpsell=()=>setUpsellCycle({state:'resolved'})
+  const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'});setUpsellOutcome(null)}
+  const dismissUpsell=()=>{setUpsellOutcome('dismissed');setUpsellCycle({state:'resolved'})}
   const acceptUpsell=()=>{
     const target=upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)
+    setUpsellOutcome('accepted')
     setUpsellCycle({state:'resolved'})
     if(target)add(target,{suppressUpsell:true})
   }
@@ -171,12 +192,13 @@ export default function AppV2(){
   const closeShift=async()=>{const x=await window.raspechatkaPos.closeShift();await refresh();setMessage('Смена закрыта: '+x.receipts+' чеков, итог '+formatMoney(x.revenueMinor-x.returnsMinor))}
   const holdReceipt=async()=>{
     if(!cart.length)return
-    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,totalMinor:total,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount})
+    await window.raspechatkaPos.holdReceipt({label:customer?.name||'Чек на '+formatMoney(total),lines:cart,customer,totalMinor:total,discountPercent:subtotal?breakdown.totalDiscountMinor/subtotal*100:0,reviewCount,manualDiscount,upsell:heldUpsellSnapshot(upsellCycle,upsellOutcome)})
     clear();await refresh();setMessage('Чек отложен')
   }
   const restoreReceipt=async(receipt:HeldReceipt)=>{
     const fresh=await resolveCurrentCustomer(receipt.customer,window.raspechatkaPos.getCustomer)
-    setUpsellCycle({state:'eligible'})
+    const savedUpsell=restoreHeldUpsell(receipt.upsell)
+    setUpsellCycle(savedUpsell.cycle);setUpsellOutcome(savedUpsell.outcome)
     setCart(receipt.lines);setCustomer(fresh);setReviewCount(receipt.reviewCount??0);setManualDiscount(receipt.manualDiscount??null)
     await window.raspechatkaPos.deleteHeldReceipt(receipt.id);await refresh();setScreen('sale')
     const restored=calculateDiscountBreakdown(
@@ -208,7 +230,7 @@ export default function AppV2(){
         manualDiscountType:manualDiscount?.type??null,manualDiscountValue:manualDiscount?.value??0,
         manualDiscountMinor:breakdown.manualDiscountMinor,totalDiscountMinor:breakdown.totalDiscountMinor,
         discountRules,discountBreakdown:breakdown,
-        cashReceivedMinor,remotePaymentConfirmation,order:orderDraft||undefined
+        cashReceivedMinor,remotePaymentConfirmation,order:orderDraft?toOrderFormPayload(orderDraft):undefined
       })
       clear();setPayment(null);await refresh()
       const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
@@ -219,8 +241,7 @@ export default function AppV2(){
     if(!boot?.shift){setMessage('Для возврата сначала откройте смену');return}
     try{setReturnSale(await window.raspechatkaPos.getSale(sale.id))}catch(e){setMessage(String(e))}
   }
-  const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setCustomerOpen(false)}
-
+  const chooseCustomer=(value:Customer|null)=>{const next=replaceReceiptCustomer({customer,reviewCount,manualDiscount},value);setCustomer(next.customer);setReviewCount(next.reviewCount);setCustomerOpen(false)}
 
   if(!boot||!auth)return <div className="loading"><i/>Запускаем кассу…</div>
   if(auth.status!=='authenticated')return <CashierLogin boot={boot} auth={auth} onAuthenticated={refresh}/>
@@ -281,26 +302,25 @@ export default function AppV2(){
         shiftOpen={Boolean(boot.shift)}
         onOpenShift={openShift}
         onHold={holdReceipt}
-        onCreateOrder={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}
+        onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
         onPay={()=>setPayment(preferredPayment)}
       />}
     />}
 
-    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>}
+    {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>} 
     {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label={EXPECTED_CASH_LABEL} value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
       <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}<div className="shift-cashier-action">{boot.shift?<PosButton variant="danger" onClick={()=>openCashCount('closing')}>Закрыть смену</PosButton>:<PosButton variant="primary" onClick={openShift}>Открыть смену</PosButton>}</div></div></section>
       {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl>{shiftPaymentRows(boot.rules,summary.paymentBreakdown??[]).map(({method,label,amountMinor})=><div key={method}><dt>{label}</dt><dd>{formatMoney(amountMinor)}</dd></div>)}<div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section className="shift-cash"><div className="shift-cash-heading"><h3>Движения наличных</h3><div className="shift-actions"><PosButton variant="secondary" className={summary.openingCountPending?'cash-count-pending':undefined} onClick={()=>openCashCount(summary.openingCountPending?'opening':'control')}>Пересчитать кассу{summary.openingCountPending&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('deposit')}>Внести деньги</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</PosButton></div></div>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason?x.reason+' · ':''}{new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p className="shift-empty">Операций пока нет</p>}</section></div>}
-
     </Page>}
     {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} onChanged={refresh} notify={setMessage}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} onClose={()=>setCashOperation(null)} onComplete={async(amount,reason)=>{try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason);setCashOperation(null);await refresh();setMessage('Операция с наличными сохранена')}catch(e){setMessage(String(e))}}}/>} 
-    {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>}
-    {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>}
-    {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>}
+    {customerOpen&&<CustomerModal selected={customer} onClose={()=>setCustomerOpen(false)} onSelect={chooseCustomer}/>} 
+    {manualDiscountOpen&&<ManualDiscountModal lines={pricedCart} rules={discountRules} clubPercent={customer?.discountPercent??0} reviewCount={reviewCount} current={manualDiscount} onClose={()=>setManualDiscountOpen(false)} onApply={(value)=>{setManualDiscount(value);setManualDiscountOpen(false)}}/>} 
+    {priceOverrideLine&&<PriceOverrideModal line={priceOverrideLine} minimumMinor={productById.get(priceOverrideLine.productId)?.minimumSalePriceMinor??0} onClose={()=>setPriceOverrideLine(null)} onApply={(price)=>{const product=productById.get(priceOverrideLine.productId)!;setCart((current)=>current.map((item)=>item.productId===priceOverrideLine.productId?{...item,unitPriceMinor:price,catalogUnitPriceMinor:item.catalogUnitPriceMinor??product.priceMinor}:item));setPriceOverrideLine(null)}}/>} 
     {cashCountOpen&&<CashCountModal type={cashCountOpen.type} expectedMinor={cashCountOpen.expectedMinor} onClose={()=>setCashCountOpen(null)} onComplete={async(lines)=>{try{const count=await saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift);setCashCountOpen(null);await refresh();if(count.countType!=='closing')setMessage('Пересчёт сохранён. Расхождение: '+formatMoney(count.differenceMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}}}/>} 
   </div>
 }
@@ -365,7 +385,7 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   return <main className="cashier-login-screen"><section className="cashier-login-card">
     {auth.status==='locked'&&<small>КАССА ЗАБЛОКИРОВАНА</small>}<h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
     {forced&&<p>После перезапуска открытую смену может продолжить только <b>{formatPersonShortName(auth.openShiftCashierName)}</b>.</p>}
-    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>)}</div>}
+    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=>{const active=employeeId===employee.id;return <button key={employee.id} type="button" className={`cashier-employee-card${active?' active':''}`} aria-pressed={active} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>})}</div>}
     {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
     {(selected||lockedEmployee)&&<form className="cashier-pin-form" onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
       <PinEntryLayout footerLeft={footerLeft} footerRight={footerRight}>
@@ -384,16 +404,10 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   </section></main>
 }
 
-export const isCompleteOrderPhone=(value:string)=>value.replace(/\D/g,'').length===11
-
-function OrderModal({draft,total,onChange,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onChange:(draft:{phone:string;comment?:string;dueAt?:string})=>void;onClose:()=>void;onPay:()=>void}){
-  const valid=isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
+export function OrderModal({draft,total,onChange,onClose,onPay}:{draft:OrderFormDraft;total:number;onChange:(draft:OrderFormDraft)=>void;onClose:()=>void;onPay:()=>void}){
+  const valid=isOrderFormComplete(draft)
   return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
-    <div className="order-form-compact">
-      <PosField label="Телефон *" error={draft.phone&&!isCompleteOrderPhone(draft.phone)?'Введите полный номер из 11 цифр':undefined}><input autoFocus inputMode="tel" value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></PosField>
-      <PosField label="Срок готовности *"><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></PosField>
-      <PosField label="Описание заказа *" size="textarea" className="order-description-field"><textarea value={draft.comment||''} onChange={(e)=>onChange({...draft,comment:e.target.value})} placeholder="Что нужно изготовить"/></PosField>
-    </div>
+    <OrderFormFields draft={draft} onChange={onChange} autoFocusPhone className="order-form-compact"/>
   </PosModal>
 }
 
@@ -426,8 +440,8 @@ function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClo
   const overflow=visible.length>50
   const rows=visible.slice(0,50)
   return <PosModal open title="Выбрать покупателя" className="customer-modal" layout="matrix" onClose={onClose}>
-    <PosField label="Телефон" helper="Введите минимум 4 цифры"><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Последние цифры телефона"/></PosField>
-    <div className="customer-list"><PosButton className={!selected?'active':''} variant="quiet" onClick={()=>onSelect(null)}><span><b>Розничный покупатель</b><small>Без персональной скидки</small></span></PosButton>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><PosButton key={x.id} className={selected?.id===x.id?'active':''} variant="quiet" onClick={()=>onSelect(x)}><span><b>{x.name}</b><small>{x.phone}</small></span><strong className="club-badge">Скидка {x.discountPercent}%</strong></PosButton>)}{!searching&&digits.length<4&&<div className="pilot-empty">Поиск выполняется только по телефону. Введите последние 4 цифры или больше.</div>}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div>
+    <PosField label="Телефон"><input autoFocus inputMode="numeric" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Введите последние четыре цифры телефона"/></PosField>
+    <div className="customer-list"><PosButton className={!selected?'active':''} variant="quiet" onClick={()=>onSelect(null)}><span><b>Розничный покупатель</b></span></PosButton>{overflow&&<div className="pilot-empty">Найдено слишком много клиентов. Введите ещё несколько цифр.</div>}{rows.map((x)=><PosButton key={x.id} className={selected?.id===x.id?'active':''} variant="quiet" onClick={()=>onSelect(x)}><span><b>{x.name}</b><small>{x.phone}</small></span><strong className="club-badge">Скидка {x.discountPercent}%</strong></PosButton>)}{!searching&&digits.length>=4&&!visible.length&&<div className="pilot-empty">В локальном кэше совпадений нет</div>}</div>
   </PosModal>
 }
 
@@ -483,7 +497,7 @@ export function CashCountModal({type,expectedMinor,onClose,onComplete}:{type:Cas
 
 export const NAV_ICON_MAP:Record<Screen|'settings',PosIconName>={sale:'sale',receipts:'receipts',orders:'orders',shift:'shift',work:'work',settings:'settings'}
 export function Nav({active,icon,label,badge,warning=false,className='',onClick}:{active:boolean;icon:PosIconName;label:string;badge?:number;warning?:boolean;className?:string;onClick:()=>void}){return <PosButton variant="quiet" className={[active?'active':'',className].filter(Boolean).join(' ')} aria-current={active?'page':undefined} icon={<PosIcon name={icon}/>} onClick={onClick}>{label}{warning&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}{badge?<b>{badge}</b>:null}</PosButton>}
-export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined}/>} 
+export function SettingsNavTrigger(){return <Nav active={false} icon={NAV_ICON_MAP.settings} label="Настройки" className="settings-open-trigger" onClick={()=>undefined/>}
 function Page({title,children}:{title:string;kicker:string;children:React.ReactNode}){return <main className={title==='Текущая смена'?'page shift-page':'page'}><div className="page-heading"><div><h1>{title}</h1></div></div>{children}</main>}
 function Metric({label,value}:{label:string;value:string}){return <article><small>{label}</small><strong>{value}</strong></article>}
 function Empty({title,text}:{title:string;text:string}){return <div className="page-empty"><i><PosIcon name="plus"/></i><b>{title}</b><span>{text}</span></div>}
