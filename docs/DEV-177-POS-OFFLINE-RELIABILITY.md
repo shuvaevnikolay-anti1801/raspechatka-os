@@ -23,6 +23,43 @@ For ordinary online KKT mode, temporary loss of Internet/OFD connectivity is not
 3. Inventory every server event type used after DEV-170…176 and prove an idempotency/deduplication boundary before enabling manual retry. Durable stock/money/fiscal effects require transactional uniqueness or equivalent owner-domain protection.
 4. Manual Retry/Cancel is allowlisted by event class/state. Never offer generic Retry/Delete for payment/fiscal UNKNOWN operations, already-started external side effects, or events whose cancellation would erase a committed business fact.
 
+## Stage 2 — current server event inventory and manual-action gate
+
+The v2 dispatcher currently supports these 13 event types. The immutable outbox ID is
+transport identity; the owner-domain key below is the canonical deduplication identity.
+All existing documents must belong to the authenticated connection's point. A unique
+field rejects a concurrent insert that wins the race after an initial lookup; the losing
+attempt remains unaccepted and can reconcile by repeating the same key.
+
+| Event | Canonical key and database constraint | Owner guard / effect |
+| --- | --- | --- |
+| `shift.opened` | payload `id` → Sales Shift `external_id` unique | Point and cashier on existing shift; OPEN_SHIFT Cashier Action `<id>:open` unique. |
+| `shift.closed` | same Sales Shift `external_id` unique | Existing shift point/cashier; CLOSE_SHIFT Cashier Action `<id>:close` unique. |
+| `sale.completed` | payload `id` → Sales Receipt `external_id` unique | Shift point and submitted receipt point; review Cashier Action `<id>:reviews` unique. Fiscal operation already completed locally before enqueue. |
+| `sale.returned` | payload `id` → Sales Receipt `external_id` unique | Shift point and submitted receipt point; local fiscal refund already completed. |
+| `cash.deposited` | payload `id` → Cash Movement `external_id` unique | Shift point and submitted movement point. |
+| `cash.withdrawn` | payload `id` → Cash Movement `external_id` unique | Same; cleaner payout additionally has unique `cleaning_payout_id`, locks point, verifies submitted withdrawal and exact cycle/visits before marking linked visits paid. |
+| `cash.counted` | outbox `id` → Cashier Action `external_id` unique | Shift point/cashier; count and action share event savepoint. |
+| `stock.write_off.requested` | outbox `id` → Stock Write Off `external_id` unique | Submitted document point, server warehouse/balance and cashier; insert precedes stock effect. |
+| `point.supply.requested` | outbox `id` → Point Supply Request `source_pos_event` unique | Document point, canonical item/warehouse and trusted employee. |
+| `stock.receipt.requested` | outbox `id` → Stock Receipt `external_id` unique | Submitted document point; Purchase Order row `FOR UPDATE`, then recheck key and server-owned remaining quantities before stock effect. |
+| `cleaner.visit.recorded` | outbox `id` → Cleaner Visit `source_pos_event` unique | Point row `FOR UPDATE`, existing visit point, one visit per point-local date. |
+| `order.created` | outbox `id` → POS Order `source_pos_event` unique | Existing order point; source receipt resolved only at authenticated point. |
+| `order.updated` | outbox `id` → POS Order `last_pos_update_event` unique for the latest timestamped event | Point and order row `FOR UPDATE`; `last_pos_update_at` rejects stale replays. Legacy updates without `updatedAt` retain compatibility but have no proven event history. |
+
+**Future generic actions (no action endpoint or UI in this stage):** A retry may only
+reuse the same immutable event and payload. Candidate allowlist is `order.created`,
+timestamped `order.updated`, `stock.write_off.requested`,
+`stock.receipt.requested`, `point.supply.requested` and
+`cleaner.visit.recorded`, while status is `pending` and no unresolved
+external effect exists. `problem` requires diagnosis/correction first. Money,
+cash, shift, sale/return and cleaner payout events are excluded from generic
+manual retry; their local completed effects or external evidence require a
+specific reconciliation flow. No generic Cancel/Delete is allowlisted: dropping
+any currently queued event could hide an already committed local fact, and a
+request may already have succeeded despite a lost response. Payment/fiscal
+UNKNOWN remains exclusively in transaction recovery.
+
 ## Health model
 Separate at least: Raspechatka OS/backend, KKT/device+FN, KKT↔OFD delivery state when Driver exposes reliable evidence, acquiring terminal, remote-link payment capability, printer/other integrations. A backend outage must not block local workflows that are designed to work offline. Acquiring outage disables only its payment methods. KKT/FN unsafe/unavailable state blocks fiscal sale as today. OFD/Internet-only outage does not defer the fiscal action to POS.
 
