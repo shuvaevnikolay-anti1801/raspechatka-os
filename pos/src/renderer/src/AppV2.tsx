@@ -274,6 +274,7 @@ export default function AppV2(){
         hasProtectedItems={cart.some((line)=>productById.get(line.productId)?.preventDiscounts)}
         subtotalMinor={subtotal}
         totalDiscountMinor={breakdown.totalDiscountMinor}
+        roundingAdjustmentMinor={roundingAdjustmentMinor}
         totalMinor={total}
         shiftOpen={Boolean(boot.shift)}
         onOpenShift={openShift}
