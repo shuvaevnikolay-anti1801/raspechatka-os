@@ -120,14 +120,17 @@
 .cashier-login-card>small{color:var(--pos-muted);font-size:var(--pos-type-meta);font-weight:var(--pos-weight-strong)}
 .cashier-login-card h1{margin:var(--pos-space-2) 0 var(--pos-space-3);font-size:var(--pos-type-page)}
 .cashier-login-card .cashier-list{gap:var(--pos-space-2);margin:var(--pos-space-6) 0}
-.cashier-login-card .cashier-list button{min-height:var(--pos-control-touch);padding:var(--pos-space-4);border-color:var(--pos-border);background:var(--pos-surface);font-size:var(--pos-type-body)}
-.cashier-login-card .cashier-list button.active{border-color:var(--pos-ink);background:var(--pos-brand)}
+.cashier-login-card .cashier-employee-card{min-height:var(--pos-control-touch);padding:var(--pos-space-4);border:1px solid var(--pos-brand);background:var(--pos-surface);color:var(--pos-ink);font-size:var(--pos-type-body)}
+.cashier-login-card .cashier-employee-card:hover:not(:disabled){border-color:var(--pos-ink)}
+.cashier-login-card .cashier-employee-card:focus-visible{outline:0;box-shadow:var(--pos-focus)}
+.cashier-login-card .cashier-employee-card.active{border-color:var(--pos-ink);background:var(--pos-brand);font-weight:var(--pos-weight-medium)}
+.cashier-login-card .cashier-employee-card:disabled{border-color:var(--pos-border);background:var(--pos-canvas);color:var(--pos-muted);opacity:.6;cursor:default}
 .cashier-login-card form.cashier-pin-form{margin-top:var(--pos-space-5)}
 .cashier-login-card .pin-entry-layout{gap:var(--pos-space-5)}
 .cashier-login-card .cashier-pin-fields{gap:var(--pos-space-4)}
 .cashier-login-card label{gap:var(--pos-space-2);font-size:var(--pos-type-label)}
 .cashier-login-card .pin-entry-footer{gap:var(--pos-space-4)}
-.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{padding-inline:0;color:var(--pos-graphite);font-size:var(--pos-type-label)}
+.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:var(--pos-control-touch);padding-inline:var(--pos-space-4);color:var(--pos-graphite);font-size:var(--pos-type-label)}
 .cashier-login-card .cashier-switch-cashier{font-size:var(--pos-type-body)}
 .cashier-login-card .cashier-switch-blocked{color:var(--pos-muted);font-size:var(--pos-type-body)}
 .cashier-login-notice{padding:var(--pos-space-3);font-size:var(--pos-type-label)}
