@@ -55,6 +55,44 @@ class TestPosOrders(TestCase):
 		self.assertEqual(doc.status, "Ready")
 		doc.save.assert_called_once_with(ignore_permissions=True)
 
+	def test_order_update_replay_keeps_first_issued_time(self):
+		get_value = Mock(return_value="POS-ORDER-1")
+		doc = SimpleNamespace(
+			phone="+79000000000",
+			contact_method="Telegram",
+			comment="Описание",
+			due_at="2026-09-20 12:00:00",
+			ready_at="2026-09-20 10:30:00",
+			issued_at="2026-09-20 11:00:00",
+			source_receipt="SALE-RECEIPT-1",
+			source_sale_id="SALE-1",
+			status="Issued",
+			save=Mock(),
+		)
+		fake_frappe = SimpleNamespace(
+			db=SimpleNamespace(get_value=get_value),
+			get_doc=Mock(return_value=doc),
+		)
+		with (
+			patch.object(pos, "_doctype_exists", return_value=True),
+			patch.object(pos, "frappe", fake_frappe),
+		):
+			pos._apply_order_updated(
+				"EVENT-ISSUED-REPLAY",
+				SimpleNamespace(business_point="POINT-1"),
+				{
+					"orderNumber": "ORD-1",
+					"status": "issued",
+					"issuedAt": "2026-09-20T11:30:00.000Z",
+				},
+			)
+
+		self.assertEqual(doc.issued_at, "2026-09-20 11:00:00")
+		self.assertEqual(doc.status, "Issued")
+		self.assertEqual(doc.source_receipt, "SALE-RECEIPT-1")
+		self.assertEqual(doc.source_sale_id, "SALE-1")
+		doc.save.assert_called_once_with(ignore_permissions=True)
+
 	def test_order_create_rejects_when_canonical_doctype_is_unavailable(self):
 		def throw(message, exception=None):
 			raise (exception or RuntimeError)(message)
@@ -163,4 +201,3 @@ class TestPosOrders(TestCase):
 					"order.created",
 					{"cashierId": "EMP-FOREIGN"},
 				)
-
