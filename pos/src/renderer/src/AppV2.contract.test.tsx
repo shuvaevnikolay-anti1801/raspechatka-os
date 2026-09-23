@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, saveCountThenClose, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
 import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
@@ -334,10 +334,27 @@ describe('DEV-173 stage 3 cash UI',()=>{
     expect(operation).not.toContain('Без комментария')
   })
 
+  it('passes the exact count payload and only closes after a successful closing save',async()=>{
+    const events:string[]=[]
+    const lines=buildCashCountLines({1000:2})
+    const save=async(type:'opening'|'control'|'closing',payload:typeof lines)=>{
+      expect(payload).toBe(lines)
+      events.push('save:'+type)
+      return {id:'count',countType:type,lines:payload,totalMinor:2000,expectedMinor:1000,differenceMinor:1000,createdAt:'2026-09-23'}
+    }
+    const close=async()=>{events.push('close')}
+    await saveCountThenClose('opening',lines,save,close)
+    expect(events).toEqual(['save:opening'])
+    await saveCountThenClose('closing',lines,save,close)
+    expect(events).toEqual(['save:opening','save:closing','close'])
+    await expect(saveCountThenClose('closing',lines,async()=>{throw Error('count failed')},close)).rejects.toThrow('count failed')
+    expect(events).toEqual(['save:opening','save:closing','close'])
+  })
+
   it('routes closing only through a saved count and leaves dismissal pending',()=>{
     const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
-    expect(source).toContain('saveCashCount(cashCountOpen.type,lines)')
-    expect(source).toContain("if(count.countType==='closing'){await closeShift()}")
+    expect(source).toContain('saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift)')
+    expect(source).toContain("if(count.countType==='closing')await close()")
     expect(source).toContain('onClose={()=>setCashCountOpen(null)}')
     expect(source).toContain("openCashCount(summary.openingCountPending?'opening':'control')")
     expect(source).toContain('expectedMinor:summary.expectedCashMinor')
