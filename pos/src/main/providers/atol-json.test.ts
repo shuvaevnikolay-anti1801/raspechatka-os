@@ -3,6 +3,15 @@ import { describe, expect, it } from "vitest";
 import { allocateFiscalAmounts, buildAtolReceiptJson, buildAtolShiftJson } from "./atol-json";
 
 describe("ATOL JSON builder", () => {
+  it("allocates fractional and many-line fiscal amounts exactly",()=>{
+    const lines=Array.from({length:17},(_,index)=>({
+      productId:String(index),name:'Позиция',quantity: index%3===0?0.333:1,unitPriceMinor: index%2?101:199,
+    }))
+    const allocated=allocateFiscalAmounts(lines,1234)
+    expect(allocated.every((value)=>value>=0)).toBe(true)
+    expect(allocated.reduce((sum,value)=>sum+value,0)).toBe(1234)
+  })
+
   it("keeps discounted total and builds a sell receipt with operator", () => {
     expect(allocateFiscalAmounts([
       { productId: "a", name: "A", quantity: 1, unitPriceMinor: 100, discountPercent: 0 },
