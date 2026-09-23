@@ -628,8 +628,8 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 				{
 					"productId": item_id,
 					"quantity": quantity,
-					"reason": payload.get("reason"),
-					"comment": payload.get("comment"),
+					"reason": reason,
+					"comment": comment,
 				}
 			),
 			"remarks": comment,
