@@ -44,7 +44,7 @@ describe('payment modal money and device safety',()=>{
   })
 
   it('preserves busy, Enter, Escape, textarea, and duplicate-event safety',()=>{
-    expect(source).toContain('const canSubmit=!busy&&cashValid&&mixedValid')
+    expect(source).toContain('const canSubmit=Number.isSafeInteger(total)&&total>0&&!busy&&cashValid&&mixedValid')
     expect(source).toContain("event.key==='Escape'&&!busy")
     expect(source).toContain("event.key==='Enter'&&canSubmit")
     expect(source).toContain("target?.tagName==='TEXTAREA'")
