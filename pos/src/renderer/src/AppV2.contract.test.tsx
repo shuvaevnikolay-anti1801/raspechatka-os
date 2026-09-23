@@ -135,6 +135,13 @@ describe('cashier workplace micro-contract',()=>{
     expect(pinSource).not.toMatch(/onKey(?:Down|Up|Press)=/)
   })
 
+  it('keeps shared PIN touch geometry usable at short renderer heights',()=>{
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('@media (max-height:760px)')
+    expect(css).toContain('.pin-input{min-height:calc(var(--pos-control-touch) + var(--pos-space-3))}')
+    expect(css).toContain('.pin-input-slots{height:calc(var(--pos-control-touch) + var(--pos-space-3))}')
+  })
+
   it('keeps every cashier auth mode on the shared PinInput and native form submit callbacks',()=>{
     const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
     expect(source.match(/<PinInput/g)?.length).toBe(3)
