@@ -33,7 +33,7 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect((markup.match(/<span class="/g)||[]).length).toBe(4)
     expect(markup).toContain('maxLength="4"')
     expect(markup).toContain('inputMode="numeric"')
-    expect(markup).toContain('autoFocus=""')
+    expect(markup).toMatch(/autofocus=""/i)
   })
 
   it('keeps admin gate on shared PinInput with native Enter submit and unchanged callbacks',()=>{
