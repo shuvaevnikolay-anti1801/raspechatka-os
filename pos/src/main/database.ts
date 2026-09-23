@@ -88,7 +88,9 @@ export class PosDatabase {
       );
       CREATE TABLE IF NOT EXISTS shifts (
         id TEXT PRIMARY KEY, opened_at TEXT NOT NULL, closed_at TEXT, cashier_name TEXT NOT NULL,
-        cashier_id TEXT NOT NULL DEFAULT '', shift_type TEXT NOT NULL DEFAULT 'Утро'
+        cashier_id TEXT NOT NULL DEFAULT '', shift_type TEXT NOT NULL DEFAULT 'Утро',
+        drawer_point_id TEXT, drawer_workplace_id TEXT, opening_expected_minor INTEGER,
+        opening_expected_verified INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS sales (
         id TEXT PRIMARY KEY, client_request_id TEXT NOT NULL UNIQUE, shift_id TEXT NOT NULL,
@@ -142,6 +144,7 @@ export class PosDatabase {
       CREATE TABLE IF NOT EXISTS cash_counts (
         id TEXT PRIMARY KEY, shift_id TEXT NOT NULL, count_type TEXT NOT NULL,
         lines_json TEXT NOT NULL, total_minor INTEGER NOT NULL, expected_minor INTEGER NOT NULL,
+        expected_verified INTEGER NOT NULL DEFAULT 1,
         difference_minor INTEGER NOT NULL, created_at TEXT NOT NULL,
         FOREIGN KEY (shift_id) REFERENCES shifts(id)
       );
@@ -211,6 +214,11 @@ export class PosDatabase {
     this.ensureColumn('sale_items', 'line_total_minor', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('shifts', 'cashier_id', "TEXT NOT NULL DEFAULT ''")
     this.ensureColumn('shifts', 'shift_type', "TEXT NOT NULL DEFAULT 'Утро'")
+    this.ensureColumn('shifts', 'drawer_point_id', 'TEXT')
+    this.ensureColumn('shifts', 'drawer_workplace_id', 'TEXT')
+    this.ensureColumn('shifts', 'opening_expected_minor', 'INTEGER')
+    this.ensureColumn('shifts', 'opening_expected_verified', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('cash_counts', 'expected_verified', 'INTEGER NOT NULL DEFAULT 1')
     this.migrateCashDrawerV1FromBootstrap()
   }
 
@@ -332,6 +340,29 @@ export class PosDatabase {
     }
   }
 
+  private updateCashDrawerPendingInTransaction(pointId:string,workplaceId:string,pending:boolean,now=new Date().toISOString()):void {
+    this.ensureCashDrawerState(pointId,workplaceId)
+    this.db.prepare(`UPDATE cash_drawer_state SET opening_count_pending=?,updated_at=?
+      WHERE point_id=? AND workplace_id=?`).run(pending?1:0,now,pointId,workplaceId)
+  }
+
+  private updateCashDrawerBaselineFromStoredCountInTransaction(
+    pointId:string,
+    workplaceId:string,
+    count:{id:string;totalMinor:number;createdAt:string},
+    now=new Date().toISOString(),
+  ):void {
+    this.ensureCashDrawerState(pointId,workplaceId)
+    this.db.prepare(`UPDATE cash_drawer_state SET baseline_minor=?,baseline_verified=1,opening_count_pending=0,
+      baseline_source='cash_count',baseline_source_id=?,baseline_at=?,updated_at=?
+      WHERE point_id=? AND workplace_id=?`)
+      .run(count.totalMinor,count.id,count.createdAt,now,pointId,workplaceId)
+  }
+
+  private currentDrawerContext():{pointId:string;workplaceId:string}|null {
+    return this.bootstrapDrawerContext()
+  }
+
   getCashDrawerState(pointId:string,workplaceId:string):CashDrawerState {
     this.db.exec('BEGIN IMMEDIATE')
     try {
@@ -347,11 +378,10 @@ export class PosDatabase {
   setCashDrawerOpeningCountPending(pointId:string,workplaceId:string,pending:boolean):CashDrawerState {
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.ensureCashDrawerState(pointId,workplaceId)
-      const now=new Date().toISOString()
-      this.db.prepare(`UPDATE cash_drawer_state SET opening_count_pending=?,updated_at=?
-        WHERE point_id=? AND workplace_id=?`).run(pending?1:0,now,pointId.trim(),workplaceId.trim())
-      const state=this.readCashDrawerStateRow(pointId.trim(),workplaceId.trim()) as CashDrawerState
+      const normalizedPointId=pointId.trim(),normalizedWorkplaceId=workplaceId.trim()
+      if(!normalizedPointId||!normalizedWorkplaceId)throw new Error('Не задан контекст физической кассы')
+      this.updateCashDrawerPendingInTransaction(normalizedPointId,normalizedWorkplaceId,pending)
+      const state=this.readCashDrawerStateRow(normalizedPointId,normalizedWorkplaceId) as CashDrawerState
       this.db.exec('COMMIT')
       return state
     } catch(error) {
@@ -363,16 +393,13 @@ export class PosDatabase {
   updateCashDrawerBaselineFromCount(pointId:string,workplaceId:string,cashCountId:string):CashDrawerState {
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.ensureCashDrawerState(pointId,workplaceId)
+      const normalizedPointId=pointId.trim(),normalizedWorkplaceId=workplaceId.trim()
+      if(!normalizedPointId||!normalizedWorkplaceId)throw new Error('Не задан контекст физической кассы')
       const count=this.db.prepare(`SELECT id,total_minor totalMinor,created_at createdAt
         FROM cash_counts WHERE id=?`).get(cashCountId) as {id:string;totalMinor:number;createdAt:string}|undefined
       if(!count)throw new Error('Контрольный пересчёт кассы не найден')
-      const now=new Date().toISOString()
-      this.db.prepare(`UPDATE cash_drawer_state SET baseline_minor=?,baseline_verified=1,opening_count_pending=0,
-        baseline_source='cash_count',baseline_source_id=?,baseline_at=?,updated_at=?
-        WHERE point_id=? AND workplace_id=?`)
-        .run(count.totalMinor,count.id,count.createdAt,now,pointId.trim(),workplaceId.trim())
-      const state=this.readCashDrawerStateRow(pointId.trim(),workplaceId.trim()) as CashDrawerState
+      this.updateCashDrawerBaselineFromStoredCountInTransaction(normalizedPointId,normalizedWorkplaceId,count)
+      const state=this.readCashDrawerStateRow(normalizedPointId,normalizedWorkplaceId) as CashDrawerState
       this.db.exec('COMMIT')
       return state
     } catch(error) {
@@ -441,21 +468,69 @@ export class PosDatabase {
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
-  currentShift():Shift|null{return (this.db.prepare(`SELECT id,opened_at AS openedAt,closed_at AS closedAt,cashier_id AS cashierId,cashier_name AS cashierName,shift_type AS shiftType
-    FROM shifts WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1`).get() as Shift|undefined)??null}
+  currentShift():Shift|null{
+    const row=this.db.prepare(`SELECT s.id,s.opened_at openedAt,s.closed_at closedAt,s.cashier_id cashierId,s.cashier_name cashierName,
+      s.shift_type shiftType,s.drawer_point_id drawerPointId,s.drawer_workplace_id drawerWorkplaceId,
+      s.opening_expected_minor openingExpectedMinor,s.opening_expected_verified openingExpectedVerified,
+      CASE WHEN d.opening_count_pending=1 THEN 1 ELSE 0 END openingCountPending
+      FROM shifts s LEFT JOIN cash_drawer_state d
+        ON d.point_id=s.drawer_point_id AND d.workplace_id=s.drawer_workplace_id
+      WHERE s.closed_at IS NULL ORDER BY s.opened_at DESC LIMIT 1`).get() as
+      (Omit<Shift,'openingExpectedVerified'|'openingCountPending'> & {openingExpectedVerified?:number;openingCountPending?:number})|undefined
+    return row?{...row,openingExpectedVerified:Boolean(row.openingExpectedVerified),openingCountPending:Boolean(row.openingCountPending)}:null
+  }
+
   openShift(shift:Shift):Shift {
     const current=this.currentShift();if(current)return current
     const opened=new Date(shift.openedAt),dayStart=new Date(opened);dayStart.setHours(0,0,0,0);const dayEnd=new Date(dayStart);dayEnd.setDate(dayEnd.getDate()+1)
     const count=(this.db.prepare('SELECT COUNT(*) count FROM shifts WHERE opened_at>=? AND opened_at<?').get(dayStart.toISOString(),dayEnd.toISOString()) as {count:number}).count
-    const persisted={...shift,shiftType:count===0?'Утро' as const:'Вечер' as const}
-    this.db.prepare('INSERT INTO shifts (id,opened_at,cashier_id,cashier_name,shift_type) VALUES (?,?,?,?,?)').run(persisted.id,persisted.openedAt,persisted.cashierId??'',persisted.cashierName,persisted.shiftType)
-    this.queue('shift.opened',persisted,persisted.openedAt);return persisted
+    const shiftType=count===0?'Утро' as const:'Вечер' as const
+    const context=this.currentDrawerContext()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const drawer=context?this.ensureCashDrawerState(context.pointId,context.workplaceId):null
+      if(context)this.updateCashDrawerPendingInTransaction(context.pointId,context.workplaceId,true,shift.openedAt)
+      this.db.prepare(`INSERT INTO shifts
+        (id,opened_at,cashier_id,cashier_name,shift_type,drawer_point_id,drawer_workplace_id,opening_expected_minor,opening_expected_verified)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        shift.id,shift.openedAt,shift.cashierId??'',shift.cashierName,shiftType,
+        context?.pointId??null,context?.workplaceId??null,drawer?.baselineMinor??null,drawer?.baselineVerified?1:0
+      )
+      const persisted=this.currentShift() as Shift
+      this.queue('shift.opened',persisted,persisted.openedAt)
+      this.db.exec('COMMIT')
+      return persisted
+    } catch(error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
+
   closeShift():ShiftSummary {
     const current=this.currentShift();if(!current)throw new Error('Нет открытой смены')
-    const summary=this.getShiftSummary();const closedAt=new Date().toISOString()
-    this.db.prepare('UPDATE shifts SET closed_at=? WHERE id=?').run(closedAt,current.id)
-    this.queue('shift.closed',{...current,closedAt,summary},closedAt);return summary
+    const summary=this.getShiftSummary()
+    const closing=this.db.prepare(`SELECT id,total_minor totalMinor,expected_minor expectedMinor,
+      expected_verified expectedVerified,created_at createdAt
+      FROM cash_counts WHERE shift_id=? AND count_type='closing' ORDER BY created_at DESC,rowid DESC LIMIT 1`)
+      .get(current.id) as {id:string;totalMinor:number;expectedMinor:number;expectedVerified:number;createdAt:string}|undefined
+    if(current.drawerPointId&&current.drawerWorkplaceId&&!closing)throw new Error('Перед закрытием рабочей смены выполните закрывающий пересчёт наличных')
+    if(closing&&(closing.expectedMinor!==summary.expectedCashMinor||Boolean(closing.expectedVerified)!==Boolean(summary.expectedCashVerified))){
+      throw new Error('После закрывающего пересчёта движение наличных изменилось. Выполните закрывающий пересчёт ещё раз.')
+    }
+    const closedAt=new Date().toISOString()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      if(current.drawerPointId&&current.drawerWorkplaceId&&closing){
+        this.updateCashDrawerBaselineFromStoredCountInTransaction(current.drawerPointId,current.drawerWorkplaceId,closing,closedAt)
+      }
+      this.db.prepare('UPDATE shifts SET closed_at=? WHERE id=?').run(closedAt,current.id)
+      this.queue('shift.closed',{...current,closedAt,summary},closedAt)
+      this.db.exec('COMMIT')
+      return summary
+    } catch(error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   getShiftSummary():ShiftSummary {
@@ -476,9 +551,12 @@ export class PosDatabase {
       COALESCE(SUM(CASE WHEN operation_type='deposit' THEN amount_minor ELSE 0 END),0) depositsMinor,
       COALESCE(SUM(CASE WHEN operation_type='withdrawal' THEN amount_minor ELSE 0 END),0) withdrawalsMinor
       FROM cash_operations WHERE shift_id=?`).get(shift.id) as Pick<ShiftSummary,'depositsMinor'|'withdrawalsMinor'>
-    const opening=(this.db.prepare("SELECT total_minor value FROM cash_counts WHERE shift_id=? AND count_type='opening' ORDER BY created_at LIMIT 1").get(shift.id) as {value:number}|undefined)?.value??0
+    const legacyOpening=(this.db.prepare("SELECT total_minor value FROM cash_counts WHERE shift_id=? AND count_type='opening' ORDER BY created_at LIMIT 1").get(shift.id) as {value:number}|undefined)?.value
+    const opening=shift.openingExpectedMinor??legacyOpening??0
+    const expectedCashVerified=shift.drawerPointId?Boolean(shift.openingExpectedVerified):true
     return {...sales,...payments,returnsMinor:refunds.returnsMinor,...cash,
-      expectedCashMinor:opening+payments.cashMinor-cashReturns.value+cash.depositsMinor-cash.withdrawalsMinor}
+      expectedCashMinor:opening+payments.cashMinor-cashReturns.value+cash.depositsMinor-cash.withdrawalsMinor,
+      expectedCashVerified,openingCountPending:Boolean(shift.openingCountPending)}
   }
 
   findSaleByClientRequestId(id:string):{saleId:string;receiptNumber:string;totalMinor:number}|null {
@@ -766,12 +844,35 @@ export class PosDatabase {
     const shift=this.currentShift();if(!shift)throw new Error('Сначала откройте смену')
     const normalized=lines.filter((x)=>Number.isInteger(x.denominationMinor)&&x.denominationMinor>0&&Number.isInteger(x.quantity)&&x.quantity>=0)
     const totalMinor=normalized.reduce((sum,x)=>sum+x.denominationMinor*x.quantity,0)
-    const expectedMinor=countType==='opening'?totalMinor:this.getShiftSummary().expectedCashMinor
-    const count:CashCount={id:randomUUID(),countType,lines:normalized,totalMinor,expectedMinor,differenceMinor:totalMinor-expectedMinor,createdAt:new Date().toISOString()}
-    this.db.prepare('INSERT INTO cash_counts (id,shift_id,count_type,lines_json,total_minor,expected_minor,difference_minor,created_at) VALUES (?,?,?,?,?,?,?,?)')
-      .run(count.id,shift.id,countType,JSON.stringify(normalized),totalMinor,expectedMinor,count.differenceMinor,count.createdAt)
-    this.queue('cash.counted',{...count,shiftId:shift.id},count.createdAt)
-    return count
+    const snapshot=this.getShiftSummary()
+    const expectedMinor=snapshot.expectedCashMinor
+    const expectedVerified=snapshot.expectedCashVerified!==false
+    const count:CashCount={
+      id:randomUUID(),countType,lines:normalized,totalMinor,expectedMinor,expectedVerified,
+      differenceMinor:totalMinor-expectedMinor,createdAt:new Date().toISOString()
+    }
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare(`INSERT INTO cash_counts
+        (id,shift_id,count_type,lines_json,total_minor,expected_minor,expected_verified,difference_minor,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(count.id,shift.id,countType,JSON.stringify(normalized),totalMinor,expectedMinor,expectedVerified?1:0,count.differenceMinor,count.createdAt)
+      if(countType==='opening'&&shift.drawerPointId&&shift.drawerWorkplaceId){
+        if(!expectedVerified){
+          this.updateCashDrawerBaselineFromStoredCountInTransaction(shift.drawerPointId,shift.drawerWorkplaceId,count,count.createdAt)
+          this.db.prepare('UPDATE shifts SET opening_expected_minor=?,opening_expected_verified=1 WHERE id=?')
+            .run(totalMinor,shift.id)
+        }else{
+          this.updateCashDrawerPendingInTransaction(shift.drawerPointId,shift.drawerWorkplaceId,false,count.createdAt)
+        }
+      }
+      this.queue('cash.counted',{...count,shiftId:shift.id},count.createdAt)
+      this.db.exec('COMMIT')
+      return count
+    } catch(error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
   getLastCashCount():CashCount|null {
     const shift=this.currentShift();if(!shift)return null
