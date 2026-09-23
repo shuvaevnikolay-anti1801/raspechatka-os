@@ -122,6 +122,7 @@ class TestPosOrderVisibility(TestCase):
 		created = {
 			"orderNumber": "ORD-20260920-ABC123",
 			"phone": "+7 900 123-45-67",
+			"contactMethod": "Telegram @client",
 			"comment": "Печать фотокниги",
 			"status": "in_progress",
 			"createdAt": "2026-09-20T09:00:00.000Z",
@@ -135,6 +136,7 @@ class TestPosOrderVisibility(TestCase):
 		}
 		ready = {
 			**created,
+			"contactMethod": "WhatsApp",
 			"status": "ready",
 			"readyAt": "2026-09-20T10:30:00.000Z",
 		}
@@ -157,6 +159,7 @@ class TestPosOrderVisibility(TestCase):
 		self.assertEqual(result["accepted"], ["EVENT-CREATE-1", "EVENT-READY-1"])
 		order = store.orders["POS-ORDER-1"]
 		self.assertEqual(order.business_point, "POINT-1")
+		self.assertEqual(order.contact_method, "WhatsApp")
 		self.assertEqual(order.status, "Ready")
 		self.assertEqual(order.ready_at, "2026-09-20T10:30:00.000Z")
 		self.assertEqual(order.source_receipt, "RECEIPT-1")
@@ -179,6 +182,7 @@ class TestPosOrderVisibility(TestCase):
 				"short_number": "№ 4567",
 				"order_number": "ORD-20260920-ABC123",
 				"phone": "+7 900 123-45-67",
+				"contact_method": "WhatsApp",
 				"business_point": "POINT-1",
 				"comment": "Печать фотокниги",
 				"fiscal_number": "777",
@@ -209,6 +213,7 @@ class TestPosOrderVisibility(TestCase):
 				"id": "POS-ORDER-1",
 				"orderNumber": "ORD-20260920-ABC123",
 				"phone": "+7 900 123-45-67",
+				"contactMethod": "WhatsApp",
 				"customerName": None,
 				"lines": [{"productId": None, "name": "Фотокнига", "quantity": 1.0, "unitPriceMinor": 12345}],
 				"totalMinor": 12345,
@@ -232,6 +237,7 @@ class TestPosOrderVisibility(TestCase):
 			name="POS-ORDER-1",
 			order_number="ORD-1",
 			phone="+79001234567",
+			contact_method="Telegram",
 			business_point="POINT-1",
 			comment="Исходное описание",
 			total_amount=100,
@@ -258,9 +264,10 @@ class TestPosOrderVisibility(TestCase):
 					"order.updated",
 					"EVENT-FOREIGN-UPDATE",
 					Row(name="POS-CONNECTION-2", business_point="POINT-2"),
-					{"orderNumber": "ORD-1", "comment": "Подменено", "status": "ready"},
+					{"orderNumber": "ORD-1", "contactMethod": "Email", "comment": "Подменено", "status": "ready"},
 				)
 
+		self.assertEqual(order.contact_method, "Telegram")
 		self.assertEqual(order.comment, "Исходное описание")
 		self.assertEqual(order.status, "In Progress")
 
@@ -408,6 +415,7 @@ class TestPosOrderFrappeIntegration(TestCase):
 		created_payload = {
 			"orderNumber": order_number,
 			"phone": "+7 900 123-45-67",
+			"contactMethod": "Telegram @client",
 			"comment": "Реальный DB regression",
 			"status": "in_progress",
 			"createdAt": "2026-09-20T09:00:00+03:00",
@@ -428,6 +436,7 @@ class TestPosOrderFrappeIntegration(TestCase):
 		}
 		ready_payload = {
 			**created_payload,
+			"contactMethod": "WhatsApp +7 900 123-45-67",
 			"status": "ready",
 			"readyAt": "2026-09-20T10:30:00+03:00",
 		}
@@ -450,6 +459,7 @@ class TestPosOrderFrappeIntegration(TestCase):
 		self.assertEqual(len(order_names), 1)
 		order = frappe.get_doc("POS Order", order_names[0])
 		self.assertEqual(order.business_point, self.point.name)
+		self.assertEqual(order.contact_method, ready_payload["contactMethod"])
 		self.assertEqual(order.status, "Ready")
 		self.assertEqual(order.source_pos_event, create_event["id"])
 		self.assertEqual(order.source_sale_id, created_payload["sourceSaleId"])
@@ -476,7 +486,10 @@ class TestPosOrderFrappeIntegration(TestCase):
 			patch.object(sales, "get_allowed_entities", return_value=[self.entity.name]),
 		):
 			rows = sales.get_orders()["rows"]
-		self.assertEqual([row["order_number"] for row in rows if row["order_number"] == order_number], [order_number])
+			with self.assertRaises(frappe.PermissionError):
+				sales.get_orders(business_point=self.foreign_point.name)
+		web_order = next(row for row in rows if row["order_number"] == order_number)
+		self.assertEqual(web_order["contact_method"], ready_payload["contactMethod"])
 
 		foreign_scope = {"global": False, "points": [self.foreign_point.name]}
 		with (
@@ -496,6 +509,7 @@ class TestPosOrderFrappeIntegration(TestCase):
 			row for row in bootstrap["workplaceData"]["orders"] if row["orderNumber"] == order_number
 		)
 		self.assertEqual(bootstrap_order["id"], order.name)
+		self.assertEqual(bootstrap_order["contactMethod"], ready_payload["contactMethod"])
 		self.assertEqual(bootstrap_order["status"], "ready")
 		self.assertEqual(bootstrap_order["readyAt"], pos._pos_datetime_to_utc(order.ready_at))
 
@@ -513,6 +527,8 @@ class TestPosOrderFrappeIntegration(TestCase):
 			),
 			1,
 		)
+		order.reload()
+		self.assertEqual(order.contact_method, ready_payload["contactMethod"])
 
 		missing_event = {
 			"id": f"MISSING-{self.suffix}",
