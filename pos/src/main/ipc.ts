@@ -245,6 +245,7 @@ export function registerIpcHandlers(dependencies:{
     const shift=database.currentShift()
     const cashier=cashierAuth.requireAuthenticated({allowRevokedForClose:true})
     if(!shift||(shift.cashierId?shift.cashierId!==cashier.id:shift.cashierName!==cashier.name))throw new Error('Закрыть смену может только открывший её кассир после входа по PIN')
+    database.assertShiftReadyToClose()
     diagnostics.record({source:'shift',eventType:'shift.close_started',message:'Начинаем закрытие локальной и фискальной смены',operationId:shift?.id})
     try{
       const shiftSummary=database.getShiftSummary()

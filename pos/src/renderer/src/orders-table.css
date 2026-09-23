@@ -1,0 +1,86 @@
+.orders-table>header,.orders-table>.order-row{
+  width:max-content;
+  min-width:100%;
+  grid-template-columns:none;
+}
+.orders-table>header{
+  z-index:2;
+}
+.orders-column-heading{
+  position:relative;
+  min-width:0;
+  height:100%;
+  display:flex;
+  align-items:center;
+  padding-right:12px;
+  overflow:hidden;
+}
+.orders-column-heading>span:first-child{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.orders-column-resizer{
+  position:absolute;
+  top:4px;
+  right:-4px;
+  bottom:4px;
+  width:10px;
+  cursor:col-resize;
+  touch-action:none;
+  user-select:none;
+}
+.orders-column-resizer::after{
+  position:absolute;
+  top:2px;
+  right:4px;
+  bottom:2px;
+  width:1px;
+  background:var(--pos-border);
+  content:'';
+}
+.orders-column-resizer:hover::after,.orders-column-resizer.resizing::after{
+  width:2px;
+  background:var(--pos-brand);
+}
+.orders-table>.order-row>*{
+  min-width:0;
+}
+.orders-table .order-status{
+  justify-self:start;
+}
+.orders-table .order-number,.orders-table .order-phone,.orders-table .order-payment,.orders-table .order-created,.orders-table .order-issued-at{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.orders-table .order-number{
+  display:block;
+  font-size:var(--pos-type-strong);
+}
+.orders-table .order-contact,.orders-table .order-description{
+  display:-webkit-box;
+  overflow:hidden;
+  overflow-wrap:anywhere;
+  line-height:1.4;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+.orders-table .order-payment{
+  display:block;
+}
+.orders-table .order-payment b{
+  font-weight:var(--pos-weight-strong);
+  white-space:nowrap;
+}
+.orders-table .order-created,.orders-table .order-issued-at,.orders-table .order-due time{
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.orders-table .order-due{
+  min-width:0;
+}
+.orders-table .order-actions{
+  min-width:0;
+}

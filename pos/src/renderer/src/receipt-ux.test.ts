@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 const receiptSource=readFileSync(new URL('./CurrentReceipt.tsx',import.meta.url),'utf8')
 const appSource=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
 const css=readFileSync(new URL('./sale-workspace.css',import.meta.url),'utf8')
+const workspaceSource=readFileSync(new URL('./SaleWorkspace.tsx',import.meta.url),'utf8')
+const catalogSource=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
 
 describe('current receipt UX contract',()=>{
   it('uses one heading and groups semantic receipt actions in the header',()=>{
@@ -34,11 +36,57 @@ describe('current receipt UX contract',()=>{
     expect(receiptSource).toContain('onClick={onOpenCustomer}')
     expect(receiptSource).toContain('onClick={onRemoveCustomer}')
     expect(receiptSource).toContain('onClick={onOpenManualDiscount}')
-    expect(css).toContain('.receipt-service-block{min-height:0;overflow:auto}')
+    expect(css).toContain('.receipt-service-block{min-height:0}')
+  })
+
+  it('scrolls only receipt lines and keeps upsell, services, totals and action in one fixed region',()=>{
+    const lines=receiptSource.indexOf('<div className="receipt-lines">')
+    const fixed=receiptSource.indexOf('<div className="receipt-fixed">')
+    const upsell=receiptSource.indexOf('className="receipt-upsell"')
+    const footer=receiptSource.indexOf('<footer className="receipt-total current-receipt-footer">')
+    const services=receiptSource.indexOf('<div className="receipt-service-block">')
+    const pay=receiptSource.indexOf('className="pos-v2-pay"')
+    expect(lines).toBeGreaterThan(-1)
+    expect(lines).toBeLessThan(fixed)
+    expect(fixed).toBeLessThan(upsell)
+    expect(upsell).toBeLessThan(footer)
+    expect(footer).toBeLessThan(services)
+    expect(services).toBeLessThan(pay)
+    expect(css).toContain('.current-receipt .receipt-lines{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}')
+    expect(css).toContain('.current-receipt .receipt-fixed{flex:0 0 auto;min-height:0}')
+    expect(css).toContain('.current-receipt .receipt-service-block{min-height:0}')
+    expect(css).not.toContain('.receipt-service-block{min-height:0;overflow:auto}')
+    expect(css).not.toContain('.current-receipt-footer{max-height:')
+  })
+
+  it('shows selected name, club percent and ruble discount in a compact row',()=>{
+    expect(receiptSource).toContain('className="receipt-service-row receipt-customer"')
+    expect(receiptSource).toContain("onClick={onOpenCustomer}>{customer?.name||'Найти по телефону'}")
+    expect(receiptSource).toContain('customer?`${clubPercent}% · − ${formatMoney(clubDiscountMinor)}`')
+    expect(receiptSource).toContain('onClick={onRemoveCustomer}')
+    expect(receiptSource).not.toContain('Клубная скидка и история покупок')
+    expect(receiptSource).not.toContain('Ограничена настройками точки')
+    expect(receiptSource).not.toContain('за отзыв')
+    expect(css).toContain('grid-template-columns:92px minmax(0,1fr) 118px')
+  })
+
+  it('uses exact customer search copy, retail selection and existing discount handlers',()=>{
+    const modal=appSource.slice(appSource.indexOf('function CustomerModal('),appSource.indexOf('function ManualDiscountModal('))
+    expect(modal).toContain('placeholder="Введите последние четыре цифры телефона"')
+    expect(modal).not.toContain('helper=')
+    expect(modal).not.toContain('Поиск выполняется только по телефону')
+    expect(modal).toContain('onClick={()=>onSelect(null)}')
+    expect(modal).toContain('rows.map((x)=>')
+    expect(appSource).toContain('setCustomer(next.customer);setReviewCount(next.reviewCount);setCustomerOpen(false)')
+    expect(appSource).toContain('onRemoveCustomer={()=>chooseCustomer(null)}')
+    expect(appSource).toContain('onReviewCountChange={setReviewCount}')
+    expect(appSource).toContain('manualDiscountMinor={breakdown.manualDiscountMinor}')
+    expect(receiptSource).toContain('onClick={onOpenManualDiscount}')
+    expect(receiptSource).toContain('onChange={(event)=>onReviewCountChange(Math.max(0,Math.floor(Number(event.target.value)||0)))}')
   })
 
   it('preserves every discount calculation source',()=>{
-    expect(receiptSource).toContain('Скидка клуба {clubPercent}%')
+    expect(receiptSource).toContain('`${clubPercent}% · − ${formatMoney(clubDiscountMinor)}`')
     expect(receiptSource).toContain('<span>Отзывы</span>')
     expect(receiptSource).toContain('<span>Доп. скидка')
     expect(receiptSource).toContain('<span>Без скидок</span><strong>{formatMoney(subtotalMinor)}</strong>')
@@ -70,6 +118,39 @@ describe('current receipt UX contract',()=>{
     expect(receiptSource).toContain('icon="plus"')
     expect(receiptSource).toContain('icon="close"')
     expect(css).toContain('background:var(--pos-brand)')
+  })
+
+  it.each([[1280,720],[1366,768]])('keeps sale data scrolling and fixed actions at %i×%i',(_width,height)=>{
+    expect(workspaceSource).toContain("style={{'--sale-categories-ratio':preferences.layout.categoriesRatio,'--sale-receipt-ratio':preferences.layout.receiptRatio}")
+    expect(workspaceSource).toContain('layout:clampSaleLayout(candidate,bounds.width)')
+    expect(catalogSource).toContain('<div className="product-grid">')
+    expect(receiptSource).toContain('<div className="receipt-lines">')
+    expect(receiptSource).toContain('<div className="receipt-fixed">')
+    expect(css).toContain('.sale-workspace-zone{min-width:0;min-height:0;overflow:hidden')
+    expect(css).toContain('.sale-workspace .catalog-toolbar{flex:0 0 auto;')
+    expect(css).toContain('.sale-workspace .product-grid{flex:1 1 auto;min-height:0;')
+    expect(css).toContain('overflow-y:auto;overflow-x:hidden}')
+    expect(css).toContain('.current-receipt .receipt-lines{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}')
+    expect(css).toContain('.current-receipt .receipt-fixed{flex:0 0 auto;min-height:0}')
+    expect(css).not.toMatch(/!important/)
+    if(height===720){
+      expect(css).toContain('@media (max-height:760px)')
+      expect(css).toContain('.current-receipt .receipt-heading{min-height:56px}')
+      expect(css).toContain('.current-receipt .pos-v2-pay,.current-receipt .receipt-open-shift{min-height:48px}')
+    }else{
+      expect(css).toContain('.current-receipt .receipt-heading{flex:0 0 auto;min-height:64px;')
+      expect(css).toContain('.current-receipt .pos-v2-pay,.current-receipt .receipt-open-shift{width:100%;min-height:56px;')
+    }
+  })
+
+  it('retains the DEV-169 splitter bands while constraining only product and line lists',()=>{
+    expect(css).toContain('minmax(160px,calc((100% - 24px)*var(--sale-categories-ratio)))')
+    expect(css).toContain('minmax(360px,min(520px,calc((100% - 24px)*var(--sale-receipt-ratio))))')
+    expect(css).toContain('@media (min-width:1100px) and (max-width:1279px)')
+    expect(css).toContain('@media (min-width:1600px)')
+    expect(css).toContain('.current-receipt .receipt-service-block{min-height:0}')
+    expect(css).not.toMatch(/\.current-receipt-footer\{[^}]*overflow:/)
+    expect(css).not.toMatch(/\.receipt-service-block\{[^}]*overflow:/)
   })
 
   it('keeps shift opening and empty-cart guards unchanged',()=>{

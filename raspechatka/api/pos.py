@@ -442,6 +442,7 @@ def _apply_order_created(event_id, workplace, payload):
 			"doctype": "POS Order",
 			"order_number": payload.get("orderNumber"),
 			"phone": payload.get("phone"),
+			"contact_method": payload.get("contactMethod") or None,
 			"customer_name": payload.get("customerName"),
 			"business_point": workplace.business_point,
 			"source_pos_event": event_id,
@@ -491,6 +492,8 @@ def _apply_order_updated(event_id, workplace, payload):
 	doc = frappe.get_doc("POS Order", name)
 	if "phone" in payload:
 		doc.phone = payload.get("phone")
+	if "contactMethod" in payload:
+		doc.contact_method = payload.get("contactMethod") or None
 	if "comment" in payload:
 		doc.comment = payload.get("comment")
 	if "dueAt" in payload:
@@ -671,10 +674,12 @@ def _allocate_minor_amount(total, weights):
 		return [0 for _weight in weights]
 	result = []
 	allocated = 0
+	cumulative = 0
 	for index, weight in enumerate(weights):
-		amount = total - allocated if index == len(weights) - 1 else round(total * weight / weight_total)
-		result.append(amount)
-		allocated += amount
+		cumulative += weight
+		target = total if index == len(weights) - 1 else round(total * cumulative / weight_total)
+		result.append(target - allocated)
+		allocated = target
 	return result
 
 
@@ -730,9 +735,13 @@ def _receipt_comment(payload):
 
 
 def _get_workplace_data(employee, point, workplace):
+	current_schedule_month = _get_schedule_month(point.name)
+	next_schedule_month = _get_schedule_month(point.name, _schedule_month_value(1))
 	return {
 		"schedule": _get_employee_schedule(employee, point.name),
-		"scheduleMonth": _get_schedule_month(point.name),
+		"scheduleMonth": current_schedule_month,
+		"scheduleCurrentMonth": current_schedule_month,
+		"scheduleNextMonth": next_schedule_month,
 		"myUpcomingShifts": _get_upcoming_shifts(employee, point.name),
 		"operationalCatalog": _get_operational_catalog(point.name),
 		"deliveries": _get_delivery_notices(point.name),
@@ -752,6 +761,7 @@ def _get_orders(point_name):
 			"name",
 			"order_number",
 			"phone",
+			"contact_method",
 			"customer_name",
 			"total_amount",
 			"paid_amount",
@@ -796,6 +806,7 @@ def _get_orders(point_name):
 			"id": x.name,
 			"orderNumber": x.order_number,
 			"phone": x.phone,
+			"contactMethod": x.contact_method,
 			"customerName": x.customer_name,
 			"lines": items.get(x.name, []),
 			"totalMinor": int(flt(x.total_amount) * 100),
@@ -910,13 +921,15 @@ def _schedule_employees(point_name):
 	]
 
 
-def _schedule_month_value():
-	today = nowdate()
-	return f"{today[:7]}-01"
+def _schedule_month_value(month_offset=0):
+	today = getdate(nowdate())
+	month_index = today.year * 12 + today.month - 1 + int(month_offset)
+	year, zero_based_month = divmod(month_index, 12)
+	return f"{year:04d}-{zero_based_month + 1:02d}-01"
 
 
-def _get_schedule_month(point_name):
-	month = _schedule_month_value()
+def _get_schedule_month(point_name, month=None):
+	month = month or _schedule_month_value()
 	year, month_number = int(month[:4]), int(month[5:7])
 	rows = _schedule_rows(point_name, month=month)
 	return {

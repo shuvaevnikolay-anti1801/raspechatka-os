@@ -52,7 +52,10 @@ export type DiscountBreakdown = {
   manualDiscountValue: number
   manualDiscountMinor: number
   totalDiscountMinor: number
+  /** Total after ordinary discounts, before ruble rounding. */
   totalMinor: number
+  roundingAdjustmentMinor: number
+  payableMinor: number
 }
 export type BankingEvidence = {
   provider: 'inpas'
@@ -80,7 +83,20 @@ export type PaymentPart = {
   bankingEvidence?: BankingEvidence
 }
 export type RemotePaymentConfirmation = { confirmed: true; confirmedAt: string; confirmedBy?: string; note?: string }
-export type Shift = { id: string; openedAt: string; closedAt?: string; cashierId?: string; cashierName: string; shiftType?:'Утро'|'Вечер' }
+export type Shift = {
+  id:string
+  openedAt:string
+  closedAt?:string
+  cashierId?:string
+  cashierName:string
+  shiftType?:'Утро'|'Вечер'
+  drawerPointId?:string
+  drawerWorkplaceId?:string
+  openingExpectedMinor?:number
+  openingExpectedVerified?:boolean
+  accountingBaselineAt?:string
+  openingCountPending?:boolean
+}
 export type PointEmployee = { id:string; name:string }
 export type CashierAuthState = {
   status:'signed_out'|'authenticated'|'locked'
@@ -146,6 +162,9 @@ export type PosLifecycleStatus = {
 
 export type CompleteSaleRequest = {
   clientRequestId: string
+  /** Cashier-visible amount after ruble rounding; validated again in main. */
+  payableMinor?: number
+  roundingAdjustmentMinor?: number
   payments: PaymentPart[]
   lines: CartLine[]
   customer?: Customer | null
@@ -163,7 +182,7 @@ export type CompleteSaleRequest = {
   discountRules?: DiscountRulesSnapshot
   cashReceivedMinor?: number
   remotePaymentConfirmation?: RemotePaymentConfirmation
-  order?: { phone:string; comment?:string; dueAt?:string }
+  order?: { phone:string; contactMethod?:string; comment?:string; dueAt?:string }
 }
 
 export type CompleteSaleResult = { saleId: string; receiptNumber: string; totalMinor: number; changeMinor: number; queuedForSync: boolean; order?: Order }
@@ -256,6 +275,11 @@ export type PrintJobSummary = {
   printedAt?:string
 }
 
+export type HeldReceiptUpsell =
+  | { state:'eligible' }
+  | { state:'pending'; triggerItem:string; candidate:UpsellCandidate }
+  | { state:'accepted' | 'dismissed' }
+
 export type HeldReceipt = {
   id: string
   label: string
@@ -264,11 +288,14 @@ export type HeldReceipt = {
   discountPercent: number
   reviewCount?: number
   manualDiscount?: ManualDiscount | null
+  /** Absent on legacy held receipts; restore treats them as dismissed. */
+  upsell?: HeldReceiptUpsell
   totalMinor?: number
   createdAt: string
 }
 export type CashOperationType = 'deposit' | 'withdrawal'
 export type CashOperation = { id: string; type: CashOperationType; amountMinor: number; reason: string; createdAt: string }
+export type ShiftPaymentBreakdownItem = { method:string; amountMinor:number }
 export type ShiftSummary = {
   receipts: number
   revenueMinor: number
@@ -282,6 +309,9 @@ export type ShiftSummary = {
   depositsMinor: number
   withdrawalsMinor: number
   expectedCashMinor: number
+  paymentBreakdown?: ShiftPaymentBreakdownItem[]
+  expectedCashVerified?: boolean
+  openingCountPending?: boolean
 }
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
@@ -313,6 +343,8 @@ export type CleanerStatus = { visitsSincePayment:number; paymentDueMinor:number;
 export type WorkplaceData = {
   schedule:WorkScheduleItem[]
   scheduleMonth:WorkScheduleMonth
+  scheduleCurrentMonth:WorkScheduleMonth
+  scheduleNextMonth:WorkScheduleMonth
   myUpcomingShifts:UpcomingShift[]
   operationalCatalog:OperationalCatalogItem[]
   deliveries:DeliveryNotice[]
@@ -320,21 +352,41 @@ export type WorkplaceData = {
   cleaner:CleanerStatus
   orders:Order[]
 }
-export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'|'Другое'; comment?:string }
-export type SupplyRequestInput = { productId?:string; itemName:string; quantity:number; comment?:string }
+export type StockWriteOffRequest = { productId:string; quantity:number; reason:'Брак'|'Внутренние нужды'|'Обучение'; comment:string }
+export type SupplyRequestInput = { productId?:string; itemName:string; comment:string }
 export type StockReceiptRequest = {
   purchaseOrderId:string
   lines:Array<{purchaseOrderItemId:string;quantity:number}>
 }
 export type CashCountLine = { denominationMinor:number; quantity:number }
-export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; differenceMinor:number; createdAt:string }
+export type CashCount = { id:string; countType:'opening'|'control'|'closing'; lines:CashCountLine[]; totalMinor:number; expectedMinor:number; expectedVerified?:boolean; differenceMinor:number; createdAt:string }
+export type CashDrawerBaselineSource =
+  | 'fresh_install'
+  | 'legacy_opening_count'
+  | 'legacy_control_count'
+  | 'legacy_closing_count'
+  | 'legacy_unverified'
+  | 'cash_count'
+export type CashDrawerState = {
+  schemaVersion:1
+  pointId:string
+  workplaceId:string
+  baselineMinor:number|null
+  baselineVerified:boolean
+  openingCountPending:boolean
+  baselineSource:CashDrawerBaselineSource
+  baselineSourceId?:string
+  baselineAt?:string
+  migratedAt:string
+  updatedAt:string
+}
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
-export type Order = { id:string; orderNumber:string; phone:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
-export type CreateUnpaidOrderRequest = { phone:string; lines:CartLine[]; comment?:string; dueAt?:string }
-export type CreateOrderFromSaleRequest = { saleId:string; phone:string; comment:string; dueAt:string }
-export type UpdateOrderRequest = { id:string; phone?:string; comment?:string; status?:OrderStatus; dueAt?:string }
+export type Order = { id:string; orderNumber:string; phone:string; contactMethod?:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
+export type CreateUnpaidOrderRequest = { phone:string; contactMethod?:string; lines:CartLine[]; comment?:string; dueAt?:string }
+export type CreateOrderFromSaleRequest = { saleId:string; phone:string; contactMethod?:string; comment:string; dueAt:string }
+export type UpdateOrderRequest = { id:string; phone?:string; contactMethod?:string; comment?:string; status?:OrderStatus; dueAt?:string }
 
 export type HardwareStatus = {ready:boolean;status:'ready'|'offline'|'busy'|'error'|'not_configured';message:string;details?:Record<string,unknown>}
 export type ShiftDeviceStatus = {ready:boolean;localOpen:boolean;fiscalOpen?:boolean;message:string}

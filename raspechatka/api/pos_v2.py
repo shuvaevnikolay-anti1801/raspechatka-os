@@ -373,12 +373,24 @@ def _allocate_final_amounts(lines, total_minor):
 		frappe.throw(_("Сумма позиций чека должна быть больше нуля"))
 	if total_minor < 0 or total_minor > sum(gross):
 		frappe.throw(_("Некорректная итоговая сумма чека"))
-	allocated = []
-	used = 0
-	for index, value in enumerate(raw):
-		amount = total_minor - used if index == len(raw) - 1 else round(total_minor * value / raw_total)
-		allocated.append(amount)
-		used += amount
+	persisted = [row.get("lineTotalMinor") for row in lines]
+	if any(value is not None for value in persisted):
+		if any(value is None or flt(value) != int(flt(value)) or int(flt(value)) < 0 for value in persisted):
+			frappe.throw(_("Некорректное сохранённое распределение суммы по позициям"))
+		allocated = [int(flt(value)) for value in persisted]
+		if sum(allocated) != total_minor:
+			frappe.throw(_("Сумма сохранённых позиций не совпадает с итогом чека"))
+	else:
+		allocated = []
+		used = 0
+		cumulative = 0
+		for index, value in enumerate(raw):
+			cumulative += value
+			target = total_minor if index == len(raw) - 1 else round(total_minor * cumulative / raw_total)
+			allocated.append(target - used)
+			used = target
+	if any(amount < 0 or amount > gross[index] for index, amount in enumerate(allocated)):
+		frappe.throw(_("Некорректная сумма позиции чека"))
 	return gross, raw, allocated
 
 
@@ -451,6 +463,19 @@ def _sale_receipt(payload, cashier_id, connection):
 	lines = payload.get("lines") or []
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
+	declared_total = round(flt(payload.get("totalMinor")))
+	if not lines or paid_total <= 0 or declared_total != paid_total:
+		frappe.throw(_("Итог чека не совпадает с суммой оплат"))
+	if any(flt(payment.get("amountMinor")) < 0 or flt(payment.get("amountMinor")) != round(flt(payment.get("amountMinor"))) for payment in payments_payload):
+		frappe.throw(_("Некорректная сумма оплаты"))
+	discount_breakdown = payload.get("discountBreakdown") or {}
+	rounding_adjustment = max(0, round(flt(payload.get("roundingAdjustmentMinor", discount_breakdown.get("roundingAdjustmentMinor", 0)))))
+	ordinary_paid_total = paid_total + rounding_adjustment
+	declared_payable = payload.get("payableMinor")
+	if declared_payable is not None and round(flt(declared_payable)) != paid_total:
+		frappe.throw(_("Сумма оплат не совпадает с сохранённой суммой к оплате"))
+	# payable is already after ordinary discounts and rounding; do not treat the
+	# rounding adjustment as another discount on the server mirror.
 	gross, raw, allocated = _allocate_final_amounts(lines, paid_total)
 	(
 		review_count,
@@ -459,7 +484,8 @@ def _sale_receipt(payload, cashier_id, connection):
 		manual_discount,
 		receipt_other_discount,
 		club_discount_percent,
-	) = _review_breakdown(payload, connection, sum(raw), paid_total)
+	) = _review_breakdown(payload, connection, sum(raw), ordinary_paid_total)
+	# Ordinary line discount excludes the payable rounding adjustment.
 	line_discount = sum(gross) - sum(raw)
 
 	items = []
@@ -516,6 +542,7 @@ def _sale_receipt(payload, cashier_id, connection):
 				"reviewCount": review_count,
 				"reviewDiscountMinor": review_discount,
 				"manualDiscountMinor": manual_discount,
+				"roundingAdjustmentMinor": rounding_adjustment,
 			}
 		),
 		"items": items,
@@ -590,6 +617,10 @@ def _employee_user(employee_id):
 	return frappe.db.get_value("Employee", employee_id, "user") or None
 
 
+_POS_WRITE_OFF_REASONS = {"Брак", "Внутренние нужды", "Обучение"}
+_POS_SUPPLY_REQUEST_COMPAT_QUANTITY = 1
+
+
 def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 	if frappe.db.exists("Stock Write Off", {"external_id": event_id}):
 		return
@@ -603,6 +634,12 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 	quantity = flt(payload.get("quantity"))
 	if quantity <= 0:
 		frappe.throw(_("Количество списания должно быть больше нуля"))
+	reason = str(payload.get("reason") or "").strip()
+	if reason not in _POS_WRITE_OFF_REASONS:
+		frappe.throw(_("Недопустимая причина списания"))
+	comment = str(payload.get("comment") or "").strip()
+	if not comment:
+		frappe.throw(_("Комментарий обязателен"))
 	doc = frappe.get_doc(
 		{
 			"doctype": "Stock Write Off",
@@ -610,7 +647,7 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 			"business_entity": point.business_entity,
 			"business_point": point.name,
 			"warehouse": warehouse,
-			"reason": str(payload.get("reason") or "Другое").strip() or "Другое",
+			"reason": reason,
 			"cashier": cashier_id,
 			"source": "POS",
 			"external_id": event_id,
@@ -618,11 +655,11 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 				{
 					"productId": item_id,
 					"quantity": quantity,
-					"reason": payload.get("reason"),
-					"comment": payload.get("comment"),
+					"reason": reason,
+					"comment": comment,
 				}
 			),
-			"remarks": str(payload.get("comment") or "").strip(),
+			"remarks": comment,
 			"items": [
 				{
 					"item": item_id,
@@ -644,9 +681,6 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 	if frappe.db.exists("Point Supply Request", {"source_pos_event": event_id}):
 		return
 	point, warehouse = _point_stock_context(connection)
-	quantity = flt(payload.get("quantity"))
-	if quantity <= 0:
-		frappe.throw(_("Количество потребности должно быть больше нуля"))
 	item_id = str(payload.get("productId") or "").strip() or None
 	item_name = str(payload.get("itemName") or "").strip()
 	if item_id:
@@ -661,6 +695,9 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 		item_name = item.item_name or item_name
 	if not item_name:
 		frappe.throw(_("Укажите, что требуется точке"))
+	comment = str(payload.get("comment") or "").strip()
+	if not comment:
+		frappe.throw(_("Комментарий обязателен"))
 	frappe.get_doc(
 		{
 			"doctype": "Point Supply Request",
@@ -670,8 +707,10 @@ def _ingest_supply_request(event_id, payload, connection, cashier_id):
 			"warehouse": warehouse,
 			"item": item_id,
 			"item_name": item_name,
-			"quantity": quantity,
-			"comment": str(payload.get("comment") or "").strip(),
+			# Point Supply Request keeps quantity required for canonical compatibility.
+			# POS requests are intentionally quantity-less, so the server owns this value.
+			"quantity": _POS_SUPPLY_REQUEST_COMPAT_QUANTITY,
+			"comment": comment,
 			"requested_by_employee": cashier_id,
 			"requested_by": _employee_user(cashier_id),
 			"source_pos_event": event_id,

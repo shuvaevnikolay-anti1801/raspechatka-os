@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 
+export const PIN_LENGTH=4
+export const normalizePinValue=(value:string)=>value.replace(/\D/g,'').slice(0,PIN_LENGTH)
+
 export function PinInput({value,onChange,autoFocus=false,ariaLabel}:{value:string;onChange:(value:string)=>void;autoFocus?:boolean;ariaLabel:string}){
-  const numeric=(next:string)=>next.replace(/\D/g,'').slice(0,4)
   return <div className="pin-input" data-filled={value.length>0}>
     <input
       className="cashier-pin-input pin-input-control"
@@ -9,13 +11,13 @@ export function PinInput({value,onChange,autoFocus=false,ariaLabel}:{value:strin
       type="password"
       inputMode="numeric"
       pattern="[0-9]{4}"
-      maxLength={4}
+      maxLength={PIN_LENGTH}
       value={value}
       aria-label={ariaLabel}
-      onChange={(event)=>onChange(numeric(event.target.value))}
+      onChange={(event)=>onChange(normalizePinValue(event.target.value))}
     />
     <div className="pin-input-slots" aria-hidden="true">
-      {[0,1,2,3].map((slot)=><span className={slot<value.length?'filled':''} key={slot}>{slot<value.length?'•':''}</span>)}
+      {Array.from({length:PIN_LENGTH},(_,slot)=><span className={slot<value.length?'filled':''} key={slot}>{slot<value.length?'•':''}</span>)}
     </div>
   </div>
 }

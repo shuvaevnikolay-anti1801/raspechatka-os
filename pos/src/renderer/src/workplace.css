@@ -37,13 +37,13 @@
 .schedule-shift-evening{background:#a9cef7}
 .schedule-shift-both{background:linear-gradient(135deg,#fff4a8 0 50%,#a9cef7 50% 100%)}
 .schedule-shift-other{background:var(--pos-brand-soft);color:var(--pos-success)}
-.schedule-upcoming{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:var(--pos-space-3);padding-top:var(--pos-space-4)}
+.schedule-upcoming{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--pos-space-3)}
 .schedule-upcoming>h3,.schedule-upcoming>p{grid-column:1/-1}
-.schedule-upcoming>.upcoming-shift{display:grid;grid-template-columns:minmax(106px,1fr) var(--pos-control-compact) minmax(98px,auto);align-items:center;gap:var(--pos-space-2);min-height:60px;padding:var(--pos-space-2) var(--pos-space-3);border:var(--pos-border-base);background:var(--pos-surface)}
-.upcoming-shift time{min-width:0;font-size:var(--pos-type-body);font-weight:var(--pos-weight-strong);text-transform:capitalize;overflow-wrap:anywhere}
-.upcoming-shift .schedule-mark{align-self:stretch;display:flex;align-items:center;justify-content:center;min-width:var(--pos-control-compact);padding:0 var(--pos-space-1);font-size:var(--pos-type-label)}
-.upcoming-shift>strong{font-size:var(--pos-type-body);text-align:right;white-space:nowrap}
-.upcoming-shift>small{grid-column:3;color:var(--pos-muted);font-size:var(--pos-type-label);font-weight:var(--pos-weight-medium);text-align:right}
+.schedule-upcoming>.upcoming-shift{display:grid;grid-template-columns:minmax(0,1fr) minmax(132px,auto);align-items:stretch;gap:var(--pos-space-2);min-height:68px;padding:var(--pos-space-2) var(--pos-space-3);border:var(--pos-border-base);background:var(--pos-surface)}
+.upcoming-shift time{display:grid;align-content:center;gap:var(--pos-space-1);min-width:0;text-transform:capitalize;overflow-wrap:anywhere}
+.upcoming-shift time span{color:var(--pos-muted);font-size:var(--pos-type-body);line-height:1.2}
+.upcoming-shift time b{font-size:var(--pos-type-strong);line-height:1.2}
+.upcoming-shift .schedule-mark{display:flex;align-items:center;justify-content:center;min-width:0;padding:0 var(--pos-space-3);font-size:var(--pos-type-body);text-align:center}
 
 .warehouse-workspace{display:flex;flex-direction:column;gap:var(--pos-space-4);width:100%;min-width:0}
 .warehouse-actions{display:flex;align-items:center;justify-content:flex-start;gap:var(--pos-space-3);width:100%;min-height:0}
@@ -94,6 +94,12 @@
 .warehouse-warning{padding:var(--pos-space-3);border-left:4px solid var(--pos-danger);background:var(--pos-danger-soft);color:var(--pos-danger);font-size:var(--pos-type-body);line-height:1.4}
 .warehouse-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--pos-space-4)}
 .warehouse-field-wide{grid-column:1/-1}
+.warehouse-product-picker{display:grid;gap:var(--pos-space-2);min-width:0}
+.warehouse-product-options{display:grid;max-height:220px;overflow:auto;border:var(--pos-border-base);background:var(--pos-surface)}
+.warehouse-product-option.pos-button{justify-content:space-between;width:100%;min-width:0;border-radius:0;border-bottom:var(--pos-border-base);text-align:left}
+.warehouse-product-option.pos-button:last-child{border-bottom:0}
+.warehouse-product-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.warehouse-product-option small{flex:none;color:var(--pos-muted);font-size:var(--pos-type-label)}
 .warehouse-confirm{min-width:190px}
 .receive-context{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--pos-space-4);padding:var(--pos-space-3);background:var(--pos-canvas);font-size:var(--pos-type-body)}
 .receive-context>div{display:grid;gap:var(--pos-space-1);min-width:0}
@@ -114,8 +120,8 @@
   .work-grid{grid-template-columns:1fr}
   .work-tabs{gap:var(--pos-space-1)}
   .schedule-month>header{margin-bottom:var(--pos-space-2)}
-  .schedule-upcoming{gap:var(--pos-space-2)}
-  .schedule-upcoming>.upcoming-shift{grid-template-columns:minmax(100px,1fr) var(--pos-control-compact) minmax(94px,auto);gap:var(--pos-space-1)}
+  .schedule-upcoming{grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--pos-space-2)}
+  .schedule-upcoming>.upcoming-shift{grid-template-columns:minmax(0,1fr) minmax(124px,auto);gap:var(--pos-space-1)}
   .warehouse-workspace{gap:var(--pos-space-3)}
   .warehouse-actions{gap:var(--pos-space-2)}
   .delivery-card{grid-template-columns:minmax(0,1fr) minmax(170px,auto);padding:var(--pos-space-3)}
@@ -124,7 +130,7 @@
 }
 
 @media (min-width:1600px){
-  .schedule-upcoming{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .schedule-upcoming{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
   .delivery-list-scroll{max-height:min(48vh,640px)}
   .stock-table-scroll{max-height:clamp(320px,46vh,640px)}
   .delivery-card{padding:var(--pos-space-5)}
@@ -135,7 +141,7 @@
   .work-schedule,.warehouse-workspace{gap:var(--pos-space-3)}
   .schedule-month>header{margin-bottom:var(--pos-space-2)}
   .schedule-grid-scroll{max-height:46vh}
-  .schedule-upcoming{padding-top:var(--pos-space-2)}
+  .schedule-upcoming>.upcoming-shift{min-height:64px}
   .delivery-list-scroll{max-height:36vh}
   .stock-table-scroll{max-height:38vh}
   .warehouse-modal .pos-modal__header,.warehouse-modal .pos-modal__footer{padding:var(--pos-space-3) var(--pos-space-4)}

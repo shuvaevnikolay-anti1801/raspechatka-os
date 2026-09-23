@@ -294,7 +294,12 @@ class TestPosWarehouseIngestion(TestCase):
 			with self.assertRaises(Exception):
 				pos_v2._ingest_stock_write_off(
 					"EVENT-FOREIGN",
-					{"productId": "ITEM-FOREIGN", "quantity": 1},
+					{
+					"productId": "ITEM-FOREIGN",
+					"quantity": 1,
+					"reason": "Брак",
+					"comment": "Чужой товар",
+				},
 					SimpleNamespace(business_point="POINT-A"),
 					"EMP-1",
 				)
@@ -307,13 +312,18 @@ class TestPosWarehouseIngestion(TestCase):
 		):
 			pos_v2._ingest_stock_write_off(
 				"EVENT-WO",
-				{"productId": "ITEM-1", "quantity": 1},
+				{
+					"productId": "ITEM-1",
+					"quantity": 1,
+					"reason": "Брак",
+					"comment": "Повтор",
+				},
 				SimpleNamespace(business_point="POINT-A"),
 				"EMP-1",
 			)
 			pos_v2._ingest_supply_request(
 				"EVENT-NEED",
-				{"itemName": "Бумага", "quantity": 1},
+				{"itemName": "Бумага", "comment": "Повтор"},
 				SimpleNamespace(business_point="POINT-A"),
 				"EMP-1",
 			)
@@ -331,12 +341,22 @@ class TestPosWarehouseIngestion(TestCase):
 			{
 				"id": "EVENT-WO",
 				"eventType": "stock.write_off.requested",
-				"payload": {"cashierId": "EMP-1", "productId": "ITEM-1", "quantity": 1},
+				"payload": {
+					"cashierId": "EMP-1",
+					"productId": "ITEM-1",
+					"quantity": 1,
+					"reason": "Брак",
+					"comment": "Повреждено",
+				},
 			},
 			{
 				"id": "EVENT-NEED",
 				"eventType": "point.supply.requested",
-				"payload": {"cashierId": "EMP-1", "itemName": "Бумага", "quantity": 2},
+				"payload": {
+					"cashierId": "EMP-1",
+					"itemName": "Бумага",
+					"comment": "Нужен запас",
+				},
 			},
 			{
 				"id": "EVENT-REC",

@@ -1,4 +1,5 @@
 import type { BootState, ConnectionConfig, Customer, OutboxEvent, PointEmployee, PointReceiptDetails, PointReceiptSummary, Product, ReceiptMirror, ReceiptSearchFilters, WorkplaceData } from '../shared/contracts'
+import { normalizeWorkplaceData } from './database'
 
 type BootstrapResponse = {
   point: { id:string; name:string; timezone?:string }
@@ -75,9 +76,10 @@ export async function pushEvents(config:ConnectionConfig,events:OutboxEvent[]):P
 }
 
 export async function loadBootstrap(config:ConnectionConfig,cashierId?:string):Promise<BootstrapResponse> {
-  return post<BootstrapResponse>(config,'raspechatka.api.pos_v2.get_bootstrap',{
+  const bootstrap=await post<BootstrapResponse>(config,'raspechatka.api.pos_v2.get_bootstrap',{
     device_id:config.deviceId,token:config.token,cashier_id:cashierId||null
   },15000)
+  return {...bootstrap,workplaceData:normalizeWorkplaceData(bootstrap.workplaceData)}
 }
 
 export async function searchPointReceipts(config:ConnectionConfig,query='',filters:ReceiptSearchFilters={}):Promise<PointReceiptSummary[]> {

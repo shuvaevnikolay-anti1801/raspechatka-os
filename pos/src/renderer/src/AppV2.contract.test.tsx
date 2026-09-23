@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { buildCashCountLines, CASH_COUNT_DENOMINATIONS, cashCountTotal, CashCountModal, CashOperationModal, saveCountThenClose, cashierPinNoticeClass, cashierResetEmployeeId, CashierLogin, emptyReceiptDiscountInputs, heldUpsellSnapshot, restoreHeldUpsell, isCompleteOrderPhone, lockedCashierCanSwitch, NAV_ICON_MAP, Nav, replaceReceiptCustomer, EXPECTED_CASH_LABEL, runLockedCashierSwitch, SettingsNavTrigger, TOAST_DISMISS_MS } from './AppV2'
+import { OrderFormFields, isOrderFormComplete, toOrderFormPayload } from './OrderFormFields'
 import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
 import { PosModal } from './ui/PosModal'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
-import { PinInput } from './PinEntry'
+import { normalizePinValue, PIN_LENGTH, PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -20,18 +21,57 @@ const boot:BootState={
 const auth:CashierAuthState={status:'signed_out'}
 const selectedAuth:CashierAuthState={status:'signed_out',openShiftCashierId:'e1',openShiftCashierName:'Иван Иванов'}
 
+describe('held receipt upsell lifecycle',()=>{
+  const pending={state:'showing' as const,triggerItem:'base',candidate:{item:'upsell',cashierPhrase:'Предложение'}}
+
+  it('holds and restores the exact pending candidate without rerunning selection',()=>{
+    const stored=JSON.parse(JSON.stringify({upsell:heldUpsellSnapshot(pending,null)}))
+    expect(stored.upsell).toEqual({state:'pending',triggerItem:'base',candidate:{item:'upsell',cashierPhrase:'Предложение'}})
+    expect(restoreHeldUpsell(stored.upsell)).toEqual({cycle:pending,outcome:null})
+  })
+
+  it('keeps dismissed proposals resolved across repeated restore',()=>{
+    const stored=heldUpsellSnapshot({state:'resolved'},'dismissed')
+    expect(stored).toEqual({state:'dismissed'})
+    expect(restoreHeldUpsell(stored)).toEqual({cycle:{state:'resolved'},outcome:'dismissed'})
+    expect(restoreHeldUpsell(stored)).toEqual(restoreHeldUpsell(stored))
+  })
+
+  it('keeps accepted proposals resolved without adding the item again',()=>{
+    const stored=heldUpsellSnapshot({state:'resolved'},'accepted')
+    expect(stored).toEqual({state:'accepted'})
+    const restored=restoreHeldUpsell(stored)
+    expect(restored).toEqual({cycle:{state:'resolved'},outcome:'accepted'})
+    expect(restoreHeldUpsell(stored)).toEqual(restored)
+    expect(restored.cycle.state).not.toBe('eligible')
+  })
+
+  it('reads legacy JSON without upsell once as a resolved cycle',()=>{
+    const legacy=JSON.parse('{"lines":[{"productId":"base"}]}')
+    expect(restoreHeldUpsell(legacy.upsell)).toEqual({cycle:{state:'resolved'},outcome:'dismissed'})
+  })
+
+  it('stores lifecycle in the same held receipt request and avoids restore re-add',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('reviewCount,manualDiscount,upsell:heldUpsellSnapshot(upsellCycle,upsellOutcome)')
+    expect(source).toContain('const savedUpsell=restoreHeldUpsell(receipt.upsell)')
+    expect(source).toContain('setUpsellCycle(savedUpsell.cycle);setUpsellOutcome(savedUpsell.outcome)')
+    expect(source).not.toContain("setUpsellCycle({state:'eligible'})\n    setCart(receipt.lines)")
+  })
+})
+
 describe('receipt discount input ownership',()=>{
   const firstCustomer={id:'customer-1',name:'Первый клиент',phone:'+7 900 000-00-01',discountPercent:10}
   const replacementCustomer={id:'customer-2',name:'Другой клиент',phone:'+7 900 000-00-02',discountPercent:20}
   const initial={customer:null,reviewCount:1,manualDiscount:{type:'amount' as const,value:1000}}
 
-  it('preserves cashier review and manual inputs on attach, replace and remove customer',()=>{
+  it('preserves manual discount and reviews on attach/replace, clears reviews for retail',()=>{
     const attached=replaceReceiptCustomer(initial,firstCustomer)
     const replaced=replaceReceiptCustomer(attached,replacementCustomer)
     const removed=replaceReceiptCustomer(replaced,null)
     expect(attached).toMatchObject({customer:firstCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
     expect(replaced).toMatchObject({customer:replacementCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
-    expect(removed).toMatchObject({customer:null,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+    expect(removed).toMatchObject({customer:null,reviewCount:0,manualDiscount:{type:'amount',value:1000}})
   })
 
   it('resets receipt discount inputs only for explicit clear/new receipt',()=>{
@@ -76,6 +116,44 @@ describe('cashier workplace micro-contract',()=>{
     expect((login.match(/class="[^"]*pin-input-control/g)||[]).length).toBe(1)
   })
 
+  it('keeps employee selector semantics and callbacks while exposing distinct visual states',()=>{
+    const selector=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    expect(selector).toContain('cashier-employee-card')
+    expect(selector).toContain('type="button"')
+    expect(selector).toContain('aria-pressed="false"')
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('const active=employeeId===employee.id')
+    expect(source).toContain('aria-pressed={active}')
+    expect(source).toContain('onClick={()=>void choose(employee.id)}')
+    expect(source).toContain("auth.status!=='locked'&&!forced")
+  })
+
+  it('uses tokenized green idle cards with distinct selected focus and disabled states',()=>{
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card{')
+    expect(css).toContain('border:1px solid var(--pos-brand)')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card:focus-visible{outline:0;box-shadow:var(--pos-focus)}')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card.active{border-color:var(--pos-ink);background:var(--pos-brand)')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card:disabled{border-color:var(--pos-border);background:var(--pos-canvas);color:var(--pos-muted)')
+  })
+
+  it('keeps footer actions in their existing state scenarios with larger tokenized touch targets',()=>{
+    const idle=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    const login=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
+    const locked=renderToStaticMarkup(<CashierLogin boot={boot} auth={lockedAuth} onAuthenticated={async()=>undefined}/>)
+    expect(idle).toContain('Настройки кассы')
+    expect(idle).not.toContain('Забыли PIN?')
+    expect(login).toContain('Настройки кассы')
+    expect(login).toContain('Забыли PIN?')
+    expect(locked).toContain('Настройки кассы')
+    expect(locked).toContain('Забыли PIN?')
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('const footerRight=!setup&&!adminReset')
+    expect(source).toContain("setAdminReset(true);setPin('');setConfirmation('');setNotice(null)")
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:var(--pos-control-touch);padding-inline:var(--pos-space-4)')
+  })
+
   it('renders exactly four visual slots while keeping one real PIN input',()=>{
     const markup=renderToStaticMarkup(<PinInput value="12" onChange={()=>undefined} ariaLabel="PIN"/>)
     expect((markup.match(/<input/g)||[]).length).toBe(1)
@@ -85,6 +163,36 @@ describe('cashier workplace micro-contract',()=>{
     expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
     expect(markup).toContain('inputMode="numeric"')
     expect(markup).toContain('maxLength="4"')
+    expect(PIN_LENGTH).toBe(4)
+  })
+
+  it('keeps digits-only controlled PIN semantics without custom keyboard interception',()=>{
+    expect(normalizePinValue('1a2-34x5')).toBe('1234')
+    expect(normalizePinValue('аб12')).toBe('12')
+    const pinSource=readFileSync(new URL('./PinEntry.tsx',import.meta.url),'utf8')
+    expect(pinSource).toContain('value={value}')
+    expect(pinSource).toContain('onChange={(event)=>onChange(normalizePinValue(event.target.value))}')
+    expect(pinSource).not.toMatch(/onKey(?:Down|Up|Press)=/)
+  })
+
+  it('keeps shared PIN touch geometry usable at short renderer heights',()=>{
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('@media (max-height:760px)')
+    expect(css).toContain('.pin-input{min-height:calc(var(--pos-control-touch) + var(--pos-space-3))}')
+    expect(css).toContain('.pin-input-slots{height:calc(var(--pos-control-touch) + var(--pos-space-3))}')
+  })
+
+  it('keeps every cashier auth mode on the shared PinInput and native form submit callbacks',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source.match(/<PinInput/g)?.length).toBe(3)
+    expect(source).toContain('PinInput autoFocus value={adminCode}')
+    expect(source).toContain("PinInput autoFocus={!adminReset} value={pin}")
+    expect(source).toContain('PinInput value={confirmation}')
+    expect(source).toContain('<form className="cashier-pin-form" onSubmit=')
+    expect(source).toContain("if(auth.status==='locked')await window.raspechatkaPos.unlockCashier(pin)")
+    expect(source).toContain("else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)")
+    expect(source).toContain("else await window.raspechatkaPos.loginCashier(employeeId,pin)")
+    expect(source).toContain('await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)')
   })
 
   it('keeps success green and wrong PIN failures red through explicit notice severity',()=>{
@@ -259,18 +367,35 @@ describe('DEV-169 POS foundation contract',()=>{
 
 describe('DEV-169 stage 3 operational modal contracts',()=>{
   const appSource=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+  const orderFormSource=readFileSync(new URL('./OrderFormFields.tsx',import.meta.url),'utf8')
+  const ordersSource=readFileSync(new URL('./OrdersPage.tsx',import.meta.url),'utf8')
   const shiftSource=readFileSync(new URL('./ShiftCloseGuard.tsx',import.meta.url),'utf8')
   const css=readFileSync(new URL('./checkout.css',import.meta.url),'utf8')
 
-  it('blocks clearly incomplete order phones and keeps all required fields',()=>{
+  it('uses one complete order form contract in Sale create, Orders create and Orders edit',()=>{
     expect(isCompleteOrderPhone('+7 900 000-00-00')).toBe(true)
     expect(isCompleteOrderPhone('90000')).toBe(false)
     expect(isCompleteOrderPhone('+7 900 000-00')).toBe(false)
-    expect(appSource).toContain("isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)")
-    expect(appSource).toContain('title="Оформить заказ"')
-    expect(appSource).not.toContain('ОБЯЗАТЕЛЬСТВО КЛИЕНТУ')
-    expect(appSource).not.toContain('Заказ появится в работе только после успешной оплаты')
-    expect(appSource).toContain('className="order-description-field"')
+    const draft={phone:'+7 900 000-00-00',contactMethod:'  Telegram @client  ',dueAt:'2026-09-24T18:30',comment:'  Фотокнига  '}
+    expect(isOrderFormComplete(draft)).toBe(true)
+    expect(toOrderFormPayload(draft)).toEqual({
+      phone:'+7 900 000-00-00',contactMethod:'Telegram @client',dueAt:'2026-09-24T18:30',comment:'Фотокнига',
+    })
+    const markup=renderToStaticMarkup(<OrderFormFields draft={draft} onChange={()=>undefined}/>)
+    const labels=['Телефон *','Способ связи','Дата выдачи *','Описание заказа *']
+    const positions=labels.map((label)=>markup.indexOf(label))
+    expect(positions.every((position)=>position>=0)).toBe(true)
+    expect(positions).toEqual([...positions].sort((a,b)=>a-b))
+    expect(markup).not.toContain('Срок готовности')
+    expect(orderFormSource).toContain('Введите полный номер из 11 цифр')
+    expect(orderFormSource).toContain('className="order-description-field"')
+    expect(appSource.match(/<OrderFormFields/g)?.length).toBe(1)
+    expect(ordersSource.match(/<OrderFormFields/g)?.length).toBe(2)
+    expect(appSource).toContain('order:orderDraft?toOrderFormPayload(orderDraft):undefined')
+    expect(ordersSource).toContain('updateOrder({id:order.id,...toOrderFormPayload(draft)})')
+    expect(ordersSource).toContain('createOrderFromSale({saleId,...toOrderFormPayload(draft)})')
+    expect(appSource).not.toContain('Срок готовности')
+    expect(ordersSource).not.toContain('Срок готовности')
   })
 
   it('uses shared modal, field, and button primitives for every mounted inline modal',()=>{
@@ -308,5 +433,67 @@ describe('DEV-169 stage 3 operational modal contracts',()=>{
     expect(css).toContain('.denominations{display:grid;grid-template-columns:1fr 1fr')
     expect(css).toContain('.cash-count-modal .pos-modal__body')
     expect(css).toContain('.denomination-row{min-height:52px}')
+  })
+})
+
+
+describe('DEV-173 stage 3 cash UI',()=>{
+  it('keeps expected cash frozen in the opening count and renders the counted total separately',()=>{
+    const markup=renderToStaticMarkup(<CashCountModal type="opening" expectedMinor={12345} onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(markup).toContain('Ожидается</span><b>123,45 ₽')
+    expect(markup).toContain('Насчитано</span><b>0 ₽')
+    expect(markup).toContain('Расхождение</span><strong>-123,45 ₽')
+    expect(markup).toContain('aria-label="Закрыть"')
+    const lines=buildCashCountLines({500:3})
+    expect(cashCountTotal(lines)).toBe(1500)
+    expect(markup).toContain('Ожидается</span><b>123,45')
+  })
+
+  it('marks pending counts on Shift navigation and keeps the reason blank by default',()=>{
+    const nav=renderToStaticMarkup(<Nav active={false} icon="shift" label="Смена" warning onClick={()=>undefined}/>)
+    expect(nav).toContain('cash-warning')
+    expect(nav).toContain('Ожидается пересчёт на начало смены')
+    const operation=renderToStaticMarkup(<CashOperationModal type="deposit" onClose={()=>undefined} onComplete={async()=>undefined}/>)
+    expect(operation).toContain('Основание')
+    expect(operation).not.toContain('placeholder=')
+    expect(operation).not.toContain('Без комментария')
+  })
+
+  it('passes the exact count payload and only closes after a successful closing save',async()=>{
+    const events:string[]=[]
+    const lines=buildCashCountLines({1000:2})
+    const save=async(type:'opening'|'control'|'closing',payload:typeof lines)=>{
+      expect(payload).toBe(lines)
+      events.push('save:'+type)
+      return {id:'count',countType:type,lines:payload,totalMinor:2000,expectedMinor:1000,differenceMinor:1000,createdAt:'2026-09-23'}
+    }
+    const close=async()=>{events.push('close')}
+    await saveCountThenClose('opening',lines,save,close)
+    expect(events).toEqual(['save:opening'])
+    await saveCountThenClose('closing',lines,save,close)
+    expect(events).toEqual(['save:opening','save:closing','close'])
+    await expect(saveCountThenClose('closing',lines,async()=>{throw Error('count failed')},close)).rejects.toThrow('count failed')
+    expect(events).toEqual(['save:opening','save:closing','close'])
+  })
+
+  it('routes closing only through a saved count and leaves dismissal pending',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('saveCountThenClose(cashCountOpen.type,lines,window.raspechatkaPos.saveCashCount,closeShift)')
+    expect(source).toContain("if(count.countType==='closing')await close()")
+    expect(source).toContain('onClose={()=>setCashCountOpen(null)}')
+    expect(source).toContain("openCashCount(summary.openingCountPending?'opening':'control')")
+    expect(source).toContain('expectedMinor:summary.expectedCashMinor')
+    expect(source).not.toContain("type==='opening'?total:expectedMinor")
+    expect(source).toContain('addCashOperation(cashOperation,amount,reason)')
+  })
+})
+
+
+describe('DEV-173 stage 4 shift payment rendering',()=>{
+  it('uses configured rules and actual payment breakdown instead of fixed summary fields',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('shiftPaymentRows(boot.rules,summary.paymentBreakdown??[])')
+    expect(source).not.toContain('<dt>Наличные продажи</dt>')
+    expect(source).not.toContain('<dt>Удалённая оплата</dt>')
   })
 })
