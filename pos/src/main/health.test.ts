@@ -75,6 +75,29 @@ describe('independent device health',()=>{
     expect(status.printer.ready).toBe(true)
   })
 
+  it('keeps remote payment independent of PAX and respects point and connection configuration',async()=>{
+    const terminalDown=channels(true,down)
+    expect((await collectDeviceStatuses(terminalDown)).remotePayment.ready).toBe(true)
+    terminalDown.boot.rules.acceptsRemotePayment=false
+    expect((await collectDeviceStatuses(terminalDown)).remotePayment.status).toBe('not_configured')
+    expect((await collectDeviceStatuses(terminalDown)).paymentMethods.remote_payment).toBe(false)
+    terminalDown.boot.rules.acceptsRemotePayment=true
+    terminalDown.connectionConfigured=false
+    expect((await collectDeviceStatuses(terminalDown)).paymentMethods.remote_payment).toBe(false)
+  })
+
+  it('keeps printer and payment rules separate from fiscal and OFD states',async()=>{
+    const source=channels(false,down,ready,down)
+    source.boot.rules.acceptsCash=false
+    source.boot.rules.acceptsQr=false
+    source.printer.healthCheck.mockResolvedValueOnce(down)
+    const status=await collectDeviceStatuses(source)
+    expect(status.printer.ready).toBe(false)
+    expect(status.fiscal.ready).toBe(true)
+    expect(status.ofd.status).toBe('offline')
+    expect(status.paymentMethods).toEqual({cash:false,card:false,qr:false,remote_payment:false})
+  })
+
   it('reports OFD not available for providers without a trustworthy Driver channel',async()=>{
     const source=channels(true)
     const fiscal={healthCheck:source.fiscal.healthCheck,getShiftStatus:source.fiscal.getShiftStatus}
