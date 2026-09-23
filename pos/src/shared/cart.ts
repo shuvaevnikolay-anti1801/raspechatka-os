@@ -14,6 +14,10 @@ export function calculateTotalMinor(lines: CartLine[], receiptDiscountPercent = 
   return Math.round(calculateSubtotalMinor(lines) * (1 - discount / 100))
 }
 
+export function calculatePayableMinor(discountedTotalMinor: number): number {
+  return Math.floor(discountedTotalMinor / 100) * 100
+}
+
 export function calculateDiscountBreakdown(
   lines: CartLine[],
   rules: DiscountRulesSnapshot,
@@ -29,6 +33,8 @@ export function calculateDiscountBreakdown(
       subtotalMinor, discountableSubtotalMinor, clubDiscountPercent: 0, clubDiscountMinor: 0,
       reviewCount: 0, reviewDiscountMinor: 0, manualDiscountValue: 0, manualDiscountMinor: 0,
       totalDiscountMinor: 0, totalMinor: subtotalMinor,
+      roundingAdjustmentMinor: subtotalMinor - calculatePayableMinor(subtotalMinor),
+      payableMinor: calculatePayableMinor(subtotalMinor),
     }
   }
 
@@ -59,10 +65,13 @@ export function calculateDiscountBreakdown(
     Math.max(afterReview - 1, 0),
   )
   const totalDiscountMinor = clubDiscountMinor + reviewDiscountMinor + manualDiscountMinor
+  const discountedTotalMinor = subtotalMinor - totalDiscountMinor
+  const payableMinor = calculatePayableMinor(discountedTotalMinor)
   return {
     subtotalMinor, discountableSubtotalMinor, clubDiscountPercent: clubDiscountMinor > 0 ? allowedClubPercent : 0, clubDiscountMinor,
     reviewCount: appliedReviewCount, reviewDiscountMinor,
     manualDiscountType: manualDiscount?.type, manualDiscountValue, manualDiscountMinor,
-    totalDiscountMinor, totalMinor: subtotalMinor - totalDiscountMinor,
+    totalDiscountMinor, totalMinor: discountedTotalMinor,
+    roundingAdjustmentMinor: discountedTotalMinor - payableMinor, payableMinor,
   }
 }
