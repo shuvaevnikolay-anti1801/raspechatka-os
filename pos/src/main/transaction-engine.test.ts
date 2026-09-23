@@ -350,7 +350,7 @@ describe('PosTransactionEngine safety',()=>{
     },shiftId)
     const sale=database.getSale(original.saleId)
     const item=sale.lines[0]
-    expect(item.lineTotalMinor).toBe(300)
+    expect(item.unitPriceMinor*item.quantity).toBe(300)
     await engine.createReturn({
       clientRequestId:'split-return-first',saleId:sale.id,
       lines:[{saleItemId:item.id,quantity:1}],payments:[{method:'cash',amountMinor:100}],
