@@ -357,7 +357,7 @@ describe('PosDatabase',()=>{
         baselineMinor:87000,baselineVerified:true,openingCountPending:false,
         baselineSource:'legacy_control_count',baselineSourceId:'control-count',
       })
-      expect(database.getShiftSummary().depositsMinor).toBe(5000)
+      expect(database.getShiftSummary()).toMatchObject({depositsMinor:5000,expectedCashMinor:5000})
     })
 
     it('keeps ambiguous legacy cash history explicitly unverified instead of writing zero',()=>{
