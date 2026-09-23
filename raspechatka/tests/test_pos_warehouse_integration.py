@@ -7,6 +7,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from raspechatka.api import pos_v2
+from raspechatka.api import sales as sales_ingest
 
 
 class TestPosWarehouseRoundTrip(FrappeTestCase):
@@ -18,11 +19,13 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			"Business Point",
 			f"TEST-POINT-{suffix}",
 			business_entity=self.entity,
+			active=1,
 		)
 		self.foreign_point = self._raw(
 			"Business Point",
 			f"TEST-POINT-FOREIGN-{suffix}",
 			business_entity=self.entity,
+			active=1,
 		)
 		self.warehouse = self._raw(
 			"Catalog Warehouse",
@@ -132,6 +135,48 @@ class TestPosWarehouseRoundTrip(FrappeTestCase):
 			)
 			or 0
 		)
+
+	def test_cross_point_duplicate_ids_are_rejected_for_money_stock_and_requests(self):
+		foreign_connection = SimpleNamespace(business_point=self.foreign_point)
+		local_connection = SimpleNamespace(business_point=self.point)
+		cases = (
+			("Sales Receipt", "external_id", sales_ingest._ingest_receipt, True),
+			("Cash Movement", "external_id", sales_ingest._ingest_cash, True),
+			("Stock Receipt", "external_id", pos_v2._ingest_stock_receipt, True),
+			("Stock Write Off", "external_id", pos_v2._ingest_stock_write_off, True),
+			("Point Supply Request", "source_pos_event", pos_v2._ingest_supply_request, False),
+		)
+		for doctype, field, ingest, submitted in cases:
+			with self.subTest(doctype=doctype):
+				event_id = f"DEV177-{doctype.replace(' ', '-')}-{uuid4().hex}"
+				self._raw(doctype, f"RAW-{uuid4().hex}", **{
+					field: event_id, "business_point": self.point,
+					**({"docstatus": 1} if submitted else {}),
+				})
+				with self.assertRaises(frappe.PermissionError):
+					if doctype in ("Sales Receipt", "Cash Movement"):
+						ingest({"external_id": event_id}, foreign_connection,
+							{"created": 0, "duplicates": 0, "errors": []})
+					else:
+						ingest(event_id, {}, foreign_connection, self.employee)
+				if doctype in ("Sales Receipt", "Cash Movement"):
+					stats = {"created": 0, "duplicates": 0, "errors": []}
+					ingest({"external_id": event_id}, local_connection, stats)
+					self.assertEqual(stats["duplicates"], 1)
+				else:
+					ingest(event_id, {}, local_connection, self.employee)
+
+	def test_cleaner_visit_replay_is_serialized_and_cross_point_key_is_denied(self):
+		event_id = f"VISIT-{uuid4().hex}"
+		self._raw("Cleaner Visit", f"RAW-VISIT-{uuid4().hex}",
+			business_point=self.point, visit_date="2026-09-23", source_pos_event=event_id)
+		created_at = "2026-09-23T09:00:00+03:00"
+		pos_v2._ingest_cleaner_visit(event_id, {}, SimpleNamespace(business_point=self.point),
+			self.employee, created_at)
+		self.assertEqual(frappe.db.count("Cleaner Visit", {"source_pos_event": event_id}), 1)
+		with self.assertRaises(frappe.PermissionError):
+			pos_v2._ingest_cleaner_visit(event_id, {},
+				SimpleNamespace(business_point=self.foreign_point), self.employee, created_at)
 
 	def test_real_purchase_order_receipt_partial_full_replay_and_foreign_rejection(self):
 		order = self._purchase_order()
