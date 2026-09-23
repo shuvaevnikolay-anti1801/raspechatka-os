@@ -1088,7 +1088,7 @@ export class PosDatabase {
       this.db.prepare(`INSERT INTO cleaning_visits
         (id,point_id,workplace_id,cycle_id,local_date,created_at,cashier_id,cashier_name)
         VALUES (?,?,?,?,?,?,?,?)`).run([
-          visit.id,context.pointId,context.workplaceId,status.cycleId,visitDate,createdAt,shift.cashierId,shift.cashierName
+          visit.id,context.pointId,context.workplaceId,status.cycleId!,visitDate,createdAt,shift.cashierId,shift.cashierName
         ])
       const visitsSincePayment=status.visitsSincePayment+1
       const due=visitsSincePayment>=status.everyNVisits!
