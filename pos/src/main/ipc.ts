@@ -1,9 +1,9 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import { calculateDiscountBreakdown } from '../shared/cart'
 import type {
   BootState, CashOperationType, CompleteSaleRequest, CompleteSaleResult, ConnectionConfig,
   CashCount, CashCountLine, CreateReturnRequest, HeldReceipt, PaymentPart, PrintKind,
-  ReturnResult, SaleDetails, Shift, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest
+  ReturnResult, SaleDetails, Shift, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, CreateUnpaidOrderRequest, UpdateOrderRequest, CreateOrderFromSaleRequest, OutboxQueueItem, SyncQueueSnapshot
 } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
@@ -14,7 +14,7 @@ import { ShiftCoordinator } from './shift-coordinator'
 import { buildBootState, performConfigurationSync, performSync } from './sync'
 import { collectDeviceStatuses } from './health'
 import { PosTransactionEngine } from './transaction-engine'
-import { CashierAuthSession } from './cashier-auth'
+import { CashierAuthSession, verifyAdminCode } from './cashier-auth'
 import { PosLifecycleStore } from './pos-lifecycle'
 import { getPointReceipt } from './frappe'
 
@@ -42,6 +42,37 @@ const accepted=(rules:BootState['rules'],method:PaymentPart['method'])=>
   method==='remote_payment'?(rules.acceptsRemotePayment!==false):false
 
 const usesTerminal=(payments:PaymentPart[])=>payments.some((payment)=>payment.method==='card'||payment.method==='qr')
+
+const syncEventLabels:Record<string,string>={
+  'order.created':'Новый заказ',
+  'order.updated':'Обновление заказа',
+  'stock.write_off.requested':'Списание товара',
+  'stock.receipt.requested':'Приёмка товара',
+  'point.supply.requested':'Заявка на снабжение',
+  'cleaner.visit.recorded':'Визит уборщика',
+  'shift.opened':'Открытие смены',
+  'shift.closed':'Закрытие смены',
+  'sale.completed':'Продажа',
+  'sale.returned':'Возврат продажи',
+  'cash.deposited':'Внесение наличных',
+  'cash.withdrawn':'Изъятие наличных',
+  'cash.counted':'Пересчёт наличных',
+}
+const retryableSyncEvents=new Set([
+  'order.created','order.updated','stock.write_off.requested',
+  'stock.receipt.requested','point.supply.requested','cleaner.visit.recorded',
+])
+
+/** Retry only a due, still-pending owner-domain event with no unresolved external effect. */
+export function canRetrySyncQueueEvent(event:OutboxQueueItem,blocked:boolean,now=Date.now()):boolean{
+  if(blocked||event.status!=='pending'||!retryableSyncEvents.has(event.eventType))return false
+  if(event.nextAttemptAt&&(!Number.isFinite(Date.parse(event.nextAttemptAt))||Date.parse(event.nextAttemptAt)>now))return false
+  if(event.eventType==='order.updated'){
+    const payload=event.payload as {updatedAt?:unknown}|null
+    if(!payload||typeof payload.updatedAt!=='string'||!Number.isFinite(Date.parse(payload.updatedAt)))return false
+  }
+  return true
+}
 
 export function registerIpcHandlers(dependencies:{
   database:PosDatabase
@@ -161,6 +192,44 @@ export function registerIpcHandlers(dependencies:{
     localOpen:Boolean(database.currentShift()),
     fiscal:fiscalProvider,payment:paymentProvider,printer:printProvider,
   }))
+
+  ipcMain.handle('pos:get-pos-version',()=>app.getVersion())
+  const queueSnapshot=():SyncQueueSnapshot=>{
+    const problems=database.listProblemQueue(1001)
+    const pending=database.listPendingQueue(1000)
+    const blocked=transactionEngine.hasBlockingOperation()
+    return {
+      items:[...problems.slice(0,1000),...pending].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(0,1000)
+        .map((event)=>({
+          id:event.id,eventType:event.eventType,
+          label:syncEventLabels[event.eventType]??'Документ точки',
+          createdAt:event.createdAt,status:event.status as 'pending'|'problem',
+          attemptCount:event.attemptCount,nextAttemptAt:event.nextAttemptAt,
+          lastError:event.lastError,canRetry:canRetrySyncQueueEvent(event,blocked),canCancel:false as const,
+        })),
+      total:database.pendingSyncCount(),
+      problemCount:Math.min(problems.length,1000),
+      problemCountTruncated:problems.length>1000,
+    }
+  }
+  ipcMain.handle('pos:list-sync-queue',queueSnapshot)
+  ipcMain.handle('pos:retry-sync-event',async(_event,id:string,adminCode:string)=>{
+    if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
+    const cashier=assertCashierAccess()
+    if(transactionEngine.hasBlockingOperation())throw new Error('Сначала завершите восстановление незавершённой операции')
+    const event=database.listPendingQueue(1000).find((row)=>row.id===id)
+    if(!event||!canRetrySyncQueueEvent(event,false))throw new Error('Повтор этого события сейчас недоступен')
+    // Normal sync retains the immutable ID/payload and server-side deduplication.
+    // It may also deliver other due events; no external payment/fiscal operation is retried here.
+    await performSync(database,connectionStore,cashier.id)
+    const remaining=[...database.listPendingQueue(1000),...database.listProblemQueue(1000)]
+      .find((row)=>row.id===id)
+    const sent=!remaining
+    diagnostics.record({source:'sync',level:sent?'info':'warning',
+      eventType:sent?'sync.manual_event_accepted':'sync.manual_event_pending',
+      message:sent?'Событие принято сервером':'Событие остаётся в очереди',details:{id,eventType:event.eventType}})
+    return {sent,message:sent?'Документ принят сервером':'Документ остаётся в очереди; проверьте его состояние'}
+  })
 
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
   ipcMain.handle('pos:recover-operation',async(_event,id:string)=>{
