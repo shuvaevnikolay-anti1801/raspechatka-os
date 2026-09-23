@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { calculateDiscountBreakdown } from '../shared/cart'
 import type { CompleteSaleRequest } from '../shared/contracts'
 import type {
   DeviceHealth, FiscalOperationStatus, FiscalProvider, FiscalRequest, FiscalResult,
@@ -13,6 +14,7 @@ import { PosTransactionEngine } from './transaction-engine'
 
 class TestPaymentProvider implements PaymentProvider {
   chargeCalls=0
+  charges:PaymentRequest[]=[]
   refundCalls=0
   statusCalls=0
   nextCharge:PaymentResult={status:'approved',transactionId:'bank-1'}
@@ -21,6 +23,7 @@ class TestPaymentProvider implements PaymentProvider {
 
   async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
   async charge(_request:PaymentRequest):Promise<PaymentResult>{
+    this.charges.push(_request)
     this.chargeCalls++
     if(this.throwOnCharge)throw new Error('connection lost')
     return this.nextCharge
@@ -33,6 +36,7 @@ class TestPaymentProvider implements PaymentProvider {
 
 class TestFiscalProvider implements FiscalProvider {
   saleCalls=0
+  sales:FiscalRequest[]=[]
   returnCalls=0
   statusCalls=0
   snapshotCalls=0
@@ -45,7 +49,7 @@ class TestFiscalProvider implements FiscalProvider {
   async getShiftStatus(){return {open:true,state:'opened' as const,message:'open'}}
   async openShift(){return}
   async closeShift(){return {message:'closed'}}
-  async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
+  async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.sales.push(_request);this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
   async fiscalizeReturn(_request:FiscalReturnRequest):Promise<FiscalResult>{this.returnCalls++;return {receiptNumber:`FR-${this.returnCalls}`}}
   async getOperationStatus(_request:{
     operationId:string;entityId:string;kind:'sale'|'return';expectedAmountMinor:number;recovery?:unknown
@@ -259,6 +263,71 @@ describe('PosTransactionEngine safety',()=>{
     expect(fiscal.statusCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()[0].state).toBe('fiscal_status_unknown')
+  })
+
+  const roundedRequest=(payments:CompleteSaleRequest['payments'],id:string):CompleteSaleRequest=>{
+    const lines=[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:299}]
+    const discountRules={allowDiscounts:false,maxDiscountPercent:0,reviewDiscountPerReviewMinor:0}
+    return {
+      clientRequestId:id,lines,payments,discountRules,
+      discountBreakdown:calculateDiscountBreakdown(lines,discountRules),
+      payableMinor:200,
+    }
+  }
+
+  it.each([
+    ['card',[{method:'card' as const,amountMinor:200}]],
+    ['cash',[{method:'cash' as const,amountMinor:200}]],
+    ['qr',[{method:'qr' as const,amountMinor:200}]],
+    ['remote_payment',[{method:'remote_payment' as const,amountMinor:200}]],
+    ['mixed',[{method:'cash' as const,amountMinor:50},{method:'card' as const,amountMinor:150}]],
+  ])('persists one payable for %s across payment, journal, fiscal and sale',async(method,parts)=>{
+    const input=roundedRequest(parts,'rounded-'+method)
+    if(method==='remote_payment')input.remotePaymentConfirmation={
+      confirmed:true,confirmedAt:'2026-09-10T12:00:00.000Z'
+    }
+    if(method==='cash')input.cashReceivedMinor=300
+    const result=await engine.completeSale(input,shiftId)
+    const operation=journal.getByClientRequestId(input.clientRequestId)!
+    expect(operation.amountMinor).toBe(200)
+    expect((operation.request as CompleteSaleRequest).discountBreakdown).toMatchObject({
+      totalMinor:299,roundingAdjustmentMinor:99,payableMinor:200,
+    })
+    expect(operation.confirmedPayments.reduce((sum,p)=>sum+p.amountMinor,0)).toBe(200)
+    expect(payment.charges.map((p)=>p.amountMinor)).toEqual(parts.filter(p=>p.method!=='cash'&&p.method!=='remote_payment').map(p=>p.amountMinor))
+    expect(fiscal.sales[0].amountMinor).toBe(200)
+    expect(result.totalMinor).toBe(200)
+    expect(database.getSale(result.saleId).payments.reduce((sum,p)=>sum+p.amountMinor,0)).toBe(200)
+    expect(result.changeMinor).toBe(method==='cash'?100:0)
+  })
+
+  it('rejects mismatched payable, evidence, parts and legacy total before side effects',async()=>{
+    const valid=roundedRequest([{method:'card',amountMinor:200}],'invalid-payable')
+    await expect(engine.completeSale({...valid,payableMinor:299},shiftId)).rejects.toThrow(/Сумма к оплате/)
+    await expect(engine.completeSale({...valid,discountBreakdown:{...valid.discountBreakdown!,roundingAdjustmentMinor:0}},shiftId)).rejects.toThrow(/Расчёт скидок/)
+    await expect(engine.completeSale({...valid,payments:[{method:'card',amountMinor:299}]},shiftId)).rejects.toThrow(/не совпадает/)
+    await expect(engine.completeSale(valid,shiftId,299)).rejects.toThrow(/Итог чека/)
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
+    expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('keeps rounded attempt hash and UNKNOWN blocker across journal restart',async()=>{
+    const input=roundedRequest([{method:'card',amountMinor:200}],'rounded-unknown')
+    payment.throwOnCharge=true
+    await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
+    const operation=journal.getByClientRequestId(input.clientRequestId)!
+    const hash=journal.getLatestPaymentAttempt(operation.id)?.requestHash
+    expect(hash).toBeTruthy()
+    expect(journal.getLatestPaymentAttempt(operation.id)?.amountMinor).toBe(200)
+    journal.close()
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+    expect(journal.get(operation.id)?.amountMinor).toBe(200)
+    expect(journal.getLatestPaymentAttempt(operation.id)?.requestHash).toBe(hash)
+    await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/защиты|провер|восстанов|заверш/)
+    expect(payment.chargeCalls).toBe(1)
+    expect(fiscal.saleCalls).toBe(0)
   })
 
 })
