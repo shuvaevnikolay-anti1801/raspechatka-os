@@ -1087,9 +1087,9 @@ export class PosDatabase {
       const visit={id:randomUUID(),visitDate,recordedBy:shift.cashierName,paid:false}
       this.db.prepare(`INSERT INTO cleaning_visits
         (id,point_id,workplace_id,cycle_id,local_date,created_at,cashier_id,cashier_name)
-        VALUES (?,?,?,?,?,?,?,?)`).run(
+        VALUES (?,?,?,?,?,?,?,?)`).run([
           visit.id,context.pointId,context.workplaceId,status.cycleId,visitDate,createdAt,shift.cashierId,shift.cashierName
-        )
+        ])
       const visitsSincePayment=status.visitsSincePayment+1
       const due=visitsSincePayment>=status.everyNVisits!
       this.db.prepare(`UPDATE cleaning_cycles SET visits_count=?,payout_state=?,updated_at=?
@@ -1350,7 +1350,7 @@ export class PosDatabase {
   listHeldReceipts():HeldReceipt[]{return (this.db.prepare('SELECT payload_json payload FROM held_receipts ORDER BY created_at DESC').all() as Array<{payload:string}>).map((x)=>JSON.parse(x.payload) as HeldReceipt)}
   deleteHeldReceipt(id:string):void{this.db.prepare('DELETE FROM held_receipts WHERE id=?').run(id)}
 
-  private queue(eventType:string,payload:unknown,createdAt=new Date().toISOString(),trustedCashierId?:string,eventId=randomUUID()):void {
+  private queue(eventType:string,payload:unknown,createdAt=new Date().toISOString(),trustedCashierId?:string,eventId:string=randomUUID()):void {
     const value=payload&&typeof payload==='object'?payload as Record<string,unknown>:undefined
     const shiftId=String(value?.shiftId||value?.shift_id||'')
     const shift=(shiftId
