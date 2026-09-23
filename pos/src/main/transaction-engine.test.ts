@@ -325,6 +325,7 @@ describe('PosTransactionEngine safety',()=>{
     engine=new PosTransactionEngine(database,journal,payment,fiscal)
     expect(journal.get(operation.id)?.amountMinor).toBe(200)
     expect(journal.getLatestPaymentAttempt(operation.id)?.requestHash).toBe(hash)
+    await expect(engine.completeSale({...input,payableMinor:300},shiftId)).rejects.toThrow(/Сумма к оплате/)
     await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/защиты|провер|восстанов|заверш/)
     expect(payment.chargeCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(0)
