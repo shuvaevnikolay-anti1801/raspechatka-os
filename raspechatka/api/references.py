@@ -253,7 +253,7 @@ def _hydrate_reference_labels(reference, rows):
 
 @frappe.whitelist()
 @access_contract(auth="current_user", action="read", scope="point")
-def get_reference_detail(reference, name):
+def get_reference_detail(reference: str, name: str):
 	config = _get_config(reference)
 	require_access(AREA_BY_REFERENCE[reference], "read")
 	if not frappe.db.exists(config["doctype"], {"name": name, **_scope_filters(reference)}):
@@ -393,7 +393,7 @@ def lookup_bank_by_bic(bic):
 
 @frappe.whitelist(methods=["POST"])
 @access_contract(auth="current_user", action="write", scope="entity")
-def save_reference(reference, data):
+def save_reference(reference: str, data: str | dict):
 	data = frappe.parse_json(data)
 	config = _get_config(reference)
 	name = data.get("name")
