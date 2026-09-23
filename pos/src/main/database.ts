@@ -266,7 +266,7 @@ export class PosDatabase {
       }
     }
     const baselineSource:CashDrawerState['baselineSource']=
-      latest.countType==='closing'&&latest.closedAt?'legacy_closing_count'
+      latest.countType==='closing'?'legacy_closing_count'
         :latest.countType==='control'?'legacy_control_count':'legacy_opening_count'
     return {
       baselineMinor:latest.totalMinor,baselineVerified:true,openingCountPending:false,
@@ -286,7 +286,7 @@ export class PosDatabase {
     this.db.prepare(`INSERT INTO cash_drawer_state
       (point_id,workplace_id,schema_version,baseline_minor,baseline_verified,opening_count_pending,
        baseline_source,baseline_source_id,baseline_at,migrated_at,updated_at)
-      VALUES (?,?,1,?,?,?,?,?,?,?,?,?)`)
+      VALUES (?,?,1,?,?,?,?,?,?,?,?)`)
       .run(pointId,workplaceId,value.baselineMinor,value.baselineVerified?1:0,value.openingCountPending?1:0,
         value.baselineSource,value.baselineSourceId??null,value.baselineAt??null,now,now)
     return this.readCashDrawerStateRow(pointId,workplaceId) as CashDrawerState
