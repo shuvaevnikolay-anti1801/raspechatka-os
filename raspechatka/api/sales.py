@@ -533,12 +533,12 @@ def push_batch(device_id, token, payload):
 def _ingest_shift(row, connection, result, update_existing=False):
 	external_id = _required(row, "external_id")
 	name = frappe.db.get_value("Sales Shift", {"external_id": external_id}, "name")
-	if name and not update_existing:
-		result["duplicates"] += 1
-		return
 	doc = frappe.get_doc("Sales Shift", name) if name else frappe.new_doc("Sales Shift")
 	if name and doc.business_point != connection.business_point:
 		frappe.throw(_("Событие смены принадлежит другой точке"), frappe.PermissionError)
+	if name and not update_existing:
+		result["duplicates"] += 1
+		return
 	if not name:
 		doc.external_id = external_id
 	_set_shift_scope(doc, connection)
