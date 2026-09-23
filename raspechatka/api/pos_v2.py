@@ -373,12 +373,24 @@ def _allocate_final_amounts(lines, total_minor):
 		frappe.throw(_("Сумма позиций чека должна быть больше нуля"))
 	if total_minor < 0 or total_minor > sum(gross):
 		frappe.throw(_("Некорректная итоговая сумма чека"))
-	allocated = []
-	used = 0
-	for index, value in enumerate(raw):
-		amount = total_minor - used if index == len(raw) - 1 else round(total_minor * value / raw_total)
-		allocated.append(amount)
-		used += amount
+	persisted = [row.get("lineTotalMinor") for row in lines]
+	if any(value is not None for value in persisted):
+		if any(value is None or flt(value) != int(flt(value)) or int(flt(value)) < 0 for value in persisted):
+			frappe.throw(_("Некорректное сохранённое распределение суммы по позициям"))
+		allocated = [int(flt(value)) for value in persisted]
+		if sum(allocated) != total_minor:
+			frappe.throw(_("Сумма сохранённых позиций не совпадает с итогом чека"))
+	else:
+		allocated = []
+		used = 0
+		cumulative = 0
+		for index, value in enumerate(raw):
+			cumulative += value
+			target = total_minor if index == len(raw) - 1 else round(total_minor * cumulative / raw_total)
+			allocated.append(target - used)
+			used = target
+	if any(amount < 0 or amount > gross[index] for index, amount in enumerate(allocated)):
+		frappe.throw(_("Некорректная сумма позиции чека"))
 	return gross, raw, allocated
 
 
@@ -451,6 +463,11 @@ def _sale_receipt(payload, cashier_id, connection):
 	lines = payload.get("lines") or []
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
+	declared_total = round(flt(payload.get("totalMinor")))
+	if not lines or paid_total <= 0 or declared_total != paid_total:
+		frappe.throw(_("Итог чека не совпадает с суммой оплат"))
+	if any(flt(payment.get("amountMinor")) < 0 or flt(payment.get("amountMinor")) != round(flt(payment.get("amountMinor"))) for payment in payments_payload):
+		frappe.throw(_("Некорректная сумма оплаты"))
 	discount_breakdown = payload.get("discountBreakdown") or {}
 	rounding_adjustment = max(0, round(flt(payload.get("roundingAdjustmentMinor", discount_breakdown.get("roundingAdjustmentMinor", 0)))))
 	ordinary_paid_total = paid_total + rounding_adjustment
