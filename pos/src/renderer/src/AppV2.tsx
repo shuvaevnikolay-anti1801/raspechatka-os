@@ -436,7 +436,7 @@ function CustomerModal({selected,onClose,onSelect}:{selected:Customer|null;onClo
   const [visible,setVisible]=useState<Customer[]>([])
   const [searching,setSearching]=useState(false)
   const digits=query.replace(/\D/g,'')
-  useEffect(()=>{let cancelled=false;if(digits.length<4){setVisible([]);setSearching(false);return};const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(digits);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[digits])
+  useEffect(()=>{let cancelled=false;if(digits.length<4){setVisible([]);setSearching(false);return};const timer=window.setTimeout(async()=>{setSearching(true);try{const rows=await window.raspechatkaPos.listCustomers(digits);if(!cancelled)setVisible(rows)}finally{if(!cancelled)setSearching(false)}},120);return()=>{cancelled=true;window.clearTimeout(timer)}},[digits])
   const overflow=visible.length>50
   const rows=visible.slice(0,50)
   return <PosModal open title="Выбрать покупателя" className="customer-modal" layout="matrix" onClose={onClose}>
