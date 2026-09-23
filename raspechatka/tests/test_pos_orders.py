@@ -10,6 +10,7 @@ class TestPosOrders(TestCase):
 		get_value = Mock(return_value="POS-ORDER-1")
 		doc = SimpleNamespace(
 			phone="+79000000000",
+			contact_method="Telegram",
 			comment="Старое описание",
 			due_at="2026-09-20 10:00:00",
 			ready_at="2026-09-20 09:30:00",
@@ -33,6 +34,7 @@ class TestPosOrders(TestCase):
 				{
 					"orderNumber": "ORD-1",
 					"phone": "+79001234567",
+					"contactMethod": "WhatsApp",
 					"comment": "Новое описание",
 					"dueAt": "2026-09-20T12:00:00.000Z",
 					"readyAt": "2026-09-20T10:30:00.000Z",
@@ -46,6 +48,7 @@ class TestPosOrders(TestCase):
 			"name",
 		)
 		self.assertEqual(doc.phone, "+79001234567")
+		self.assertEqual(doc.contact_method, "WhatsApp")
 		self.assertEqual(doc.comment, "Новое описание")
 		self.assertEqual(doc.due_at, "2026-09-20T12:00:00.000Z")
 		self.assertEqual(doc.ready_at, "2026-09-20 09:30:00")
@@ -109,6 +112,7 @@ class TestPosOrders(TestCase):
 		payload = {
 			"orderNumber": "ORD-DUPLICATE",
 			"phone": "+79001234567",
+			"contactMethod": "Telegram @client",
 			"status": "new",
 			"lines": [],
 		}
@@ -120,6 +124,8 @@ class TestPosOrders(TestCase):
 			pos._apply_order_created("EVENT-DUPLICATE", SimpleNamespace(business_point="POINT-1"), payload)
 
 		fake_frappe.get_doc.assert_called_once()
+		created_doc = fake_frappe.get_doc.call_args.args[0]
+		self.assertEqual(created_doc["contact_method"], "Telegram @client")
 		doc.insert.assert_called_once_with(ignore_permissions=True)
 
 	def test_delayed_order_event_accepts_cashier_from_current_point(self):
