@@ -263,8 +263,8 @@ def get_reference_detail(reference, name):
 	doc = frappe.get_doc(config["doctype"], name)
 	result = doc.as_dict(no_nulls=False)
 	if reference == "points":
-		result["cleaning_payout_amount"] = doc.cleaning_payout_amount or 2000
-		result["cleaning_every_n_visits"] = doc.cleaning_every_n_visits or 4
+		result["cleaning_payout_amount"] = getattr(doc, "cleaning_payout_amount", None) or 2000
+		result["cleaning_every_n_visits"] = getattr(doc, "cleaning_every_n_visits", None) or 4
 
 	if reference == "entities":
 		result["bank_accounts"] = frappe.get_all(
