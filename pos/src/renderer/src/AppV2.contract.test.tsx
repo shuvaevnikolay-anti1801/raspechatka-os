@@ -255,7 +255,9 @@ describe('cashier workplace micro-contract',()=>{
 
 const workplace:WorkplaceData={
   schedule:[],
-  scheduleMonth:{month:'2026-09',days:30,employees:[{id:'e1',name:'Иван Иванов'}],entries:[{id:'entry',date:'2026-09-20',employeeId:'e1',employeeName:'Иван Иванов',shiftTemplate:'Утро',shiftCode:'U',shiftName:'Утренняя',startTime:'09:00:00',endTime:'18:00:00',plannedHours:8}]},
+  scheduleMonth:{month:'2026-09',days:30,employees:[],entries:[]},
+  scheduleCurrentMonth:{month:'2026-09',days:30,employees:[{id:'e1',name:'Иван Иванов'}],entries:[{id:'entry',date:'2026-09-20',employeeId:'e1',employeeName:'Иван Иванов',shiftTemplate:'Утро',shiftCode:'U',shiftName:'Утренняя',startTime:'09:00:00',endTime:'18:00:00',plannedHours:8}]},
+  scheduleNextMonth:{month:'2026-10',days:31,employees:[],entries:[]},
   myUpcomingShifts:[{id:'entry',date:'2026-09-20',shiftTemplate:'Утро',shiftCode:'U',shiftName:'Утренняя',startTime:'09:00:00',endTime:'18:00:00',plannedHours:8}],
   operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[],
 }
@@ -393,7 +395,7 @@ describe('DEV-169 stage 3 operational modal contracts',()=>{
     expect(ordersSource.match(/<OrderFormFields/g)?.length).toBe(2)
     expect(appSource).toContain('order:orderDraft?toOrderFormPayload(orderDraft):undefined')
     expect(ordersSource).toContain('updateOrder({id:order.id,...toOrderFormPayload(draft)})')
-    expect(ordersSource).toContain('createOrderFromSale({saleId,...toOrderFormPayload(draft)})')
+    expect(ordersSource).toContain('createOrderFromSale(buildOrderFromSaleRequest(selectedSale,draft))')
     expect(appSource).not.toContain('Срок готовности')
     expect(ordersSource).not.toContain('Срок готовности')
   })

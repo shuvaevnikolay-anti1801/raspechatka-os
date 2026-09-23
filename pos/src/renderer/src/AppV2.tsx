@@ -32,7 +32,7 @@ type Screen='sale'|'receipts'|'orders'|'shift'|'work'
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,averageCheckBeforeDiscountMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0,paymentBreakdown:[]}
-const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
+const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},scheduleCurrentMonth:{month:'',days:0,employees:[],entries:[]},scheduleNextMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
 export const manualSyncMessage=(result:BootState)=>{
@@ -232,7 +232,7 @@ export default function AppV2(){
         clubDiscountMinor,reviewCount,reviewDiscountMinor,manualDiscount,
         manualDiscountType:manualDiscount?.type??null,manualDiscountValue:manualDiscount?.value??0,
         manualDiscountMinor:breakdown.manualDiscountMinor,totalDiscountMinor:breakdown.totalDiscountMinor,
-        discountRules,discountBreakdown:breakdown,
+        discountRules,
         cashReceivedMinor,remotePaymentConfirmation,order:orderDraft?toOrderFormPayload(orderDraft):undefined
       })
       clear();setPayment(null);await refresh()
@@ -305,7 +305,7 @@ export default function AppV2(){
         roundingAdjustmentMinor={roundingAdjustmentMinor}
         totalMinor={total}
         shiftOpen={Boolean(boot.shift)}
-        onOpenShift={openShift}
+        onOpenShift={()=>{void openShift()}}
         onHold={holdReceipt}
         onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
         onPay={()=>{if(total>0)setPayment(preferredPayment)}}
@@ -313,13 +313,13 @@ export default function AppV2(){
     />}
 
     {screen==='receipts'&&<ReceiptsPage boot={boot} sales={sales} held={held} onReturn={startReturn} onRestore={restoreReceipt} notify={setMessage}/>} 
-    {screen==='orders'&&<OrdersPage orders={orders} onChanged={refresh} notify={setMessage}/>} 
+    {screen==='orders'&&<OrdersPage orders={orders} onChanged={async()=>{await refresh()}} notify={setMessage}/>} 
     {screen==='shift'&&<Page title="Текущая смена" kicker="">
       <div className="metrics pos-v2-metrics"><Metric label="Продажи" value={formatMoney(summary.revenueMinor)}/><Metric label="Средний чек без скидок" value={formatMoney(summary.averageCheckBeforeDiscountMinor??0)}/><Metric label="Возвраты" value={'− '+formatMoney(summary.returnsMinor)}/><Metric label={EXPECTED_CASH_LABEL} value={formatMoney(summary.expectedCashMinor)}/><Metric label="Чеков" value={String(summary.receipts)}/></div>
-      <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}<div className="shift-cashier-action">{boot.shift?<PosButton variant="danger" onClick={()=>openCashCount('closing')}>Закрыть смену</PosButton>:<PosButton variant="primary" onClick={openShift}>Открыть смену</PosButton>}</div></div></section>
+      <section className="shift-card"><div className="shift-cashier"><small>Кассир</small><h2>{formatPersonShortName(boot.cashierName)}</h2><p>{boot.shift?'Начало: '+new Date(boot.shift.openedAt).toLocaleString('ru-RU'):'Откройте смену, чтобы проводить продажи'}</p>{lastCashCount&&<p>Последний пересчёт: {formatMoney(lastCashCount.totalMinor)} · расхождение {formatMoney(lastCashCount.differenceMinor)}</p>}<div className="shift-cashier-action">{boot.shift?<PosButton variant="danger" onClick={()=>{void openCashCount('closing')}}>Закрыть смену</PosButton>:<PosButton variant="primary" onClick={()=>{void openShift()}}>Открыть смену</PosButton>}</div></div></section>
       {boot.shift&&<div className="shift-details"><section><h3>Оплаты</h3><dl>{shiftPaymentRows(boot.rules,summary.paymentBreakdown??[]).map(({method,label,amountMinor})=><div key={method}><dt>{label}</dt><dd>{formatMoney(amountMinor)}</dd></div>)}<div><dt>Внесения</dt><dd>{formatMoney(summary.depositsMinor)}</dd></div><div><dt>Изъятия</dt><dd>− {formatMoney(summary.withdrawalsMinor)}</dd></div></dl></section><section className="shift-cash"><div className="shift-cash-heading"><h3>Движения наличных</h3><div className="shift-actions"><PosButton variant="secondary" className={summary.openingCountPending?'cash-count-pending':undefined} onClick={()=>openCashCount(summary.openingCountPending?'opening':'control')}>Пересчитать кассу{summary.openingCountPending&&<span className="cash-warning" aria-label="Ожидается пересчёт на начало смены">!</span>}</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('deposit')}>Внести деньги</PosButton><PosButton variant="secondary" onClick={()=>setCashOperation('withdrawal')}>Изъять деньги</PosButton></div></div>{cashOperations.length?cashOperations.map((x)=><article key={x.id}><div><b>{x.type==='deposit'?'Внесение':'Изъятие'}</b><small>{x.reason?x.reason+' · ':''}{new Date(x.createdAt).toLocaleTimeString('ru-RU')}</small></div><strong>{x.type==='deposit'?'+':'−'} {formatMoney(x.amountMinor)}</strong></article>):<p className="shift-empty">Операций пока нет</p>}</section></div>}
     </Page>}
-    {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} online={boot.online} onChanged={refresh} notify={setMessage} onRequestCleanerPayout={async(cycleId)=>{const payout=await window.raspechatkaPos.prepareCleanerPayout(cycleId);setCleaningPayout(payout);setCashOperation('withdrawal');await refresh()}}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
+    {screen==='work'&&<WorkPage products={products} data={workplace} shiftOpen={Boolean(boot.shift)} online={boot.online} onChanged={async()=>{await refresh()}} notify={setMessage} onRequestCleanerPayout={async(cycleId)=>{const payout=await window.raspechatkaPos.prepareCleanerPayout(cycleId);setCleaningPayout(payout);setCashOperation('withdrawal');await refresh()}}/>} {payment&&<PaymentModalV2 choice={payment} total={total} rules={boot.rules} busy={busy} onChoice={setPayment} onClose={()=>setPayment(null)} onComplete={complete}/>}
     {orderDraft&&!payment&&<OrderModal draft={orderDraft} total={total} onChange={setOrderDraft} onClose={()=>setOrderDraft(null)} onPay={()=>setPayment(preferredPayment)}/>} 
     {returnSale&&<ReturnModal sale={returnSale} busy={busy} onClose={()=>setReturnSale(null)} onComplete={async(lines,payments)=>{setBusy(true);try{const x=await window.raspechatkaPos.createReturn({clientRequestId:crypto.randomUUID(),saleId:returnSale.id,lines,payments});setReturnSale(null);await refresh();setMessage('Возврат '+x.receiptNumber+' оформлен на '+formatMoney(x.totalMinor))}catch(e){setMessage(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}}/>} 
     {cashOperation&&<CashOperationModal type={cashOperation} initialAmountMinor={cleaningPayout?.amountMinor} initialReason={cleaningPayout?'Уборка':''} locked={Boolean(cleaningPayout)} busy={cashOperationBusy} onClose={()=>{if(!cashOperationBusy){setCashOperation(null);setCleaningPayout(null)}}} onComplete={async(amount,reason)=>{if(cashOperationBusy)return;setCashOperationBusy(true);try{await window.raspechatkaPos.addCashOperation(cashOperation,amount,reason,cleaningPayout?.id);setCashOperation(null);setCleaningPayout(null);await refresh();setMessage('Изъятие сохранено на кассе'+(boot.online?'':'. Ожидает отправки в ОС'))}catch(e){setMessage(e instanceof Error?e.message:String(e));await refresh().catch(()=>undefined)}finally{setCashOperationBusy(false)}}}/>}  
