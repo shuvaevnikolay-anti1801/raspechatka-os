@@ -331,4 +331,22 @@ describe('PosTransactionEngine safety',()=>{
     expect(fiscal.saleCalls).toBe(0)
   })
 
+  it('uses persisted paid line allocation for full and partial historical returns',async()=>{
+    const sale=await engine.completeSale(request([{method:'cash',amountMinor:2000}],'return-source'),shiftId)
+    const persisted=database.getSale(sale.saleId)
+    const first=persisted.lines[0]
+    const partial=await engine.createReturn({
+      clientRequestId:'partial-return',saleId:sale.saleId,
+      lines:[{saleItemId:first.id,quantity:0.5}],
+      payments:[{method:'cash',amountMinor:1000}],
+    },shiftId,1000,persisted)
+    expect(partial.totalMinor).toBe(1000)
+    await expect(engine.createReturn({
+      clientRequestId:'over-return',saleId:sale.saleId,
+      lines:[{saleItemId:first.id,quantity:0.6}],
+      payments:[{method:'cash',amountMinor:1200}],
+    },shiftId,1200,database.getSale(sale.saleId))).rejects.toThrow(/доступно|превышает/)
+  })
+
+
 })
