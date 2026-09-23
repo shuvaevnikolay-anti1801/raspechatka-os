@@ -92,6 +92,9 @@ export class PosTransactionEngine {
   }
 
   async createReturn(request:CreateReturnRequest,shiftId:string,totalMinor:number,sale:SaleDetails):Promise<ReturnResult>{
+    const persistedSale=this.database.getSale(sale.id)
+    const lines=this.allocateReturnLines(persistedSale,request)
+    this.validateReturnAmount(persistedSale,request,lines,totalMinor)
     this.validatePayments(request.payments,totalMinor,'возврата')
 
     const existingOperation=this.journal.getByClientRequestId(request.clientRequestId)
@@ -113,7 +116,7 @@ export class PosTransactionEngine {
       id:randomUUID(),clientRequestId:request.clientRequestId,kind:'return',entityId:returnId,
       relatedSaleId:sale.id,shiftId,amountMinor:totalMinor,request
     })
-    return this.runReturn(operation,sale)
+    return this.runReturn(operation,persistedSale)
   }
 
   async recover(operationId:string):Promise<{status:'completed'|'attention';message:string}>{
@@ -202,16 +205,8 @@ export class PosTransactionEngine {
   private async runReturn(operation:JournalOperation,sale:SaleDetails):Promise<ReturnResult>{
     const request=operation.request as CreateReturnRequest
     this.validatePayments(request.payments,operation.amountMinor,'возврата')
-    const lines=request.lines.map((requested)=>{
-      const original=sale.lines.find((x)=>x.id===requested.saleItemId)
-      if(!original)throw new Error('Позиция исходного чека не найдена')
-      const available=original.quantity-original.returnedQuantity
-      if(requested.quantity<=0||requested.quantity>available)throw new Error(`Для «${original.name}» доступно к возврату: ${available}`)
-      const originalLineTotal=Math.round(original.quantity*original.unitPriceMinor*(1-(original.discountPercent??0)/100))
-      const paidLineTotal=Math.round(sale.totalMinor*originalLineTotal/
-        (sale.lines.reduce((sum,x)=>sum+Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent??0)/100)),0)||1))
-      return {...requested,lineTotalMinor:Math.round(paidLineTotal*requested.quantity/original.quantity)}
-    })
+    const lines=this.allocateReturnLines(sale,request)
+    this.validateReturnAmount(sale,request,lines,operation.amountMinor)
     let current=operation
     if(current.state==='created'||current.state==='requires_attention'){
       const originalPayments=this.resolveOriginalRefundPayments(sale,request.payments)
@@ -239,6 +234,53 @@ export class PosTransactionEngine {
     const saved=this.database.findReturnByClientRequestId(current.clientRequestId)
     if(!saved)throw new Error('Возврат не завершён и требует проверки')
     return {...saved,queuedForSync:true}
+  }
+
+  private allocateReturnLines(sale:SaleDetails,request:CreateReturnRequest):
+    Array<{saleItemId:number;quantity:number;lineTotalMinor:number}>{
+    if(!request.lines.length)throw new Error('Выберите позиции для возврата')
+    const seen=new Set<number>()
+    return request.lines.map((requested)=>{
+      if(seen.has(requested.saleItemId))throw new Error('Позиция возврата указана дважды')
+      seen.add(requested.saleItemId)
+      const original=sale.lines.find((line)=>line.id===requested.saleItemId) as
+        (SaleDetails['lines'][number]&{lineTotalMinor?:number;returnedLineMinor?:number})|undefined
+      if(!original)throw new Error('Позиция исходного чека не найдена')
+      const available=original.quantity-original.returnedQuantity
+      if(!Number.isFinite(requested.quantity)||requested.quantity<=0||requested.quantity>available+1e-9)
+        throw new Error(`Для «${original.name}» доступно к возврату: ${available}`)
+      // Old sales also have line_total_minor; it is the historical paid allocation.
+      if(!Number.isSafeInteger(original.lineTotalMinor)||original.lineTotalMinor!<0)
+        throw new Error('Отсутствует сохранённая сумма позиции исходного чека')
+      const remaining=original.lineTotalMinor!-(original.returnedLineMinor??0)
+      const full= Math.abs(requested.quantity-available)<1e-9
+      const amount=full?remaining:Math.min(remaining,
+        Math.round(original.lineTotalMinor!*requested.quantity/original.quantity))
+      if(amount<=0)throw new Error('Сумма выбранной части возврата должна быть больше нуля')
+      return {...requested,lineTotalMinor:amount}
+    })
+  }
+
+  private validateReturnAmount(
+    sale:SaleDetails,request:CreateReturnRequest,
+    lines:Array<{lineTotalMinor:number}>,amount:number
+  ):void{
+    const lineAmount=lines.reduce((sum,line)=>sum+line.lineTotalMinor,0)
+    if(!Number.isSafeInteger(amount)||amount<=0||amount!==lineAmount)
+      throw new Error('Сумма возврата не совпадает с оплаченной стоимостью выбранных позиций')
+    if(amount>sale.totalMinor-sale.returnedMinor||
+      amount>sale.payments.reduce((sum,payment)=>sum+payment.amountMinor,0)-sale.returnedMinor)
+      throw new Error('Возврат превышает остаток исходной фискальной оплаты')
+    const methods=new Set(request.payments.map((payment)=>payment.method))
+    for(const method of methods){
+      const original=sale.payments.filter((payment)=>payment.method===method)
+        .reduce((sum,payment)=>sum+payment.amountMinor,0)
+      const returned=this.database.getReturnedPaymentMinor(sale.id,method)
+      const requested=request.payments.filter((payment)=>payment.method===method)
+        .reduce((sum,payment)=>sum+payment.amountMinor,0)
+      if(requested>original-returned)
+        throw new Error('Возврат превышает остаток исходной оплаты этим способом')
+    }
   }
 
   private async processPayments(
