@@ -1087,7 +1087,8 @@ def _cleaning_config(point):
 	amount = flt(point.get("cleaning_payout_amount")) if point else 0
 	visits = point.get("cleaning_every_n_visits") if point else None
 	amount = amount if amount > 0 else 2000
-	visits = int(visits) if visits and str(visits).isdigit() and int(visits) >= 1 else 4
+	visits_number = flt(visits)
+	visits = int(visits_number) if visits_number >= 1 and visits_number == int(visits_number) else 4
 	return {"payoutAmountMinor": round(amount * 100), "everyNVisits": visits}
 
 
