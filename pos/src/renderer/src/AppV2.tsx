@@ -179,9 +179,9 @@ export default function AppV2(){
       const result=await window.raspechatkaPos.syncNow();await refresh()
       if(customer)setCustomer(await resolveCurrentCustomer(customer,window.raspechatkaPos.getCustomer))
       setMessage(manualSyncMessage(result))
-    }catch{
+    }catch(error){
       await refresh().catch(()=>undefined)
-      setMessage('Не удалось связаться с Распечатка OS — продолжаем работать локально')
+      setMessage(operatorError(error,'sync'))
     }finally{setSyncing(false)}
   }
   const openShift=async()=>{try{await window.raspechatkaPos.openShift();const openedSummary=await refresh();setCashCountOpen({type:'opening',expectedMinor:openedSummary.expectedCashMinor});setMessage('Смена открыта — пересчитайте стартовые наличные')}catch(e){setMessage(operatorError(e,'shift'))}}
