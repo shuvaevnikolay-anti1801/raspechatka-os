@@ -264,6 +264,14 @@ describe('PosTransactionEngine safety',()=>{
     expect(fiscal.statusCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()[0].state).toBe('fiscal_status_unknown')
+    const fiscalHash=journal.getLatestFiscalAttempt(engine.listUnresolved()[0].id)?.requestHash
+    journal.close()
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+    expect(journal.getLatestFiscalAttempt(engine.listUnresolved()[0].id)?.requestHash).toBe(fiscalHash)
+    const afterRestart=await engine.recover(engine.listUnresolved()[0].id)
+    expect(afterRestart.status).toBe('attention')
+    expect(fiscal.saleCalls).toBe(1)
   })
 
   const roundedRequest=(payments:CompleteSaleRequest['payments'],id:string):CompleteSaleRequest=>{
@@ -330,6 +338,52 @@ describe('PosTransactionEngine safety',()=>{
     await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/защиты|провер|восстанов|заверш/)
     expect(payment.chargeCalls).toBe(1)
     expect(fiscal.saleCalls).toBe(0)
+  })
+
+  it('refunds the remaining persisted amount after a partial rounded sale return',async()=>{
+    const lines=[{productId:'print-bw-a4',name:'Печать',quantity:3,unitPriceMinor:133}]
+    const rules={allowDiscounts:false,maxDiscountPercent:0,reviewDiscountPerReviewMinor:0}
+    const original=await engine.completeSale({
+      clientRequestId:'split-return-source',lines,
+      payments:[{method:'cash',amountMinor:300}],discountRules:rules,
+      discountBreakdown:calculateDiscountBreakdown(lines,rules),payableMinor:300,
+    },shiftId)
+    const sale=database.getSale(original.saleId)
+    const item=sale.lines[0]
+    expect(item.lineTotalMinor).toBe(300)
+    await engine.createReturn({
+      clientRequestId:'split-return-first',saleId:sale.id,
+      lines:[{saleItemId:item.id,quantity:1}],payments:[{method:'cash',amountMinor:100}],
+    },shiftId,100,sale)
+    const remainder=database.getSale(original.saleId)
+    const full=await engine.createReturn({
+      clientRequestId:'split-return-final',saleId:sale.id,
+      lines:[{saleItemId:item.id,quantity:2}],payments:[{method:'cash',amountMinor:200}],
+    },shiftId,200,remainder)
+    expect(full.totalMinor).toBe(200)
+    expect(fiscal.returns.map((row)=>row.amountMinor)).toEqual([100,200])
+    expect(fiscal.returns.map((row)=>(row.lines[0] as {lineTotalMinor?:number}).lineTotalMinor)).toEqual([100,200])
+    expect(database.getSale(sale.id).returnedMinor).toBe(300)
+  })
+
+  it('returns a legacy pre-rounding sale from its stored kopeck total',async()=>{
+    database.saveSale({
+      id:'legacy-sale',clientRequestId:'legacy-sale-request',shiftId,totalMinor:199,
+      paymentMethod:'cash',fiscalNumber:'FD-legacy',createdAt:new Date().toISOString(),
+      receiptDiscountPercent:0,
+      lines:[{productId:'print-bw-a4',name:'Печать',quantity:1,unitPriceMinor:199}],
+      payments:[{method:'cash',amountMinor:199}],
+    })
+    const sale=database.getSale('legacy-sale')
+    const result=await engine.createReturn({
+      clientRequestId:'legacy-return',saleId:sale.id,
+      lines:[{saleItemId:sale.lines[0].id,quantity:1}],
+      payments:[{method:'cash',amountMinor:199}],
+    },shiftId,199,sale)
+    expect(result.totalMinor).toBe(199)
+    expect(fiscal.returns[0].amountMinor).toBe(199)
+    expect((fiscal.returns[0].lines[0] as {lineTotalMinor?:number}).lineTotalMinor).toBe(199)
+    expect(database.getSale(sale.id).returnedMinor).toBe(199)
   })
 
   it('uses persisted paid line allocation for full and partial historical returns',async()=>{
