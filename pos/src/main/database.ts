@@ -90,7 +90,7 @@ export class PosDatabase {
         id TEXT PRIMARY KEY, opened_at TEXT NOT NULL, closed_at TEXT, cashier_name TEXT NOT NULL,
         cashier_id TEXT NOT NULL DEFAULT '', shift_type TEXT NOT NULL DEFAULT 'Утро',
         drawer_point_id TEXT, drawer_workplace_id TEXT, opening_expected_minor INTEGER,
-        opening_expected_verified INTEGER NOT NULL DEFAULT 0
+        opening_expected_verified INTEGER NOT NULL DEFAULT 0, accounting_baseline_at TEXT
       );
       CREATE TABLE IF NOT EXISTS sales (
         id TEXT PRIMARY KEY, client_request_id TEXT NOT NULL UNIQUE, shift_id TEXT NOT NULL,
@@ -218,6 +218,7 @@ export class PosDatabase {
     this.ensureColumn('shifts', 'drawer_workplace_id', 'TEXT')
     this.ensureColumn('shifts', 'opening_expected_minor', 'INTEGER')
     this.ensureColumn('shifts', 'opening_expected_verified', 'INTEGER NOT NULL DEFAULT 0')
+    this.ensureColumn('shifts', 'accounting_baseline_at', 'TEXT')
     this.ensureColumn('cash_counts', 'expected_verified', 'INTEGER NOT NULL DEFAULT 1')
     this.migrateCashDrawerV1FromBootstrap()
   }
@@ -472,6 +473,7 @@ export class PosDatabase {
     const row=this.db.prepare(`SELECT s.id,s.opened_at openedAt,s.closed_at closedAt,s.cashier_id cashierId,s.cashier_name cashierName,
       s.shift_type shiftType,s.drawer_point_id drawerPointId,s.drawer_workplace_id drawerWorkplaceId,
       s.opening_expected_minor openingExpectedMinor,s.opening_expected_verified openingExpectedVerified,
+      s.accounting_baseline_at accountingBaselineAt,
       CASE WHEN d.opening_count_pending=1 THEN 1 ELSE 0 END openingCountPending
       FROM shifts s LEFT JOIN cash_drawer_state d
         ON d.point_id=s.drawer_point_id AND d.workplace_id=s.drawer_workplace_id
@@ -491,10 +493,11 @@ export class PosDatabase {
       const drawer=context?this.ensureCashDrawerState(context.pointId,context.workplaceId):null
       if(context)this.updateCashDrawerPendingInTransaction(context.pointId,context.workplaceId,true,shift.openedAt)
       this.db.prepare(`INSERT INTO shifts
-        (id,opened_at,cashier_id,cashier_name,shift_type,drawer_point_id,drawer_workplace_id,opening_expected_minor,opening_expected_verified)
-        VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        (id,opened_at,cashier_id,cashier_name,shift_type,drawer_point_id,drawer_workplace_id,opening_expected_minor,opening_expected_verified,accounting_baseline_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
         shift.id,shift.openedAt,shift.cashierId??'',shift.cashierName,shiftType,
-        context?.pointId??null,context?.workplaceId??null,drawer?.baselineMinor??null,drawer?.baselineVerified?1:0
+        context?.pointId??null,context?.workplaceId??null,drawer?.baselineMinor??null,drawer?.baselineVerified?1:0,
+        context?shift.openedAt:null
       )
       const persisted=this.currentShift() as Shift
       this.queue('shift.opened',persisted,persisted.openedAt)
