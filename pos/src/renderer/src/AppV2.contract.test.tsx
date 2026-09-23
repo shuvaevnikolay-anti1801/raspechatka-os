@@ -506,9 +506,9 @@ describe('DEV-175 standard cleaning withdrawal',()=>{
     expect(markup).toContain('Изъятие')
     expect(markup).toContain('value="3250.5"')
     expect(markup).toContain('value="Уборка"')
-    expect(markup.match(/readonly=""/g)?.length).toBe(2)
+    expect(markup.match(/readonly=""/gi)?.length).toBe(2)
     const normal=renderToStaticMarkup(<CashOperationModal type="withdrawal" onClose={()=>undefined} onComplete={async()=>undefined}/>)
-    expect(normal).not.toContain('readonly=""')
+    expect(normal).not.toMatch(/readonly=""/i)
   })
   it('shows a named work warning separate from the cash-count warning',()=>{
     expect(renderToStaticMarkup(<Nav active={false} icon="work" label="Работа" warning warningLabel="Ожидается выплата за уборку" onClick={()=>undefined}/>)).toContain('Ожидается выплата за уборку')

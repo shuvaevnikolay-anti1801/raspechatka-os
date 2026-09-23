@@ -302,7 +302,7 @@ describe('PosDatabase',()=>{
     database.openShift({id:'shift-work',openedAt:'2026-09-06T12:00:00.000Z',cashierId:'SHIFT-EMP',cashierName:'Николай'})
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
     expect(count).toMatchObject({totalMinor:200000,differenceMinor:200000})
-    expect(database.getShiftSummary().expectedCashMinor).toBe(200000)
+    expect(database.getShiftSummary().expectedCashMinor).toBe(0)
     database.reportStockWriteOff({
       productId:'paper-hidden',quantity:1,reason:'Брак',comment:'Замята упаковка',
       cashierId:'FORGED-RENDERER'

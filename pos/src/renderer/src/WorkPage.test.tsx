@@ -396,7 +396,7 @@ describe('DEV-175 cleaning UI',()=>{
     expect(cleanerNeedsPayout(due.cleaner)).toBe(true)
     const pending=render(cleaning({...due.cleaner,payoutState:'withdrawal_pending'}),false)
     expect(pending).toContain('Изъятие подготовлено')
-    expect(pending).toContain('Ожидает отправки')
+    expect(pending).toContain('ожидают синхронизации')
     expect(pending).not.toContain('Отметить сегодняшнюю уборку')
   })
   it('allows the visit before threshold and clears the warning after payout',()=>{
