@@ -112,7 +112,7 @@ export default function AppV2(){
   }
   const pricedCart=cart.map((line)=>({...line,preventDiscounts:Boolean(productById.get(line.productId)?.preventDiscounts)}))
   const breakdown=calculateDiscountBreakdown(pricedCart,discountRules,customer?.discountPercent??0,reviewCount,manualDiscount)
-  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,totalMinor:discountedTotal,roundingAdjustmentMinor,payableMinor:total}=breakdown
+  const {subtotalMinor:subtotal,clubDiscountPercent:clubPercent,clubDiscountMinor,reviewDiscountMinor,roundingAdjustmentMinor,payableMinor:total}=breakdown
   const reviewUnitMinor=discountRules.allowDiscounts?discountRules.reviewDiscountPerReviewMinor:0
   const safeReviewCount=breakdown.reviewCount
   const maxReviews=reviewUnitMinor>0?Math.floor(Math.max(0,subtotal-clubDiscountMinor-1)/reviewUnitMinor):0
@@ -279,7 +279,7 @@ export default function AppV2(){
         onOpenShift={openShift}
         onHold={holdReceipt}
         onCreateOrder={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}
-        onPay={()=>setPayment(preferredPayment)}
+        onPay={()=>{if(total>0)setPayment(preferredPayment)}}
       />}
     />}
 
@@ -385,7 +385,7 @@ export const isCompleteOrderPhone=(value:string)=>value.replace(/\D/g,'').length
 
 function OrderModal({draft,total,onChange,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onChange:(draft:{phone:string;comment?:string;dueAt?:string})=>void;onClose:()=>void;onPay:()=>void}){
   const valid=isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
-  return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
+  return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid||total<=0} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
     <div className="order-form-compact">
       <PosField label="Телефон *" error={draft.phone&&!isCompleteOrderPhone(draft.phone)?'Введите полный номер из 11 цифр':undefined}><input autoFocus inputMode="tel" value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></PosField>
       <PosField label="Срок готовности *"><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></PosField>
