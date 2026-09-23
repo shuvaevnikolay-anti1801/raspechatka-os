@@ -71,13 +71,13 @@ describe('calculateDiscountBreakdown',()=>{
 
   it('keeps stacked ordinary discounts and rounding separate',()=>{
     const result=calculateDiscountBreakdown(
-      [{productId:'x',name:'Печать',quantity:1,unitPriceMinor:10001}],
+      [{productId:'x',name:'Печать',quantity:1,unitPriceMinor:10002}],
       {allowDiscounts:true,maxDiscountPercent:30,reviewDiscountPerReviewMinor:101},
       10,1,{type:'amount',value:100}
     )
     expect(result).toMatchObject({
       clubDiscountMinor:1000,reviewDiscountMinor:101,manualDiscountMinor:100,
-      totalDiscountMinor:1201,totalMinor:8800,payableMinor:8800,roundingAdjustmentMinor:0,
+      totalDiscountMinor:1201,totalMinor:8801,payableMinor:8800,roundingAdjustmentMinor:1,
     })
   })
 
