@@ -12,6 +12,36 @@ describe("ATOL JSON builder", () => {
     expect(allocated.reduce((sum,value)=>sum+value,0)).toBe(1234)
   })
 
+  it.each([1, 37, 99])("matches persisted payable and historical return allocation at %i kopecks", (adjustment) => {
+    const lines = Array.from({length: 19}, (_, index) => ({
+      productId: String(index), name: "Услуга", quantity: index % 2 ? 0.333 : 1,
+      unitPriceMinor: 101 + index, itemType: "service",
+    }));
+    const rawTotal = lines.reduce((sum, line) => sum + Math.round(line.quantity * line.unitPriceMinor), 0);
+    const payable = rawTotal - adjustment;
+    const payments = [
+      {method: "cash" as const, amountMinor: 50},
+      {method: "card" as const, amountMinor: payable - 50},
+    ];
+    const sale = buildAtolReceiptJson({
+      type: "sell", amountMinor: payable, payments, lines,
+      taxationType: "patent", taxType: "none",
+    });
+    const items = sale.items as Array<{amount: number; paymentObject: string}>;
+    expect(Math.round(items.reduce((sum, item) => sum + item.amount, 0) * 100)).toBe(payable);
+    expect(items.every((item) => item.paymentObject === "service")).toBe(true);
+    const historical = lines.map((line, index) => ({
+      ...line, lineTotalMinor: Math.round(items[index].amount * 100),
+    }));
+    const returned = buildAtolReceiptJson({
+      type: "sellReturn", amountMinor: payable, payments, lines: historical,
+      taxationType: "patent", taxType: "none",
+    });
+    expect((returned.items as Array<{amount: number}>).map((item) => item.amount))
+      .toEqual(items.map((item) => item.amount));
+    expect(() => allocateFiscalAmounts(historical, payable + 1)).toThrow(/сохранённые суммы/i);
+  });
+
   it("keeps discounted total and builds a sell receipt with operator", () => {
     expect(allocateFiscalAmounts([
       { productId: "a", name: "A", quantity: 1, unitPriceMinor: 100, discountPercent: 0 },
