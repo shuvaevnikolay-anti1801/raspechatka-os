@@ -451,6 +451,9 @@ def _sale_receipt(payload, cashier_id, connection):
 	lines = payload.get("lines") or []
 	payments_payload = payload.get("payments") or []
 	paid_total = sum(round(flt(payment.get("amountMinor"))) for payment in payments_payload)
+	discount_breakdown = payload.get("discountBreakdown") or {}
+	rounding_adjustment = max(0, round(flt(payload.get("roundingAdjustmentMinor", discount_breakdown.get("roundingAdjustmentMinor", 0)))))
+	ordinary_paid_total = paid_total + rounding_adjustment
 	declared_payable = payload.get("payableMinor")
 	if declared_payable is not None and round(flt(declared_payable)) != paid_total:
 		frappe.throw(_("Сумма оплат не совпадает с сохранённой суммой к оплате"))
@@ -464,7 +467,7 @@ def _sale_receipt(payload, cashier_id, connection):
 		manual_discount,
 		receipt_other_discount,
 		club_discount_percent,
-	) = _review_breakdown(payload, connection, sum(raw), paid_total)
+	) = _review_breakdown(payload, connection, sum(raw), ordinary_paid_total)
 	line_discount = sum(gross) - sum(raw)
 
 	items = []
@@ -521,6 +524,7 @@ def _sale_receipt(payload, cashier_id, connection):
 				"reviewCount": review_count,
 				"reviewDiscountMinor": review_discount,
 				"manualDiscountMinor": manual_discount,
+				"roundingAdjustmentMinor": rounding_adjustment,
 			}
 		),
 		"items": items,
