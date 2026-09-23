@@ -108,10 +108,18 @@ class TestPosOrders(TestCase):
 	def test_timestamped_update_locks_order_and_ignores_duplicate_or_stale_replay(self):
 		get_value = Mock(return_value="POS-ORDER-1")
 		doc = SimpleNamespace(
-			last_pos_update_at=None, last_pos_update_event=None,
-			phone="old", contact_method=None, comment=None, due_at=None,
-			ready_at=None, issued_at=None, source_receipt=None, source_sale_id=None,
-			status="New", save=Mock(),
+			last_pos_update_at=None,
+			last_pos_update_event=None,
+			phone="old",
+			contact_method=None,
+			comment=None,
+			due_at=None,
+			ready_at=None,
+			issued_at=None,
+			source_receipt=None,
+			source_sale_id=None,
+			status="New",
+			save=Mock(),
 		)
 		db = SimpleNamespace(get_value=get_value, sql=Mock(return_value=[("POS-ORDER-1",)]))
 		with (
@@ -119,12 +127,19 @@ class TestPosOrders(TestCase):
 			patch.object(pos, "frappe", SimpleNamespace(db=db, get_doc=Mock(return_value=doc))),
 		):
 			workplace = SimpleNamespace(business_point="POINT-1")
-			new = {"orderNumber": "ORD-1", "updatedAt": "2026-09-20 12:00:00",
-				"phone": "new", "status": "ready"}
+			new = {
+				"orderNumber": "ORD-1",
+				"updatedAt": "2026-09-20 12:00:00",
+				"phone": "new",
+				"status": "ready",
+			}
 			pos._apply_order_updated("EVENT-NEW", workplace, new)
 			pos._apply_order_updated("EVENT-NEW", workplace, new)
-			pos._apply_order_updated("EVENT-OLD", workplace, {**new,
-				"updatedAt": "2026-09-20 11:00:00", "phone": "old", "status": "new"})
+			pos._apply_order_updated(
+				"EVENT-OLD",
+				workplace,
+				{**new, "updatedAt": "2026-09-20 11:00:00", "phone": "old", "status": "new"},
+			)
 		self.assertEqual(doc.phone, "new")
 		self.assertEqual(doc.status, "Ready")
 		self.assertEqual(doc.last_pos_update_event, "EVENT-NEW")
