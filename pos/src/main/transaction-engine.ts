@@ -396,6 +396,7 @@ export class PosTransactionEngine {
       const original=sale.lines.find((line)=>line.id===returned.saleItemId)!
       return {productId:original.productId,name:original.name,quantity:returned.quantity,
         unitPriceMinor:Math.round(returned.lineTotalMinor/returned.quantity),discountPercent:0,
+        lineTotalMinor:returned.lineTotalMinor,
         ...({itemType:catalog.get(original.productId)?.type} as object)} as CartLine
     })
     const fiscalRequest={operationId:attemptId,returnId:operation.entityId,saleId:sale.id,
