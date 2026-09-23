@@ -462,6 +462,14 @@ export class PosDatabase {
   saveReturn(input:{id:string;clientRequestId:string;saleId:string;shiftId:string;totalMinor:number;fiscalNumber:string;createdAt:string;lines:Array<{saleItemId:number;quantity:number;lineTotalMinor:number}>;payments:PaymentPart[]}):void {
     this.db.exec('BEGIN')
     try {
+      const original=this.getSale(input.saleId)
+      const refunded=this.db.prepare('SELECT COALESCE(SUM(total_minor),0) amount FROM returns WHERE sale_id=?').get(input.saleId) as {amount:number}
+      if(!Number.isSafeInteger(input.totalMinor)||input.totalMinor<=0||
+        input.lines.reduce((sum,line)=>sum+line.lineTotalMinor,0)!==input.totalMinor||
+        input.payments.reduce((sum,payment)=>sum+payment.amountMinor,0)!==input.totalMinor||
+        input.totalMinor>original.totalMinor-refunded.amount||
+        input.totalMinor>original.payments.reduce((sum,payment)=>sum+payment.amountMinor,0)-refunded.amount)
+        throw new Error('Возврат превышает сохранённый остаток исходного чека')
       this.db.prepare('INSERT INTO returns (id,client_request_id,sale_id,shift_id,total_minor,fiscal_number,created_at) VALUES (?,?,?,?,?,?,?)')
         .run(input.id,input.clientRequestId,input.saleId,input.shiftId,input.totalMinor,input.fiscalNumber,input.createdAt)
       const line=this.db.prepare('INSERT INTO return_items (return_id,sale_item_id,quantity,line_total_minor) VALUES (?,?,?,?)')
