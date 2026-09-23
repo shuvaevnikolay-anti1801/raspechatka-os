@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type {
   BankingEvidence, CartLine, CashOperation, CashOperationType, Customer, HeldReceipt, OutboxEvent,
-  CashCount, CashCountLine, CashDrawerState, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
+  CashCount, CashCountLine, CashDrawerState, CleanerPayout, CleanerVisitResult, DiscountBreakdown, ManualDiscount, PaymentPart, Product, RemotePaymentConfirmation, ReturnSummary,
   SaleDetails, SaleSummary, Shift, ShiftSummary, StockReceiptRequest, StockWriteOffRequest, SupplyRequestInput, WorkplaceData, WorkScheduleMonth,
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
@@ -195,7 +195,7 @@ export class PosDatabase {
         point_id TEXT NOT NULL, workplace_id TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1,
         cycle_id TEXT NOT NULL, visits_count INTEGER NOT NULL DEFAULT 0,
         every_n_visits INTEGER NOT NULL, payout_amount_minor INTEGER NOT NULL,
-        payout_state TEXT NOT NULL DEFAULT 'not_due', updated_at TEXT NOT NULL,
+        payout_state TEXT NOT NULL DEFAULT 'not_due', payout_id TEXT, updated_at TEXT NOT NULL,
         PRIMARY KEY (point_id,workplace_id),
         CHECK(schema_version = 1), CHECK(visits_count >= 0),
         CHECK(every_n_visits >= 1), CHECK(payout_amount_minor > 0),
@@ -204,8 +204,15 @@ export class PosDatabase {
       CREATE TABLE IF NOT EXISTS cleaning_visits (
         id TEXT PRIMARY KEY, point_id TEXT NOT NULL, workplace_id TEXT NOT NULL,
         cycle_id TEXT NOT NULL, local_date TEXT NOT NULL, created_at TEXT NOT NULL,
-        cashier_id TEXT NOT NULL, cashier_name TEXT NOT NULL,
+        cashier_id TEXT NOT NULL, cashier_name TEXT NOT NULL, paid INTEGER NOT NULL DEFAULT 0,
         UNIQUE(point_id,local_date)
+      );
+      CREATE TABLE IF NOT EXISTS cleaning_payouts (
+        id TEXT PRIMARY KEY, point_id TEXT NOT NULL, workplace_id TEXT NOT NULL,
+        cycle_id TEXT NOT NULL UNIQUE, amount_minor INTEGER NOT NULL, every_n_visits INTEGER NOT NULL,
+        visit_event_ids_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'withdrawal_pending',
+        cash_operation_id TEXT UNIQUE, created_at TEXT NOT NULL, paid_at TEXT,
+        CHECK(status IN ('withdrawal_pending','paid')), CHECK(amount_minor > 0), CHECK(every_n_visits >= 1)
       );
       CREATE TABLE IF NOT EXISTS orders (
         id TEXT PRIMARY KEY, order_number TEXT NOT NULL UNIQUE, phone TEXT NOT NULL, contact_method TEXT,
@@ -268,6 +275,10 @@ export class PosDatabase {
     this.ensureColumn('shifts', 'opening_expected_minor', 'INTEGER')
     this.ensureColumn('shifts', 'opening_expected_verified', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('shifts', 'accounting_baseline_at', 'TEXT')
+    this.ensureColumn('cash_operations', 'cleaning_payout_id', 'TEXT')
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_cleaning_payout ON cash_operations(cleaning_payout_id)')
+    this.ensureColumn('cleaning_cycles', 'payout_id', 'TEXT')
+    this.ensureColumn('cleaning_visits', 'paid', 'INTEGER NOT NULL DEFAULT 0')
     this.ensureColumn('cash_counts', 'expected_verified', 'INTEGER NOT NULL DEFAULT 1')
     this.migrateCashDrawerV1FromBootstrap()
   }
@@ -828,13 +839,61 @@ export class PosDatabase {
     sales.fiscal_number originalReceiptNumber,returns.total_minor totalMinor,returns.created_at createdAt
     FROM returns JOIN sales ON sales.id=returns.sale_id ORDER BY returns.created_at DESC LIMIT 100`).all() as ReturnSummary[]}
 
-  addCashOperation(type:CashOperationType,amountMinor:number,reason:string):CashOperation {
-    const shift=this.currentShift();if(!shift)throw new Error('Сначала откройте смену')
-    if(!Number.isInteger(amountMinor)||amountMinor<=0)throw new Error('Укажите сумму больше нуля')
-    const operation={id:randomUUID(),type,amountMinor,reason:reason.trim()||'Без комментария',createdAt:new Date().toISOString()}
-    this.db.prepare('INSERT INTO cash_operations (id,shift_id,operation_type,amount_minor,reason,created_at) VALUES (?,?,?,?,?,?)')
-      .run(operation.id,shift.id,type,amountMinor,operation.reason,operation.createdAt)
-    this.queue(type==='deposit'?'cash.deposited':'cash.withdrawn',{...operation,shiftId:shift.id},operation.createdAt)
+  addCashOperation(type:CashOperationType,amountMinor:number,reason:string,cleaningPayoutId?:string):CashOperation {
+    if(!Number.isSafeInteger(amountMinor)||amountMinor<=0)throw new Error('Укажите сумму больше нуля')
+    this.db.exec('BEGIN IMMEDIATE')
+    let operation!:CashOperation
+    try {
+      const payout=cleaningPayoutId?this.readCleaningPayout(cleaningPayoutId):null
+      if(cleaningPayoutId){
+        if(!payout||type!=='withdrawal'||payout.amountMinor!==amountMinor)
+          throw new Error('Выплата уборки не соответствует подготовленному изъятию')
+        const context=this.cleaningContext()
+        if(payout.pointId!==context.pointId||payout.workplaceId!==context.workplaceId)
+          throw new Error('Выплата относится к другой точке или кассе')
+        const prior=this.db.prepare(`SELECT id,operation_type type,amount_minor amountMinor,
+          reason,created_at createdAt,cleaning_payout_id cleaningPayoutId
+          FROM cash_operations WHERE cleaning_payout_id=?`).get(cleaningPayoutId) as CashOperation|undefined
+        if(prior){
+          operation=prior
+          this.db.exec('COMMIT')
+          this.reconcileCleaningPayout(cleaningPayoutId)
+          return operation
+        }
+        if(payout.status!=='withdrawal_pending')throw new Error('Выплата уже завершена без подтверждённого изъятия')
+      }
+      const shift=this.currentShift()
+      if(!shift)throw new Error('Сначала откройте смену')
+      if(cleaningPayoutId){
+        const context=this.cleaningContext()
+        if(shift.drawerPointId!==context.pointId||shift.drawerWorkplaceId!==context.workplaceId)
+          throw new Error('Смена относится к другой точке или кассе')
+        const summary=this.getShiftSummary()
+        if(summary.expectedCashVerified===false||summary.openingCountPending)
+          throw new Error('Перед выплатой подтвердите остаток кассы пересчётом')
+        if(summary.expectedCashMinor<amountMinor)throw new Error('Недостаточно наличных для выплаты уборки')
+      }
+      const createdAt=new Date().toISOString()
+      operation={
+        id:randomUUID(),type,amountMinor,
+        reason:cleaningPayoutId?`Уборка: оплата за ${payout!.everyNVisits} посещений`:reason.trim()||'Без комментария',
+        createdAt,...(cleaningPayoutId?{cleaningPayoutId}:{})
+      }
+      this.db.prepare(`INSERT INTO cash_operations
+        (id,shift_id,operation_type,amount_minor,reason,created_at,cleaning_payout_id)
+        VALUES (?,?,?,?,?,?,?)`).run(
+          operation.id,shift.id,type,amountMinor,operation.reason,createdAt,cleaningPayoutId??null
+        )
+      const payload=cleaningPayoutId?{
+        ...operation,shiftId:shift.id,cleaningCycleId:payout!.cycleId,
+        cleaningVisitEventIds:payout!.visitEventIds,everyNVisits:payout!.everyNVisits,
+        payoutAmountMinor:payout!.amountMinor,withdrawalPurpose:'Expense'
+      }:{...operation,shiftId:shift.id}
+      this.queue(type==='deposit'?'cash.deposited':'cash.withdrawn',payload,createdAt,shift.cashierId||undefined,
+        cleaningPayoutId?operation.id:undefined)
+      this.db.exec('COMMIT')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
+    if(cleaningPayoutId)this.reconcileCleaningPayout(cleaningPayoutId)
     return operation
   }
   listCashOperations():CashOperation[]{const shift=this.currentShift();if(!shift)return[];return this.db.prepare(`SELECT id,operation_type type,
@@ -846,7 +905,9 @@ export class PosDatabase {
     try { data=normalizeWorkplaceData(raw?JSON.parse(raw) as Partial<WorkplaceData>:null) }
     catch { data=emptyWorkplaceData() }
     try {
-      const local=this.localCleanerStatus(this.cleaningContext())
+      const context=this.cleaningContext()
+      this.reconcilePendingCleaner(context)
+      const local=this.localCleanerStatus(context)
       if(local)data.cleaner=local
     } catch { /* A disconnected or older bootstrap has no point context yet. */ }
     return data
@@ -989,19 +1050,20 @@ export class PosDatabase {
   private localCleanerStatus(context:ReturnType<PosDatabase['cleaningContext']>):WorkplaceData['cleaner']|null {
     const cycle=this.db.prepare(`SELECT cycle_id cycleId,schema_version schemaVersion,
       visits_count visitsSincePayment,every_n_visits everyNVisits,payout_amount_minor payoutAmountMinor,
-      payout_state payoutState FROM cleaning_cycles WHERE point_id=? AND workplace_id=?`)
+      payout_state payoutState,payout_id payoutId FROM cleaning_cycles WHERE point_id=? AND workplace_id=?`)
       .get(context.pointId,context.workplaceId) as
-      Pick<WorkplaceData['cleaner'],'cycleId'|'schemaVersion'|'visitsSincePayment'|'everyNVisits'|'payoutAmountMinor'|'payoutState'>|undefined
+      Pick<WorkplaceData['cleaner'],'cycleId'|'schemaVersion'|'visitsSincePayment'|'everyNVisits'|'payoutAmountMinor'|'payoutState'|'payoutId'>|undefined
     if(!cycle)return null
-    const visits=this.db.prepare(`SELECT id,local_date visitDate,cashier_name recordedBy
+    const visits=this.db.prepare(`SELECT id,local_date visitDate,cashier_name recordedBy,paid
       FROM cleaning_visits WHERE point_id=? AND workplace_id=? ORDER BY local_date DESC LIMIT 12`)
-      .all(context.pointId,context.workplaceId) as Array<{id:string;visitDate:string;recordedBy:string}>
+      .all(context.pointId,context.workplaceId) as Array<{id:string;visitDate:string;recordedBy:string;paid:number}>
     return {...cycle,paymentDueMinor:cycle.payoutState==='due'||cycle.payoutState==='withdrawal_pending'
-      ?cycle.payoutAmountMinor||0:0,recentVisits:visits.map((visit)=>({...visit,paid:false}))}
+      ?cycle.payoutAmountMinor||0:0,recentVisits:visits.map((visit)=>({...visit,paid:Boolean(visit.paid)}))}
   }
 
   recordCleanerVisit(_cashierName:string):CleanerVisitResult {
     const context=this.cleaningContext()
+    this.reconcilePendingCleaner(context)
     const shift=this.currentShift()
     if(!shift?.cashierId)throw new Error('Сначала откройте смену сотрудника')
     if(shift.drawerPointId!==context.pointId||shift.drawerWorkplaceId!==context.workplaceId)
@@ -1035,12 +1097,105 @@ export class PosDatabase {
           visitsSincePayment,due?'due':'not_due',createdAt,context.pointId,context.workplaceId
         )
       this.queue('cleaner.visit.recorded',
-        {id:visit.id,visitDate,recordedBy:shift.cashierName,shiftId:shift.id},
+        {id:visit.id,visitDate,recordedBy:shift.cashierName,shiftId:shift.id,cleaningCycleId:status.cycleId},
         createdAt,shift.cashierId,visit.id)
       this.db.exec('COMMIT')
       return {visit,visitsSincePayment,paymentDueMinor:due?status.payoutAmountMinor!:0}
     } catch(error) { this.db.exec('ROLLBACK');throw error }
   }
+  private readCleaningPayout(id:string):(CleanerPayout & {pointId:string;workplaceId:string})|null {
+    const row=this.db.prepare(`SELECT id,point_id pointId,workplace_id workplaceId,
+      cycle_id cycleId,amount_minor amountMinor,every_n_visits everyNVisits,
+      visit_event_ids_json visitEventIdsJson,status,cash_operation_id cashOperationId
+      FROM cleaning_payouts WHERE id=?`).get(id) as
+      (Omit<CleanerPayout,'visitEventIds'> & {pointId:string;workplaceId:string;visitEventIdsJson:string})|undefined
+    return row?{...row,visitEventIds:JSON.parse(row.visitEventIdsJson) as string[]}:null
+  }
+
+  private reconcilePendingCleaner(context:ReturnType<PosDatabase['cleaningContext']>):void {
+    const cycle=this.localCleanerStatus(context)
+    if(cycle?.payoutState==='withdrawal_pending'&&cycle.payoutId)
+      this.reconcileCleaningPayout(cycle.payoutId)
+  }
+
+  private reconcileCleaningPayout(id:string):void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const payout=this.readCleaningPayout(id)
+      if(!payout)throw new Error('Ссылка выплаты уборки не найдена')
+      const operation=this.db.prepare(`SELECT id,shift_id shiftId,operation_type type,
+        amount_minor amountMinor FROM cash_operations WHERE cleaning_payout_id=?`).get(id) as
+        {id:string;shiftId:string;type:CashOperationType;amountMinor:number}|undefined
+      if(!operation){
+        this.db.exec('COMMIT')
+        return
+      }
+      if(operation.type!=='withdrawal'||operation.amountMinor!==payout.amountMinor)
+        throw new Error('Изъятие не соответствует сохранённой выплате уборки')
+      if(payout.cashOperationId&&payout.cashOperationId!==operation.id)
+        throw new Error('Выплата уже связана с другим изъятием')
+      if(payout.status!=='paid'){
+        const now=new Date().toISOString()
+        this.db.prepare(`UPDATE cleaning_payouts SET status='paid',cash_operation_id=?,paid_at=? WHERE id=?`)
+          .run(operation.id,now,id)
+        this.db.prepare('UPDATE cleaning_visits SET paid=1 WHERE cycle_id=? AND point_id=? AND workplace_id=?')
+          .run(payout.cycleId,payout.pointId,payout.workplaceId)
+        this.db.prepare(`UPDATE cleaning_cycles SET cycle_id=?,visits_count=0,payout_state='not_due',
+          payout_id=NULL,updated_at=? WHERE point_id=? AND workplace_id=? AND cycle_id=? AND payout_id=?`)
+          .run(randomUUID(),now,payout.pointId,payout.workplaceId,payout.cycleId,id)
+      }
+      this.db.exec('COMMIT')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
+  }
+
+  prepareCleanerPayout(expectedCycleId:string):CleanerPayout {
+    const context=this.cleaningContext()
+    this.reconcilePendingCleaner(context)
+    if(!expectedCycleId)throw new Error('Укажите цикл уборки')
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const previous=this.db.prepare('SELECT id FROM cleaning_payouts WHERE cycle_id=? AND point_id=? AND workplace_id=?')
+        .get(expectedCycleId,context.pointId,context.workplaceId) as {id:string}|undefined
+      if(previous){
+        const payout=this.readCleaningPayout(previous.id)!
+        this.db.exec('COMMIT')
+        return payout
+      }
+      const shift=this.currentShift()
+      if(!shift?.cashierId||shift.drawerPointId!==context.pointId||shift.drawerWorkplaceId!==context.workplaceId)
+        throw new Error('Сначала откройте смену сотрудника на этой кассе')
+      const cycle=this.localCleanerStatus(context)
+      if(!cycle||cycle.cycleId!==expectedCycleId||cycle.payoutState!=='due'||
+        cycle.visitsSincePayment!==cycle.everyNVisits)
+        throw new Error('Цикл уборки не готов к выплате')
+      const visits=this.db.prepare(`SELECT id FROM cleaning_visits
+        WHERE point_id=? AND workplace_id=? AND cycle_id=? ORDER BY local_date`)
+        .all(context.pointId,context.workplaceId,expectedCycleId) as Array<{id:string}>
+      if(visits.length!==cycle.everyNVisits)
+        throw new Error('Не все визиты цикла имеют подтверждаемые идентификаторы')
+      const visitEventIds=visits.map(({id})=>{
+        const legacy=this.db.prepare(`SELECT id FROM outbox
+          WHERE event_type='cleaner.visit.recorded' AND json_extract(payload_json,'$.id')=?
+          ORDER BY created_at LIMIT 1`).get(id) as {id:string}|undefined
+        return legacy?.id||id
+      })
+      if(new Set(visitEventIds).size!==cycle.everyNVisits)
+        throw new Error('Повторяющиеся события визитов не могут быть оплачены')
+      const id=randomUUID(),now=new Date().toISOString()
+      this.db.prepare(`INSERT INTO cleaning_payouts
+        (id,point_id,workplace_id,cycle_id,amount_minor,every_n_visits,visit_event_ids_json,status,created_at)
+        VALUES (?,?,?,?,?,?,?,'withdrawal_pending',?)`).run(
+          id,context.pointId,context.workplaceId,expectedCycleId,cycle.payoutAmountMinor!,
+          cycle.everyNVisits!,JSON.stringify(visitEventIds),now
+        )
+      this.db.prepare(`UPDATE cleaning_cycles SET payout_state='withdrawal_pending',payout_id=?,updated_at=?
+        WHERE point_id=? AND workplace_id=? AND cycle_id=?`)
+        .run(id,now,context.pointId,context.workplaceId,expectedCycleId)
+      this.db.exec('COMMIT')
+      return this.readCleaningPayout(id)!
+    }catch(error){this.db.exec('ROLLBACK');throw error}
+  }
+
   payCleaner(_amountMinor:number):CashOperation {
     throw new Error('Выплата за уборку временно недоступна до интеграции с кассовым изъятием')
   }

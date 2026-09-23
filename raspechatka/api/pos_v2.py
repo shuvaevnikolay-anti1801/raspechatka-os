@@ -877,9 +877,78 @@ def _ingest_cleaner_visit(event_id, payload, connection, cashier_id, created_at)
 			"recorded_by": _employee_user(cashier_id),
 			"recorded_by_name": frappe.db.get_value("Employee", cashier_id, "employee_name") or cashier_id,
 			"paid": 0,
+			"cleaning_cycle_id": str(payload.get("cleaningCycleId") or "")[:140] or None,
 			"source_pos_event": event_id,
 		}
 	).insert(ignore_permissions=True)
+
+
+def _ingest_cleaner_payment(payload, connection, cashier_id):
+	payout_id = str(payload.get("cleaningPayoutId") or "").strip()
+	cycle_id = str(payload.get("cleaningCycleId") or "").strip()
+	visit_ids = payload.get("cleaningVisitEventIds")
+	n = payload.get("everyNVisits")
+	amount_minor = payload.get("payoutAmountMinor")
+	if (
+		not payout_id
+		or not cycle_id
+		or not isinstance(n, int)
+		or isinstance(n, bool)
+		or n < 1
+		or not isinstance(amount_minor, int)
+		or isinstance(amount_minor, bool)
+		or amount_minor <= 0
+		or payload.get("amountMinor") != amount_minor
+		or not isinstance(visit_ids, list)
+		or len(visit_ids) != n
+		or len(set(str(value) for value in visit_ids)) != n
+		or any(not isinstance(value, str) or not value.strip() for value in visit_ids)
+	):
+		frappe.throw(_("Некорректная ссылка выплаты уборки"), frappe.ValidationError)
+	locked = frappe.db.sql(
+		"select name from `tabBusiness Point` where name=%s and active=1 for update",
+		(connection.business_point,),
+	)
+	if not locked:
+		frappe.throw(_("Точка продаж недоступна"), frappe.PermissionError)
+	movement = frappe.db.get_value(
+		"Cash Movement", {"external_id": payload.get("id")},
+		["name", "business_point", "movement_type", "amount", "cashier", "docstatus",
+		 "cleaning_payout_id", "cleaning_cycle_id"], as_dict=True,
+	)
+	if (
+		not movement
+		or movement.business_point != connection.business_point
+		or movement.movement_type != "Withdrawal"
+		or movement.cashier != cashier_id
+		or movement.docstatus != 1
+		or abs(flt(movement.amount) * 100 - amount_minor) > 0.001
+		or movement.cleaning_payout_id != payout_id
+		or movement.cleaning_cycle_id != cycle_id
+	):
+		frappe.throw(_("Выплата уборки не подтверждена кассовым изъятием"), frappe.ValidationError)
+	visits = frappe.get_all(
+		"Cleaner Visit",
+		filters={"business_point": connection.business_point, "source_pos_event": ["in", visit_ids]},
+		fields=["name", "source_pos_event", "paid", "payment_pos_event", "cleaning_cycle_id", "cleaning_payout_id"],
+		limit_page_length=n + 1,
+	)
+	if len(visits) != n or {row.source_pos_event for row in visits} != set(visit_ids):
+		frappe.throw(_("Не найдены все визиты цикла уборки"), frappe.ValidationError)
+	for row in visits:
+		if row.cleaning_cycle_id and row.cleaning_cycle_id != cycle_id:
+			frappe.throw(_("Визит относится к другому циклу уборки"), frappe.ValidationError)
+		if row.paid and (row.payment_pos_event != payload.get("id") or row.cleaning_payout_id != payout_id):
+			frappe.throw(_("Визит уже оплачен другим изъятием"), frappe.ValidationError)
+	for row in visits:
+		if row.paid:
+			continue
+		doc = frappe.get_doc("Cleaner Visit", row.name)
+		doc.paid = 1
+		doc.paid_at = now_datetime()
+		doc.payment_pos_event = payload["id"]
+		doc.cleaning_payout_id = payout_id
+		doc.save(ignore_permissions=True)
 
 
 _SUPPORTED_PUSH_EVENT_TYPES = {
@@ -976,9 +1045,16 @@ def push_events(device_id, token, cashier_id=None, events=None, app_version=None
 				elif event_type == "cash.deposited":
 					sales_api._ingest_cash(base_pos._cash(payload, selected["id"], "Deposit"), connection, stats)
 				elif event_type == "cash.withdrawn":
-					sales_api._ingest_cash(
-						base_pos._cash(payload, selected["id"], "Withdrawal"), connection, stats
-					)
+					cash_row = base_pos._cash(payload, selected["id"], "Withdrawal")
+					if payload.get("cleaningPayoutId"):
+						cash_row.update({
+							"withdrawal_purpose": "Expense",
+							"cleaning_payout_id": payload["cleaningPayoutId"],
+							"cleaning_cycle_id": payload.get("cleaningCycleId"),
+						})
+					sales_api._ingest_cash(cash_row, connection, stats)
+					if payload.get("cleaningPayoutId"):
+						_ingest_cleaner_payment(payload, connection, selected["id"])
 				elif event_type == "cash.counted":
 					_ingest_cash_count(event_id, payload, connection, selected["id"])
 				elif event_type == "stock.write_off.requested":

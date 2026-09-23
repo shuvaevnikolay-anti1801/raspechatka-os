@@ -645,7 +645,10 @@ def _ingest_cash(row, connection, result):
 	doc.movement_type = _required(row, "movement_type")
 	doc.shift = _shift_name(row.get("shift_external_id"), connection.business_point)
 	_set_doc_scope(doc, connection, doc.shift)
-	for field in ("posting_datetime", "cashier", "amount", "reason"):
+	for field in (
+		"posting_datetime", "cashier", "amount", "reason", "withdrawal_purpose",
+		"cleaning_payout_id", "cleaning_cycle_id",
+	):
 		if field in row:
 			doc.set(field, row.get(field))
 	doc.source = "POS"
