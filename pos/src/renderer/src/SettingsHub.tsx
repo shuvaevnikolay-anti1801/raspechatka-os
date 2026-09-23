@@ -6,6 +6,8 @@ import type {
   DeviceStatuses,
   DiagnosticEvent,
   InpasSettings,
+  SyncQueueSnapshot,
+  SyncQueueItem,
   PrintJobSummary,
   PrinterInfo,
   UnresolvedOperation,
@@ -108,15 +110,28 @@ export type SettingsHubProps = {
   initialOpen?: boolean;
 };
 
+const channelState=(status:DeviceStatuses['os'],ready:string,offline:string)=>
+  status.status==='ready'?ready:
+  status.status==='unknown'?'Нет данных':
+  status.status==='not_available'?'Недоступно':
+  status.status==='not_configured'?'Не настроено':
+  status.status==='busy'?'Занято':offline;
+
 export const buildSettingsStatusItems = (devices: DeviceStatuses | null) =>
   devices
     ? ([
-        ["OS", devices.os.ready, devices.os.message],
-        ["ККТ", devices.fiscal.ready, devices.fiscal.message],
-        ["Эквайринг", devices.payment.ready, devices.payment.message],
-        ["Принтер", devices.printer.ready, devices.printer.message],
+        ['OS',devices.os.ready,channelState(devices.os,'На связи','Локальный режим'),devices.os.status],
+        ['ККТ и ФН',devices.fiscal.ready,channelState(devices.fiscal,'Готовы','Требуют проверки'),devices.fiscal.status],
+        ['Передача в ОФД',devices.ofd.ready,channelState(devices.ofd,'На связи','Задержка передачи'),devices.ofd.status],
+        ['Эквайринг',devices.payment.ready,channelState(devices.payment,'Готов','Нет связи'),devices.payment.status],
+        ['Удалённая оплата',devices.remotePayment.ready,channelState(devices.remotePayment,'Доступна','Нет связи с OS'),devices.remotePayment.status],
+        ['Принтер',devices.printer.ready,channelState(devices.printer,'Готов','Требует проверки'),devices.printer.status],
       ] as const)
     : [];
+
+const queueState=(item:SyncQueueItem,now=Date.now())=>
+  item.status==='problem'?'Требует исправления':
+  item.nextAttemptAt&&Date.parse(item.nextAttemptAt)>now?'Ожидает повторной отправки':'Ожидает отправки';
 
 const defaultAtol: AtolSettings = {
   version: 2,
@@ -153,6 +168,9 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
   const [printer, setPrinter] = useState("");
   const [operations, setOperations] = useState<UnresolvedOperation[]>([]);
   const [printJobs, setPrintJobs] = useState<PrintJobSummary[]>([]);
+  const [syncQueue, setSyncQueue] = useState<SyncQueueSnapshot | null>(null);
+  const [posVersion, setPosVersion] = useState("");
+  const [adminCode, setAdminCode] = useState("");
   const [diagnostics, setDiagnostics] = useState<DiagnosticEvent[]>([]);
   const [pairing, setPairing] = useState<ConnectionConfig>({
     serverUrl: "https://os.rpechatka.ru",
@@ -221,6 +239,8 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     setPrintJobs(nextPrintJobs);
     setDiagnostics(nextDiagnostics);
     setAtolDriver(nextAtolDriver);
+    setSyncQueue(nextSyncQueue);
+    setPosVersion(nextPosVersion);
     setPairing((current) => ({
       ...current,
       serverUrl: nextConnection.serverUrl || current.serverUrl,
@@ -250,11 +270,13 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     setOpen(next.open);
     setGateError(next.gateError);
     if (!next.open) return;
+    setAdminCode(password);
     setPassword("");
     void refresh();
   };
   const close = () => {
     setOpen(false);
+    setAdminCode("");
     setShowPairing(false);
     setMessage("");
   };
@@ -367,6 +389,19 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     }
   };
 
+  const retrySyncEvent = async (id:string) => {
+    if(!adminCode)return setMessage('Войдите как администратор повторно')
+    setBusy(true)
+    try {
+      const result=await pos().retrySyncEvent(id,adminCode)
+      await refresh()
+      setMessage(result.message)
+    } catch {
+      await refresh().catch(()=>undefined)
+      setMessage('Повтор не завершён. Проверьте состояние документа в очереди')
+    } finally {setBusy(false)}
+  };
+
   const statusItems = useMemo(() => buildSettingsStatusItems(devices), [devices]);
 
   return (
@@ -387,10 +422,6 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
             <div>
               <small>ТЕХНИЧЕСКИЙ РАЗДЕЛ</small>
               <h1>Настройки кассы</h1>
-              <p>
-                Подключение точки, оборудование, статусы и диагностика — всё в
-                одном месте.
-              </p>
             </div>
             <PosIconButton icon="close" label="Закрыть настройки" onClick={close}/>
           </header>
@@ -399,13 +430,12 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="section-heading">
                 <div>
                   <h2>Состояние кассы</h2>
-                  <p>Обновляется автоматически каждые 10 секунд.</p>
                 </div>
                 <PosButton onClick={() => void refresh()}>Обновить</PosButton>
               </div>
               <div className="settings-status-grid">
-                {statusItems.map(([label, ready, text]) => (
-                  <article key={label} className={ready ? "ready" : "bad"}>
+                {statusItems.map(([label, ready, text, status]) => (
+                  <article key={label} className={ready ? "ready" : status==="unknown"||status==="not_available" ? "neutral" : "bad"}>
                     <i aria-hidden="true" />
                     <div>
                       <b>{label}</b>
@@ -420,10 +450,6 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="section-heading">
                 <div>
                   <h2>Распечатка OS и точка</h2>
-                  <p>
-                    Точка определяется Device ID, созданным в OS. В Windows
-                    выбрать другую точку нельзя.
-                  </p>
                 </div>
                 {connection?.configured && (
                   <PosButton onClick={() => setShowPairing((x) => !x)}>
@@ -536,7 +562,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="section-heading">
                 <div>
                   <h2>ККТ АТОЛ</h2>
-                  <p>Прямое подключение через Драйвер ККТ 10.</p>
+                  
                 </div>
                 <label className="toggle">
                   <input type="checkbox" checked={atol.enabled}
@@ -576,7 +602,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="section-heading">
                 <div>
                   <h2>Эквайринг INPAS / PAX</h2>
-                  <p>DC Console автоматически подключается к локальной службе Dual Connector.</p>
+                  
                 </div>
                 <label className="toggle">
                   <input
@@ -631,7 +657,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="section-heading">
                 <div>
                   <h2>Принтер товарного чека</h2>
-                  <p>Любой установленный Windows-принтер.</p>
+                  
                 </div>
               </div>
               <PosField label="Принтер" className="printer-row"><select
@@ -650,11 +676,32 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
 
             <section className="settings-section">
               <div className="section-heading">
+                <h2>Очередь синхронизации</h2>
+                <b>{syncQueue?.total ?? '—'}</b>
+              </div>
+              {syncQueue?.total===0 ? <div className="settings-ok">Все документы отправлены.</div>
+                : <>
+                  <div className="settings-queue-summary">
+                    {syncQueue ? `Ожидают: ${syncQueue.total - syncQueue.problemCount} · Требуют исправления: ${syncQueue.problemCount}${syncQueue.problemCountTruncated ? '+' : ''}` : 'Загрузка очереди…'}
+                  </div>
+                  <div className="settings-sync-list">
+                    {syncQueue?.items.map((item)=><article key={item.id}>
+                      <div>
+                        <b>{item.label}</b>
+                        <span>{new Date(item.createdAt).toLocaleString('ru-RU')} · {queueState(item)} · Попыток: {item.attemptCount}</span>
+                        {item.lastError&&<span>{item.lastError}</span>}
+                      </div>
+                      {item.canRetry&&<PosButton disabled={busy} onClick={()=>void retrySyncEvent(item.id)}>Повторить отправку</PosButton>}
+                    </article>)}
+                  </div>
+                  {syncQueue&&syncQueue.total>syncQueue.items.length&&<div className="settings-warning">Показана часть очереди. Остальные документы ожидают отправки.</div>}
+                </>}
+            </section>
+
+            <section className="settings-section">
+              <div className="section-heading">
                 <div>
                   <h2>Незавершённые операции</h2>
-                  <p>
-                    Оплаты, фискализация и печать, которые требуют внимания.
-                  </p>
                 </div>
                 <b>{operations.length + printJobs.length}</b>
               </div>
@@ -699,10 +746,19 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
               <div className="section-heading">
                 <div>
                   <h2>Диагностика</h2>
-                  <p>Последние технические события приложения.</p>
+                  
                 </div>
                 <PosButton onClick={() => void refresh()}>Обновить</PosButton>
               </div>
+              <div className="settings-diagnostics-summary">
+                <div><small>Версии</small><b>POS {posVersion || '—'} · АТОЛ {atolDriver?.version || '—'} · INPAS {String(devices?.payment.details?.version || '—')}</b></div>
+                <div><small>Провайдеры</small><b>ККТ: {atol.adapter} · Терминал: {inpas.enabled ? 'включён' : 'выключен'}</b></div>
+                <div><small>Последняя связь с OS</small><b>{boot?.lastSyncAt ? new Date(boot.lastSyncAt).toLocaleString('ru-RU') : 'Ещё не было'}</b></div>
+                <div><small>Очередь</small><b>Всего: {syncQueue?.total ?? '—'} · Проблем: {syncQueue?.problemCount ?? '—'}{syncQueue?.problemCountTruncated ? '+' : ''}</b></div>
+              </div>
+              <details className="settings-technical-details"><summary>Техническое состояние каналов и проблемных событий</summary>
+                <pre>{JSON.stringify({devices,problems:syncQueue?.items.filter((x)=>x.status==='problem').map((x)=>({id:x.id,eventType:x.eventType,error:x.lastError}))},null,2)}</pre>
+              </details>
               <div className="settings-log">
                 {diagnostics.length ? (
                   diagnostics.slice(0, 40).map((x) => (
@@ -715,6 +771,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                           {x.source} · {x.eventType}
                         </b>
                         <span>{x.message}</span>
+                        {(x.operationId||x.details)&&<details><summary>Технические данные</summary><pre>{JSON.stringify({id:x.id,operationId:x.operationId,details:x.details},null,2)}</pre></details>}
                       </div>
                     </article>
                   ))
