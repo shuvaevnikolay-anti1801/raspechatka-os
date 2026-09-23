@@ -7,7 +7,7 @@ import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
 import { PosModal } from './ui/PosModal'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
-import { PinInput } from './PinEntry'
+import { normalizePinValue, PIN_LENGTH, PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
 
 const boot:BootState={
@@ -115,6 +115,44 @@ describe('cashier workplace micro-contract',()=>{
     expect((login.match(/class="[^"]*pin-input-control/g)||[]).length).toBe(1)
   })
 
+  it('keeps employee selector semantics and callbacks while exposing distinct visual states',()=>{
+    const selector=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    expect(selector).toContain('cashier-employee-card')
+    expect(selector).toContain('type="button"')
+    expect(selector).toContain('aria-pressed="false"')
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('const active=employeeId===employee.id')
+    expect(source).toContain('aria-pressed={active}')
+    expect(source).toContain('onClick={()=>void choose(employee.id)}')
+    expect(source).toContain("auth.status!=='locked'&&!forced")
+  })
+
+  it('uses tokenized green idle cards with distinct selected focus and disabled states',()=>{
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card{')
+    expect(css).toContain('border:1px solid var(--pos-brand)')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card:focus-visible{outline:0;box-shadow:var(--pos-focus)}')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card.active{border-color:var(--pos-ink);background:var(--pos-brand)')
+    expect(css).toContain('.cashier-login-card .cashier-employee-card:disabled{border-color:var(--pos-border);background:var(--pos-canvas);color:var(--pos-muted)')
+  })
+
+  it('keeps footer actions in their existing state scenarios with larger tokenized touch targets',()=>{
+    const idle=renderToStaticMarkup(<CashierLogin boot={boot} auth={auth} onAuthenticated={async()=>undefined}/>)
+    const login=renderToStaticMarkup(<CashierLogin boot={boot} auth={selectedAuth} onAuthenticated={async()=>undefined}/>)
+    const locked=renderToStaticMarkup(<CashierLogin boot={boot} auth={lockedAuth} onAuthenticated={async()=>undefined}/>)
+    expect(idle).toContain('Настройки кассы')
+    expect(idle).not.toContain('Забыли PIN?')
+    expect(login).toContain('Настройки кассы')
+    expect(login).toContain('Забыли PIN?')
+    expect(locked).toContain('Настройки кассы')
+    expect(locked).toContain('Забыли PIN?')
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('const footerRight=!setup&&!adminReset')
+    expect(source).toContain('setAdminReset(true);setPin(\'\');setConfirmation(\'\');setNotice(null)')
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('.cashier-login-card .cashier-forgot-pin,.cashier-login-card .settings-open-trigger{min-height:var(--pos-control-touch);padding-inline:var(--pos-space-4)')
+  })
+
   it('renders exactly four visual slots while keeping one real PIN input',()=>{
     const markup=renderToStaticMarkup(<PinInput value="12" onChange={()=>undefined} ariaLabel="PIN"/>)
     expect((markup.match(/<input/g)||[]).length).toBe(1)
@@ -124,6 +162,36 @@ describe('cashier workplace micro-contract',()=>{
     expect((markup.match(/class="filled"/g)||[]).length).toBe(2)
     expect(markup).toContain('inputMode="numeric"')
     expect(markup).toContain('maxLength="4"')
+    expect(PIN_LENGTH).toBe(4)
+  })
+
+  it('keeps digits-only controlled PIN semantics without custom keyboard interception',()=>{
+    expect(normalizePinValue('1a2-34x5')).toBe('1234')
+    expect(normalizePinValue('аб12')).toBe('12')
+    const pinSource=readFileSync(new URL('./PinEntry.tsx',import.meta.url),'utf8')
+    expect(pinSource).toContain('value={value}')
+    expect(pinSource).toContain('onChange={(event)=>onChange(normalizePinValue(event.target.value))}')
+    expect(pinSource).not.toMatch(/onKey(?:Down|Up|Press)=/)
+  })
+
+  it('keeps shared PIN touch geometry usable at short renderer heights',()=>{
+    const css=readFileSync(new URL('./pos-design-system.css',import.meta.url),'utf8')
+    expect(css).toContain('@media (max-height:760px)')
+    expect(css).toContain('.pin-input{min-height:calc(var(--pos-control-touch) + var(--pos-space-3))}')
+    expect(css).toContain('.pin-input-slots{height:calc(var(--pos-control-touch) + var(--pos-space-3))}')
+  })
+
+  it('keeps every cashier auth mode on the shared PinInput and native form submit callbacks',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source.match(/<PinInput/g)?.length).toBe(3)
+    expect(source).toContain('PinInput autoFocus value={adminCode}')
+    expect(source).toContain("PinInput autoFocus={!adminReset} value={pin}")
+    expect(source).toContain('PinInput value={confirmation}')
+    expect(source).toContain('<form className="cashier-pin-form" onSubmit=')
+    expect(source).toContain("if(auth.status==='locked')await window.raspechatkaPos.unlockCashier(pin)")
+    expect(source).toContain("else if(setup)await window.raspechatkaPos.createCashierPin(employeeId,pin,confirmation)")
+    expect(source).toContain("else await window.raspechatkaPos.loginCashier(employeeId,pin)")
+    expect(source).toContain('await window.raspechatkaPos.resetCashierPin(resetEmployeeId,adminCode,pin,confirmation)')
   })
 
   it('keeps success green and wrong PIN failures red through explicit notice severity',()=>{

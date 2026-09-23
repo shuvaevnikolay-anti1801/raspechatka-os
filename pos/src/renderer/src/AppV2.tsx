@@ -380,7 +380,7 @@ export function CashierLogin({boot,auth,onAuthenticated}:{boot:BootState;auth:Ca
   return <main className="cashier-login-screen"><section className="cashier-login-card">
     {auth.status==='locked'&&<small>КАССА ЗАБЛОКИРОВАНА</small>}<h1>{auth.status==='locked'?formatPersonShortName(lockedEmployee?.name):'Выберите себя'}</h1>
     {forced&&<p>После перезапуска открытую смену может продолжить только <b>{formatPersonShortName(auth.openShiftCashierName)}</b>.</p>}
-    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=><button key={employee.id} className={employeeId===employee.id?'active':''} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>)}</div>}
+    {auth.status!=='locked'&&!forced&&<div className="cashier-list">{boot.employees.map((employee)=>{const active=employeeId===employee.id;return <button key={employee.id} type="button" className={`cashier-employee-card${active?' active':''}`} aria-pressed={active} onClick={()=>void choose(employee.id)}>{formatPersonShortName(employee.name)}</button>})}</div>}
     {!boot.employees.length&&<p>Нет подтверждённых кассиров этой точки. Выполните синхронизацию в настройках.</p>}
     {(selected||lockedEmployee)&&<form className="cashier-pin-form" onSubmit={(event)=>{event.preventDefault();void (adminReset?reset():submit())}}>
       <PinEntryLayout footerLeft={footerLeft} footerRight={footerRight}>
