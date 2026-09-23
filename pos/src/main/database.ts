@@ -535,7 +535,7 @@ export class PosDatabase {
     if(!raw)return emptyWorkplaceData()
     try{return normalizeWorkplaceData(JSON.parse(raw) as Partial<WorkplaceData>)}catch{return emptyWorkplaceData()}
   }
-  setWorkplaceData(value:WorkplaceData):void{this.setState('workplace_data',JSON.stringify(normalizeWorkplaceData(value)))}
+  setWorkplaceData(value:Partial<WorkplaceData>):void{this.setState('workplace_data',JSON.stringify(normalizeWorkplaceData(value)))}
   clearConfirmedPointData():void {
     this.db.exec('BEGIN')
     try {
