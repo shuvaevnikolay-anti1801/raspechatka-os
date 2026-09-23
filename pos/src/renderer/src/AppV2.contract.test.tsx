@@ -395,7 +395,7 @@ describe('DEV-169 stage 3 operational modal contracts',()=>{
     expect(ordersSource.match(/<OrderFormFields/g)?.length).toBe(2)
     expect(appSource).toContain('order:orderDraft?toOrderFormPayload(orderDraft):undefined')
     expect(ordersSource).toContain('updateOrder({id:order.id,...toOrderFormPayload(draft)})')
-    expect(ordersSource).toContain('createOrderFromSale({saleId,...toOrderFormPayload(draft)})')
+    expect(ordersSource).toContain('createOrderFromSale(buildOrderFromSaleRequest(selectedSale,draft))')
     expect(appSource).not.toContain('Срок готовности')
     expect(ordersSource).not.toContain('Срок готовности')
   })
