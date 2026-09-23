@@ -15,7 +15,6 @@ from raspechatka.time_contract import (
 	site_naive_to_utc_rfc3339,
 )
 
-
 _POS_INSTANT_FIELDS = (
 	"createdAt",
 	"openedAt",
@@ -111,7 +110,9 @@ def push_events(workplace_code=None, events=None):
 					"business_point": workplace.business_point,
 					"pos_workplace": workplace.name,
 					"cashier_user": frappe.session.user,
-					"occurred_at": _legacy_pos_site_datetime(event.get("createdAt")) if event.get("createdAt") else now(),
+					"occurred_at": _legacy_pos_site_datetime(event.get("createdAt"))
+					if event.get("createdAt")
+					else now(),
 					"payload_json": frappe.as_json(event_payload, indent=2),
 					"received_at": now(),
 				}
@@ -486,9 +487,7 @@ def _apply_order_updated(event_id, workplace, payload):
 		"name",
 	)
 	if not name:
-		frappe.throw(
-			f"Заказ {payload.get('orderNumber') or 'без номера'} не найден на текущей точке"
-		)
+		frappe.throw(f"Заказ {payload.get('orderNumber') or 'без номера'} не найден на текущей точке")
 	doc = frappe.get_doc("POS Order", name)
 	if "phone" in payload:
 		doc.phone = payload.get("phone")
@@ -521,7 +520,9 @@ def _apply_sale(event_id, workplace, payload):
 		return
 
 	posting_datetime = (
-		_legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+		_legacy_pos_site_datetime(payload.get("createdAt"))
+		if payload.get("createdAt")
+		else get_datetime(now())
 	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
@@ -561,7 +562,9 @@ def _apply_return(event_id, workplace, payload):
 		frappe.throw(f"Исходная продажа {sale_id or 'не указана'} не найдена")
 
 	posting_datetime = (
-		_legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else get_datetime(now())
+		_legacy_pos_site_datetime(payload.get("createdAt"))
+		if payload.get("createdAt")
+		else get_datetime(now())
 	)
 	shift = _get_or_create_legacy_shift(workplace, payload.get("shiftId"), posting_datetime)
 	doc = frappe.new_doc("Sales Receipt")
@@ -1119,6 +1122,7 @@ def _get_cleaner_status(point_name, point=None):
 		**config,
 	}
 
+
 def _point_context(workplace):
 	point = frappe.get_doc("Business Point", workplace.business_point)
 	warehouse = frappe.db.get_value("Catalog Warehouse", {"business_point": point.name, "active": 1}, "name")
@@ -1217,7 +1221,9 @@ def _apply_cash_count(event_id, workplace, payload):
 			"doctype": "POS Cash Count",
 			"business_point": workplace.business_point,
 			"pos_workplace": workplace.name,
-			"counted_at": _legacy_pos_site_datetime(payload.get("createdAt")) if payload.get("createdAt") else now(),
+			"counted_at": _legacy_pos_site_datetime(payload.get("createdAt"))
+			if payload.get("createdAt")
+			else now(),
 			"count_type": payload.get("countType"),
 			"cashier_user": frappe.session.user,
 			"expected_amount": flt(payload.get("expectedMinor")) / 100,
