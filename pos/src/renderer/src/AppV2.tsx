@@ -32,7 +32,7 @@ type Screen='sale'|'receipts'|'orders'|'shift'|'work'
 const toMinor=(value:string)=>Math.round((Number(value.replace(',','.'))||0)*100)
 const paymentNames:Record<SalePaymentMethod,string>={cash:'Наличные',card:'Карта',qr:'QR / СБП',remote_payment:'Удалённая оплата',mixed:'Смешанная'}
 const emptySummary:ShiftSummary={receipts:0,revenueMinor:0,grossRevenueMinor:0,averageCheckBeforeDiscountMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0,paymentBreakdown:[]}
-const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
+const emptyWorkplace:WorkplaceData={schedule:[],scheduleMonth:{month:'',days:0,employees:[],entries:[]},scheduleCurrentMonth:{month:'',days:0,employees:[],entries:[]},scheduleNextMonth:{month:'',days:0,employees:[],entries:[]},myUpcomingShifts:[],operationalCatalog:[],deliveries:[],supplyRequests:[],cleaner:{visitsSincePayment:0,paymentDueMinor:0,recentVisits:[]},orders:[]}
 export const TOAST_DISMISS_MS=3000
 export const EXPECTED_CASH_LABEL='Денег в кассе'
 export const manualSyncMessage=(result:BootState)=>{
@@ -303,7 +303,7 @@ export default function AppV2(){
         roundingAdjustmentMinor={roundingAdjustmentMinor}
         totalMinor={total}
         shiftOpen={Boolean(boot.shift)}
-        onOpenShift={openShift}
+        onOpenShift={()=>{void openShift()}}
         onHold={holdReceipt}
         onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
         onPay={()=>{if(total>0)setPayment(preferredPayment)}}
