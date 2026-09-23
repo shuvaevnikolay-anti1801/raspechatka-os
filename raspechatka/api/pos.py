@@ -671,10 +671,12 @@ def _allocate_minor_amount(total, weights):
 		return [0 for _weight in weights]
 	result = []
 	allocated = 0
+	cumulative = 0
 	for index, weight in enumerate(weights):
-		amount = total - allocated if index == len(weights) - 1 else round(total * weight / weight_total)
-		result.append(amount)
-		allocated += amount
+		cumulative += weight
+		target = total if index == len(weights) - 1 else round(total * cumulative / weight_total)
+		result.append(target - allocated)
+		allocated = target
 	return result
 
 
