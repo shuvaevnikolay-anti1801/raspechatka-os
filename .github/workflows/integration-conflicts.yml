@@ -1,31 +1,29 @@
 name: Integration conflict inspector
 
 on:
-  pull_request:
+  push:
     branches:
       - codex/integration-dev-170-176-final
-    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
 jobs:
-  inspect:
+  inspect-dev173:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build conflict snapshot
+      - name: Build DEV-173 conflict snapshot
         shell: bash
         run: |
           set -uo pipefail
           git config user.name integration-inspector
           git config user.email integration-inspector@users.noreply.github.com
-          git fetch origin "${{ github.base_ref }}" "${{ github.head_ref }}"
-          git checkout -B integration-inspect "origin/${{ github.base_ref }}"
+          git fetch origin codex/dev-173-pos-cash-drawer
           set +e
-          git merge --no-commit --no-ff "origin/${{ github.head_ref }}"
+          git merge --no-commit --no-ff origin/codex/dev-173-pos-cash-drawer
           merge_rc=$?
           set -e
           mkdir -p integration-conflicts/base integration-conflicts/ours integration-conflicts/theirs integration-conflicts/merged
@@ -41,6 +39,6 @@ jobs:
           printf '%s\n' "$merge_rc" > integration-conflicts/merge-exit-code.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: integration-conflicts-${{ github.event.pull_request.number }}
+          name: integration-conflicts-dev173
           path: integration-conflicts
           if-no-files-found: error
