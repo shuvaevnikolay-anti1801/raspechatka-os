@@ -640,7 +640,9 @@ _POS_SUPPLY_REQUEST_COMPAT_QUANTITY = 1
 def _existing_pos_document(doctype, key, event_id, point, submitted=False):
 	"""A global event key may only acknowledge a completed document at its original point."""
 	row = frappe.db.get_value(
-		doctype, {key: event_id}, ["business_point", "docstatus"] if submitted else "business_point",
+		doctype,
+		{key: event_id},
+		["business_point", "docstatus"] if submitted else "business_point",
 		as_dict=submitted,
 	)
 	if not row:
@@ -709,7 +711,9 @@ def _ingest_stock_write_off(event_id, payload, connection, cashier_id):
 
 
 def _ingest_supply_request(event_id, payload, connection, cashier_id):
-	if _existing_pos_document("Point Supply Request", "source_pos_event", event_id, connection.business_point):
+	if _existing_pos_document(
+		"Point Supply Request", "source_pos_event", event_id, connection.business_point
+	):
 		return
 	point, warehouse = _point_stock_context(connection)
 	item_id = str(payload.get("productId") or "").strip() or None
