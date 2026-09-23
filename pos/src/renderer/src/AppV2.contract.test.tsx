@@ -362,3 +362,13 @@ describe('DEV-173 stage 3 cash UI',()=>{
     expect(source).toContain('addCashOperation(cashOperation,amount,reason)')
   })
 })
+
+
+describe('DEV-173 stage 4 shift payment rendering',()=>{
+  it('uses configured rules and actual payment breakdown instead of fixed summary fields',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain('shiftPaymentRows(boot.rules,summary.paymentBreakdown??[])')
+    expect(source).not.toContain('<dt>Наличные продажи</dt>')
+    expect(source).not.toContain('<dt>Удалённая оплата</dt>')
+  })
+})
