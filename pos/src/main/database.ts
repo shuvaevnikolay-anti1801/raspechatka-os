@@ -845,8 +845,9 @@ export class PosDatabase {
     const normalized=lines.filter((x)=>Number.isInteger(x.denominationMinor)&&x.denominationMinor>0&&Number.isInteger(x.quantity)&&x.quantity>=0)
     const totalMinor=normalized.reduce((sum,x)=>sum+x.denominationMinor*x.quantity,0)
     const snapshot=this.getShiftSummary()
-    const expectedMinor=snapshot.expectedCashMinor
-    const expectedVerified=snapshot.expectedCashVerified!==false
+    const drawerOpening=countType==='opening'&&Boolean(shift.drawerPointId&&shift.drawerWorkplaceId)
+    const expectedMinor=drawerOpening?(shift.openingExpectedMinor??0):snapshot.expectedCashMinor
+    const expectedVerified=drawerOpening?Boolean(shift.openingExpectedVerified):snapshot.expectedCashVerified!==false
     const count:CashCount={
       id:randomUUID(),countType,lines:normalized,totalMinor,expectedMinor,expectedVerified,
       differenceMinor:totalMinor-expectedMinor,createdAt:new Date().toISOString()
