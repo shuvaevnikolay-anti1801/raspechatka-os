@@ -496,6 +496,51 @@ describe('PosDatabase',()=>{
       expect(database.getShiftSummary().expectedCashMinor).toBe(11000)
     })
 
+    it('carries cashier A closing count through restart and cashier B hand-off',()=>{
+      const filePath=createDatabaseFile()
+      let database=openTrackedDatabase(filePath)
+      const {pointId,workplaceId}=bindDrawer(database,'point-handoff-restart','register-handoff-restart')
+      database.openShift({id:'handoff-a',openedAt:'2026-09-14T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      database.saveCashCount('opening',[])
+      database.addCashOperation('deposit',15000,'float')
+      const closing=database.saveCashCount('closing',[{denominationMinor:1000,quantity:14}])
+      expect(closing).toMatchObject({expectedMinor:15000,totalMinor:14000,differenceMinor:-1000})
+      database.closeShift()
+      database.close()
+      databases.splice(databases.indexOf(database),1)
+
+      database=openTrackedDatabase(filePath)
+      expect(database.currentShift()).toBeNull()
+      expect(database.getCashDrawerState(pointId,workplaceId)).toMatchObject({
+        baselineMinor:14000,baselineVerified:true,baselineSourceId:closing.id,
+      })
+      const next=database.openShift({id:'handoff-b',openedAt:'2026-09-14T14:00:00.000Z',cashierId:'B',cashierName:'B'})
+      expect(next).toMatchObject({cashierId:'B',openingExpectedMinor:14000,openingCountPending:true})
+      expect(database.saveCashCount('opening',[{denominationMinor:1000,quantity:14}]))
+        .toMatchObject({expectedMinor:14000,totalMinor:14000,differenceMinor:0})
+    })
+
+    it('keeps the saved control-count delta immutable after later cash movement and restart',()=>{
+      const filePath=createDatabaseFile()
+      let database=openTrackedDatabase(filePath)
+      bindDrawer(database,'point-count-snapshot','register-count-snapshot')
+      database.openShift({id:'count-snapshot',openedAt:'2026-09-15T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      database.saveCashCount('opening',[])
+      database.addCashOperation('deposit',5000,'float')
+      const count=database.saveCashCount('control',[{denominationMinor:1000,quantity:4}])
+      expect(count).toMatchObject({expectedMinor:5000,totalMinor:4000,differenceMinor:-1000})
+      database.addCashOperation('withdrawal',2000,'later withdrawal')
+      expect(database.getShiftSummary().expectedCashMinor).toBe(3000)
+      database.close()
+      databases.splice(databases.indexOf(database),1)
+
+      database=openTrackedDatabase(filePath)
+      expect(database.getLastCashCount()).toMatchObject({
+        id:count.id,expectedMinor:5000,totalMinor:4000,differenceMinor:-1000,
+      })
+      expect(database.getShiftSummary().expectedCashMinor).toBe(3000)
+    })
+
     it('counts sale return deposit and withdrawal exactly once from the frozen baseline',()=>{
       const database=createDatabase()
       bindDrawer(database,'point-accounting','register-accounting')
