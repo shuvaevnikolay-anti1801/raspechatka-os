@@ -8,6 +8,7 @@ import type {
 } from '../shared/contracts'
 import type { PointEmployee, ReceiptMirror } from '../shared/contracts'
 import { normalizeRussianPhone } from '../shared/phone'
+import { allocateFiscalAmounts } from './providers/atol-json'
 
 const emptySummary=():ShiftSummary=>({
   receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,
@@ -316,19 +317,19 @@ export class PosDatabase {
     try {
       this.db.prepare(`INSERT INTO sales (id,client_request_id,shift_id,total_minor,payment_method,payment_transaction_id,fiscal_number,customer_id,customer_name,receipt_discount_percent,remote_payment_confirmation_json,discount_breakdown_json,created_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(input.id,input.clientRequestId,input.shiftId,input.totalMinor,input.paymentMethod,input.payments.map((x)=>x.transactionId).filter(Boolean).join(','),input.fiscalNumber,input.customerId??null,input.customerName??null,input.receiptDiscountPercent,input.remotePaymentConfirmation?JSON.stringify(input.remotePaymentConfirmation):null,input.discountBreakdown?JSON.stringify(input.discountBreakdown):null,input.createdAt)
-      const lineRaw=input.lines.map((line)=>Math.round(line.quantity*line.unitPriceMinor*(1-(line.discountPercent??0)/100)))
-      const rawTotal=lineRaw.reduce((sum,x)=>sum+x,0)
+      const allocated=allocateFiscalAmounts(input.lines,input.totalMinor)
+      if(input.payments.reduce((sum,payment)=>sum+payment.amountMinor,0)!==input.totalMinor)
+        throw new Error('Сумма оплат не совпадает с сохранённым итогом чека')
       const insertLine=this.db.prepare('INSERT INTO sale_items (sale_id,product_id,name,quantity,unit_price_minor,discount_percent,line_total_minor) VALUES (?,?,?,?,?,?,?)')
       input.lines.forEach((line,index)=>{
-        const allocated=index===input.lines.length-1?input.totalMinor-Math.round(input.totalMinor*lineRaw.slice(0,index).reduce((s,x)=>s+x,0)/(rawTotal||1)):Math.round(input.totalMinor*lineRaw[index]/(rawTotal||1))
-        insertLine.run(input.id,line.productId,line.name,line.quantity,line.unitPriceMinor,line.discountPercent??0,allocated)
+        insertLine.run(input.id,line.productId,line.name,line.quantity,line.unitPriceMinor,line.discountPercent??0,allocated[index])
       })
       const pay=this.db.prepare('INSERT INTO sale_payments (sale_id,method,amount_minor,transaction_id,banking_evidence_json) VALUES (?,?,?,?,?)')
       input.payments.forEach((x)=>pay.run(input.id,x.method,x.amountMinor,x.transactionId??null,
         x.bankingEvidence?JSON.stringify(x.bankingEvidence):null))
       const reduceStock=this.db.prepare('UPDATE products SET stock=stock-? WHERE id=? AND track_inventory=1')
       input.lines.forEach((x)=>reduceStock.run(x.quantity,x.productId))
-      this.queue('sale.completed',input,input.createdAt)
+      this.queue('sale.completed',{...input,lines:input.lines.map((line,index)=>({...line,lineTotalMinor:allocated[index]}))},input.createdAt)
       if (input.order) this.createPaidOrderFromSaleSnapshot(input, input.order)
       this.db.exec('COMMIT')
     }catch(error){this.db.exec('ROLLBACK');throw error}
@@ -383,7 +384,9 @@ export class PosDatabase {
     }
     const sale=this.listSales().find((x)=>x.id===id);if(!sale)throw new Error('Чек не найден')
     const lines=this.db.prepare(`SELECT sale_items.id,product_id productId,name,quantity,unit_price_minor unitPriceMinor,
-      discount_percent discountPercent,COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
+      discount_percent discountPercent,line_total_minor lineTotalMinor,
+      COALESCE((SELECT SUM(line_total_minor) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedLineMinor,
+      COALESCE((SELECT SUM(quantity) FROM return_items WHERE sale_item_id=sale_items.id),0) returnedQuantity
       FROM sale_items WHERE sale_id=? ORDER BY id`).all(id) as unknown as SaleDetails['lines']
     const payments=(this.db.prepare(`SELECT method,amount_minor amountMinor,transaction_id transactionId,
       banking_evidence_json bankingEvidenceJson FROM sale_payments WHERE sale_id=? ORDER BY id`).all(id) as unknown as
