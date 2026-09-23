@@ -831,18 +831,18 @@ def get_order_options():
 @frappe.whitelist()
 @access_contract(area="page.sales.orders", action="read", scope="point")
 def get_orders(
-	business_entity=None,
-	business_point=None,
-	status=None,
-	search=None,
-	created_from=None,
-	created_to=None,
-	due_from=None,
-	due_to=None,
-	ready_from=None,
-	ready_to=None,
-	overdue=0,
-	limit_page_length=1000,
+	business_entity: str | None = None,
+	business_point: str | None = None,
+	status: str | None = None,
+	search: str | None = None,
+	created_from: str | None = None,
+	created_to: str | None = None,
+	due_from: str | None = None,
+	due_to: str | None = None,
+	ready_from: str | None = None,
+	ready_to: str | None = None,
+	overdue: int | str = 0,
+	limit_page_length: int | str = 1000,
 ):
 	require_access("page.sales.orders", "read")
 	point_names = frappe.get_all(
