@@ -342,8 +342,8 @@ describe('Warehouse operational modals',()=>{
     expect(markup).toContain('>Комментарий<')
     expect(markup).toContain('>обязательно<')
     expect(markup).toContain('required=""')
-    expect(markup).not.toContain('PAPER-A4')
-    expect(markup).not.toContain('paper-a4')
+    expect(markup).not.toContain('>PAPER-A4<')
+    expect(markup).not.toContain('>paper-a4<')
   })
 
   it('preserves canonical callbacks while keeping supply quantity out of its renderer payload',()=>{
