@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 
 import frappe
+from frappe import _
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
 from raspechatka.access_contract import access_contract
@@ -430,7 +431,7 @@ def _apply_order_created(event_id, workplace, payload):
 	existing_point = frappe.db.get_value("POS Order", {"source_pos_event": event_id}, "business_point")
 	if existing_point:
 		if existing_point != workplace.business_point:
-			frappe.throw("Событие заказа принадлежит другой точке", frappe.PermissionError)
+			frappe.throw(_("Событие заказа принадлежит другой точке"), frappe.PermissionError)
 		return
 	status = {
 		"new": "New",
