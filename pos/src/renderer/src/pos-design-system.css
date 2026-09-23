@@ -153,6 +153,8 @@
 @media (max-height:760px){
   .app-shell{grid-template-rows:56px minmax(0,1fr)}
   .pos-header-nav>.pos-button{min-height:56px}
+  .pin-input{min-height:calc(var(--pos-control-touch) + var(--pos-space-3))}
+  .pin-input-slots{height:calc(var(--pos-control-touch) + var(--pos-space-3))}
   .cashier-login-screen{padding:var(--pos-space-3)}
   .cashier-login-card{min-height:calc(100vh - 24px);padding:var(--pos-space-5)}
   .cashier-login-card .cashier-list{margin:var(--pos-space-3) 0}
