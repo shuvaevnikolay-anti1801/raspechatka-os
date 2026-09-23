@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PosDatabase } from './database'
 import type { CreateUnpaidOrderRequest, UpdateOrderRequest } from '../shared/contracts'
@@ -13,6 +14,40 @@ const createDatabase=()=>{
   const database=new PosDatabase(join(folder,'test.sqlite'))
   databases.push(database)
   return database
+}
+const createDatabaseFile=()=>{
+  const folder=mkdtempSync(join(tmpdir(),'raspechatka-pos-'))
+  folders.push(folder)
+  return join(folder,'test.sqlite')
+}
+const openTrackedDatabase=(filePath:string)=>{
+  const database=new PosDatabase(filePath)
+  databases.push(database)
+  return database
+}
+const createLegacyCashDatabase=(setup:(legacy:DatabaseSync)=>void)=>{
+  const filePath=createDatabaseFile()
+  const legacy=new DatabaseSync(filePath)
+  legacy.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE app_state (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE shifts (
+      id TEXT PRIMARY KEY,opened_at TEXT NOT NULL,closed_at TEXT,cashier_name TEXT NOT NULL
+    );
+    CREATE TABLE cash_counts (
+      id TEXT PRIMARY KEY,shift_id TEXT NOT NULL,count_type TEXT NOT NULL,lines_json TEXT NOT NULL,
+      total_minor INTEGER NOT NULL,expected_minor INTEGER NOT NULL,difference_minor INTEGER NOT NULL,created_at TEXT NOT NULL,
+      FOREIGN KEY (shift_id) REFERENCES shifts(id)
+    );
+    CREATE TABLE cash_operations (
+      id TEXT PRIMARY KEY,shift_id TEXT NOT NULL,operation_type TEXT NOT NULL,
+      amount_minor INTEGER NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,
+      FOREIGN KEY (shift_id) REFERENCES shifts(id)
+    );
+  `)
+  setup(legacy)
+  legacy.close()
+  return {filePath,database:openTrackedDatabase(filePath)}
 }
 afterEach(()=>{
   databases.splice(0).forEach((database)=>database.close())
@@ -273,6 +308,101 @@ describe('PosDatabase',()=>{
       items:[expect.objectContaining({purchaseOrderItemId:'POI-FULL',receivedQuantity:0,remainingQuantity:2})],
     })])
     expect(database.pendingEvents().filter((event)=>event.eventType==='stock.receipt.requested')).toHaveLength(1)
+  })
+
+  describe('DEV-173 durable cash drawer v1',()=>{
+    const bootstrap=(legacy:DatabaseSync,pointId='point-1',workplaceId='register-1')=>{
+      legacy.prepare("INSERT INTO app_state (key,value) VALUES ('bootstrap',?)")
+        .run(JSON.stringify({pointId,workplaceId}))
+    }
+
+    it('creates a verified zero baseline only for a fresh physical register context',()=>{
+      const database=createDatabase()
+      expect(database.getCashDrawerState('point-fresh','register-fresh')).toMatchObject({
+        schemaVersion:1,pointId:'point-fresh',workplaceId:'register-fresh',
+        baselineMinor:0,baselineVerified:true,openingCountPending:false,baselineSource:'fresh_install',
+      })
+    })
+
+    it('migrates the latest closed-shift closing count as the trusted baseline',()=>{
+      const {database}=createLegacyCashDatabase((legacy)=>{
+        bootstrap(legacy)
+        legacy.exec(`
+          INSERT INTO shifts (id,opened_at,closed_at,cashier_name)
+          VALUES ('closed','2026-09-01T08:00:00.000Z','2026-09-01T18:00:00.000Z','A');
+          INSERT INTO cash_counts (id,shift_id,count_type,lines_json,total_minor,expected_minor,difference_minor,created_at)
+          VALUES ('closing-count','closed','closing','[]',125000,124000,1000,'2026-09-01T17:59:00.000Z');
+        `)
+      })
+      expect(database.getCashDrawerState('point-1','register-1')).toMatchObject({
+        schemaVersion:1,baselineMinor:125000,baselineVerified:true,openingCountPending:false,
+        baselineSource:'legacy_closing_count',baselineSourceId:'closing-count',
+        baselineAt:'2026-09-01T17:59:00.000Z',
+      })
+    })
+
+    it('migrates an active-shift control count without replaying shift cash effects',()=>{
+      const {database}=createLegacyCashDatabase((legacy)=>{
+        bootstrap(legacy)
+        legacy.exec(`
+          INSERT INTO shifts (id,opened_at,closed_at,cashier_name)
+          VALUES ('active','2026-09-02T08:00:00.000Z',NULL,'A');
+          INSERT INTO cash_counts (id,shift_id,count_type,lines_json,total_minor,expected_minor,difference_minor,created_at)
+          VALUES ('control-count','active','control','[]',87000,86000,1000,'2026-09-02T12:00:00.000Z');
+          INSERT INTO cash_operations (id,shift_id,operation_type,amount_minor,reason,created_at)
+          VALUES ('deposit-after','active','deposit',5000,'test','2026-09-02T13:00:00.000Z');
+        `)
+      })
+      expect(database.getCashDrawerState('point-1','register-1')).toMatchObject({
+        baselineMinor:87000,baselineVerified:true,openingCountPending:false,
+        baselineSource:'legacy_control_count',baselineSourceId:'control-count',
+      })
+      expect(database.getShiftSummary().depositsMinor).toBe(5000)
+    })
+
+    it('keeps ambiguous legacy cash history explicitly unverified instead of writing zero',()=>{
+      const {database}=createLegacyCashDatabase((legacy)=>{
+        bootstrap(legacy)
+        legacy.exec(`
+          INSERT INTO shifts (id,opened_at,closed_at,cashier_name)
+          VALUES ('legacy','2026-09-03T08:00:00.000Z','2026-09-03T18:00:00.000Z','A');
+          INSERT INTO cash_operations (id,shift_id,operation_type,amount_minor,reason,created_at)
+          VALUES ('legacy-deposit','legacy','deposit',15000,'test','2026-09-03T10:00:00.000Z');
+        `)
+      })
+      expect(database.getCashDrawerState('point-1','register-1')).toMatchObject({
+        baselineMinor:null,baselineVerified:false,openingCountPending:true,baselineSource:'legacy_unverified',
+      })
+    })
+
+    it('persists trusted drawer state across restart and only accepts a stored cash count as baseline evidence',()=>{
+      const filePath=createDatabaseFile()
+      let database=openTrackedDatabase(filePath)
+      const shift=database.openShift({id:'restart-shift',openedAt:'2026-09-04T08:00:00.000Z',cashierName:'A'})
+      const count=database.saveCashCount('control',[{denominationMinor:1000,quantity:42}])
+      const updated=database.updateCashDrawerBaselineFromCount('point-restart','register-restart',count.id)
+      expect(updated).toMatchObject({baselineMinor:42000,baselineVerified:true,openingCountPending:false,baselineSource:'cash_count'})
+      expect(()=>database.updateCashDrawerBaselineFromCount('point-restart','register-restart','missing-count')).toThrow(/не найден/)
+      database.close()
+      databases.splice(databases.indexOf(database),1)
+      database=openTrackedDatabase(filePath)
+      expect(database.getCashDrawerState('point-restart','register-restart')).toMatchObject({
+        baselineMinor:42000,baselineVerified:true,baselineSourceId:count.id,
+      })
+      expect(database.currentShift()?.id).toBe(shift.id)
+    })
+
+    it('isolates durable state by point and workplace rather than cashier or shift',()=>{
+      const database=createDatabase()
+      expect(database.getCashDrawerState('point-a','register-a').baselineMinor).toBe(0)
+      expect(database.getCashDrawerState('point-a','register-b').baselineMinor).toBe(0)
+      database.openShift({id:'isolation-shift',openedAt:'2026-09-05T08:00:00.000Z',cashierId:'cashier-a',cashierName:'A'})
+      const count=database.saveCashCount('control',[{denominationMinor:5000,quantity:3}])
+      database.updateCashDrawerBaselineFromCount('point-a','register-a',count.id)
+      expect(database.getCashDrawerState('point-a','register-a').baselineMinor).toBe(15000)
+      expect(database.getCashDrawerState('point-a','register-b').baselineMinor).toBe(0)
+      expect(database.getCashDrawerState('point-b','register-a').baselineMinor).toBe(0)
+    })
   })
 
   it('assigns morning and evening explicitly and preserves them after restart',()=>{
