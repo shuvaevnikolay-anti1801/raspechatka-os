@@ -11,7 +11,7 @@ import { normalizeRussianPhone } from '../shared/phone'
 
 const emptySummary=():ShiftSummary=>({
   receipts:0,revenueMinor:0,returnsMinor:0,cashMinor:0,cardMinor:0,qrMinor:0,remotePaymentMinor:0,
-  depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0
+  depositsMinor:0,withdrawalsMinor:0,expectedCashMinor:0,paymentBreakdown:[]
 })
 
 export const emptyWorkplaceData=():WorkplaceData=>{
@@ -550,12 +550,16 @@ export class PosDatabase {
     const shift=this.currentShift();if(!shift)return emptySummary()
     const sales=this.db.prepare(`SELECT COUNT(*) receipts,COALESCE(SUM(total_minor),0) revenueMinor
       FROM sales WHERE shift_id=?`).get(shift.id) as {receipts:number;revenueMinor:number}
-    const payments=this.db.prepare(`SELECT
-      COALESCE(SUM(CASE WHEN method='cash' THEN amount_minor ELSE 0 END),0) cashMinor,
-      COALESCE(SUM(CASE WHEN method='card' THEN amount_minor ELSE 0 END),0) cardMinor,
-      COALESCE(SUM(CASE WHEN method='qr' THEN amount_minor ELSE 0 END),0) qrMinor,
-      COALESCE(SUM(CASE WHEN method='remote_payment' THEN amount_minor ELSE 0 END),0) remotePaymentMinor
-      FROM sale_payments WHERE sale_id IN (SELECT id FROM sales WHERE shift_id=?)`).get(shift.id) as Pick<ShiftSummary,'cashMinor'|'cardMinor'|'qrMinor'|'remotePaymentMinor'>
+    const paymentBreakdown=this.db.prepare(`SELECT method,SUM(amount_minor) amountMinor
+      FROM sale_payments WHERE sale_id IN (SELECT id FROM sales WHERE shift_id=?)
+      GROUP BY method ORDER BY method`).all(shift.id) as Array<{method:string;amountMinor:number}>
+    const paymentTotals=new Map(paymentBreakdown.map(({method,amountMinor})=>[method,amountMinor]))
+    const payments={
+      cashMinor:paymentTotals.get('cash')??0,
+      cardMinor:paymentTotals.get('card')??0,
+      qrMinor:paymentTotals.get('qr')??0,
+      remotePaymentMinor:paymentTotals.get('remote_payment')??0,
+    }
     const refunds=this.db.prepare('SELECT COALESCE(SUM(total_minor),0) returnsMinor FROM returns WHERE shift_id=?')
       .get(shift.id) as {returnsMinor:number}
     const cashReturns=this.db.prepare(`SELECT COALESCE(SUM(amount_minor),0) value FROM return_payments
@@ -580,7 +584,7 @@ export class PosDatabase {
       ?Number((this.db.prepare("SELECT COALESCE(SUM(amount_minor),0) value FROM cash_operations WHERE shift_id=? AND operation_type='withdrawal' AND created_at>?").get(shift.id,cutoff) as {value:number}).value)
       :cash.withdrawalsMinor
     const expectedCashVerified=shift.drawerPointId?Boolean(shift.openingExpectedVerified):true
-    return {...sales,...payments,returnsMinor:refunds.returnsMinor,...cash,
+    return {...sales,...payments,paymentBreakdown,returnsMinor:refunds.returnsMinor,...cash,
       expectedCashMinor:opening+cashSalesForExpected-cashReturnsForExpected+depositsForExpected-withdrawalsForExpected,
       expectedCashVerified,openingCountPending:Boolean(shift.openingCountPending)}
   }
