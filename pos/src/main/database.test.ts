@@ -498,6 +498,30 @@ describe('PosDatabase',()=>{
       expect(database.getShiftSummary().expectedCashMinor).toBe(10000)
     })
 
+    it('absorbs pre-count cash movement when an unverified legacy drawer becomes trusted',()=>{
+      const {database}=createLegacyCashDatabase((legacy)=>{
+        legacy.prepare("INSERT INTO app_state (key,value) VALUES ('bootstrap',?)")
+          .run(JSON.stringify({pointId:'point-legacy-pending',workplaceId:'register-legacy-pending'}))
+        legacy.exec(`
+          INSERT INTO shifts (id,opened_at,closed_at,cashier_name)
+          VALUES ('legacy-closed','2026-09-01T08:00:00.000Z','2026-09-01T18:00:00.000Z','Legacy');
+          INSERT INTO cash_operations (id,shift_id,operation_type,amount_minor,reason,created_at)
+          VALUES ('legacy-unknown','legacy-closed','deposit',1000,'legacy','2026-09-01T09:00:00.000Z');
+        `)
+      })
+      expect(database.getCashDrawerState('point-legacy-pending','register-legacy-pending')).toMatchObject({
+        baselineMinor:null,baselineVerified:false,openingCountPending:true,
+      })
+      database.openShift({id:'trusted-later',openedAt:'2026-09-13T08:00:00.000Z',cashierId:'A',cashierName:'A'})
+      database.addCashOperation('deposit',3000,'before opening count')
+      const opening=database.saveCashCount('opening',[{denominationMinor:1000,quantity:4}])
+      expect(opening).toMatchObject({expectedMinor:0,expectedVerified:false,totalMinor:4000,differenceMinor:4000})
+      expect(database.currentShift()).toMatchObject({
+        openingExpectedMinor:4000,openingExpectedVerified:true,openingCountPending:false,
+      })
+      expect(database.getShiftSummary().expectedCashMinor).toBe(4000)
+    })
+
     it('preserves opening pending and frozen baseline across restart',()=>{
       const filePath=createDatabaseFile()
       let database=openTrackedDatabase(filePath)
