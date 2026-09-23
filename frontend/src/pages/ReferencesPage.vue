@@ -742,8 +742,22 @@ onMounted(loadOptions);
 				<div class="form-section">
 					<h3>Уборка</h3>
 					<div class="form-grid">
-						<label>Выплата за уборку, ₽<input v-model.number="form.cleaning_payout_amount" type="number" min="0.01" step="0.01" required /></label>
-						<label>Выплачивать каждые N уборок<input v-model.number="form.cleaning_every_n_visits" type="number" min="1" step="1" required /></label>
+						<label
+							>Выплата за уборку, ₽<input
+								v-model.number="form.cleaning_payout_amount"
+								type="number"
+								min="0.01"
+								step="0.01"
+								required
+						/></label>
+						<label
+							>Выплачивать каждые N уборок<input
+								v-model.number="form.cleaning_every_n_visits"
+								type="number"
+								min="1"
+								step="1"
+								required
+						/></label>
 					</div>
 				</div>
 				<p v-if="formError" class="form-error">{{ formError }}</p>
