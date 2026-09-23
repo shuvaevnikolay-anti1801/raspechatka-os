@@ -566,9 +566,22 @@ export class PosDatabase {
       FROM cash_operations WHERE shift_id=?`).get(shift.id) as Pick<ShiftSummary,'depositsMinor'|'withdrawalsMinor'>
     const legacyOpening=(this.db.prepare("SELECT total_minor value FROM cash_counts WHERE shift_id=? AND count_type='opening' ORDER BY created_at LIMIT 1").get(shift.id) as {value:number}|undefined)?.value
     const opening=shift.openingExpectedMinor??legacyOpening??0
+    const cutoff=shift.accountingBaselineAt
+    const cashSalesForExpected=cutoff
+      ?Number((this.db.prepare("SELECT COALESCE(SUM(sp.amount_minor),0) value FROM sale_payments sp JOIN sales s ON s.id=sp.sale_id WHERE s.shift_id=? AND sp.method='cash' AND s.created_at>?").get(shift.id,cutoff) as {value:number}).value)
+      :payments.cashMinor
+    const cashReturnsForExpected=cutoff
+      ?Number((this.db.prepare("SELECT COALESCE(SUM(rp.amount_minor),0) value FROM return_payments rp JOIN returns r ON r.id=rp.return_id WHERE r.shift_id=? AND rp.method='cash' AND r.created_at>?").get(shift.id,cutoff) as {value:number}).value)
+      :cashReturns.value
+    const depositsForExpected=cutoff
+      ?Number((this.db.prepare("SELECT COALESCE(SUM(amount_minor),0) value FROM cash_operations WHERE shift_id=? AND operation_type='deposit' AND created_at>?").get(shift.id,cutoff) as {value:number}).value)
+      :cash.depositsMinor
+    const withdrawalsForExpected=cutoff
+      ?Number((this.db.prepare("SELECT COALESCE(SUM(amount_minor),0) value FROM cash_operations WHERE shift_id=? AND operation_type='withdrawal' AND created_at>?").get(shift.id,cutoff) as {value:number}).value)
+      :cash.withdrawalsMinor
     const expectedCashVerified=shift.drawerPointId?Boolean(shift.openingExpectedVerified):true
     return {...sales,...payments,returnsMinor:refunds.returnsMinor,...cash,
-      expectedCashMinor:opening+payments.cashMinor-cashReturns.value+cash.depositsMinor-cash.withdrawalsMinor,
+      expectedCashMinor:opening+cashSalesForExpected-cashReturnsForExpected+depositsForExpected-withdrawalsForExpected,
       expectedCashVerified,openingCountPending:Boolean(shift.openingCountPending)}
   }
 
@@ -874,8 +887,8 @@ export class PosDatabase {
       if(countType==='opening'&&shift.drawerPointId&&shift.drawerWorkplaceId){
         if(!expectedVerified){
           this.updateCashDrawerBaselineFromStoredCountInTransaction(shift.drawerPointId,shift.drawerWorkplaceId,count,count.createdAt)
-          this.db.prepare('UPDATE shifts SET opening_expected_minor=?,opening_expected_verified=1 WHERE id=?')
-            .run(totalMinor,shift.id)
+          this.db.prepare('UPDATE shifts SET opening_expected_minor=?,opening_expected_verified=1,accounting_baseline_at=? WHERE id=?')
+            .run(totalMinor,count.createdAt,shift.id)
         }else{
           this.updateCashDrawerPendingInTransaction(shift.drawerPointId,shift.drawerWorkplaceId,false,count.createdAt)
         }
