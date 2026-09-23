@@ -64,13 +64,13 @@ describe('receipt discount input ownership',()=>{
   const replacementCustomer={id:'customer-2',name:'Другой клиент',phone:'+7 900 000-00-02',discountPercent:20}
   const initial={customer:null,reviewCount:1,manualDiscount:{type:'amount' as const,value:1000}}
 
-  it('preserves cashier review and manual inputs on attach, replace and remove customer',()=>{
+  it('preserves manual discount and reviews on attach/replace, clears reviews for retail',()=>{
     const attached=replaceReceiptCustomer(initial,firstCustomer)
     const replaced=replaceReceiptCustomer(attached,replacementCustomer)
     const removed=replaceReceiptCustomer(replaced,null)
     expect(attached).toMatchObject({customer:firstCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
     expect(replaced).toMatchObject({customer:replacementCustomer,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
-    expect(removed).toMatchObject({customer:null,reviewCount:1,manualDiscount:{type:'amount',value:1000}})
+    expect(removed).toMatchObject({customer:null,reviewCount:0,manualDiscount:{type:'amount',value:1000}})
   })
 
   it('resets receipt discount inputs only for explicit clear/new receipt',()=>{
