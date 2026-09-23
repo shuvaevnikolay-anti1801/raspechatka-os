@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PosDatabase } from './database'
-import type { CreateUnpaidOrderRequest, UpdateOrderRequest } from '../shared/contracts'
+import type { CreateUnpaidOrderRequest, StockWriteOffRequest, SupplyRequestInput, UpdateOrderRequest } from '../shared/contracts'
 
 const folders:string[]=[]
 const databases:PosDatabase[]=[]
@@ -189,8 +189,14 @@ describe('PosDatabase',()=>{
     const count=database.saveCashCount('opening',[{denominationMinor:100000,quantity:2}])
     expect(count).toMatchObject({totalMinor:200000,differenceMinor:0})
     expect(database.getShiftSummary().expectedCashMinor).toBe(200000)
-    database.reportStockWriteOff({productId:'paper-hidden',quantity:1,reason:'Брак',comment:'Замята упаковка'},'EMP-1')
-    database.createSupplyRequest({productId:'paper-hidden',itemName:'Клиент не должен переименовать',quantity:10},'EMP-1')
+    database.reportStockWriteOff({
+      productId:'paper-hidden',quantity:1,reason:'Брак',comment:'Замята упаковка',
+      cashierId:'FORGED-RENDERER'
+    } as StockWriteOffRequest & {cashierId:string},'EMP-1')
+    database.createSupplyRequest({
+      productId:'paper-hidden',itemName:'Клиент не должен переименовать',comment:'Нужен запас бумаги',
+      quantity:999,cashierId:'FORGED-RENDERER'
+    } as SupplyRequestInput & {quantity:number;cashierId:string},'EMP-1')
     database.createStockReceipt({purchaseOrderId:'PO-1',lines:[{purchaseOrderItemId:'POI-1',quantity:2}]},'EMP-1')
     for(let index=0;index<4;index+=1)database.recordCleanerVisit('Николай')
     expect(database.getWorkplaceData().cleaner.paymentDueMinor).toBe(200000)
@@ -205,8 +211,14 @@ describe('PosDatabase',()=>{
     const writeOff=events.find((x)=>x.eventType==='stock.write_off.requested')?.payload as Record<string,unknown>
     const need=events.find((x)=>x.eventType==='point.supply.requested')?.payload as Record<string,unknown>
     const receipt=events.find((x)=>x.eventType==='stock.receipt.requested')?.payload as Record<string,unknown>
-    expect(writeOff.cashierId).toBe('EMP-1')
-    expect(need).toMatchObject({cashierId:'EMP-1',productId:'paper-hidden',itemName:'Бумага служебная'})
+    expect(writeOff).toMatchObject({
+      cashierId:'EMP-1',productId:'paper-hidden',reason:'Брак',comment:'Замята упаковка'
+    })
+    expect(writeOff.cashierId).not.toBe('FORGED-RENDERER')
+    expect(need).toEqual({
+      cashierId:'EMP-1',productId:'paper-hidden',itemName:'Бумага служебная',comment:'Нужен запас бумаги'
+    })
+    expect(need).not.toHaveProperty('quantity')
     expect(receipt).toEqual({
       cashierId:'EMP-1',
       purchaseOrderId:'PO-1',
