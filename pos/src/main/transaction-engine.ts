@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { calculateDiscountBreakdown, calculateTotalMinor } from '../shared/cart'
+import { calculateDiscountBreakdown, calculatePayableMinor, calculateTotalMinor } from '../shared/cart'
 import type {
   CartLine, CompleteSaleRequest, CompleteSaleResult, CreateReturnRequest, PaymentPart, ReturnResult, SaleDetails
 } from '../shared/contracts'
@@ -47,8 +47,23 @@ export class PosTransactionEngine {
     const recalculated=request.discountRules?calculateDiscountBreakdown(
       request.lines,request.discountRules,request.clubDiscountPercent??0,request.reviewCount??0,request.manualDiscount,
     ):undefined
-    const amount=totalMinor??recalculated?.totalMinor??calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
-    if(totalMinor!=null&&recalculated&&totalMinor!==recalculated.totalMinor)throw new Error('Итог чека не совпадает с пересчётом скидок')
+    const amount=recalculated?.payableMinor??calculatePayableMinor(
+      calculateTotalMinor(request.lines,request.receiptDiscountPercent??0)
+    )
+    if(!Number.isSafeInteger(amount)||amount<=0)throw new Error('Сумма чека после округления должна быть больше нуля')
+    if(request.payableMinor!=null&&request.payableMinor!==amount)
+      throw new Error('Сумма к оплате не совпадает с пересчётом скидок и округления')
+    if(totalMinor!=null&&totalMinor!==amount)
+      throw new Error('Итог чека не совпадает с суммой к оплате')
+    if(request.discountBreakdown&&recalculated){
+      const evidence=request.discountBreakdown
+      if(evidence.subtotalMinor!==recalculated.subtotalMinor||
+        evidence.totalDiscountMinor!==recalculated.totalDiscountMinor||
+        evidence.totalMinor!==recalculated.totalMinor||
+        evidence.roundingAdjustmentMinor!==recalculated.roundingAdjustmentMinor||
+        evidence.payableMinor!==amount)
+        throw new Error('Расчёт скидок и округления не совпадает с запросом')
+    }
     this.validatePayments(request.payments,amount,'оплаты')
     if(request.payments.some((payment)=>payment.method==='remote_payment')&&!request.remotePaymentConfirmation?.confirmed){
       throw new Error('Удалённая оплата не подтверждена кассиром. Операция не начата.')
