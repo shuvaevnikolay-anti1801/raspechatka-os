@@ -1,4 +1,4 @@
-name: Integration DEV-176 conflict inspector
+name: Integration DEV-176 merger
 
 on:
   push:
@@ -6,39 +6,86 @@ on:
       - codex/integration-dev-170-176-final
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect-dev176:
+  merge-dev176:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build DEV-176 conflict snapshot
+      - name: Merge DEV-176 with reviewed conflict resolution
         shell: bash
         run: |
-          set -uo pipefail
-          git config user.name integration-inspector
-          git config user.email integration-inspector@users.noreply.github.com
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git fetch origin codex/dev-176-pos-fiscal-totals
+          if git merge-base --is-ancestor origin/codex/dev-176-pos-fiscal-totals HEAD; then
+            echo "DEV-176 already integrated"
+            exit 0
+          fi
           set +e
           git merge --no-commit --no-ff origin/codex/dev-176-pos-fiscal-totals
           merge_rc=$?
           set -e
-          mkdir -p integration-conflicts/base integration-conflicts/ours integration-conflicts/theirs integration-conflicts/merged
-          git diff --name-only --diff-filter=U | tee integration-conflicts/conflicts.txt
-          while IFS= read -r file; do
-            [ -n "$file" ] || continue
-            mkdir -p "integration-conflicts/base/$(dirname "$file")" "integration-conflicts/ours/$(dirname "$file")" "integration-conflicts/theirs/$(dirname "$file")" "integration-conflicts/merged/$(dirname "$file")"
-            git show ":1:$file" > "integration-conflicts/base/$file" || true
-            git show ":2:$file" > "integration-conflicts/ours/$file" || true
-            git show ":3:$file" > "integration-conflicts/theirs/$file" || true
-            cp "$file" "integration-conflicts/merged/$file" || true
-          done < integration-conflicts/conflicts.txt
-          printf '%s\n' "$merge_rc" > integration-conflicts/merge-exit-code.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: integration-conflicts-dev176
-          path: integration-conflicts
-          if-no-files-found: error
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U | sort)
+          expected=("pos/src/renderer/src/AppV2.tsx")
+          if [ "$merge_rc" -ne 0 ]; then
+            if [ "${conflicts[*]}" != "${expected[*]}" ]; then
+              printf 'Unexpected conflicts:\n%s\n' "${conflicts[*]}"
+              exit 1
+            fi
+            python - <<'PY'
+          from pathlib import Path
+
+          path = Path('pos/src/renderer/src/AppV2.tsx')
+          s = path.read_text()
+          old1 = """<<<<<<< HEAD
+                  onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
+                  onPay={()=>setPayment(preferredPayment)}
+          =======
+                  onCreateOrder={()=>setOrderDraft({phone:customer?.phone||'',comment:'',dueAt:''})}
+                  onPay={()=>{if(total>0)setPayment(preferredPayment)}}
+          >>>>>>> origin/codex/dev-176-pos-fiscal-totals
+          """
+          new1 = """        onCreateOrder={()=>setOrderDraft(emptyOrderFormDraft(customer?.phone||''))}
+                  onPay={()=>{if(total>0)setPayment(preferredPayment)}}
+          """
+          old2 = """<<<<<<< HEAD
+          export function OrderModal({draft,total,onChange,onClose,onPay}:{draft:OrderFormDraft;total:number;onChange:(draft:OrderFormDraft)=>void;onClose:()=>void;onPay:()=>void}){
+            const valid=isOrderFormComplete(draft)
+            return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
+              <OrderFormFields draft={draft} onChange={onChange} autoFocusPhone className="order-form-compact"/>
+          =======
+          export const isCompleteOrderPhone=(value:string)=>value.replace(/\\D/g,'').length===11
+
+          function OrderModal({draft,total,onChange,onClose,onPay}:{draft:{phone:string;comment?:string;dueAt?:string};total:number;onChange:(draft:{phone:string;comment?:string;dueAt?:string})=>void;onClose:()=>void;onPay:()=>void}){
+            const valid=isCompleteOrderPhone(draft.phone)&&Boolean(draft.comment?.trim())&&Boolean(draft.dueAt)
+            return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid||total<=0} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
+              <div className="order-form-compact">
+                <PosField label="Телефон *" error={draft.phone&&!isCompleteOrderPhone(draft.phone)?'Введите полный номер из 11 цифр':undefined}><input autoFocus inputMode="tel" value={draft.phone} onChange={(e)=>onChange({...draft,phone:e.target.value})} placeholder="+7 900 000-00-00"/></PosField>
+                <PosField label="Срок готовности *"><input type="datetime-local" value={draft.dueAt||''} onChange={(e)=>onChange({...draft,dueAt:e.target.value})}/></PosField>
+                <PosField label="Описание заказа *" size="textarea" className="order-description-field"><textarea value={draft.comment||''} onChange={(e)=>onChange({...draft,comment:e.target.value})} placeholder="Что нужно изготовить"/></PosField>
+              </div>
+          >>>>>>> origin/codex/dev-176-pos-fiscal-totals
+          """
+          new2 = """export function OrderModal({draft,total,onChange,onClose,onPay}:{draft:OrderFormDraft;total:number;onChange:(draft:OrderFormDraft)=>void;onClose:()=>void;onPay:()=>void}){
+            const valid=isOrderFormComplete(draft)
+            return <PosModal open title="Оформить заказ" className="order-modal" onClose={onClose} footer={<PosButton variant="primary" size="touch" disabled={!valid||total<=0} onClick={onPay}>К оплате · {formatMoney(total)}</PosButton>}>
+              <OrderFormFields draft={draft} onChange={onChange} autoFocusPhone className="order-form-compact"/>
+          """
+          for old, new, label in ((old1,new1,'sale actions'),(old2,new2,'order modal')):
+              if old not in s:
+                  raise SystemExit(f'missing reviewed DEV-176 conflict block: {label}')
+              s = s.replace(old,new,1)
+          if '<<<<<<<' in s or '>>>>>>>' in s or '\n=======\n' in s:
+              raise SystemExit('unresolved DEV-176 conflict marker')
+          path.write_text(s)
+          PY
+          fi
+          git add -A
+          git diff --cached --check
+          git commit -m "integrate: DEV-176 fiscal totals"
+          git push origin HEAD:codex/integration-dev-170-176-final
