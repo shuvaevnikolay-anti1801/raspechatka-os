@@ -142,6 +142,8 @@ def get_shifts(
 	filters = _document_filters("business_date", from_date, to_date, business_entity, business_point)
 	if status:
 		filters["status"] = status
+	else:
+		filters["status"] = ["!=", "Cancelled"]
 	if cashier:
 		filters["cashier"] = cashier
 	or_filters = (
@@ -214,7 +216,7 @@ def get_shift(name):
 	doc = frappe.get_doc("Sales Shift", name)
 	_ensure_point(doc.business_point, doc.business_entity)
 	result = doc.as_dict(no_nulls=False)
-	result["receipts"] = _receipt_rows({"shift": name})
+	result["receipts"] = _receipt_rows({"shift": name, "docstatus": ["!=", 2]})
 	result["cash_movements"] = frappe.get_all(
 		"Cash Movement",
 		filters={"shift": name, "docstatus": ["!=", 2]},

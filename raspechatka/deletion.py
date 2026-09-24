@@ -243,33 +243,45 @@ def _shift_actions(doc):
 
 
 def _sales_shift(doc, *, execute=False):
+	if doc.status == "Cancelled":
+		return _dependency_result({}, _("Смена уже архивирована"))
 	dependencies = {}
-	for doctype, field in (("Sales Receipt", "shift"), ("Cash Movement", "shift")):
-		names = _references(doctype, {field: doc.name})
+	history = {}
+	for doctype in ("Sales Receipt", "Cash Movement"):
+		names = _references(doctype, {"shift": doc.name, "docstatus": ["!=", 2]})
 		if names:
 			dependencies[doctype] = names
+		cancelled = _references(doctype, {"shift": doc.name, "docstatus": 2})
+		if cancelled:
+			history[doctype] = cancelled
 	technical, business = _shift_actions(doc)
-	if business:
-		dependencies["Cashier Action"] = business
 	if dependencies:
-		return _dependency_result(dependencies, _("Сначала разберите связанные документы и действия смены"))
+		return _dependency_result(dependencies, _("Сначала удалите или отмените активные документы смены"))
+	archive = bool(history or business)
 	result = {
-		"strategy": "hard_delete",
+		"strategy": "archive" if archive else "hard_delete",
 		"deleted": bool(execute),
 		"can_delete": True,
-		"message": _("Пустая смена и её технические действия будут удалены"),
+		"message": _("Смена убрана из работы; история сохранена.")
+		if archive and execute
+		else _("Смена будет убрана из работы; история сохранится.")
+		if archive
+		else _("Пустая смена и её технические действия будут удалены"),
 		"dependencies": {},
-		"affected": [{"doctype": "Cashier Action", "name": name} for name in technical],
+		"affected": [] if archive else [{"doctype": "Cashier Action", "name": name} for name in technical],
 		"warnings": [],
 	}
 	if execute:
-		for name in technical:
-			# This immutable audit DocType rejects generic on_trash. The only
-			# exception is an action proven above to belong solely to this
-			# empty shift, removed inside the same audited transaction.
-			frappe.db.delete("Cashier Action", {"name": name})
-		frappe.delete_doc("Sales Shift", doc.name, ignore_permissions=True)
-		result["affected"].append({"doctype": "Sales Shift", "name": doc.name, "deleted": True})
+		if archive:
+			doc.status = "Cancelled"
+			doc.save(ignore_permissions=True)
+			result["affected"].append({"doctype": "Sales Shift", "name": doc.name, "status": "Cancelled"})
+		else:
+			for name in technical:
+				# Only shift-owned technical actions of an otherwise empty shift.
+				frappe.db.delete("Cashier Action", {"name": name})
+			frappe.delete_doc("Sales Shift", doc.name, ignore_permissions=True)
+			result["affected"].append({"doctype": "Sales Shift", "name": doc.name, "deleted": True})
 	return result
 
 

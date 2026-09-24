@@ -42,6 +42,7 @@ class DeletionContractTests(unittest.TestCase):
 		frappe._ = lambda value: value
 		access = types.ModuleType("raspechatka.access")
 		access.require_access = MagicMock()
+		access.get_scope = MagicMock(return_value={"global": True})
 		contract = types.ModuleType("raspechatka.access_contract")
 		contract.access_contract = lambda **kwargs: lambda fn: fn
 		scope = types.ModuleType("raspechatka.scope")
@@ -62,7 +63,9 @@ class DeletionContractTests(unittest.TestCase):
 		spec.loader.exec_module(self.module)
 		self.frappe, self.access, self.scope = frappe, access, scope
 		self.frappe.get_doc.side_effect = lambda *args: (
-			types.SimpleNamespace(name=args[1], business_point="P1", business_entity="E1")
+			types.SimpleNamespace(
+				name=args[1], business_point="P1", business_entity="E1", get=lambda key: None
+			)
 			if len(args) == 2
 			else MagicMock(insert=MagicMock())
 		)
@@ -83,10 +86,10 @@ class DeletionContractTests(unittest.TestCase):
 			self.frappe.get_doc.assert_not_called()
 
 	def test_admin_preview_and_execute_share_scope_resolver(self):
-		self.assertFalse(self.module.get_delete_preview("business_point", "R1")["can_delete"])
+		self.assertTrue(self.module.get_delete_preview("business_point", "R1")["can_delete"])
 		result = self.module.delete_entity("business_point", "R1")
-		self.assertEqual(result["strategy"], "blocked")
-		self.access.require_access.assert_called_with("page.sales.overview", "delete")
+		self.assertEqual(result["strategy"], "hard_delete")
+		self.access.require_access.assert_called_with("page.references.points", "delete")
 		self.assertEqual(self.scope.ensure_point_allowed.call_count, 2)
 		self.frappe.db.sql.assert_called_once()
 		self.frappe.get_doc.return_value.insert.assert_not_called()
@@ -192,13 +195,13 @@ class DeletionContractTests(unittest.TestCase):
 		self.assertEqual(result["strategy"], "hard_delete")
 		self.frappe.delete_doc.assert_called_once_with("Stock Receipt", "DRAFT-1", ignore_permissions=True)
 
-	def test_shift_dependency_counts_include_all_sources_and_business_actions(self):
+	def test_shift_dependency_counts_include_only_active_documents(self):
 		doc = MagicMock(doctype="Sales Shift", business_entity="E1", business_point="P1")
 		doc.name = "SHIFT-1"
 		self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
-			["R1", "R2"]
+			(["R1", "R2"] if kwargs["filters"]["docstatus"] == ["!=", 2] else ["R-OLD"])
 			if doctype == "Sales Receipt"
-			else ["C1"]
+			else (["C1"] if kwargs["filters"]["docstatus"] == ["!=", 2] else ["C-OLD"])
 			if doctype == "Cash Movement"
 			else [
 				types.SimpleNamespace(
@@ -220,7 +223,8 @@ class DeletionContractTests(unittest.TestCase):
 				result = self.module._sales_shift(doc, execute=True)
 				self.assertEqual(result["dependencies"]["Sales Receipt"], {"count": 2, "names": ["R1", "R2"]})
 				self.assertEqual(result["dependencies"]["Cash Movement"], {"count": 1, "names": ["C1"]})
-				self.assertEqual(result["dependencies"]["Cashier Action"]["names"], ["A1"])
+				self.assertNotIn("Cashier Action", result["dependencies"])
+				self.assertNotIn("R-OLD", result["dependencies"]["Sales Receipt"]["names"])
 		self.frappe.delete_doc.assert_not_called()
 
 	def test_shift_deletes_only_actions_owned_by_shift(self):
@@ -243,8 +247,36 @@ class DeletionContractTests(unittest.TestCase):
 		self.assertTrue(preview["can_delete"])
 		self.assertFalse(preview["deleted"])
 		self.module._sales_shift(doc, execute=True)
-		self.assertEqual(self.frappe.delete_doc.call_args_list[0].args, ("Cashier Action", "A-OPEN"))
-		self.assertEqual(self.frappe.delete_doc.call_args_list[1].args, ("Sales Shift", doc.name))
+		self.frappe.db.delete.assert_called_once_with("Cashier Action", {"name": "A-OPEN"})
+		self.frappe.delete_doc.assert_called_once_with("Sales Shift", doc.name, ignore_permissions=True)
+
+	def test_shift_with_cancelled_document_or_business_action_archives_without_deleting_audit(self):
+		doc = MagicMock(doctype="Sales Shift", business_entity="E1", business_point="P1", status="Open")
+		doc.name, doc.closed_at = "SHIFT-1", None
+		business = types.SimpleNamespace(
+			name="A-SALE",
+			action_type="SALE",
+			shift=doc.name,
+			business_entity="E1",
+			business_point="P1",
+			reference_doctype="Sales Receipt",
+			reference_document="R-OLD",
+		)
+		self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
+			["R-OLD"]
+			if doctype == "Sales Receipt" and kwargs["filters"]["docstatus"] == 2
+			else [business]
+			if doctype == "Cashier Action"
+			else []
+		)
+		self.assertEqual(self.module._sales_shift(doc)["strategy"], "archive")
+		result = self.module._sales_shift(doc, execute=True)
+		self.assertEqual(result["strategy"], "archive")
+		self.assertEqual(doc.status, "Cancelled")
+		self.assertIsNone(doc.closed_at)
+		doc.save.assert_called_once_with(ignore_permissions=True)
+		self.frappe.delete_doc.assert_not_called()
+		self.frappe.db.delete.assert_not_called()
 
 	def test_employee_open_shift_blocks_archive_and_profile_is_preserved(self):
 		doc = MagicMock(doctype="Employee", business_entity="E1")

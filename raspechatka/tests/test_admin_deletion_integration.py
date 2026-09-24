@@ -122,6 +122,7 @@ class TestAdminOperationalDeletion(FrappeTestCase):
 				"business_entity": self.entity,
 				"business_point": self.point,
 				"warehouse": self.warehouse,
+				"cashier": frappe.db.get_value("Sales Shift", self.shift, "cashier"),
 				"source": "MoySklad" if mirror else "POS",
 				"external_id": f"moysklad:retaildemand:{uuid4().hex}" if mirror else f"POS-{uuid4().hex}",
 				"mirror_only": int(mirror),
@@ -455,13 +456,144 @@ class TestAdminOperationalDeletion(FrappeTestCase):
 		shift = frappe.get_doc("Sales Shift", self.shift)
 		log_cashier_action(shift, "OPEN_SHIFT", f"TEST-OPEN-{uuid4().hex}")
 		log_cashier_action(shift, "REVIEW_RECEIVED", f"TEST-REVIEW-{uuid4().hex}")
+		log_cashier_action(shift, "DISCOUNT", f"TEST-DISCOUNT-{uuid4().hex}")
 		action = frappe.db.get_value(
 			"Cashier Action", {"shift": shift.name, "action_type": "REVIEW_RECEIVED"}, "name"
 		)
 		preview = get_delete_preview("sales_shift", shift.name)
-		self.assertEqual(preview["dependencies"]["Cashier Action"], {"count": 1, "names": [action]})
-		self.assertFalse(delete_entity("sales_shift", shift.name)["deleted"])
+		self.assertEqual(preview["strategy"], "archive")
+		self.assertFalse(preview["dependencies"])
+		closed_at = shift.closed_at
+		self.assertEqual(delete_entity("sales_shift", shift.name)["strategy"], "archive")
 		self.assertTrue(frappe.db.exists("Cashier Action", action))
+		self.assertEqual(frappe.db.count("Cashier Action", {"shift": shift.name}), 3)
+		self.assertEqual(frappe.db.get_value("Sales Shift", shift.name, "status"), "Cancelled")
+		self.assertEqual(frappe.db.get_value("Sales Shift", shift.name, "closed_at"), closed_at)
+
+	def test_cancelled_sale_then_shift_archives_without_losing_audit_or_pos_access(self):
+		from raspechatka.api.sales import get_receipts, get_shift, get_shifts
+
+		employee = self._employee(pos_access=1)
+		external_id = f"POS-ARCHIVED-SHIFT-{uuid4().hex}"
+		frappe.db.set_value(
+			"Sales Shift",
+			self.shift,
+			{"cashier": employee.name, "source": "POS", "external_id": external_id, "status": "Open"},
+		)
+		shift = frappe.get_doc("Sales Shift", self.shift)
+		log_cashier_action(shift, "OPEN_SHIFT", f"{external_id}:open")
+		self._receipt(quantity=5)
+		sale = self._sale()
+		self.assertEqual(self._balance()[0], 3)
+		self.assertIn(sale.name, [row.name for row in get_receipts(shift=self.shift)["rows"]])
+		self.assertGreater(float(frappe.db.get_value("Sales Shift", self.shift, "net_sales")), 0)
+		self.assertEqual(delete_entity("sales_receipt", sale.name)["strategy"], "cancel")
+		self.assertEqual(frappe.db.get_value("Sales Receipt", sale.name, "docstatus"), 2)
+		self.assertEqual(float(frappe.db.get_value("Sales Shift", self.shift, "net_sales")), 0)
+		self.assertEqual(self._balance()[0], 5)
+		self.assertNotIn(sale.name, [row.name for row in get_receipts(shift=self.shift)["rows"]])
+		self.assertNotIn(sale.name, [row.name for row in get_shift(self.shift)["receipts"]])
+		self.assertEqual(get_delete_preview("sales_shift", self.shift)["strategy"], "archive")
+		self.assertEqual(delete_entity("sales_shift", self.shift)["strategy"], "archive")
+		self.assertEqual(frappe.db.get_value("Sales Shift", self.shift, "status"), "Cancelled")
+		self.assertIsNone(frappe.db.get_value("Sales Shift", self.shift, "closed_at"))
+		self.assertTrue(frappe.db.exists("Sales Receipt", sale.name))
+		actions = frappe.get_all("Cashier Action", filters={"shift": self.shift}, pluck="action_type")
+		self.assertIn("SALE", actions)
+		self.assertIn("CANCEL_RECEIPT", actions)
+		self.assertIn("CANCEL_RECEIPT", [row.action_type for row in get_shift(self.shift)["actions"]])
+		self.assertTrue(is_external_event_suppressed("POS", external_id))
+		self.assertNotIn(self.shift, [row.name for row in get_shifts()["rows"]])
+		self.assertIn(self.shift, [row.name for row in get_shifts(status="Cancelled")["rows"]])
+		self.assertFalse(frappe.db.exists("Sales Shift", {"cashier": employee.name, "status": "Open"}))
+		change = {
+			"name": employee.name,
+			"business_entity": self.entity,
+			"active": 1,
+			"pos_access_enabled": 0,
+			"assigned_points": [{"business_point": self.point, "is_default": 1}],
+		}
+		self.assertEqual(save_employee(change)["name"], employee.name)
+		self.assertEqual(frappe.db.get_value("Employee", employee.name, "pos_access_enabled"), 0)
+		stats = {"created": 0, "duplicates": 0}
+		sales_ingest._ingest_shift(
+			{"external_id": external_id, "status": "Open"},
+			SimpleNamespace(business_point=self.point),
+			stats,
+			update_existing=True,
+		)
+		self.assertEqual(stats["duplicates"], 1)
+		self.assertEqual(frappe.db.get_value("Sales Shift", self.shift, "status"), "Cancelled")
+
+	def test_cancelled_cash_movement_does_not_block_shift_archive(self):
+		from raspechatka.api.sales import get_shift
+
+		movement = frappe.get_doc(
+			{
+				"doctype": "Cash Movement",
+				"movement_type": "Deposit",
+				"posting_datetime": now_datetime(),
+				"shift": self.shift,
+				"business_entity": self.entity,
+				"business_point": self.point,
+				"cashier": frappe.db.get_value("Sales Shift", self.shift, "cashier"),
+				"source": "POS",
+				"external_id": f"POS-CASH-{uuid4().hex}",
+				"amount": 50,
+				"reason": "DEV-183 collection",
+			}
+		).insert(ignore_permissions=True)
+		movement.submit()
+		self.assertEqual(delete_entity("cash_movement", movement.name)["strategy"], "cancel")
+		self.assertEqual(frappe.db.get_value("Cash Movement", movement.name, "docstatus"), 2)
+		self.assertNotIn(movement.name, [row.name for row in get_shift(self.shift)["cash_movements"]])
+		self.assertEqual(delete_entity("sales_shift", self.shift)["strategy"], "archive")
+		self.assertTrue(frappe.db.exists("Cash Movement", movement.name))
+		self.assertTrue(frappe.db.exists("Cashier Action", {"shift": self.shift}))
+
+	def test_active_draft_and_submitted_documents_still_block_shift(self):
+		cancelled = self._raw(
+			"Sales Receipt",
+			f"TEST-DEV183-CANCELLED-{uuid4().hex[:10]}",
+			shift=self.shift,
+			business_entity=self.entity,
+			business_point=self.point,
+			docstatus=2,
+		)
+		for doctype, status in (("Sales Receipt", 0), ("Cash Movement", 1)):
+			name = self._raw(
+				doctype,
+				f"TEST-DEV183-{uuid4().hex[:10]}",
+				shift=self.shift,
+				business_entity=self.entity,
+				business_point=self.point,
+				docstatus=status,
+			)
+			preview = get_delete_preview("sales_shift", self.shift)
+			self.assertEqual(preview["strategy"], "blocked")
+			self.assertIn(name, preview["dependencies"][doctype]["names"])
+			self.assertNotIn(cancelled, preview["dependencies"].get("Sales Receipt", {}).get("names", []))
+			self.assertEqual(preview["message"], "Сначала удалите или отмените активные документы смены")
+		self.assertFalse(delete_entity("sales_shift", self.shift)["deleted"])
+
+	def test_moysklad_cancelled_document_archives_and_replay_is_suppressed(self):
+		external_id = f"moysklad:retailshift:{uuid4().hex}"
+		frappe.db.set_value("Sales Shift", self.shift, {"source": "MoySklad", "external_id": external_id})
+		cancelled = self._raw(
+			"Sales Receipt",
+			f"TEST-DEV183-MS-{uuid4().hex[:10]}",
+			shift=self.shift,
+			business_entity=self.entity,
+			business_point=self.point,
+			docstatus=2,
+		)
+		self.assertEqual(delete_entity("sales_shift", self.shift)["strategy"], "archive")
+		self.assertTrue(frappe.db.exists("Sales Receipt", cancelled))
+		self.assertTrue(is_external_event_suppressed("MoySklad", external_id))
+		stats = {"duplicates": 0}
+		moysklad_sales._upsert_shift({"id": external_id.rsplit(":", 1)[-1]}, {"stats": stats})
+		self.assertEqual(stats["duplicates"], 1)
+		self.assertEqual(frappe.db.get_value("Sales Shift", self.shift, "status"), "Cancelled")
 
 	def test_empty_shift_sources_share_rules_and_moysklad_replay_stays_suppressed(self):
 		for source in ("POS", "MoySklad", "Manual", "Import"):
