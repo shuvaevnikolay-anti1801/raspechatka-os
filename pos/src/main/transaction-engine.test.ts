@@ -143,7 +143,7 @@ describe('PosTransactionEngine safety',()=>{
     expect(engine.listUnresolved()).toHaveLength(0)
   })
 
-  it('cancels only a pre-effect operation and rejects cancellation after payment attempts or confirmation',async()=>{
+  it('cancels pre-effect and evidence-free unknown operations but keeps evidenced or confirmed payments protected',async()=>{
     fiscal.ready=false
     await expect(engine.completeSale(request([{method:'cash',amountMinor:2000}],'cancel-safe'),shiftId)).rejects.toThrow(/ККТ/)
     const operation=engine.listUnresolved()[0]
@@ -157,12 +157,26 @@ describe('PosTransactionEngine safety',()=>{
     payment.throwOnCharge=true
     await expect(engine.completeSale(request([{method:'card',amountMinor:2000}],'cancel-unknown'),shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
     const unknown=engine.listUnresolved()[0]
-    expect(unknown.canCancel).toBe(false)
-    expect(()=>engine.cancelBeforeSideEffects(unknown.id)).toThrow(/Отмена недоступна/)
-    journal.setState(unknown.id,'payment_confirmed')
-    journal.setConfirmedPayments(unknown.id,[{method:'card',amountMinor:2000,transactionId:'bank-confirmed'}])
+    expect(unknown.canCancel).toBe(true)
+    expect(engine.cancelBeforeSideEffects(unknown.id)).toMatchObject({status:'completed'})
+    expect(engine.listUnresolved()).toHaveLength(0)
+
+    payment.throwOnCharge=false
+    payment.nextCharge={
+      status:'unknown',
+      bankingEvidence:{
+        provider:'inpas',adapter:'direct',terminalId:'terminal-1',referenceNumber:'ref-1',
+        amountMinor:2000,operationKind:'sale',startedAt:'2026-09-24T20:00:00.000Z'
+      }
+    }
+    await expect(engine.completeSale(request([{method:'card',amountMinor:2000}],'cancel-evidenced'),shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
+    const evidenced=engine.listUnresolved()[0]
+    expect(evidenced.canCancel).toBe(false)
+    expect(()=>engine.cancelBeforeSideEffects(evidenced.id)).toThrow(/Отмена недоступна/)
+    journal.setState(evidenced.id,'payment_confirmed')
+    journal.setConfirmedPayments(evidenced.id,[{method:'card',amountMinor:2000,transactionId:'bank-confirmed'}])
     expect(engine.listUnresolved()[0].canCancel).toBe(false)
-    expect(()=>engine.cancelBeforeSideEffects(unknown.id)).toThrow(/Отмена недоступна/)
+    expect(()=>engine.cancelBeforeSideEffects(evidenced.id)).toThrow(/Отмена недоступна/)
   })
 
   it('does not start payment after an administrator cancels while KKT health is pending',async()=>{
