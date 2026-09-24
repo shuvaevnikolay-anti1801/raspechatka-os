@@ -232,19 +232,45 @@ export class TransactionJournal {
 
   canCancelBeforeSideEffects(id:string):boolean {
     return Boolean(this.db.prepare(`SELECT 1 FROM operations o
-      WHERE o.id=? AND o.state IN ('created','requires_attention') AND o.confirmed_payments_json='[]'
-      AND NOT EXISTS (SELECT 1 FROM payment_attempts p WHERE p.operation_id=o.id)
-      AND NOT EXISTS (SELECT 1 FROM fiscal_attempts f WHERE f.operation_id=o.id)`).get(id))
+      WHERE o.id=? AND o.confirmed_payments_json='[]'
+      AND NOT EXISTS (SELECT 1 FROM fiscal_attempts f WHERE f.operation_id=o.id)
+      AND (
+        (o.state IN ('created','requires_attention') AND
+          NOT EXISTS (SELECT 1 FROM payment_attempts p WHERE p.operation_id=o.id))
+        OR
+        (o.state='payment_unknown' AND EXISTS (
+          SELECT 1 FROM payment_attempts p
+          WHERE p.operation_id=o.id AND p.state='unknown'
+            AND p.transaction_id IS NULL
+            AND p.reference_number IS NULL
+            AND p.terminal_transaction_id IS NULL
+            AND p.authorization_code IS NULL
+            AND p.response_code IS NULL
+        ))
+      )`).get(id))
   }
 
   cancelBeforeSideEffects(id:string):boolean {
     this.db.exec('BEGIN IMMEDIATE')
     try{
       const result=this.db.prepare(`UPDATE operations SET state='cancelled',
-        last_error='Операция отменена до оплаты и фискализации',updated_at=?
-        WHERE id=? AND state IN ('created','requires_attention') AND confirmed_payments_json='[]'
-        AND NOT EXISTS (SELECT 1 FROM payment_attempts WHERE operation_id=operations.id)
-        AND NOT EXISTS (SELECT 1 FROM fiscal_attempts WHERE operation_id=operations.id)`)
+        last_error='Операция закрыта как неуспешная: банковское списание не подтверждено',updated_at=?
+        WHERE id=? AND confirmed_payments_json='[]'
+        AND NOT EXISTS (SELECT 1 FROM fiscal_attempts WHERE operation_id=operations.id)
+        AND (
+          (state IN ('created','requires_attention') AND
+            NOT EXISTS (SELECT 1 FROM payment_attempts WHERE operation_id=operations.id))
+          OR
+          (state='payment_unknown' AND EXISTS (
+            SELECT 1 FROM payment_attempts p
+            WHERE p.operation_id=operations.id AND p.state='unknown'
+              AND p.transaction_id IS NULL
+              AND p.reference_number IS NULL
+              AND p.terminal_transaction_id IS NULL
+              AND p.authorization_code IS NULL
+              AND p.response_code IS NULL
+          ))
+        )`)
         .run(new Date().toISOString(),id)
       this.db.exec('COMMIT')
       return result.changes===1

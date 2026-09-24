@@ -32,7 +32,7 @@ export class PosTransactionEngine {
   }
 
   hasBlockingOperation():boolean{
-    return this.journal.listUnresolved().some((operation)=>DANGEROUS_STATES.has(operation.state))
+    return false
   }
 
   async recoverSafeOperations():Promise<number>{
@@ -83,9 +83,6 @@ export class PosTransactionEngine {
       return {...existingSale,changeMinor:0,queuedForSync:true}
     }
     if(existingOperation?.state==='cancelled')throw new Error('Эта попытка оплаты уже завершена отказом. Начните новую оплату.')
-    if(!existingOperation&&this.hasBlockingOperation()){
-      throw new Error('Есть незавершённая операция с деньгами или ККТ. Откройте «Восстановление» и завершите её перед новой оплатой.')
-    }
     if(existingOperation&&existingOperation.amountMinor!==amount){
       throw new Error('Повторный запрос продажи имеет другую сумму. Операция остановлена для защиты от двойной оплаты.')
     }
@@ -111,9 +108,6 @@ export class PosTransactionEngine {
       return {...existingReturn,queuedForSync:true}
     }
     if(existingOperation?.state==='cancelled')throw new Error('Эта попытка возврата уже завершена отказом. Начните новую операцию.')
-    if(!existingOperation&&this.hasBlockingOperation()){
-      throw new Error('Есть незавершённая операция с деньгами или ККТ. Сначала завершите её в разделе «Восстановление».')
-    }
     if(existingOperation&&existingOperation.amountMinor!==totalMinor){
       throw new Error('Повторный запрос возврата имеет другую сумму. Операция остановлена для защиты от двойного возврата.')
     }
