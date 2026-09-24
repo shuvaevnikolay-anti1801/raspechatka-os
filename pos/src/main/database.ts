@@ -276,6 +276,8 @@ export class PosDatabase {
     this.ensureColumn('orders', 'ready_at', 'TEXT')
     this.ensureColumn('orders', 'issued_at', 'TEXT')
     this.ensureColumn('orders', 'contact_method', 'TEXT')
+    this.ensureColumn('orders', 'customer_order_number', 'TEXT')
+    this.backfillCustomerOrderNumbers()
     const legacyPhones=this.db.prepare("SELECT id,phone FROM customers WHERE normalized_phone='' AND phone IS NOT NULL").all() as Array<{id:string;phone:string}>
     const updatePhone=this.db.prepare('UPDATE customers SET normalized_phone=? WHERE id=?')
     legacyPhones.forEach((row)=>updatePhone.run(normalizeRussianPhone(row.phone),row.id))
@@ -784,19 +786,21 @@ export class PosDatabase {
   replaceServerOrders(pointId:string,orders:Order[],retentionDays=60):void {
     const now=new Date().toISOString();const cutoff=new Date(Date.now()-retentionDays*86400000).toISOString();this.db.exec('BEGIN')
     try{
-      const previous=(this.db.prepare("SELECT id,order_number orderNumber,source_sale_id sourceSaleId FROM orders WHERE origin='server'").all() as Array<{id:string;orderNumber:string;sourceSaleId?:string}>)
+      const previous=(this.db.prepare("SELECT id,order_number orderNumber,customer_order_number customerOrderNumber,source_sale_id sourceSaleId FROM orders WHERE origin='server'").all() as Array<{id:string;orderNumber:string;customerOrderNumber?:string;sourceSaleId?:string}>)
       const previousByOrder=new Map(previous.map((row)=>[row.orderNumber,row.id]))
+      const previousNumberByOrder=new Map(previous.map((row)=>[row.orderNumber,row.customerOrderNumber]))
       const previousBySale=new Map(previous.filter((row)=>row.sourceSaleId).map((row)=>[row.sourceSaleId as string,row.id]))
       this.db.prepare("DELETE FROM orders WHERE origin='server'").run()
       for(const row of orders){
         const existing=this.db.prepare('SELECT id FROM orders WHERE order_number=? OR (source_sale_id IS NOT NULL AND source_sale_id=?) LIMIT 1').get(row.orderNumber,row.sourceSaleId??'__none__') as {id:string}|undefined
         const id=existing?.id||previousByOrder.get(row.orderNumber)||(row.sourceSaleId?previousBySale.get(row.sourceSaleId):undefined)||row.id
-        this.db.prepare(`INSERT INTO orders (id,order_number,phone,contact_method,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,ready_at,issued_at,source_sale_id,fiscal_number,created_at,updated_at,origin,point_id)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET order_number=excluded.order_number,phone=excluded.phone,
+        const customerOrderNumber=row.customerOrderNumber||previousNumberByOrder.get(row.orderNumber)||this.allocateCustomerOrderNumber(row.phone,pointId)
+        this.db.prepare(`INSERT INTO orders (id,order_number,customer_order_number,phone,contact_method,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,ready_at,issued_at,source_sale_id,fiscal_number,created_at,updated_at,origin,point_id)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET order_number=excluded.order_number,customer_order_number=COALESCE(orders.customer_order_number,excluded.customer_order_number),phone=excluded.phone,
           contact_method=excluded.contact_method,customer_name=excluded.customer_name,lines_json=excluded.lines_json,total_minor=excluded.total_minor,paid_minor=excluded.paid_minor,
           status=excluded.status,comment=excluded.comment,due_at=excluded.due_at,ready_at=COALESCE(orders.ready_at,excluded.ready_at),issued_at=COALESCE(orders.issued_at,excluded.issued_at),source_sale_id=excluded.source_sale_id,
           fiscal_number=excluded.fiscal_number,updated_at=excluded.updated_at,origin='server',point_id=excluded.point_id`)
-          .run(id,row.orderNumber,row.phone,row.contactMethod??null,row.customerName??null,JSON.stringify(row.lines),row.totalMinor,row.paidMinor,row.status,row.comment??null,row.dueAt??null,row.readyAt??null,row.issuedAt??null,row.sourceSaleId??null,row.fiscalNumber??null,row.createdAt,now,'server',pointId)
+          .run(id,row.orderNumber,customerOrderNumber,row.phone,row.contactMethod??null,row.customerName??null,JSON.stringify(row.lines),row.totalMinor,row.paidMinor,row.status,row.comment??null,row.dueAt??null,row.readyAt??null,row.issuedAt??null,row.sourceSaleId??null,row.fiscalNumber??null,row.createdAt,now,'server',pointId)
       }
       this.db.prepare("DELETE FROM orders WHERE origin='server' AND (point_id<>? OR created_at<?)").run(pointId,cutoff)
       this.db.exec('COMMIT')
@@ -1257,10 +1261,32 @@ export class PosDatabase {
   }
 
   listOrders():Order[] {
-    return (this.db.prepare(`SELECT id,order_number orderNumber,phone,contact_method contactMethod,customer_name customerName,lines_json lines,
+    return (this.db.prepare(`SELECT id,order_number orderNumber,customer_order_number customerOrderNumber,phone,contact_method contactMethod,customer_name customerName,lines_json lines,
       total_minor totalMinor,paid_minor paidMinor,status,comment,created_at createdAt,due_at dueAt,ready_at readyAt,issued_at issuedAt,
       source_sale_id sourceSaleId,fiscal_number fiscalNumber FROM orders ORDER BY created_at DESC LIMIT 5000`).all() as any[])
       .map((x)=>({...x,lines:JSON.parse(x.lines),paymentStatus:x.paidMinor>=x.totalMinor?'paid':x.paidMinor>0?'partial':'unpaid'})) as Order[]
+  }
+
+  private allocateCustomerOrderNumber(phone:string,pointId:string|null=null):string {
+    const base=normalizeRussianPhone(phone).replace(/\D/g,'').slice(-4).padStart(4,'0')
+    const rows=this.db.prepare(`SELECT customer_order_number number FROM orders
+      WHERE (? IS NULL OR point_id IS ? OR point_id IS NULL) AND status IN ('new','in_progress','ready') AND customer_order_number IS NOT NULL`).all(pointId,pointId) as Array<{number:string}>
+    const used=new Set(rows.map((row)=>row.number))
+    let suffix=0
+    while(used.has(suffix?`${base} (${suffix})`:base))suffix++
+    return suffix?`${base} (${suffix})`:base
+  }
+
+  private backfillCustomerOrderNumbers():void {
+    const rows=this.db.prepare(`SELECT id,phone,point_id pointId FROM orders
+      WHERE customer_order_number IS NULL AND status IN ('new','in_progress','ready')
+      ORDER BY created_at,order_number,id`).all() as Array<{id:string;phone:string;pointId:string|null}>
+    const update=this.db.prepare('UPDATE orders SET customer_order_number=? WHERE id=?')
+    this.db.exec('BEGIN')
+    try{
+      for(const row of rows)update.run(this.allocateCustomerOrderNumber(row.phone,row.pointId),row.id)
+      this.db.exec('COMMIT')
+    }catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
   private parseBankingEvidence(value:string|null|undefined):BankingEvidence|undefined {
@@ -1290,14 +1316,14 @@ export class PosDatabase {
     const customer=this.listCustomers(normalizedPhone.replace(/\D/g,''))
       .find((x)=>normalizeRussianPhone(x.phone)===normalizedPhone)
     const order:Order={
-      id,orderNumber,phone,contactMethod,customerName:customer?.name||input.customerName,
+      id,orderNumber,customerOrderNumber:this.allocateCustomerOrderNumber(phone),phone,contactMethod,customerName:customer?.name||input.customerName,
       lines:input.lines,totalMinor:input.totalMinor,paidMinor:input.totalMinor,paymentStatus:'paid',status:'in_progress',
       comment,createdAt:now,dueAt,sourceSaleId:input.id,fiscalNumber:input.fiscalNumber
     }
     this.db.prepare(`INSERT INTO orders
-      (id,order_number,phone,contact_method,customer_id,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(order.id,order.orderNumber,order.phone,order.contactMethod??null,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),
+      (id,order_number,customer_order_number,phone,contact_method,customer_id,customer_name,lines_json,total_minor,paid_minor,status,comment,due_at,source_sale_id,fiscal_number,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(order.id,order.orderNumber,order.customerOrderNumber??null,order.phone,order.contactMethod??null,customer?.id||input.customerId||null,order.customerName||null,JSON.stringify(order.lines),
         order.totalMinor,order.paidMinor,order.status,order.comment??null,order.dueAt??null,order.sourceSaleId??null,order.fiscalNumber??null,now,now)
     this.queue('order.created',order,now,trustedCashierId)
     return order
@@ -1323,9 +1349,9 @@ export class PosDatabase {
     const totalMinor=input.lines.reduce((s,x)=>s+Math.round(x.quantity*x.unitPriceMinor*(1-(x.discountPercent||0)/100)),0)
     if(totalMinor<=0)throw new Error('Сумма заказа должна быть больше нуля')
     const contactMethod=input.contactMethod?.trim()||undefined
-    const order:Order={id,orderNumber,phone:input.phone.trim(),contactMethod,lines:input.lines,totalMinor,paidMinor:0,paymentStatus:'unpaid',status:'new',comment:input.comment?.trim()||undefined,createdAt:now,dueAt:input.dueAt}
-    this.db.prepare(`INSERT INTO orders (id,order_number,phone,contact_method,lines_json,total_minor,paid_minor,status,comment,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id,orderNumber,order.phone,order.contactMethod??null,JSON.stringify(order.lines),totalMinor,0,'new',order.comment||null,order.dueAt||null,now,now)
+    const order:Order={id,orderNumber,customerOrderNumber:this.allocateCustomerOrderNumber(input.phone),phone:input.phone.trim(),contactMethod,lines:input.lines,totalMinor,paidMinor:0,paymentStatus:'unpaid',status:'new',comment:input.comment?.trim()||undefined,createdAt:now,dueAt:input.dueAt}
+    this.db.prepare(`INSERT INTO orders (id,order_number,customer_order_number,phone,contact_method,lines_json,total_minor,paid_minor,status,comment,due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(id,orderNumber,order.customerOrderNumber??null,order.phone,order.contactMethod??null,JSON.stringify(order.lines),totalMinor,0,'new',order.comment||null,order.dueAt||null,now,now)
     this.queue('order.created',order,now,trustedCashierId)
     return order
   }

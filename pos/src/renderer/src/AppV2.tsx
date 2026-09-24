@@ -229,7 +229,7 @@ export default function AppV2(){
         cashReceivedMinor,remotePaymentConfirmation,order:orderDraft?toOrderFormPayload(orderDraft):undefined
       })
       clear();setPayment(null);await refresh()
-      const baseMessage=orderDraft?'Заказ '+(result.order?.orderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
+      const baseMessage=orderDraft?'Заказ '+(result.order?.customerOrderNumber||'создан')+' принят':'Чек '+result.receiptNumber+' готов'+(result.changeMinor?'. Сдача: '+formatMoney(result.changeMinor):'')
       setMessage(baseMessage)
     }catch(e){setMessage(operatorError(e,'payment'))}finally{setBusy(false)}
   }

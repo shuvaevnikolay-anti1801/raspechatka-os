@@ -1,6 +1,6 @@
 .orders-table>header,.orders-table>.order-row{
-  width:max-content;
-  min-width:100%;
+  width:100%;
+  min-width:0;
   grid-template-columns:none;
 }
 .orders-table>header{
@@ -50,7 +50,7 @@
 .orders-table .order-status{
   justify-self:start;
 }
-.orders-table .order-number,.orders-table .order-phone,.orders-table .order-payment,.orders-table .order-created,.orders-table .order-issued-at{
+.orders-table .order-number,.orders-table .order-phone,.orders-table .order-payment,.orders-table .order-created{
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
@@ -59,13 +59,14 @@
   display:block;
   font-size:var(--pos-type-strong);
 }
-.orders-table .order-contact,.orders-table .order-description{
-  display:-webkit-box;
-  overflow:hidden;
+.orders-table .order-contact{
   overflow-wrap:anywhere;
   line-height:1.4;
-  -webkit-box-orient:vertical;
-  -webkit-line-clamp:2;
+}
+.orders-table .order-description{
+  white-space:normal;
+  overflow-wrap:anywhere;
+  line-height:1.4;
 }
 .orders-table .order-payment{
   display:block;
@@ -74,9 +75,12 @@
   font-weight:var(--pos-weight-strong);
   white-space:nowrap;
 }
-.orders-table .order-created,.orders-table .order-issued-at,.orders-table .order-due time{
+.orders-table .order-created,.orders-table .order-due time{
   font-variant-numeric:tabular-nums;
   white-space:nowrap;
+}
+@media(max-width:900px){
+  .orders-table>header,.orders-table>.order-row{width:900px}
 }
 .orders-table .order-due{
   min-width:0;

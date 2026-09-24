@@ -50,3 +50,4 @@ raspechatka.patches.v1_0.repair_moysklad_variants
 raspechatka.patches.v1_0.repair_dev161_time
 raspechatka.patches.v1_0.repair_client_id_series
 raspechatka.patches.v1_0.repair_legacy_user_timezones
+raspechatka.patches.v1_0.backfill_pos_customer_order_numbers
