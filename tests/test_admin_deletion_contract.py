@@ -89,7 +89,7 @@ class DeletionContractTests(unittest.TestCase):
 
     def test_failed_handler_rolls_back_and_retry_reexecutes(self):
         doc = types.SimpleNamespace(name="R1", business_point="P1", business_entity="E1")
-        self.frappe.get_doc.side_effect = lambda *args: doc
+        self.frappe.get_doc.side_effect = lambda *args: doc if len(args) == 2 else MagicMock()
         handler = MagicMock(side_effect=RuntimeError("failed"))
         old = self.module.REGISTRY["sales_receipt"]
         self.module.REGISTRY["sales_receipt"] = self.module.DeletionRule(old.doctype, old.area, old.scope, handler)
