@@ -104,8 +104,9 @@ def delete_entity(entity_type, name, reason=None):
             result = preview
         else:
             result = rule.handler(doc, execute=True)
-            if result.get("deleted") and doc.get("external_id") and doc.get("source") in EXTERNAL_SOURCES:
-                suppress_external_event(doc.source, doc.external_id, entity_type, name)
+            source = _external_source(doc)
+            if result.get("deleted") and doc.get("external_id") and source:
+                suppress_external_event(source, doc.external_id, entity_type, name)
         frappe.get_doc({
             "doctype": "Admin Deletion Audit",
             "actor": frappe.session.user,
@@ -124,6 +125,13 @@ def delete_entity(entity_type, name, reason=None):
 
 
 EXTERNAL_SOURCES = frozenset({"POS", "MoySklad"})
+
+
+def _external_source(doc):
+    source = doc.get("source")
+    if source == "MoySklad Opening Balance":
+        return "MoySklad"
+    return source if source in EXTERNAL_SOURCES else None
 
 
 def suppress_external_event(source, external_id, entity_type, entity_name):
