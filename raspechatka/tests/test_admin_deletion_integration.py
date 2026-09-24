@@ -142,7 +142,9 @@ class TestAdminOperationalDeletion(FrappeTestCase):
 
 	def _employee(self, *, pos_access=0):
 		position = self._raw(
-			"Position", f"TEST-DEL-POSITION-{uuid4().hex[:10]}", position_name="Тестовая должность"
+			"Position",
+			f"TEST-DEL-POSITION-{uuid4().hex[:10]}",
+			position_name=f"Тестовая должность {uuid4().hex[:10]}",
 		)
 		return frappe.get_doc(
 			{

@@ -554,7 +554,7 @@ def _preview(entity_type, name):
 
 @frappe.whitelist(methods=["GET"])
 @access_contract(auth="current_user", action="delete", scope="point")
-def get_delete_preview(entity_type, name):
+def get_delete_preview(entity_type: str, name: str):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Требуется авторизация"), frappe.AuthenticationError)
 	return _preview(entity_type, name)
@@ -562,7 +562,7 @@ def get_delete_preview(entity_type, name):
 
 @frappe.whitelist(methods=["POST"])
 @access_contract(auth="current_user", action="delete", scope="point")
-def delete_entity(entity_type, name, reason=None):
+def delete_entity(entity_type: str, name: str, reason: str | None = None):
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Требуется авторизация"), frappe.AuthenticationError)
 	authorized = False
