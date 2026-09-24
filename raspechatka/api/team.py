@@ -1,3 +1,5 @@
+# ruff: noqa: RUF001
+# fmt: off
 from calendar import monthrange
 from datetime import date
 
