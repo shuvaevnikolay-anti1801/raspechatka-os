@@ -228,10 +228,16 @@ class TestPosOrders(TestCase):
 			patch.object(pos, "_order_source_receipt", return_value=None),
 			patch.object(pos, "frappe", SimpleNamespace(db=db, get_doc=Mock(return_value=doc))),
 		):
-			pos._apply_order_created("EVENT-NEW", SimpleNamespace(business_point="POINT-1"), {
-				"orderNumber": "ORD-TECHNICAL", "customerOrderNumber": "4567 (1)",
-				"phone": "+79001234567", "lines": [],
-			})
+			pos._apply_order_created(
+				"EVENT-NEW",
+				SimpleNamespace(business_point="POINT-1"),
+				{
+					"orderNumber": "ORD-TECHNICAL",
+					"customerOrderNumber": "4567 (1)",
+					"phone": "+79001234567",
+					"lines": [],
+				},
+			)
 			created = pos.frappe.get_doc.call_args.args[0]
 			self.assertEqual(created["order_number"], "ORD-TECHNICAL")
 			self.assertEqual(created["customer_order_number"], "4567 (1)")
@@ -243,10 +249,26 @@ class TestPosOrders(TestCase):
 		self.assertEqual(db.sql.call_args.args[1], "POINT-1")
 
 	def test_bootstrap_serializes_both_numbers(self):
-		row = SimpleNamespace(name="id", order_number="ORD-TECHNICAL", customer_order_number="4567",
-			phone="+79001234567", contact_method=None, customer_name=None, total_amount=10, paid_amount=10,
-			status="New", comment="", due_at=None, creation="2026-09-23", created_at=None,
-			ready_at=None, issued_at=None, source_sale_id=None, source_receipt=None, fiscal_number=None)
+		row = SimpleNamespace(
+			name="id",
+			order_number="ORD-TECHNICAL",
+			customer_order_number="4567",
+			phone="+79001234567",
+			contact_method=None,
+			customer_name=None,
+			total_amount=10,
+			paid_amount=10,
+			status="New",
+			comment="",
+			due_at=None,
+			creation="2026-09-23",
+			created_at=None,
+			ready_at=None,
+			issued_at=None,
+			source_sale_id=None,
+			source_receipt=None,
+			fiscal_number=None,
+		)
 		fake = SimpleNamespace(get_all=Mock(side_effect=[[row], []]))
 		with (
 			patch.object(pos, "_doctype_exists", return_value=True),
