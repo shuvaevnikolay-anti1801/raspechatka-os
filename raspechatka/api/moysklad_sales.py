@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 import frappe
+from raspechatka.deletion import is_external_event_suppressed
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, now_datetime
 
@@ -389,6 +390,9 @@ def _upsert_shift(row, context):
 	stats = context["stats"]
 	source_id = _required_id(row)
 	external_id = _external_id("retailshift", source_id)
+	if is_external_event_suppressed("MoySklad", external_id):
+		stats["duplicates"] += 1
+		return None
 	name = frappe.db.get_value("Sales Shift", {"external_id": external_id}, "name")
 	point = _mapped_point(row, context)
 	if not point:
@@ -476,6 +480,9 @@ def _upsert_receipt(row, context, is_return=False):
 	source_id = _required_id(row)
 	kind = "retailsalesreturn" if is_return else "retaildemand"
 	external_id = _external_id(kind, source_id)
+	if is_external_event_suppressed("MoySklad", external_id):
+		stats["duplicates"] += 1
+		return
 	name = frappe.db.get_value("Sales Receipt", {"external_id": external_id}, "name")
 	if name and not _source_is_newer("Sales Receipt", name, row.get("updated")):
 		stats["duplicates"] += 1
@@ -565,6 +572,9 @@ def _upsert_cash_movement(row, context, is_withdrawal=False):
 	source_id = _required_id(row)
 	kind = "retaildrawercashout" if is_withdrawal else "retaildrawercashin"
 	external_id = _external_id(kind, source_id)
+	if is_external_event_suppressed("MoySklad", external_id):
+		stats["duplicates"] += 1
+		return
 	if frappe.db.exists("Cash Movement", {"external_id": external_id}):
 		stats["duplicates"] += 1
 		return
