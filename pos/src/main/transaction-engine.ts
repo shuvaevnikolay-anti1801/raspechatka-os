@@ -31,8 +31,11 @@ export class PosTransactionEngine {
     return {status:'completed',message:'Операция отменена до оплаты и фискализации'}
   }
 
-  hasBlockingOperation():boolean{
-    return this.journal.listUnresolved().some((operation)=>DANGEROUS_STATES.has(operation.state))
+  hasBlockingOperation(allowCashOnlyReturn=false):boolean{
+    return this.journal.listUnresolved().some((operation)=>
+      DANGEROUS_STATES.has(operation.state) &&
+      !(allowCashOnlyReturn && operation.state==='payment_unknown')
+    )
   }
 
   async recoverSafeOperations():Promise<number>{
@@ -111,7 +114,8 @@ export class PosTransactionEngine {
       return {...existingReturn,queuedForSync:true}
     }
     if(existingOperation?.state==='cancelled')throw new Error('Эта попытка возврата уже завершена отказом. Начните новую операцию.')
-    if(!existingOperation&&this.hasBlockingOperation()){
+    const cashOnlyReturn=request.payments.every((payment)=>isLocalPayment(payment.method))
+    if(!existingOperation&&this.hasBlockingOperation(cashOnlyReturn)){
       throw new Error('Есть незавершённая операция с деньгами или ККТ. Сначала завершите её в разделе «Восстановление».')
     }
     if(existingOperation&&existingOperation.amountMinor!==totalMinor){
