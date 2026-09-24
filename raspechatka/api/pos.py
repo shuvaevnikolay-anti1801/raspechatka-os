@@ -1,5 +1,6 @@
-from raspechatka.deletion import is_external_event_suppressed
 from __future__ import annotations
+
+from raspechatka.deletion import is_external_event_suppressed
 
 import calendar
 
