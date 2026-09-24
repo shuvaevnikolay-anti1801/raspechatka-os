@@ -22,6 +22,7 @@
   "employment_type",
   "hire_date",
   "dismissal_date",
+  "pos_access_enabled",
   "system_user_profile",
   "hr_tab",
   "inn",
@@ -156,6 +157,13 @@
    "fieldname": "dismissal_date",
    "fieldtype": "Date",
    "label": "Дата увольнения"
+  },
+  {
+   "fieldname": "pos_access_enabled",
+   "fieldtype": "Check",
+   "label": "Доступ к кассе",
+   "default": "0",
+   "in_list_view": 1
   },
   {
    "fieldname": "system_user_profile",
