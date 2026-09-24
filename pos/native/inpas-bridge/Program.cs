@@ -301,15 +301,6 @@ internal sealed class InpasSession
         var outcome = ClassifyOutcome(responseCode, transactionStatus);
         var description = ReadField(responsePacket, 71);
 
-        var response = IsPacketLike(exchangeResult) ? exchangeResult : packet;
-        var responseCode = SafeText(response,
-            "ResponseCodeHost", "ResponseCode", "HostResponseCode", "ResponseStatus", "ResultCode");
-        var transactionStatus = SafeText(response,
-            "TransactionStatus", "Status", "ResultStatus");
-        var outcome = ClassifyOutcome(responseCode, transactionStatus);
-        var description = SafeText(response,
-            "ResponseDescription", "ErrorDescription", "ResultDescription", "Message");
-
         return new Dictionary<string, object>
         {
             ["success"] = outcome == "approved",
