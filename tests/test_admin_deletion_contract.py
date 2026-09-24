@@ -71,10 +71,10 @@ class DeletionContractTests(unittest.TestCase):
             self.frappe.get_doc.assert_not_called()
 
     def test_admin_preview_and_execute_share_scope_resolver(self):
-        self.assertFalse(self.module.get_delete_preview("sales_shift", "R1")["can_delete"])
-        result = self.module.delete_entity("sales_shift", "R1")
+        self.assertFalse(self.module.get_delete_preview("business_point", "R1")["can_delete"])
+        result = self.module.delete_entity("business_point", "R1")
         self.assertEqual(result["strategy"], "blocked")
-        self.access.require_access.assert_called_with("page.sales.shifts", "delete")
+        self.access.require_access.assert_called_with("page.sales.overview", "delete")
         self.assertEqual(self.scope.ensure_point_allowed.call_count, 2)
         self.frappe.db.sql.assert_called_once()
         self.frappe.get_doc.return_value.insert.assert_not_called()
@@ -84,6 +84,17 @@ class DeletionContractTests(unittest.TestCase):
         with self.assertRaises(self.frappe.PermissionError):
             self.module.delete_entity("sales_receipt", "R1")
         self.frappe.db.rollback.assert_called_once()
+
+    def test_shift_and_employee_foreign_scope_are_denied_before_handlers(self):
+        self.scope.ensure_point_allowed.side_effect = self.frappe.PermissionError("foreign point")
+        with self.assertRaises(self.frappe.PermissionError):
+            self.module.delete_entity("sales_shift", "SHIFT-FOREIGN")
+        self.frappe.get_all.assert_not_called()
+        self.scope.ensure_point_allowed.side_effect = None
+        self.scope.ensure_entity_allowed.side_effect = self.frappe.PermissionError("foreign entity")
+        with self.assertRaises(self.frappe.PermissionError):
+            self.module.delete_entity("employee", "EMP-FOREIGN")
+        self.frappe.get_all.assert_not_called()
 
     def test_unknown_entity_never_reaches_get_doc(self):
         with self.assertRaises(self.frappe.PermissionError):
@@ -166,6 +177,75 @@ class DeletionContractTests(unittest.TestCase):
         self.assertEqual(result["strategy"], "hard_delete")
         self.frappe.delete_doc.assert_called_once_with("Stock Receipt", "DRAFT-1", ignore_permissions=True)
 
+    def test_shift_dependency_counts_include_all_sources_and_business_actions(self):
+        doc = MagicMock(doctype="Sales Shift", business_entity="E1", business_point="P1")
+        doc.name = "SHIFT-1"
+        self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
+            ["R1", "R2"] if doctype == "Sales Receipt" else
+            ["C1"] if doctype == "Cash Movement" else
+            [types.SimpleNamespace(name="A1", action_type="SALE", shift=doc.name,
+                                   business_entity="E1", business_point="P1",
+                                   reference_doctype="Sales Receipt", reference_document="R1")]
+            if doctype == "Cashier Action" else []
+        )
+        for source in ("POS", "MoySklad", "Manual", "Import"):
+            with self.subTest(source=source):
+                doc.source = source
+                result = self.module._sales_shift(doc, execute=True)
+                self.assertEqual(result["dependencies"]["Sales Receipt"],
+                                 {"count": 2, "names": ["R1", "R2"]})
+                self.assertEqual(result["dependencies"]["Cash Movement"],
+                                 {"count": 1, "names": ["C1"]})
+                self.assertEqual(result["dependencies"]["Cashier Action"]["names"], ["A1"])
+        self.frappe.delete_doc.assert_not_called()
+
+    def test_shift_deletes_only_actions_owned_by_shift(self):
+        doc = MagicMock(doctype="Sales Shift", business_entity="E1", business_point="P1")
+        doc.name = "SHIFT-1"
+        technical = types.SimpleNamespace(
+            name="A-OPEN", action_type="OPEN_SHIFT", shift=doc.name,
+            business_entity="E1", business_point="P1",
+            reference_doctype="Sales Shift", reference_document=doc.name,
+        )
+        self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
+            [technical] if doctype == "Cashier Action" else []
+        )
+        preview = self.module._sales_shift(doc)
+        self.assertEqual(preview["strategy"], "hard_delete")
+        self.assertTrue(preview["can_delete"])
+        self.assertFalse(preview["deleted"])
+        self.module._sales_shift(doc, execute=True)
+        self.assertEqual(self.frappe.delete_doc.call_args_list[0].args, ("Cashier Action", "A-OPEN"))
+        self.assertEqual(self.frappe.delete_doc.call_args_list[1].args, ("Sales Shift", doc.name))
+
+    def test_employee_open_shift_blocks_archive_and_profile_is_preserved(self):
+        doc = MagicMock(doctype="Employee", business_entity="E1")
+        doc.name = "EMP-1"
+        doc.get.side_effect = lambda key: {"system_user_profile": "PROFILE-1", "user": "web@example.test"}.get(key)
+        self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
+            ["SHIFT-1"] if doctype == "Sales Shift" else []
+        )
+        blocked = self.module._employee(doc, execute=True)
+        self.assertEqual(blocked["dependencies"]["Sales Shift"]["names"], ["SHIFT-1"])
+        doc.save.assert_not_called()
+        self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
+            ["SHIFT-1"] if doctype == "Sales Shift" and "status" not in kwargs["filters"] else []
+        )
+        archived = self.module._employee(doc, execute=True)
+        self.assertEqual(archived["strategy"], "deactivate")
+        self.assertEqual((doc.active, doc.pos_access_enabled), (0, 0))
+        self.assertEqual(len(archived["warnings"]), 2)
+        doc.save.assert_called_once_with(ignore_permissions=True)
+        self.frappe.delete_doc.assert_not_called()
+
+    def test_employee_without_history_is_hard_deleted(self):
+        doc = MagicMock(doctype="Employee")
+        doc.name = "EMP-EMPTY"
+        doc.get.return_value = None
+        result = self.module._employee(doc, execute=True)
+        self.assertEqual(result["strategy"], "hard_delete")
+        self.frappe.delete_doc.assert_called_once_with("Employee", doc.name, ignore_permissions=True)
+
     def test_suppressed_pos_receipt_never_reaches_upsert(self):
         source = MODULE.parent / "api" / "sales.py"
         tree = ast.parse(source.read_text())
@@ -179,6 +259,34 @@ class DeletionContractTests(unittest.TestCase):
         stats = {"duplicates": 0}
         namespace["_ingest_receipt"]({"external_id": "R1"}, object(), stats)
         self.assertEqual(stats["duplicates"], 1)
+        self.frappe.db.get_value.assert_not_called()
+
+    def test_deleted_shift_cannot_be_recreated_by_pos_ingest_or_legacy_path(self):
+        source = MODULE.parent / "api" / "sales.py"
+        fn = next(node for node in ast.parse(source.read_text()).body
+                  if isinstance(node, ast.FunctionDef) and node.name == "_ingest_shift")
+        namespace = {
+            "_required": lambda row, field: row[field],
+            "is_external_event_suppressed": lambda source, external_id: True,
+            "frappe": self.frappe,
+        }
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(source), "exec"), namespace)
+        stats = {"duplicates": 0}
+        namespace["_ingest_shift"]({"external_id": "OLD-SHIFT"}, object(), stats)
+        self.assertEqual(stats["duplicates"], 1)
+        self.frappe.db.get_value.assert_not_called()
+
+        legacy = MODULE.parent / "api" / "pos.py"
+        fn = next(node for node in ast.parse(legacy.read_text()).body
+                  if isinstance(node, ast.FunctionDef) and node.name == "_get_or_create_legacy_shift")
+        namespace = {"is_external_event_suppressed": lambda source, external_id: True,
+                     "frappe": self.frappe, "_": lambda message: message}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(legacy), "exec"), namespace)
+        with self.assertRaisesRegex(Exception, "Удалённая смена"):
+            namespace["_get_or_create_legacy_shift"](
+                types.SimpleNamespace(name="WORKPLACE"), "OLD-SHIFT",
+                types.SimpleNamespace(date=lambda: "2026-09-24"),
+            )
         self.frappe.db.get_value.assert_not_called()
 
     def test_suppressed_moysklad_receipt_never_reaches_upsert(self):
