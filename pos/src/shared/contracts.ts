@@ -459,6 +459,7 @@ export type UnresolvedOperation = {
   createdAt:string
   updatedAt:string
   paymentMethods:string[]
+  canCancel:boolean
 }
 export type RecoveryResult = {status:'completed'|'attention';message:string}
 export type DiagnosticEvent = {
@@ -506,6 +507,7 @@ export type PosApi = {
   discardSyncEvent: (id:string,adminCode:string) => Promise<SyncQueueSnapshot>
   listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
   recoverOperation: (id:string) => Promise<RecoveryResult>
+  cancelOperation: (id:string,adminCode:string) => Promise<RecoveryResult>
   listDiagnosticEvents: (limit?:number) => Promise<DiagnosticEvent[]>
   getAtolSettings: () => Promise<AtolSettings>
   saveAtolSettings: (value:AtolSettings) => Promise<AtolSettings>

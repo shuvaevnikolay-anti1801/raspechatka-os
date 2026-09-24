@@ -66,12 +66,6 @@ export function registerIpcHandlers(dependencies:{
   const assertCashierAccess=()=>cashierAuth.requireAuthenticated()
 
   const errorMessage=(error:unknown)=>error instanceof Error?error.message:String(error)
-  const assertFiscalShiftReady=async(action:string)=>{
-    const fiscalShift=await fiscalProvider.getShiftStatus()
-    if(!fiscalShift.open)throw new Error(`Нельзя ${action}: фискальная смена АТОЛ закрыта. Откройте смену кассы.`)
-    if(fiscalShift.state==='expired')throw new Error(`Нельзя ${action}: фискальная смена АТОЛ истекла. Закройте текущую смену и откройте новую.`)
-    return fiscalShift
-  }
 
   ipcMain.handle('pos:get-boot-state',bootState)
   ipcMain.handle('pos:set-upsell-cursor',(_event,triggerItem:string,cursor:number)=>{
@@ -217,6 +211,13 @@ export function registerIpcHandlers(dependencies:{
       diagnostics.record({source:'recovery',level:'error',eventType:'operation.recovery_failed',message:errorMessage(error),operationId:id})
       throw error
     }
+  })
+  ipcMain.handle('pos:cancel-operation',(_event,id:string,adminCode:string)=>{
+    if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
+    const result=transactionEngine.cancelBeforeSideEffects(id)
+    diagnostics.record({source:'recovery',level:'warning',eventType:'operation.cancelled_before_effects',
+      message:'Операция отменена до оплаты и фискализации',operationId:id})
+    return result
   })
   ipcMain.handle('pos:list-diagnostic-events',(_event,limit?:number)=>diagnostics.list(limit))
 
@@ -367,14 +368,6 @@ export function registerIpcHandlers(dependencies:{
       }
     }:request
 
-    const fiscalHealth=await fiscalProvider.healthCheck()
-    if(!fiscalHealth.ready)throw new Error(`Нельзя принимать оплату: ККТ не готова. ${fiscalHealth.message}`)
-    await assertFiscalShiftReady('проводить продажу')
-    if(usesTerminal(request.payments)){
-      const paymentHealth=await paymentProvider.healthCheck()
-      if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов. ${paymentHealth.message}`)
-    }
-
     diagnostics.record({
       source:usesTerminal(request.payments)?'payment':'fiscal',
       eventType:'sale.started',
@@ -421,14 +414,6 @@ export function registerIpcHandlers(dependencies:{
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма возврата по способам оплаты не совпадает с итогом')
     if(request.payments.some((x)=>x.method==='remote_payment')){
       throw new Error('Автоматический возврат удалённой оплаты пока не поддерживается. Не фиксируем фиктивный возврат денег.')
-    }
-
-    const fiscalHealth=await fiscalProvider.healthCheck()
-    if(!fiscalHealth.ready)throw new Error(`Нельзя начинать возврат: ККТ не готова. ${fiscalHealth.message}`)
-    await assertFiscalShiftReady('оформлять возврат')
-    if(usesTerminal(request.payments)){
-      const paymentHealth=await paymentProvider.healthCheck()
-      if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов к возврату. ${paymentHealth.message}`)
     }
 
     diagnostics.record({source:'fiscal',eventType:'return.started',message:`Начат возврат на ${totalMinor/100} ₽`,operationId:request.clientRequestId,details:{saleId:request.saleId,totalMinor}})

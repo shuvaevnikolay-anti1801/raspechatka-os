@@ -11,7 +11,8 @@ import { JournalOperation, TransactionJournal } from './transaction-journal'
 
 const isLocalPayment=(method:PaymentPart['method'])=>method==='cash'||method==='remote_payment'
 const DANGEROUS_STATES=new Set([
-  'payment_in_progress','payment_confirmed','payment_unknown','fiscalization_in_progress','fiscalized','fiscal_status_unknown'
+  'created','requires_attention','payment_in_progress','payment_confirmed','payment_unknown',
+  'fiscalization_in_progress','fiscalized','fiscal_status_unknown'
 ])
 
 export class PosTransactionEngine {
@@ -23,6 +24,12 @@ export class PosTransactionEngine {
   ){}
 
   listUnresolved(){return this.journal.listUnresolvedSummaries()}
+
+  cancelBeforeSideEffects(operationId:string):{status:'completed';message:string}{
+    if(!this.journal.cancelBeforeSideEffects(operationId))
+      throw new Error('Отмена недоступна: оплата или действие ККТ могли уже начаться. Используйте восстановление.')
+    return {status:'completed',message:'Операция отменена до оплаты и фискализации'}
+  }
 
   hasBlockingOperation():boolean{
     return this.journal.listUnresolved().some((operation)=>DANGEROUS_STATES.has(operation.state))
@@ -151,6 +158,35 @@ export class PosTransactionEngine {
     catch(error){return {status:'attention',message:error instanceof Error?error.message:String(error)}}
   }
 
+  private preflightError(operation:JournalOperation,message:string):never {
+    if(this.journal.get(operation.id)?.state==='cancelled')throw new Error('Операция отменена до оплаты и фискализации')
+    this.journal.setState(operation.id,operation.state,message)
+    throw new Error(message)
+  }
+
+  private async assertFiscalReady(operation:JournalOperation):Promise<void>{
+    let health
+    try{health=await this.fiscalProvider.healthCheck()}
+    catch{return this.preflightError(operation,'Не удалось проверить ККТ. Проверьте подключение и продолжите операцию через «Восстановление».')}
+    if(this.journal.get(operation.id)?.state==='cancelled')throw new Error('Операция отменена до оплаты и фискализации')
+    if(!health.ready)this.preflightError(operation,'ККТ недоступна или не настроена. Проверьте её и продолжите операцию через «Восстановление».')
+    let shift
+    try{shift=await this.fiscalProvider.getShiftStatus()}
+    catch{return this.preflightError(operation,'Не удалось проверить фискальную смену. Проверьте ККТ и продолжите операцию через «Восстановление».')}
+    if(this.journal.get(operation.id)?.state==='cancelled')throw new Error('Операция отменена до оплаты и фискализации')
+    if(!shift.open)this.preflightError(operation,'Фискальная смена закрыта. Откройте её и продолжите операцию через «Восстановление».')
+    if(shift.state==='expired')this.preflightError(operation,'Фискальная смена истекла. Закройте её, откройте новую и продолжите операцию через «Восстановление».')
+  }
+
+  private async assertPaymentReady(operation:JournalOperation,payments:PaymentPart[]):Promise<void>{
+    if(!payments.some((payment)=>payment.method==='card'||payment.method==='qr'))return
+    let health
+    try{health=await this.paymentProvider.healthCheck()}
+    catch{return this.preflightError(operation,'Не удалось проверить терминал. Продолжите операцию через «Восстановление».')}
+    if(this.journal.get(operation.id)?.state==='cancelled')throw new Error('Операция отменена до оплаты и фискализации')
+    if(!health.ready)this.preflightError(operation,'Терминал оплаты недоступен. Продолжите операцию через «Восстановление».')
+  }
+
   private async runSale(operation:JournalOperation):Promise<CompleteSaleResult>{
     const request=operation.request as CompleteSaleRequest
     this.validatePayments(request.payments,operation.amountMinor,'оплаты')
@@ -160,6 +196,9 @@ export class PosTransactionEngine {
     let current=operation
 
     if(current.state==='created'||current.state==='requires_attention'){
+      await this.assertFiscalReady(current)
+      await this.assertPaymentReady(current,request.payments)
+      if(this.journal.get(current.id)?.state==='cancelled')throw new Error('Операция отменена до оплаты и фискализации')
       const payments=await this.processPayments(current,request.payments,'charge')
       this.assertConfirmedPayments(request.payments,payments,operation.amountMinor)
       this.journal.setConfirmedPayments(current.id,payments)
@@ -167,6 +206,7 @@ export class PosTransactionEngine {
       current=this.journal.get(current.id)!
     }
     if(current.state==='payment_confirmed'){
+      await this.assertFiscalReady(current)
       this.assertConfirmedPayments(request.payments,current.confirmedPayments,operation.amountMinor)
       const fiscal=await this.fiscalizeSale(current,request)
       this.journal.setFiscalReceipt(current.id,fiscal.receiptNumber)
@@ -209,6 +249,9 @@ export class PosTransactionEngine {
     this.validateReturnAmount(sale,request,lines,operation.amountMinor)
     let current=operation
     if(current.state==='created'||current.state==='requires_attention'){
+      await this.assertFiscalReady(current)
+      await this.assertPaymentReady(current,request.payments)
+      if(this.journal.get(current.id)?.state==='cancelled')throw new Error('Операция отменена до оплаты и фискализации')
       const originalPayments=this.resolveOriginalRefundPayments(sale,request.payments)
       const payments=await this.processPayments(current,request.payments,'refund',originalPayments)
       this.assertConfirmedPayments(request.payments,payments,operation.amountMinor)
@@ -217,6 +260,7 @@ export class PosTransactionEngine {
       current=this.journal.get(current.id)!
     }
     if(current.state==='payment_confirmed'){
+      await this.assertFiscalReady(current)
       this.assertConfirmedPayments(request.payments,current.confirmedPayments,operation.amountMinor)
       const fiscal=await this.fiscalizeReturn(current,sale,lines)
       this.journal.setFiscalReceipt(current.id,fiscal.receiptNumber)

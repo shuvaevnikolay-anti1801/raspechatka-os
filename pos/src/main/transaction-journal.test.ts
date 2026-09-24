@@ -47,6 +47,27 @@ describe('TransactionJournal',()=>{
     expect(second.getLatestPaymentAttempt('op-1')?.state).toBe('in_progress')
   })
 
+  it('atomically cancels only an operation with no payment or fiscal attempts',()=>{
+    const {journal}=createJournal()
+    journal.create({id:'safe',clientRequestId:'request-1',kind:'sale',entityId:'sale-1',shiftId:'shift-1',amountMinor:10000,request:saleRequest})
+    expect(journal.listUnresolvedSummaries()).toMatchObject([{id:'safe',canCancel:true,paymentMethods:['card']}])
+    expect(journal.cancelBeforeSideEffects('safe')).toBe(true)
+    expect(journal.cancelBeforeSideEffects('safe')).toBe(false)
+    expect(journal.listUnresolved()).toHaveLength(0)
+
+    journal.create({id:'attempted',clientRequestId:'request-2',kind:'sale',entityId:'sale-2',shiftId:'shift-1',amountMinor:10000,
+      request:{...saleRequest,clientRequestId:'request-2'}})
+    journal.startPaymentAttempt({id:'payment-2',operationId:'attempted',action:'charge',method:'card',amountMinor:10000})
+    journal.setState('attempted','requires_attention')
+    expect(journal.canCancelBeforeSideEffects('attempted')).toBe(false)
+    expect(journal.cancelBeforeSideEffects('attempted')).toBe(false)
+
+    journal.create({id:'fiscal-attempt',clientRequestId:'request-3',kind:'sale',entityId:'sale-3',shiftId:'shift-1',amountMinor:10000,
+      request:{...saleRequest,clientRequestId:'request-3'}})
+    journal.startFiscalAttempt({id:'fiscal-3',operationId:'fiscal-attempt',action:'sale'})
+    expect(journal.cancelBeforeSideEffects('fiscal-attempt')).toBe(false)
+  })
+
   it('keeps payment and fiscal attempts as separate audit records',()=>{
     const {journal}=createJournal()
     journal.create({id:'op-1',clientRequestId:'request-1',kind:'sale',entityId:'sale-1',shiftId:'shift-1',amountMinor:10000,request:saleRequest})

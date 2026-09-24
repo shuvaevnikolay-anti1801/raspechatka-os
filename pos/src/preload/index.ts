@@ -104,6 +104,8 @@ const api: ExtendedPosApi = {
     ipcRenderer.invoke("pos:list-unresolved-operations"),
   recoverOperation: (id: string) =>
     ipcRenderer.invoke("pos:recover-operation", id),
+  cancelOperation: (id: string, adminCode: string) =>
+    ipcRenderer.invoke("pos:cancel-operation", id, adminCode),
   listDiagnosticEvents: (limit?: number) =>
     ipcRenderer.invoke("pos:list-diagnostic-events", limit),
   getAtolSettings: () => ipcRenderer.invoke("pos:get-atol-settings"),

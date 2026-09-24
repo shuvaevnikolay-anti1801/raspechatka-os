@@ -13,6 +13,7 @@ import { TransactionJournal } from './transaction-journal'
 import { PosTransactionEngine } from './transaction-engine'
 
 class TestPaymentProvider implements PaymentProvider {
+  healthCalls=0
   chargeCalls=0
   charges:PaymentRequest[]=[]
   refundCalls=0
@@ -21,7 +22,7 @@ class TestPaymentProvider implements PaymentProvider {
   nextStatus:PaymentResult={status:'approved',transactionId:'bank-1'}
   throwOnCharge=false
 
-  async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
+  async healthCheck():Promise<DeviceHealth>{this.healthCalls++;return {ready:true,status:'ready',message:'test'}}
   async charge(_request:PaymentRequest):Promise<PaymentResult>{
     this.charges.push(_request)
     this.chargeCalls++
@@ -35,6 +36,10 @@ class TestPaymentProvider implements PaymentProvider {
 }
 
 class TestFiscalProvider implements FiscalProvider {
+  ready=true
+  throwOnHealth=false
+  throwOnShift=false
+  shiftOpen=true
   saleCalls=0
   sales:FiscalRequest[]=[]
   returnCalls=0
@@ -46,8 +51,8 @@ class TestFiscalProvider implements FiscalProvider {
   throwOnSale=false
   nextStatus:FiscalOperationStatus={status:'fiscalized',receiptNumber:'FD-recovered'}
   async captureRecoverySnapshot(){this.snapshotCalls++;if(this.throwOnSnapshot||(this.throwOnSnapshotAfter&&this.snapshotCalls>1))throw new Error('snapshot unavailable');return {kktSerialNumber:'KKT-1',shiftNumber:'5',fiscalDocumentNumber:'10',kktDateTime:'2026-09-19T10:00:00.000Z',documentClosed:true}}
-  async healthCheck():Promise<DeviceHealth>{return {ready:true,status:'ready',message:'test'}}
-  async getShiftStatus(){return {open:true,state:'opened' as const,message:'open'}}
+  async healthCheck():Promise<DeviceHealth>{if(this.throwOnHealth)throw new Error('secret driver failure');return {ready:this.ready,status:this.ready?'ready':'not_available',message:'test'}}
+  async getShiftStatus(){if(this.throwOnShift)throw new Error('secret driver failure');return {open:this.shiftOpen,state:this.shiftOpen?'opened' as const:'closed' as const,message:'test'}}
   async openShift(){return}
   async closeShift(){return {message:'closed'}}
   async fiscalizeSale(_request:FiscalRequest):Promise<FiscalResult>{this.sales.push(_request);this.saleCalls++;if(this.throwOnSale)throw new Error('timeout');return {receiptNumber:`FD-${this.saleCalls}`}}
@@ -95,6 +100,83 @@ describe('PosTransactionEngine safety',()=>{
     expect(payment.chargeCalls).toBe(0)
     expect(fiscal.saleCalls).toBe(0)
     expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it.each(['disconnected','unconfigured','health error','shift unavailable','shift closed'])(
+    'persists a safe, cancellable sale before payment when KKT is %s',async(failure)=>{
+      fiscal.ready=failure!=='disconnected'&&failure!=='unconfigured'
+      fiscal.throwOnHealth=failure==='health error'
+      fiscal.throwOnShift=failure==='shift unavailable'
+      fiscal.shiftOpen=failure!=='shift closed'
+      await expect(engine.completeSale(request([{method:'card',amountMinor:2000}]),shiftId)).rejects.toThrow(/ККТ|[Фф]искальную смену|[Фф]искальная смена/)
+      const unresolved=engine.listUnresolved()
+      expect(unresolved).toHaveLength(1)
+      expect(unresolved[0]).toMatchObject({state:'created',canCancel:true,paymentMethods:['card'],amountMinor:2000})
+      expect(unresolved[0].lastError).not.toContain('secret driver failure')
+      expect(payment.healthCalls).toBe(0)
+      expect(payment.chargeCalls).toBe(0)
+      expect(fiscal.saleCalls).toBe(0)
+      expect(journal.getLatestFiscalAttempt(unresolved[0].id)).toBeNull()
+      expect(database.findSaleByClientRequestId('request-1')).toBeNull()
+      expect(database.findOrderBySourceSale(unresolved[0].entityId)).toBeFalsy()
+    }
+  )
+
+  it('recovers the same sale once after a journal restart and KKT readiness',async()=>{
+    fiscal.ready=false
+    const input={...request([{method:'card' as const,amountMinor:2000}],'restart-sale'),
+      order:{phone:'+7 999 123-45-67',comment:'Печать плаката',dueAt:'2026-10-01T10:00:00.000Z'}}
+    await expect(engine.completeSale(input,shiftId)).rejects.toThrow(/ККТ/)
+    const operation=engine.listUnresolved()[0]
+    expect(operation.canCancel).toBe(true)
+    journal.close()
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+    expect(engine.listUnresolved()).toMatchObject([{id:operation.id,state:'created',canCancel:true}])
+    fiscal.ready=true
+    expect(await engine.recover(operation.id)).toMatchObject({status:'completed'})
+    expect(await engine.recover(operation.id)).toMatchObject({status:'completed'})
+    expect(payment.chargeCalls).toBe(1)
+    expect(fiscal.saleCalls).toBe(1)
+    expect(database.findSaleByClientRequestId('restart-sale')).toBeTruthy()
+    expect(database.findOrderBySourceSale(operation.entityId)).toBeTruthy()
+    expect(engine.listUnresolved()).toHaveLength(0)
+  })
+
+  it('cancels only a pre-effect operation and rejects cancellation after payment attempts or confirmation',async()=>{
+    fiscal.ready=false
+    await expect(engine.completeSale(request([{method:'cash',amountMinor:2000}],'cancel-safe'),shiftId)).rejects.toThrow(/ККТ/)
+    const operation=engine.listUnresolved()[0]
+    expect(engine.cancelBeforeSideEffects(operation.id)).toMatchObject({status:'completed'})
+    expect(engine.listUnresolved()).toHaveLength(0)
+    fiscal.ready=true
+    await expect(engine.recover(operation.id)).resolves.toMatchObject({status:'completed'})
+    expect(fiscal.saleCalls).toBe(0)
+    await expect(engine.completeSale(request([{method:'cash',amountMinor:2000}],'cancel-safe'),shiftId)).rejects.toThrow(/новую оплату/)
+
+    payment.throwOnCharge=true
+    await expect(engine.completeSale(request([{method:'card',amountMinor:2000}],'cancel-unknown'),shiftId)).rejects.toThrow(/НЕ повторяйте оплату/)
+    const unknown=engine.listUnresolved()[0]
+    expect(unknown.canCancel).toBe(false)
+    expect(()=>engine.cancelBeforeSideEffects(unknown.id)).toThrow(/Отмена недоступна/)
+    journal.setState(unknown.id,'payment_confirmed')
+    journal.setConfirmedPayments(unknown.id,[{method:'card',amountMinor:2000,transactionId:'bank-confirmed'}])
+    expect(engine.listUnresolved()[0].canCancel).toBe(false)
+    expect(()=>engine.cancelBeforeSideEffects(unknown.id)).toThrow(/Отмена недоступна/)
+  })
+
+  it('does not start payment after an administrator cancels while KKT health is pending',async()=>{
+    let finishHealth!:(value:DeviceHealth)=>void
+    fiscal.healthCheck=()=>new Promise((resolve)=>{finishHealth=resolve})
+    const completing=engine.completeSale(request([{method:'card',amountMinor:2000}],'cancel-during-health'),shiftId)
+    const [operation]=engine.listUnresolved()
+    expect(operation.canCancel).toBe(true)
+    engine.cancelBeforeSideEffects(operation.id)
+    finishHealth({ready:true,status:'ready',message:'ready'})
+    await expect(completing).rejects.toThrow(/отменена/)
+    expect(payment.healthCalls).toBe(0)
+    expect(payment.chargeCalls).toBe(0)
+    expect(fiscal.saleCalls).toBe(0)
   })
 
   it('does not accept remote payment without explicit cashier confirmation',async()=>{
@@ -148,7 +230,7 @@ describe('PosTransactionEngine safety',()=>{
 
     const unresolved=engine.listUnresolved()
     expect(unresolved).toHaveLength(1)
-    expect(unresolved[0].paymentMethods).toEqual(['cash'])
+    expect(unresolved[0].paymentMethods).toEqual(['cash','card'])
     expect(payment.chargeCalls).toBe(1)
 
     payment.throwOnCharge=false
@@ -255,6 +337,8 @@ describe('PosTransactionEngine safety',()=>{
       .rejects.toThrow(/НЕ пробивайте чек повторно/)
     expect(fiscal.saleCalls).toBe(1)
     expect(engine.listUnresolved()[0].state).toBe('fiscal_status_unknown')
+    expect(engine.listUnresolved()[0].canCancel).toBe(false)
+    expect(()=>engine.cancelBeforeSideEffects(engine.listUnresolved()[0].id)).toThrow(/Отмена недоступна/)
     expect(journal.getLatestFiscalAttempt(engine.listUnresolved()[0].id)?.requestHash).toBeTruthy()
 
     fiscal.throwOnSale=false
@@ -402,6 +486,30 @@ describe('PosTransactionEngine safety',()=>{
       lines:[{saleItemId:first.id,quantity:0.6}],
       payments:[{method:'cash',amountMinor:1200}],
     },shiftId,1200,database.getSale(sale.saleId))).rejects.toThrow(/доступно|превышает/)
+  })
+
+  it('journals a return with disconnected KKT before refund and resumes that same return',async()=>{
+    const original=await engine.completeSale(request([{method:'cash',amountMinor:2000}],'return-before-kkt'),shiftId)
+    const sale=database.getSale(original.saleId)
+    const input={clientRequestId:'recover-return-kkt',saleId:sale.id,
+      lines:[{saleItemId:sale.lines[0].id,quantity:1}],payments:[{method:'cash' as const,amountMinor:2000}]}
+    fiscal.ready=false
+    await expect(engine.createReturn(input,shiftId,2000,sale)).rejects.toThrow(/ККТ/)
+    const [unresolved]=engine.listUnresolved()
+    expect(unresolved).toMatchObject({kind:'return',state:'created',canCancel:true})
+    expect(payment.refundCalls).toBe(0)
+    expect(fiscal.returnCalls).toBe(0)
+    expect(database.findReturnByClientRequestId(input.clientRequestId)).toBeNull()
+    expect(database.getSale(sale.id).returnedMinor).toBe(0)
+    journal.close()
+    journal=new TransactionJournal(join(dir,'journal.sqlite'))
+    engine=new PosTransactionEngine(database,journal,payment,fiscal)
+    expect(engine.listUnresolved()).toMatchObject([{id:unresolved.id,canCancel:true}])
+    fiscal.ready=true
+    expect(await engine.recover(unresolved.id)).toMatchObject({status:'completed'})
+    expect(fiscal.returnCalls).toBe(1)
+    expect(database.getSale(sale.id).returnedMinor).toBe(2000)
+    expect(engine.listUnresolved()).toHaveLength(0)
   })
 
 

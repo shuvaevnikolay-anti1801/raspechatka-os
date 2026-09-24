@@ -22,6 +22,7 @@ import { PinEntryLayout, PinInput } from "./PinEntry";
 import { PosButton, PosIconButton } from "./ui/PosButton";
 import { PosField } from "./ui/PosField";
 import { PosModal } from "./ui/PosModal";
+import { formatMoney } from "./money";
 import "./settings-hub.css";
 
 type ExtendedPosApi = typeof window.raspechatkaPos;
@@ -201,6 +202,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
   const [printer, setPrinter] = useState("");
   const [operations, setOperations] = useState<UnresolvedOperation[]>([]);
+  const [cancelCandidate,setCancelCandidate]=useState<UnresolvedOperation|null>(null);
   const [printJobs, setPrintJobs] = useState<PrintJobSummary[]>([]);
   const [syncQueue, setSyncQueue] = useState<SyncQueueSnapshot | null>(null);
   const [discardCandidate,setDiscardCandidate]=useState<SyncQueueItem|null>(null);
@@ -417,6 +419,21 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     } catch (e) {
       setMessage(operatorError(e, 'payment'));
     }
+  };
+  const cancelBeforeEffects=async()=>{
+    if(!cancelCandidate)return
+    if(!adminCode)return setMessage('Войдите как администратор повторно')
+    setBusy(true)
+    try{
+      const result=await pos().cancelOperation(cancelCandidate.id,adminCode)
+      setCancelCandidate(null)
+      setMessage(result.message)
+      await refresh()
+    }catch(e){
+      setCancelCandidate(null)
+      setMessage(operatorError(e,'payment'))
+      await refresh().catch(()=>undefined)
+    }finally{setBusy(false)}
   };
   const retryPrint = async (id: string) => {
     try {
@@ -760,12 +777,18 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                           {x.state}
                         </b>
                         <span>
-                          {x.lastError ? operatorError({code:x.state,message:x.lastError},'payment') : "Операция сохранена локально"}
+                          {x.lastError ? (x.canCancel ? x.lastError : operatorError({code:x.state,message:x.lastError},'payment')) : "Операция сохранена локально"}
                         </span>
+                        <span>{formatMoney(x.amountMinor)} · {x.paymentMethods.join(' + ')} · {new Date(x.createdAt).toLocaleString('ru-RU')}</span>
                       </div>
-                      <PosButton onClick={() => void recover(x.id)}>
-                        Проверить и продолжить
-                      </PosButton>
+                      <div className="settings-recovery-actions">
+                        <PosButton disabled={busy} onClick={() => void recover(x.id)}>
+                          Проверить и продолжить
+                        </PosButton>
+                        {x.canCancel && <PosButton variant="danger" disabled={busy} onClick={()=>setCancelCandidate(x)}>
+                          Отменить операцию
+                        </PosButton>}
+                      </div>
                     </article>
                   ))}
                   {printJobs.map((x) => (
@@ -781,6 +804,14 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                   ))}
                 </div>
               )}
+              {cancelCandidate&&<PosModal open title="Отменить операцию?" layout="action" closeDisabled={busy}
+                onClose={()=>setCancelCandidate(null)}
+                footer={<>
+                  <PosButton disabled={busy} onClick={()=>setCancelCandidate(null)}>Назад</PosButton>
+                  <PosButton variant="danger" disabled={busy} onClick={()=>void cancelBeforeEffects()}>Отменить операцию</PosButton>
+                </>}>
+                <p>Операция на {formatMoney(cancelCandidate.amountMinor)} будет отменена только если платёж и действие ККТ ещё не начинались. После отмены можно начать новый расчёт.</p>
+              </PosModal>}
             </section>
 
             <section className="settings-section">
