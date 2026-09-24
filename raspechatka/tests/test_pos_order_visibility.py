@@ -410,6 +410,8 @@ class TestPosOrderFrappeIntegration(TestCase):
 				"position": self.position.name,
 				"employment_type": "Трудовой договор",
 				"active": 1,
+				"pos_access_enabled": 1,
+				"assigned_points": [{"business_point": self.point.name, "is_default": 1}],
 			}
 		).insert(ignore_permissions=True)
 		self.profile = frappe.get_doc(

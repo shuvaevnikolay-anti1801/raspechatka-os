@@ -27,74 +27,25 @@ def _authenticate(device_id, token):
 
 
 def _point_employees(point_name):
-	"""Return active cashier users whose profile scope includes this Business Point."""
-	point = frappe.db.get_value("Business Point", point_name, ["business_entity"], as_dict=True)
-	if not point or not point.business_entity:
-		return []
-	organization = frappe.db.get_value("Business Entity", point.business_entity, "organization")
-	profiles = frappe.get_all(
-		"Raspechatka User Profile",
+	"""Return active POS-enabled employees assigned to this Business Point."""
+	assigned = frappe.get_all(
+		"Employee Point Assignment",
 		filters={
-			"active": 1,
-			"access_profile": "Raspechatka Cashier",
-			"linked_employee": ["is", "set"],
+			"parenttype": "Employee",
+			"business_point": point_name,
 		},
-		fields=[
-			"name",
-			"linked_employee",
-			"system_user",
-			"scope_type",
-			"organization",
-			"business_entity",
-		],
+		pluck="parent",
 		limit_page_length=1000,
 	)
-	if not profiles:
+	if not assigned:
 		return []
-	point_profiles = set(
-		frappe.get_all(
-			"Raspechatka User Point",
-			filters={
-				"parent": ["in", [row.name for row in profiles]],
-				"parenttype": "Raspechatka User Profile",
-				"business_point": point_name,
-			},
-			pluck="parent",
-			limit_page_length=1000,
-		)
-	)
-
-	def has_point_access(profile):
-		if profile.scope_type == "Network":
-			return True
-		if profile.scope_type == "Partner":
-			return bool(organization and profile.organization == organization)
-		if profile.scope_type == "Business Entity":
-			return profile.business_entity == point.business_entity
-		if profile.scope_type == "Points":
-			return profile.name in point_profiles
-		return False
-
-	profiles = [row for row in profiles if has_point_access(row)]
-	if not profiles:
-		return []
-	enabled_users = set(
-		frappe.get_all(
-			"User",
-			filters={
-				"name": ["in", [row.system_user for row in profiles if row.system_user] or ["__none__"]],
-				"enabled": 1,
-			},
-			pluck="name",
-			limit_page_length=1000,
-		)
-	)
-	eligible = {
-		row.linked_employee for row in profiles if row.system_user and row.system_user in enabled_users
-	}
 	rows = frappe.get_all(
 		"Employee",
-		filters={"name": ["in", list(eligible) or ["__none__"]], "active": 1},
+		filters={
+			"name": ["in", assigned],
+			"active": 1,
+			"pos_access_enabled": 1,
+		},
 		fields=["name", "employee_name"],
 		order_by="employee_name asc",
 		limit_page_length=1000,
