@@ -97,9 +97,13 @@ def get_delete_preview(entity_type, name):
 def delete_entity(entity_type, name, reason=None):
     if frappe.session.user == "Guest":
         frappe.throw(_("Требуется авторизация"), frappe.AuthenticationError)
+    authorized = False
+    strategy = "blocked"
     try:
         rule, doc = _resolve(entity_type, name, lock=True)
+        authorized = True
         preview = rule.handler(doc, execute=False)
+        strategy = preview["strategy"]
         if not preview["can_delete"]:
             result = preview
         else:
@@ -107,21 +111,34 @@ def delete_entity(entity_type, name, reason=None):
             source = _external_source(doc)
             if result.get("deleted") and doc.get("external_id") and source:
                 suppress_external_event(source, doc.external_id, entity_type, name)
-        frappe.get_doc({
-            "doctype": "Admin Deletion Audit",
-            "actor": frappe.session.user,
-            "entity_type": entity_type,
-            "entity_name": name,
-            "strategy": result["strategy"],
-            "occurred_at": now_datetime(),
-            "reason": reason,
-            "affected_json": frappe.as_json(result.get("affected", [])),
-            "outcome": "Applied" if result.get("deleted") else "Blocked",
-        }).insert(ignore_permissions=True)
+        _audit(entity_type, name, reason, result["strategy"], result.get("affected", []),
+               "Applied" if result.get("deleted") else "Blocked")
         return result
     except Exception:
         frappe.db.rollback()
+        if authorized:
+            # A failed domain transaction cannot contain its own durable audit.
+            # Record the diagnostic in a separate transaction after rollback.
+            try:
+                _audit(entity_type, name, reason, strategy, [], "Failed")
+                frappe.db.commit()
+            except Exception:
+                frappe.db.rollback()
         raise
+
+
+def _audit(entity_type, name, reason, strategy, affected, outcome):
+    frappe.get_doc({
+        "doctype": "Admin Deletion Audit",
+        "actor": frappe.session.user,
+        "entity_type": entity_type,
+        "entity_name": name,
+        "strategy": strategy,
+        "occurred_at": now_datetime(),
+        "reason": reason,
+        "affected_json": frappe.as_json(affected),
+        "outcome": outcome,
+    }).insert(ignore_permissions=True)
 
 
 EXTERNAL_SOURCES = frozenset({"POS", "MoySklad"})
