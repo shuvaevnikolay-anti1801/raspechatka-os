@@ -278,7 +278,10 @@ internal sealed class InpasSession
                 packet.TerminalTrxID = trxId;
         }
 
-        var responsePacket = Activator.CreateInstance(packet.GetType());
+        var responsePacketType = Type.GetTypeFromProgID(PacketProgId, false);
+        if (responsePacketType == null)
+            throw new DriverMissingException("DualConnector.SAPacket is not registered for x64.");
+        var responsePacket = Activator.CreateInstance(responsePacketType);
         var exchangeArgs = new object[] { packet, responsePacket, 120 };
         int exchangeResult;
         try
