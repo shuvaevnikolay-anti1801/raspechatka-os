@@ -30,16 +30,146 @@ def _blocked(doc, *, execute=False):
     }
 
 
+def _references(doctype, filters):
+    return frappe.get_all(doctype, filters=filters, pluck="name", limit_page_length=100000)
+
+
+def _dependency_probe(doc):
+    """Only explicit business dependencies are considered safe to inspect here."""
+    dependencies = {}
+    if doc.doctype == "Sales Receipt":
+        if doc.receipt_type == "Sale":
+            returns = _references("Sales Receipt", {
+                "original_receipt": doc.name, "receipt_type": "Return", "docstatus": 1,
+            })
+            if returns:
+                dependencies["Sales Receipt Return"] = returns
+    elif doc.doctype == "Purchase Order":
+        for doctype in ("Stock Receipt", "Supplier Payment Allocation"):
+            names = _references(doctype, {"purchase_order": doc.name})
+            if names:
+                dependencies[doctype] = names
+    elif doc.doctype == "Cash Movement":
+        transactions = _references("Finance Transaction", {"cash_movement": doc.name, "docstatus": 1})
+        if transactions:
+            allocations = _references("Supplier Payment Allocation", {
+                "finance_transaction": ["in", transactions],
+            })
+            if allocations:
+                dependencies["Supplier Payment Allocation"] = allocations
+    if doc.docstatus == 0:
+        # A draft must have no existing derived effects, including inconsistent
+        # historical rows left by an interrupted or imported workflow.
+        checks = (
+            ("Stock Ledger Entry", {"voucher_type": doc.doctype, "voucher_no": doc.name}),
+            ("Cashier Action", {"reference_doctype": doc.doctype, "reference_document": doc.name}),
+        )
+        if doc.doctype == "Sales Receipt":
+            checks += (
+                ("Profitability Entry", {"source_doctype": doc.doctype, "source_document": doc.name}),
+                ("Client Purchase", {"source_document": doc.name}),
+            )
+        if doc.doctype == "Cash Movement":
+            checks += (("Finance Transaction", {"cash_movement": doc.name}),)
+        for doctype, filters in checks:
+            names = _references(doctype, filters)
+            if names:
+                dependencies[doctype] = names
+    return dependencies
+
+
+def _affected_after_cancel(doc):
+    affected = [{"doctype": doc.doctype, "name": doc.name, "docstatus": 2}]
+    if doc.doctype in ("Sales Receipt", "Stock Receipt", "Stock Write Off", "Stock Inventory"):
+        for name in _references("Stock Ledger Entry", {
+            "voucher_type": doc.doctype, "voucher_no": doc.name, "is_reversal": 1,
+        }):
+            affected.append({"doctype": "Stock Ledger Entry", "name": name})
+    if doc.doctype == "Sales Receipt":
+        for name in _references("Profitability Entry", {
+            "source_doctype": doc.doctype, "source_document": doc.name,
+        }):
+            affected.append({"doctype": "Profitability Entry", "name": name})
+        for name in _references("Client Purchase", {"source_document": doc.name}):
+            affected.append({"doctype": "Client Purchase", "name": name})
+    if doc.doctype == "Cash Movement":
+        for name in _references("Finance Transaction", {"cash_movement": doc.name}):
+            affected.append({"doctype": "Finance Transaction", "name": name})
+    if doc.doctype == "Stock Receipt" and doc.purchase_order:
+        affected.append({"doctype": "Purchase Order", "name": doc.purchase_order})
+    if doc.doctype in ("Sales Receipt", "Cash Movement"):
+        affected.append({"doctype": "Sales Shift", "name": doc.shift})
+    return affected
+
+
+def _operational(doc, *, execute=False):
+    if doc.docstatus not in (0, 1):
+        return {
+            "strategy": "blocked", "deleted": False, "can_delete": False,
+            "message": _("Документ уже отменён или имеет неподдерживаемый статус"),
+            "dependencies": {}, "affected": [], "warnings": [],
+        }
+    dependencies = _dependency_probe(doc)
+    if dependencies:
+        return {
+            "strategy": "blocked", "deleted": False, "can_delete": False,
+            "message": _("Сначала отмените или удалите зависимые документы"),
+            "dependencies": {doctype: {"count": len(names), "names": names}
+                             for doctype, names in dependencies.items()},
+            "affected": [], "warnings": [],
+        }
+    strategy = "hard_delete" if doc.docstatus == 0 else "cancel"
+    result = {
+        "strategy": strategy, "deleted": bool(execute), "can_delete": True,
+        "message": _("Черновик будет удалён") if strategy == "hard_delete"
+                   else _("Документ будет отменён; история сохранится"),
+        "dependencies": {}, "affected": [], "warnings": [],
+    }
+    if execute:
+        if strategy == "hard_delete":
+            frappe.delete_doc(doc.doctype, doc.name, ignore_permissions=True)
+            result["affected"] = [{"doctype": doc.doctype, "name": doc.name, "deleted": True}]
+        else:
+            doc.flags.ignore_permissions = True
+            doc.cancel()
+            result["affected"] = _affected_after_cancel(doc)
+    return result
+
+
+def _sales_receipt(doc, *, execute=False):
+    return _operational(doc, execute=execute)
+
+
+def _cash_movement(doc, *, execute=False):
+    return _operational(doc, execute=execute)
+
+
+def _stock_receipt(doc, *, execute=False):
+    return _operational(doc, execute=execute)
+
+
+def _stock_write_off(doc, *, execute=False):
+    return _operational(doc, execute=execute)
+
+
+def _stock_inventory(doc, *, execute=False):
+    return _operational(doc, execute=execute)
+
+
+def _purchase_order(doc, *, execute=False):
+    return _operational(doc, execute=execute)
+
+
 # Only first-party business entities may enter this registry. A client value is
 # never passed to frappe.get_doc until it has been resolved through this map.
 REGISTRY = {
-    "sales_receipt": DeletionRule("Sales Receipt", "page.sales.receipts", "point", _blocked),
+    "sales_receipt": DeletionRule("Sales Receipt", "page.sales.receipts", "point", _sales_receipt),
     "sales_shift": DeletionRule("Sales Shift", "page.sales.shifts", "point", _blocked),
-    "cash_movement": DeletionRule("Cash Movement", "page.sales.cash", "point", _blocked),
-    "stock_receipt": DeletionRule("Stock Receipt", "page.warehouse.receipts", "point", _blocked),
-    "stock_write_off": DeletionRule("Stock Write Off", "page.warehouse.write_offs", "point", _blocked),
-    "stock_inventory": DeletionRule("Stock Inventory", "page.warehouse.inventories", "point", _blocked),
-    "purchase_order": DeletionRule("Purchase Order", "page.warehouse.purchase_orders", "entity", _blocked),
+    "cash_movement": DeletionRule("Cash Movement", "page.sales.cash", "point", _cash_movement),
+    "stock_receipt": DeletionRule("Stock Receipt", "page.warehouse.receipts", "point", _stock_receipt),
+    "stock_write_off": DeletionRule("Stock Write Off", "page.warehouse.write_offs", "point", _stock_write_off),
+    "stock_inventory": DeletionRule("Stock Inventory", "page.warehouse.inventories", "point", _stock_inventory),
+    "purchase_order": DeletionRule("Purchase Order", "page.warehouse.purchase_orders", "point", _purchase_order),
     "employee": DeletionRule("Employee", "page.team.employees", "entity", _blocked),
     "business_point": DeletionRule("Business Point", "page.sales.overview", "point_self", _blocked),
 }
