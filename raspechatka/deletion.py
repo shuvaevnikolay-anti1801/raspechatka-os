@@ -39,9 +39,10 @@ def _dependency_probe(doc):
     dependencies = {}
     if doc.doctype == "Sales Receipt":
         if doc.receipt_type == "Sale":
-            returns = _references("Sales Receipt", {
-                "original_receipt": doc.name, "receipt_type": "Return", "docstatus": 1,
-            })
+            filters = {"original_receipt": doc.name, "receipt_type": "Return"}
+            if doc.docstatus == 1:
+                filters["docstatus"] = 1
+            returns = _references("Sales Receipt", filters)
             if returns:
                 dependencies["Sales Receipt Return"] = returns
     elif doc.doctype == "Purchase Order":
