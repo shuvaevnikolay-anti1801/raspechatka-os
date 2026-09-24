@@ -1,6 +1,7 @@
-from raspechatka.deletion import is_external_event_suppressed
 # ruff: noqa: RUF001
 from __future__ import annotations
+
+from raspechatka.deletion import is_external_event_suppressed
 
 import re
 from datetime import datetime
