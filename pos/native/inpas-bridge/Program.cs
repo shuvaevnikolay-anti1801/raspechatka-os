@@ -322,7 +322,7 @@ internal sealed class InpasSession
             ["transactionStatus"] = transactionStatus,
             ["amountMinor"] = amountMinor,
             ["receipt"] = SanitizeReceipt(ReadField(responsePacket, 90)),
-            ["exchangeAccepted"] = exchangeResult == 0
+            ["exchangeAccepted"] = exchangeResult == 0 || exchangeResult == 1
         };
     }
 
