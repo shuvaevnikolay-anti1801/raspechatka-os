@@ -345,6 +345,10 @@ internal sealed class InpasSession
         {
             link = Activator.CreateInstance(linkType);
             packet = Activator.CreateInstance(packetType);
+            var initResult = Convert.ToInt32(Invoke(link, "InitResources"), CultureInfo.InvariantCulture);
+            if (initResult != 0)
+                throw new DriverMissingException(
+                    "INPAS DualConnector resource initialization failed with code " + initResult + ".");
         }
         catch (Exception error)
         {
