@@ -114,15 +114,15 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     const queue:SyncQueueSnapshot={
       items:[
         {id:'raw-order-uuid-123',eventType:'order.created',label:'Новый заказ',createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:2,lastAttemptAt:'2026-09-23T10:01:00Z',nextAttemptAt:null,lastError:'Повтор будет выполнен позже',canRetry:true,canCancel:true},
-        {id:'raw-fiscal-uuid-456',eventType:'sale.completed',label:'Продажа',createdAt:'2026-09-23T11:00:00Z',status:'problem',attemptCount:3,lastAttemptAt:null,nextAttemptAt:null,lastError:'Сервер отклонил данные события',canRetry:false,canCancel:false},
+        {id:'raw-fiscal-uuid-456',eventType:'sale.completed',label:'Продажа',createdAt:'2026-09-23T11:00:00Z',status:'problem',attemptCount:3,lastAttemptAt:null,nextAttemptAt:null,lastError:'Сервер отклонил данные события',canRetry:true,canCancel:true},
       ],total:2,problemCount:1,problemCountTruncated:false,
     }
     const markup=renderToStaticMarkup(<SettingsSyncQueue queue={queue} busy={false} onRetry={()=>undefined} onDiscard={()=>undefined}/> )
     expect(markup).toContain('Новый заказ')
     expect(markup).toContain('Требует исправления')
     expect(markup).toContain('Попыток: 2')
-    expect((markup.match(/Отправить сейчас/g)||[]).length).toBe(1)
-    expect((markup.match(/Удалить из очереди/g)||[]).length).toBe(1)
+    expect((markup.match(/Отправить сейчас/g)||[]).length).toBe(2)
+    expect((markup.match(/Удалить из очереди/g)||[]).length).toBe(2)
     expect(markup).not.toContain('Отменить')
     expect(markup).not.toContain('raw-order-uuid-123')
     expect(markup).not.toContain('raw-fiscal-uuid-456')
@@ -133,21 +133,32 @@ describe('DEV-163 unified SettingsHub contract',()=>{
     expect(legacy).not.toContain('TypeError')
   })
 
-  it('rejects unsafe, delayed and unversioned retries by the main policy',()=>{
+  it('allows every pending/problem outbox event and blocks terminal/global states',()=>{
     const event:OutboxQueueItem={id:'e',eventType:'order.created',payload:{},createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:1,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null}
-    expect(canRetrySyncQueueEvent(event,false)).toBe(true)
-    for(const eventType of ['sale.completed','sale.returned','shift.opened','shift.closed','cash.deposited','cash.withdrawn','cash.counted','payment_unknown','fiscal_status_unknown']){
-      expect(canRetrySyncQueueEvent({...event,eventType},false)).toBe(false)
-      expect(canCancelSyncQueueEvent({...event,eventType})).toBe(false)
+    for(const eventType of ['order.created','cleaner.visit.recorded','shift.opened','shift.closed','sale.completed','sale.returned','cash.deposited','cash.withdrawn','cash.counted','future.unknown','order.updated']){
+      for(const status of ['pending','problem'] as const){
+        const row={...event,eventType,status}
+        expect(canRetrySyncQueueEvent(row,false)).toBe(true)
+        expect(canCancelSyncQueueEvent(row,false)).toBe(true)
+        const queue:SyncQueueSnapshot={items:[{...row,label:'Документ',canRetry:true,canCancel:true}],total:1,problemCount:status==='problem'?1:0,problemCountTruncated:false}
+        const markup=renderToStaticMarkup(<SettingsSyncQueue queue={queue} busy={false} onRetry={()=>undefined} onDiscard={()=>undefined}/> )
+        expect(markup).toContain('Отправить сейчас')
+        expect(markup).toContain('Удалить из очереди')
+      }
     }
-    expect(canRetrySyncQueueEvent({...event,status:'problem'},false)).toBe(true)
-    expect(canRetrySyncQueueEvent({...event,nextAttemptAt:'2026-09-24T00:00:00Z'},false)).toBe(true)
     expect(canRetrySyncQueueEvent(event,true)).toBe(false)
-    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated'},false)).toBe(false)
-    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated',payload:{updatedAt:'2026-09-23T10:00:00Z'}},false)).toBe(true)
-    expect(canCancelSyncQueueEvent(event)).toBe(true)
     expect(canCancelSyncQueueEvent(event,true)).toBe(false)
-    expect(canCancelSyncQueueEvent({...event,status:'sent'})).toBe(false)
+    for(const status of ['sent','discarded'] as const){
+      expect(canRetrySyncQueueEvent({...event,status},false)).toBe(false)
+      expect(canCancelSyncQueueEvent({...event,status},false)).toBe(false)
+    }
+  })
+
+  it('warns about manual reconciliation for shift and money discards',()=>{
+    const source=readFileSync(new URL('./SettingsHub.tsx',import.meta.url),'utf8')
+    expect(source).toContain('Распечатка OS может не получить это сменное или денежное событие')
+    expect(source).toContain('Может потребоваться ручная сверка')
+    expect(source).toContain('не отменяет локальный документ')
   })
 
   it('uses configuration refresh after admin connection save without full sync',async()=>{

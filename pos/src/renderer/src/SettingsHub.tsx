@@ -754,6 +754,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 <PosButton variant="danger" disabled={busy} onClick={()=>void discardSyncEvent()}>Удалить из очереди</PosButton>
               </>}>
               <p>Документ «{discardCandidate.label}» останется на этой кассе, но больше не будет отправляться в Распечатка OS. Если прежняя отправка осталась без ответа, сервер мог уже принять документ. Проверьте его там перед подтверждением.</p>
+              {(/^(shift\.|sale\.|cash\.)/.test(discardCandidate.eventType))&&<p>Распечатка OS может не получить это сменное или денежное событие. Может потребоваться ручная сверка. Удаление из очереди не отменяет локальный документ.</p>}
             </PosModal>}
 
             <section className="settings-section">

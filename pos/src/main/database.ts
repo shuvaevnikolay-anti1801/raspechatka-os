@@ -7,6 +7,7 @@ import type {
   Order, CreateUnpaidOrderRequest, UpdateOrderRequest
 } from '../shared/contracts'
 import type { PointEmployee, ReceiptMirror } from '../shared/contracts'
+import { normalizeOrderColumnWidths, type OrderColumnWidths } from '../shared/contracts'
 import { normalizeRussianPhone } from '../shared/phone'
 import { allocateFiscalAmounts } from './providers/atol-json'
 
@@ -319,6 +320,24 @@ export class PosDatabase {
     } catch {
       return null
     }
+  }
+
+  private orderWidthsKey():string|null {
+    const context=this.bootstrapDrawerContext()
+    if(!context)return null
+    return `ui:orders:column-widths:v1:${encodeURIComponent(context.pointId)}:${encodeURIComponent(context.workplaceId)}`
+  }
+
+  getOrderTableColumnWidths():OrderColumnWidths {
+    const key=this.orderWidthsKey()
+    if(!key)return normalizeOrderColumnWidths(null)
+    try { return normalizeOrderColumnWidths(JSON.parse(this.getState(key)??'null')) }
+    catch { return normalizeOrderColumnWidths(null) }
+  }
+
+  saveOrderTableColumnWidths(widths:unknown):void {
+    const key=this.orderWidthsKey()
+    if(key)this.setState(key,JSON.stringify(normalizeOrderColumnWidths(widths)))
   }
 
   private hasLegacyCashFacts():boolean {
