@@ -210,6 +210,15 @@ class TestAdminOperationalDeletion(FrappeTestCase):
         }).insert(ignore_permissions=True)
         self.assertEqual(delete_entity("purchase_order", draft.name)["strategy"], "hard_delete")
         self.assertFalse(frappe.db.exists("Purchase Order", draft.name))
+        unlinked = frappe.get_doc({
+            "doctype": "Purchase Order", "business_entity": self.entity,
+            "business_point": self.point, "warehouse": self.warehouse,
+            "supplier": self.supplier,
+            "items": [{"item": self.item, "quantity": 1, "rate": 120}],
+        }).insert(ignore_permissions=True)
+        unlinked.submit()
+        self.assertEqual(delete_entity("purchase_order", unlinked.name)["strategy"], "cancel")
+        self.assertEqual(frappe.db.get_value("Purchase Order", unlinked.name, "docstatus"), 2)
         order = frappe.get_doc({
             "doctype": "Purchase Order", "business_entity": self.entity,
             "business_point": self.point, "warehouse": self.warehouse,
@@ -223,6 +232,18 @@ class TestAdminOperationalDeletion(FrappeTestCase):
         self.assertIn(receipt.name, result["dependencies"]["Stock Receipt"]["names"])
         self.assertFalse(delete_entity("purchase_order", order.name)["deleted"])
         self.assertEqual(frappe.db.get_value("Purchase Order", order.name, "docstatus"), 1)
+
+    def test_safe_draft_stock_receipt_has_no_stock_effect(self):
+        before = self._balance()
+        draft = frappe.get_doc({
+            "doctype": "Stock Receipt", "receipt_type": "Оприходование",
+            "business_entity": self.entity, "business_point": self.point,
+            "warehouse": self.warehouse, "reason": "DEV-181 draft",
+            "items": [{"item": self.item, "quantity": 10, "rate": 100}],
+        }).insert(ignore_permissions=True)
+        self.assertEqual(delete_entity("stock_receipt", draft.name)["strategy"], "hard_delete")
+        self.assertFalse(frappe.db.exists("Stock Receipt", draft.name))
+        self.assertEqual(self._balance(), before)
 
     def test_collection_cancels_finance_transaction_and_restores_shift(self):
         article = frappe.db.get_value("Financial Article", {"article_name": "Выручка", "active": 1},
