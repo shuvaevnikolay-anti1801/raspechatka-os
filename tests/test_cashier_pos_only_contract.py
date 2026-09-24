@@ -23,19 +23,17 @@ def test_cashier_web_access_is_denied_before_routing():
 	assert "is_cashier_pos_only(frappe.session.user)" in web and "frappe.PermissionError" in web
 
 
-def test_pos_cashier_list_requires_active_cashier_profile_user_and_profile_point_scope():
+def test_pos_cashier_list_uses_employee_pos_access_and_work_point_assignment():
 	source = (ROOT / "raspechatka/api/pos_device.py").read_text(encoding="utf-8")
 	section = source[source.index("def _point_employees") : source.index("def _customers")]
-	assert '"Raspechatka User Profile"' in section
-	assert '"access_profile": "Raspechatka Cashier"' in section
-	assert '"active": 1' in section
-	assert '"User"' in section and '"enabled": 1' in section
-	assert '"Raspechatka User Point"' in section
+	assert '"Employee Point Assignment"' in section
 	assert '"business_point": point_name' in section
-	assert 'profile.scope_type == "Points"' in section
-	assert 'profile.scope_type == "Business Entity"' in section
-	assert 'profile.scope_type == "Partner"' in section
-	assert '"Employee Point Assignment"' not in section
+	assert '"Employee"' in section
+	assert '"active": 1' in section
+	assert '"pos_access_enabled": 1' in section
+	assert '"Raspechatka User Profile"' not in section
+	assert '"Raspechatka User Point"' not in section
+	assert '"User"' not in section
 
 
 def test_pos_rejects_cross_point_cashier_filters_and_unknown_selection():
@@ -60,12 +58,20 @@ def test_revocation_blocks_new_pos_work_but_keeps_shift_closure_available():
 	assert "assertCashierAccess()" not in close_section
 
 
-def test_open_shift_must_close_before_access_or_assignment_revocation():
-	profile = (
-		ROOT / "raspechatka/raspechatka_os/doctype/raspechatka_user_profile/raspechatka_user_profile.py"
-	).read_text(encoding="utf-8")
+def test_open_shift_must_close_before_pos_access_or_assignment_revocation():
 	team = (ROOT / "raspechatka/api/team.py").read_text(encoding="utf-8")
-	assert '"Sales Shift", {"cashier": previous.linked_employee, "status": "Open"}' in profile
-	assert "Сначала закройте открытую смену кассира" in profile
+	assert "previous_pos_access" in team and "pos_access_revoked" in team
 	assert "previous_points" in team and "removed_points" in team
 	assert 'open_shift_filters = {"cashier": name, "status": "Open"}' in team
+	assert "Сначала закройте открытую смену кассира" in team
+
+
+def test_web_user_flows_do_not_offer_new_cashier_role():
+	users = (ROOT / "raspechatka/api/users.py").read_text(encoding="utf-8")
+	team = (ROOT / "raspechatka/api/team.py").read_text(encoding="utf-8")
+	employees = (ROOT / "frontend/src/pages/EmployeesPage.vue").read_text(encoding="utf-8")
+	assert 'if role["name"] != CASHIER_ROLE' in users
+	assert "Роль кассира не создаётся как пользователь ОС" in users
+	assert 'access_profile in ("Cashier", CASHIER_ROLE)' in team
+	assert "Доступ к Windows-кассе" in employees
+	assert 'access_profile: "Point Manager"' in employees
