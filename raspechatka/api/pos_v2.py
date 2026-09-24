@@ -13,6 +13,7 @@ from raspechatka.access_contract import access_contract
 from raspechatka.api import pos as legacy_pos
 from raspechatka.api import pos_device as base_pos
 from raspechatka.api import sales as sales_api
+from raspechatka.deletion import is_external_event_suppressed
 from raspechatka.pos_settings import get_pos_sales_rules
 from raspechatka.pos_upsell import get_pos_upsell_rules
 from raspechatka.sales import log_cashier_action, update_shift_totals
@@ -1076,6 +1077,22 @@ def push_events(
 				if event_type not in _SUPPORTED_PUSH_EVENT_TYPES:
 					frappe.throw(_("Неподдерживаемый тип события: {0}").format(event_type))
 				payload = _normalize_v2_payload(event.get("payload") or {})
+				if event_type in (
+					"sale.completed",
+					"sale.returned",
+					"shift.opened",
+					"shift.closed",
+					"cash.deposited",
+					"cash.withdrawn",
+				) and is_external_event_suppressed("POS", payload.get("id")):
+					accepted.append(event_id)
+					continue
+				if event_type in (
+					"stock.write_off.requested",
+					"stock.receipt.requested",
+				) and is_external_event_suppressed("POS", event_id):
+					accepted.append(event_id)
+					continue
 				if event.get("createdAt"):
 					_normalize_v2_payload({"createdAt": event.get("createdAt")})
 				selected = _trusted_event_cashier(connection, employees, event_type, payload, cashier_id)

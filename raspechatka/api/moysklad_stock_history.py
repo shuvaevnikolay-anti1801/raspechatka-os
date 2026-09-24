@@ -25,6 +25,7 @@ from raspechatka.api.moysklad import (
 	_ref_id,
 	_request,
 )
+from raspechatka.deletion import is_external_event_suppressed
 
 HISTORY_START = "2026-07-01"
 PAGE_SIZE = 100
@@ -197,6 +198,9 @@ def run_stock_document_sync():
 					continue
 				doctype = "Stock Receipt" if target == "receipt" else "Stock Write Off"
 				external_id = f"moysklad:{source_kind}:{row.get('id')}"
+				if is_external_event_suppressed("MoySklad", external_id):
+					stats["document_duplicates"] += 1
+					continue
 				if frappe.db.exists(doctype, {"external_id": external_id}):
 					stats["document_duplicates"] += 1
 					continue
@@ -490,6 +494,9 @@ def _create_opening_documents(settings, stats, import_batch, replay_existing=Fal
 		frappe.throw(_("Не сопоставлены склады МоегоСклада."))
 	for source_store_id, warehouse in warehouses.items():
 		external_id = f"moysklad:opening:{source_store_id}:{HISTORY_START}"
+		if is_external_event_suppressed("MoySklad", external_id):
+			stats["document_duplicates"] += 1
+			continue
 		existing = frappe.db.get_value("Stock Inventory", {"external_id": external_id}, "name")
 		has_batch_movement = existing and frappe.db.exists(
 			"Stock Ledger Entry",
@@ -636,6 +643,9 @@ def _positions(settings, source_kind, row):
 def _import_stock_document(event, stats, import_batch, replay_existing=False):
 	row = event["source"]
 	external_id = f"moysklad:{event['source_kind']}:{event['key']}"
+	if is_external_event_suppressed("MoySklad", external_id):
+		stats["document_duplicates"] += 1
+		return
 	doctype = "Stock Receipt" if event["kind"] == "receipt" else "Stock Write Off"
 	existing = frappe.db.get_value(doctype, {"external_id": external_id}, "name")
 	has_batch_movement = existing and frappe.db.exists(

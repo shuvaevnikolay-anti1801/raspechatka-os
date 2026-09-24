@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
@@ -871,6 +872,18 @@ onMounted(loadOptions);
 
 			<template v-if="reference !== 'warehouses'" #footer>
 				<div v-if="form.name" class="danger-actions">
+					<AdminDelete
+						:area="`page.references.${reference}`"
+						:entity-type="
+							{ entities: 'business_entity', points: 'business_point' }[reference]
+						"
+						:name="form.name"
+						:label="config.title"
+						@deleted="
+							detail = null;
+							load();
+						"
+					/>
 					<button
 						class="text-button"
 						type="button"

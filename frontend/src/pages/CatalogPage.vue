@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import CatalogGroupSidebar from "../components/CatalogGroupSidebar.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
@@ -771,6 +772,17 @@ async function initializeCatalog(size) {
 				<p v-if="editorError" class="form-error">{{ editorError }}</p>
 			</form>
 			<template #footer>
+				<AdminDelete
+					v-if="itemForm.name"
+					area="page.catalog"
+					entity-type="catalog_item"
+					:name="itemForm.name"
+					label="товар"
+					@deleted="
+						editorOpen = false;
+						load();
+					"
+				/>
 				<button
 					v-if="itemForm.name && canEdit"
 					class="button button-secondary"

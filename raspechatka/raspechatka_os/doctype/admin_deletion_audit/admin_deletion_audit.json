@@ -1,0 +1,78 @@
+{
+  "doctype": "DocType",
+  "name": "Admin Deletion Audit",
+  "module": "Raspechatka OS",
+  "autoname": "hash",
+  "engine": "InnoDB",
+  "field_order": [
+    "actor",
+    "entity_type",
+    "entity_name",
+    "strategy",
+    "occurred_at",
+    "reason",
+    "affected_json",
+    "outcome"
+  ],
+  "fields": [
+    {
+      "fieldname": "actor",
+      "fieldtype": "Link",
+      "label": "actor",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "entity_type",
+      "fieldtype": "Data",
+      "label": "entity type",
+      "read_only": 1
+    },
+    {
+      "fieldname": "entity_name",
+      "fieldtype": "Data",
+      "label": "entity name",
+      "read_only": 1
+    },
+    {
+      "fieldname": "strategy",
+      "fieldtype": "Data",
+      "label": "strategy",
+      "read_only": 1
+    },
+    {
+      "fieldname": "occurred_at",
+      "fieldtype": "Datetime",
+      "label": "occurred at",
+      "read_only": 1
+    },
+    {
+      "fieldname": "reason",
+      "fieldtype": "Small Text",
+      "label": "reason",
+      "read_only": 1
+    },
+    {
+      "fieldname": "affected_json",
+      "fieldtype": "Code",
+      "label": "affected json",
+      "read_only": 1
+    },
+    {
+      "fieldname": "outcome",
+      "fieldtype": "Data",
+      "label": "outcome",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0
+    }
+  ],
+  "track_changes": 0
+}

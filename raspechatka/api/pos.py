@@ -7,6 +7,7 @@ from frappe import _
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
 from raspechatka.access_contract import access_contract
+from raspechatka.deletion import is_external_event_suppressed
 from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
 from raspechatka.pricing import resolve_point_price
 from raspechatka.time_contract import (
@@ -387,6 +388,19 @@ def _get_customers():
 
 def _apply_pos_event(event_type, event_id, workplace, payload):
 	payload = _normalize_legacy_payload(payload)
+	if event_type in ("sale.completed", "sale.returned") and is_external_event_suppressed(
+		"POS", str(payload.get("id") or event_id)
+	):
+		return
+	if event_type in ("sale.completed", "sale.returned"):
+		posting = (
+			_legacy_pos_site_datetime(payload.get("createdAt"))
+			if payload.get("createdAt")
+			else get_datetime(now())
+		)
+		shift_id = f"legacy-pos:{workplace.name}:{payload.get('shiftId') or posting.date()}"
+		if is_external_event_suppressed("POS", shift_id):
+			return
 	if event_type == "sale.completed":
 		_apply_sale(event_id, workplace, payload)
 	elif event_type == "sale.returned":
@@ -646,6 +660,8 @@ def _apply_return(event_id, workplace, payload):
 
 def _get_or_create_legacy_shift(workplace, external_id, posting_datetime):
 	external_id = f"legacy-pos:{workplace.name}:{external_id or posting_datetime.date()}"
+	if is_external_event_suppressed("POS", external_id):
+		frappe.throw(_("Удалённая смена не может быть восстановлена синхронизацией"))
 	name = frappe.db.get_value("Sales Shift", {"external_id": external_id}, "name")
 	if name:
 		return frappe.get_doc("Sales Shift", name)

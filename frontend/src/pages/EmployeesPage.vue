@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from "vue";
 import { call } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
@@ -685,7 +686,18 @@ async function copyInvitation() {
 				<p v-if="formError" class="form-error">{{ formError }}</p>
 			</form>
 			<template #footer
-				><div class="footer-actions">
+				><AdminDelete
+					v-if="form.name"
+					area="page.team.employees"
+					entity-type="employee"
+					:name="form.name"
+					label="сотрудника"
+					@deleted="
+						detail = null;
+						load();
+					"
+				/>
+				<div class="footer-actions">
 					<button class="button" @click="detail = null">Закрыть</button
 					><button
 						v-if="currentStep > 1"

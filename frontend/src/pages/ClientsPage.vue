@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
@@ -371,7 +372,17 @@ onMounted(loadOptions);
 			</div>
 			<p v-if="formError" class="form-error">{{ formError }}</p>
 			<template #footer
-				><div></div>
+				><AdminDelete
+					v-if="form.name"
+					area="page.references.clients"
+					entity-type="client"
+					:name="form.name"
+					label="клиента"
+					@deleted="
+						detail = null;
+						load();
+					"
+				/>
 				<div class="footer-actions">
 					<button class="button button-secondary" @click="detail = null">Закрыть</button
 					><button

@@ -21,6 +21,7 @@ class SalesReceipt(Document):
 
 	def validate(self):
 		from raspechatka.sales import set_business_date
+
 		set_business_date(self, "posting_datetime")
 		mirror_only = bool(self.mirror_only)
 		validate_warehouse_header(self.business_entity, self.business_point, self.warehouse)
@@ -482,7 +483,17 @@ class SalesReceipt(Document):
 			else "Completed"
 		)
 		purchase.cancelled = 1 if purchase.status == "Returned" else 0
-		purchase.save(ignore_permissions=True)
+		# The purchase record is immutable to normal edits. Return reconciliation
+		# is its controlled derived state update within this receipt transaction.
+		frappe.db.set_value(
+			"Client Purchase",
+			purchase_name,
+			{
+				"returned_amount": purchase.returned_amount,
+				"status": purchase.status,
+				"cancelled": purchase.cancelled,
+			},
+		)
 
 	def _source_payload(self):
 		if not self.source_payload_json:
