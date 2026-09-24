@@ -1,4 +1,5 @@
 """DEV-181: real Frappe documents and balances around administrator cancellation."""
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from raspechatka.deletion import delete_entity, get_delete_preview, is_external_event_suppressed
+from raspechatka.api import moysklad_sales, sales as sales_ingest
 from raspechatka.stock import get_balance
 
 
@@ -154,6 +156,11 @@ class TestAdminOperationalDeletion(FrappeTestCase):
         )
         self.assertTrue(is_external_event_suppressed("POS", sale.external_id))
         self.assertEqual(frappe.db.get_value("Sales Receipt", sale.name, "docstatus"), 2)
+        stats = {"created": 0, "duplicates": 0, "errors": []}
+        sales_ingest._ingest_receipt({"external_id": sale.external_id},
+                                     SimpleNamespace(business_point=self.point), stats)
+        self.assertEqual(stats["duplicates"], 1)
+        self.assertEqual(frappe.db.count("Sales Receipt", {"external_id": sale.external_id}), 1)
 
     def test_moysklad_mirror_cancel_never_posts_physical_reversal(self):
         self._receipt(quantity=10, rate=100)
@@ -166,6 +173,12 @@ class TestAdminOperationalDeletion(FrappeTestCase):
             "voucher_type": "Sales Receipt", "voucher_no": sale.name,
         }), 0)
         self.assertTrue(is_external_event_suppressed("MoySklad", sale.external_id))
+        stats = {"duplicates": 0}
+        moysklad_sales._upsert_receipt(
+            {"id": sale.external_id.rsplit(":", 1)[-1]}, {"stats": stats}
+        )
+        self.assertEqual(stats["duplicates"], 1)
+        self.assertEqual(frappe.db.count("Sales Receipt", {"external_id": sale.external_id}), 1)
 
     def test_sale_with_submitted_return_blocks_without_changing_effects(self):
         self._receipt(quantity=10, rate=100)
