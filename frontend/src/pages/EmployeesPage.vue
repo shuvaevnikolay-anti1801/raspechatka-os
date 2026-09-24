@@ -19,7 +19,7 @@ const rows = ref([]),
 const filters = ref({ search: "", active: "1" });
 const options = reactive({ entities: [], points: [], positions: [] });
 const form = reactive({});
-const accessForm = reactive({ access_profile: "Cashier", points: [] });
+const accessForm = reactive({ points: [] });
 const uploading = ref(""),
 	lookingUpBank = ref(false),
 	generatingDocs = ref(false),
@@ -28,7 +28,7 @@ const steps = [
 	{ number: 1, title: "Основные данные", hint: "Кто работает" },
 	{ number: 2, title: "Трудоустройство", hint: "Где и кем" },
 	{ number: 3, title: "Документы", hint: "Реквизиты и договор" },
-	{ number: 4, title: "Доступ", hint: "Вход в систему" },
+	{ number: 4, title: "Доступ в ОС", hint: "Web OS" },
 ];
 const entityFields = defineEntityFields([
 	{
@@ -82,8 +82,8 @@ const selectedPoints = computed(() => (form.assigned_points || []).map((x) => x.
 const employeePoints = computed(() =>
 	availablePoints.value.filter((p) => selectedPoints.value.includes(p.name))
 );
-function labelProfile(v) {
-	return v === "Point Manager" ? "Управляющий" : "Кассир";
+function labelProfile() {
+	return "Управляющий точкой";
 }
 function reset(values = {}) {
 	Object.keys(form).forEach((k) => delete form[k]);
@@ -91,10 +91,10 @@ function reset(values = {}) {
 		active: 1,
 		employment_type: "Трудовой договор",
 		assigned_points: [],
+		pos_access_enabled: 0,
 		documents: [],
 		...values,
 	});
-	accessForm.access_profile = "Cashier";
 	accessForm.points = [];
 	invitation.value = "";
 	formError.value = "";
@@ -132,7 +132,6 @@ async function open(row) {
 		detail.value = r;
 		reset(JSON.parse(JSON.stringify(r.employee)));
 		if (r.access) {
-			accessForm.access_profile = r.access.access_profile;
 			accessForm.points = (r.access.assigned_points || []).map((x) => x.business_point);
 		}
 	} catch (e) {
@@ -214,7 +213,7 @@ async function grant() {
 			"raspechatka.api.team.grant_employee_access",
 			{
 				employee: form.name,
-				access_profile: accessForm.access_profile,
+				access_profile: "Point Manager",
 				assigned_points: JSON.stringify(accessForm.points),
 			},
 			{ method: "POST" }
@@ -442,6 +441,15 @@ async function copyInvitation() {
 						<label
 							>Дата увольнения<input v-model="form.dismissal_date" type="date"
 						/></label>
+						<label class="check-field"
+							><input
+								v-model="form.pos_access_enabled"
+								type="checkbox"
+								:true-value="1"
+								:false-value="0"
+							/>
+							Доступ к Windows-кассе</label
+						>
 					</div>
 					<h4>Точки работы</h4>
 					<div class="point-picker">
@@ -615,7 +623,7 @@ async function copyInvitation() {
 				<div v-if="form.name && currentStep === 4" class="form-section access-section">
 					<div class="access-title">
 						<div>
-							<h3>Доступ в систему</h3>
+							<h3>Доступ в ОС</h3>
 							<p v-if="!detail.access">
 								Сотрудник учитывается в графике и зарплате без учётной записи.
 							</p>
@@ -627,15 +635,10 @@ async function copyInvitation() {
 						</div>
 					</div>
 					<template v-if="!detail.access">
-						<div class="form-grid">
-							<label
-								>Профиль<select v-model="accessForm.access_profile">
-									<option value="Cashier">Кассир</option>
-									<option value="Point Manager">Управляющий точкой</option>
-								</select></label
-							>
-						</div>
-						<h4>Разрешённые точки</h4>
+						<p class="section-note">
+							Это отдельный доступ к Web OS. Для работы только в Windows-кассе пользователь ОС не нужен.
+						</p>
+						<h4>Разрешённые точки Web OS</h4>
 						<div class="point-picker">
 							<label v-for="p in employeePoints" :key="p.name"
 								><input
@@ -652,7 +655,7 @@ async function copyInvitation() {
 							:disabled="saving || !accessForm.points.length"
 							@click="grant"
 						>
-							Выдать доступ и создать приглашение
+							Выдать доступ в ОС и создать приглашение
 						</button>
 					</template>
 					<template v-else
