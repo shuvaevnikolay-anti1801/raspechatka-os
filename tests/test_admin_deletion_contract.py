@@ -25,6 +25,8 @@ class DeletionContractTests(unittest.TestCase):
         frappe.ValidationError = type("ValidationError", (Exception,), {})
         frappe.throw = lambda message, error=None: (_ for _ in ()).throw((error or Exception)(message))
         frappe.whitelist = lambda **kwargs: lambda fn: fn
+        frappe.delete_doc = MagicMock()
+        frappe.get_all = MagicMock(return_value=[])
         frappe.as_json = lambda value: str(value)
         frappe.get_doc = MagicMock()
         utils = types.ModuleType("frappe.utils")
@@ -69,10 +71,10 @@ class DeletionContractTests(unittest.TestCase):
             self.frappe.get_doc.assert_not_called()
 
     def test_admin_preview_and_execute_share_scope_resolver(self):
-        self.assertFalse(self.module.get_delete_preview("sales_receipt", "R1")["can_delete"])
-        result = self.module.delete_entity("sales_receipt", "R1")
+        self.assertFalse(self.module.get_delete_preview("sales_shift", "R1")["can_delete"])
+        result = self.module.delete_entity("sales_shift", "R1")
         self.assertEqual(result["strategy"], "blocked")
-        self.access.require_access.assert_called_with("page.sales.receipts", "delete")
+        self.access.require_access.assert_called_with("page.sales.shifts", "delete")
         self.assertEqual(self.scope.ensure_point_allowed.call_count, 2)
         self.frappe.db.sql.assert_called_once()
         self.frappe.get_doc.return_value.insert.assert_not_called()
@@ -116,6 +118,53 @@ class DeletionContractTests(unittest.TestCase):
         self.assertEqual(self.frappe.get_doc.call_args.args[0]["key"], key)
         self.assertFalse(self.module.is_external_event_suppressed("unknown", "receipt-1"))
 
+    def test_sale_with_submitted_return_blocks_without_cascade(self):
+        doc = MagicMock(doctype="Sales Receipt", docstatus=1, receipt_type="Sale")
+        doc.name = "SALE-1"
+        self.frappe.get_all.side_effect = lambda doctype, **kwargs: (
+            ["RETURN-1"] if doctype == "Sales Receipt" else []
+        )
+        result = self.module._sales_receipt(doc, execute=True)
+        self.assertEqual(result["dependencies"]["Sales Receipt Return"]["names"], ["RETURN-1"])
+        self.assertFalse(result["can_delete"])
+        doc.cancel.assert_not_called()
+
+    def test_purchase_order_blocks_receipts_and_allocations(self):
+        doc = MagicMock(doctype="Purchase Order", docstatus=1)
+        doc.name = "PO-1"
+        self.frappe.get_all.side_effect = lambda doctype, **kwargs: {
+            "Stock Receipt": ["SR-1"], "Supplier Payment Allocation": ["PA-1"],
+        }.get(doctype, [])
+        result = self.module._purchase_order(doc, execute=True)
+        self.assertEqual(set(result["dependencies"]), {"Stock Receipt", "Supplier Payment Allocation"})
+        doc.cancel.assert_not_called()
+
+    def test_submitted_documents_cancel_and_drafts_only_hard_delete(self):
+        cases = (
+            ("Sales Receipt", self.module._sales_receipt),
+            ("Cash Movement", self.module._cash_movement),
+            ("Stock Receipt", self.module._stock_receipt),
+            ("Stock Write Off", self.module._stock_write_off),
+            ("Stock Inventory", self.module._stock_inventory),
+            ("Purchase Order", self.module._purchase_order),
+        )
+        for doctype, handler in cases:
+            with self.subTest(doctype=doctype):
+                doc = MagicMock(doctype=doctype, docstatus=1)
+                doc.name = "DOC-1"
+                doc.receipt_type = "Return"
+                doc.purchase_order = None
+                with patch.object(self.module, "_affected_after_cancel", return_value=[]):
+                    result = handler(doc, execute=True)
+                self.assertEqual(result["strategy"], "cancel")
+                doc.cancel.assert_called_once()
+                self.frappe.delete_doc.assert_not_called()
+                self.frappe.delete_doc.reset_mock()
+        draft = MagicMock(doctype="Stock Receipt", docstatus=0)
+        draft.name = "DRAFT-1"
+        result = self.module._stock_receipt(draft, execute=True)
+        self.assertEqual(result["strategy"], "hard_delete")
+        self.frappe.delete_doc.assert_called_once_with("Stock Receipt", "DRAFT-1", ignore_permissions=True)
 
     def test_suppressed_pos_receipt_never_reaches_upsert(self):
         source = MODULE.parent / "api" / "sales.py"
