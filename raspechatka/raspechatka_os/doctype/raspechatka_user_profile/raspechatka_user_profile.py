@@ -37,7 +37,7 @@ class RaspechatkaUserProfile(Document):
 				"name",
 			)
 			if duplicate:
-				frappe.throw(_("Сотрудник уже связан с другим пользователем"))  # noqa: RUF001
+				frappe.throw(_("Сотрудник уже связан с другим пользователем"))
 
 	def after_insert(self):
 		self.ensure_system_user()
