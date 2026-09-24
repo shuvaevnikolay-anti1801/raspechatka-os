@@ -82,7 +82,7 @@ describe('DEV-172 stage 4 orders table',()=>{
     const css=readFileSync(new URL('./orders-table.css',import.meta.url),'utf8')
     expect(css).toContain('width:100%')
     expect(css).toContain('width:900px')
-    expect(css).toMatch(/\\.orders-table \\.order-description\\{\\r?\\n\\s*white-space:normal;/)
+    expect(css).toMatch(/\.orders-table \.order-description\{\r?\n\s*white-space:normal;/)
     expect(css).not.toContain('-webkit-line-clamp')
   })
 })
