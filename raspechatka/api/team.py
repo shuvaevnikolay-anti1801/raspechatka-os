@@ -816,7 +816,7 @@ def _assert_employee_scope(employee=None, business_entity=None):
 
 @frappe.whitelist()
 @access_contract(auth="current_user", action="read", scope="point")
-def get_employee_registry(search=None, active=None):
+def get_employee_registry(search: str | None = None, active: int | str | None = None):
 	require_access("page.team.employees", "read")
 	scope = get_scope()
 	filters = {}
@@ -882,7 +882,7 @@ def get_employee_registry(search=None, active=None):
 
 @frappe.whitelist()
 @access_contract(auth="current_user", action="read", scope="point")
-def get_employee_editor(name=None):
+def get_employee_editor(name: str | None = None):
 	require_access("page.team.employees", "read")
 	scope = get_scope()
 	allowed_entities = _allowed_employee_entities(scope)
@@ -929,7 +929,7 @@ def get_employee_editor(name=None):
 
 @frappe.whitelist(methods=["POST"])
 @access_contract(auth="current_user", action="write", scope="point")
-def save_employee(data):
+def save_employee(data: dict | str):
 	require_access("page.team.employees", "write")
 	data = frappe.parse_json(data)
 	name = data.get("name")
@@ -990,7 +990,11 @@ def save_employee(data):
 
 @frappe.whitelist(methods=["POST"])
 @access_contract(auth="current_user", action="write", scope="point")
-def grant_employee_access(employee, access_profile="Point Manager", assigned_points=None):
+def grant_employee_access(
+	employee: str,
+	access_profile: str = "Point Manager",
+	assigned_points: list | str | None = None,
+):
 	require_access("page.team.employees", "write")
 	scope = _assert_employee_scope(employee=employee)
 	if access_profile in ("Cashier", CASHIER_ROLE):
