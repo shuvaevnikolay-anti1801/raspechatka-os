@@ -40,7 +40,7 @@ class CanonicalStore:
 	def sql(self, query, values=None, **kwargs):
 		if "tabBusiness Point" in query and "for update" in query:
 			return [(values,)]
-		if "customer_order_number from \`tabPOS Order\`" in query:
+		if "customer_order_number from `tabPOS Order`" in query:
 			point = values
 			return [
 				(order.get("customer_order_number"),)
