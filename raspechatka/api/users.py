@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 import frappe
 from frappe import _
 from frappe.utils import cint, get_url, now_datetime
@@ -5,8 +6,8 @@ from frappe.utils import cint, get_url, now_datetime
 from raspechatka.access import get_matrix_role_rows, get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.api.time import get_timezone_options
-from raspechatka.time_contract import TimeContractError, get_effective_site_timezone, validate_timezone
 from raspechatka.security import CASHIER_ROLE
+from raspechatka.time_contract import TimeContractError, get_effective_site_timezone, validate_timezone
 
 
 def _require_admin():
@@ -282,7 +283,9 @@ def save_user_profile(data):
 	requested_profile = data.get("access_profile")
 	if requested_profile in ("Cashier", CASHIER_ROLE) and (not name or doc.access_profile != CASHIER_ROLE):
 		frappe.throw(
-			_("Роль кассира не создаётся как пользователь ОС. Включите «Доступ к кассе» в карточке сотрудника")
+			_(
+				"Роль кассира не создаётся как пользователь ОС. Включите «Доступ к кассе» в карточке сотрудника"
+			)
 		)
 	for fieldname in (
 		"last_name",
