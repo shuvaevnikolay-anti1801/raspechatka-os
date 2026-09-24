@@ -6,6 +6,7 @@ from raspechatka.access import get_matrix_role_rows, get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.api.time import get_timezone_options
 from raspechatka.time_contract import TimeContractError, get_effective_site_timezone, validate_timezone
+from raspechatka.security import CASHIER_ROLE
 
 
 def _require_admin():
@@ -237,7 +238,11 @@ def get_user_options():
 	except TimeContractError:
 		system_timezone = ""
 	return {
-		"access_roles": [{"name": role["name"], "label": role["label"]} for role in get_matrix_role_rows()],
+		"access_roles": [
+			{"name": role["name"], "label": role["label"]}
+			for role in get_matrix_role_rows()
+			if role["name"] != CASHIER_ROLE
+		],
 		"system_timezone": system_timezone,
 		"timezones": get_timezone_options(),
 		"organizations": frappe.get_all(
@@ -274,6 +279,11 @@ def save_user_profile(data):
 	time_zone = _validated_user_timezone(data.get("time_zone")) if "time_zone" in data else None
 	doc = _get_manageable_profile(name) if name else frappe.new_doc("Raspechatka User Profile")
 	old_employee = doc.linked_employee if name else None
+	requested_profile = data.get("access_profile")
+	if requested_profile in ("Cashier", CASHIER_ROLE) and (not name or doc.access_profile != CASHIER_ROLE):
+		frappe.throw(
+			_("Роль кассира не создаётся как пользователь ОС. Включите «Доступ к кассе» в карточке сотрудника")
+		)
 	for fieldname in (
 		"last_name",
 		"first_name",
