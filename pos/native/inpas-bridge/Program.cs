@@ -243,65 +243,47 @@ internal sealed class InpasSession
 
         EnsureComObjects();
         ClearPacket();
-        if (!TrySet(packet, operationCode, "OperationCode", "Operation", "OperationID", "OperationType") &&
-            !TrySet(packet, operationCode.ToString(CultureInfo.InvariantCulture),
-                "OperationCode", "Operation", "OperationID", "OperationType"))
-            throw new BridgeException("unsupported_driver", "SAPacket does not expose an operation field.");
-        if (!TrySet(packet, terminalId, "TerminalID", "TerminalId"))
-            throw new BridgeException("unsupported_driver", "SAPacket does not expose TerminalID.");
-
+        packet.OperationCode = operationCode;
+        const int fieldAmount = 0, fieldCurrency = 4, fieldRrn = 14, fieldTerminalId = 27;
+        if (!packet.SetField(fieldTerminalId, terminalId))
+            throw new BridgeException("unsupported_driver", "SAPacket rejected terminal ID.");
         long? amountMinor = null;
         if (requireAmount)
         {
             amountMinor = Program.Long(args, "amountMinor");
             if (amountMinor.Value <= 0)
                 throw new BridgeException("invalid_amount", "amountMinor must be a positive integer.");
-            if (!TrySet(packet, amountMinor.Value, "Amount", "TransactionAmount", "AmountMinor") &&
-                !TrySet(packet, amountMinor.Value.ToString(CultureInfo.InvariantCulture),
-                    "Amount", "TransactionAmount", "AmountMinor"))
-                throw new BridgeException("unsupported_driver", "SAPacket does not expose transaction amount.");
+            if (!packet.SetFieldInt(fieldAmount, checked((int)amountMinor.Value)))
+                throw new BridgeException("unsupported_driver", "SAPacket rejected transaction amount.");
         }
         if (requireCurrency)
         {
             var currency = Program.Text(args, "currency");
             if (currency != "643")
                 throw new BridgeException("invalid_currency", "INPAS monetary operations require currency 643.");
-            if (!TrySet(packet, currency, "CurrencyCode", "Currency", "CurrencyID") &&
-                !TrySet(packet, 643, "CurrencyCode", "Currency", "CurrencyID"))
-                throw new BridgeException("unsupported_driver", "SAPacket does not expose currency.");
+            if (!packet.SetField(fieldCurrency, currency))
+                throw new BridgeException("unsupported_driver", "SAPacket rejected currency.");
         }
-
-        var method = Program.Text(args, "method");
-        if (!String.IsNullOrWhiteSpace(method))
-            TrySet(packet, method, "PaymentMethod", "Method", "PaymentType");
-
         if (operationKind == "refund" || operationKind == "void")
         {
             var referenceNumber = Program.Text(args, "referenceNumber");
             if (String.IsNullOrWhiteSpace(referenceNumber) || referenceNumber.Length > 200 ||
                 Regex.IsMatch(referenceNumber, "[\\r\\n\\0]"))
-                throw new BridgeException(
-                    "missing_original_reference",
-                    "ReferenceNumber/RRN from the original sale is required.");
-            if (!TrySet(packet, referenceNumber, "ReferenceNumber", "RRN"))
-                throw new BridgeException(
-                    "unsupported_driver",
-                    "SAPacket does not expose ReferenceNumber for the original operation.");
-
+                throw new BridgeException("missing_original_reference",
+                    "ReferenceNumber/RRN from the original operation is required.");
+            if (!packet.SetField(fieldRrn, referenceNumber))
+                throw new BridgeException("unsupported_driver", "SAPacket rejected original RRN.");
             var originalTransactionId = Program.Text(args, "terminalTransactionId");
-            if (!String.IsNullOrWhiteSpace(originalTransactionId))
-                TrySet(packet, originalTransactionId,
-                    "TerminalTrxID", "TerminalTrxId", "TerminalTransactionID",
-                    "TerminalTransactionId", "TransactionID", "TransactionId");
-            var originalAuthorizationCode = Program.Text(args, "authorizationCode");
-            if (!String.IsNullOrWhiteSpace(originalAuthorizationCode))
-                TrySet(packet, originalAuthorizationCode, "AuthorizationCode", "AuthCode");
+            if (Int32.TryParse(originalTransactionId, out var trxId))
+                packet.TerminalTrxID = trxId;
         }
 
-        object exchangeResult;
+        dynamic request = packet;
+        dynamic response = Activator.CreateInstance(packet.GetType());
+        int exchangeResult;
         try
         {
-            exchangeResult = Invoke(link, "Exchange", packet);
+            exchangeResult = (int)link.Exchange(ref request, ref response, 120);
         }
         catch (TargetInvocationException error)
         {
@@ -313,14 +295,12 @@ internal sealed class InpasSession
             throw new BridgeException("driver_error", error.Message, null, error.HResult);
         }
 
-        var response = IsPacketLike(exchangeResult) ? exchangeResult : packet;
-        var responseCode = SafeText(response,
-            "ResponseCodeHost", "ResponseCode", "HostResponseCode", "ResponseStatus", "ResultCode");
-        var transactionStatus = SafeText(response,
-            "TransactionStatus", "Status", "ResultStatus");
+
+        var responsePacket = response;
+        var responseCode = ReadField(responsePacket, 15);
+        var transactionStatus = ReadField(responsePacket, 107);
         var outcome = ClassifyOutcome(responseCode, transactionStatus);
-        var description = SafeText(response,
-            "ResponseDescription", "ErrorDescription", "ResultDescription", "Message");
+        var description = ReadField(responsePacket, 71);
 
         return new Dictionary<string, object>
         {
@@ -328,20 +308,20 @@ internal sealed class InpasSession
             ["outcome"] = outcome,
             ["status"] = operationKind == "test" && outcome == "approved" ? "connected" : outcome,
             ["operationKind"] = operationKind,
-            ["terminalId"] = SafeText(response, "TerminalID", "TerminalId") ?? terminalId,
-            ["referenceNumber"] = SafeText(response, "ReferenceNumber", "RRN"),
+            ["terminalId"] = ReadField(responsePacket, 27) ?? terminalId,
+            ["referenceNumber"] = ReadField(responsePacket, 14),
             ["terminalTransactionId"] = SafeText(response,
                 "TerminalTrxID", "TerminalTrxId", "TerminalTransactionID", "TerminalTransactionId",
                 "TransactionID", "TransactionId"),
-            ["authorizationCode"] = SafeText(response, "AuthorizationCode", "AuthCode"),
-            ["model"] = SafeText(response, "ModelNo", "Model", "DeviceModel"),
-            ["serial"] = SafeText(response, "DeviceSerNumber", "SerialNumber", "DeviceSerialNumber"),
+            ["authorizationCode"] = ReadField(responsePacket, 13),
+            ["model"] = ReadField(responsePacket, 89),
+            ["serial"] = ReadField(responsePacket, 63),
             ["responseCode"] = responseCode,
             ["responseDescription"] = description,
             ["transactionStatus"] = transactionStatus,
             ["amountMinor"] = amountMinor,
-            ["receipt"] = SanitizeReceipt(SafeText(response, "ReceiptData", "Receipt")),
-            ["exchangeAccepted"] = exchangeResult is bool ? (object)(bool)exchangeResult : null
+            ["receipt"] = SanitizeReceipt(ReadField(responsePacket, 90)),
+            ["exchangeAccepted"] = exchangeResult == 0
         };
     }
 
@@ -441,6 +421,16 @@ internal sealed class InpasSession
             catch { }
         }
         return false;
+    }
+
+    private static string ReadField(dynamic packetValue, int fieldId)
+    {
+        try
+        {
+            var value = packetValue.GetField(fieldId);
+            return value == null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
+        catch { return null; }
     }
 
     private static string SafeText(object target, params string[] names)
