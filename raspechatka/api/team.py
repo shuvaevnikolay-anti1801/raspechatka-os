@@ -8,6 +8,7 @@ from frappe.utils import cint, flt, get_datetime, get_url, getdate, now_datetime
 from raspechatka.access import get_allowed_entities, get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.requisites import digits
+from raspechatka.security import CASHIER_ROLE, POINT_MANAGER_ROLE
 
 
 def _scope_point(business_point=None):
@@ -870,7 +871,8 @@ def get_employee_registry(search=None, active=None):
 		)
 	} if position_names else {}
 	for row in rows:
-		row["access"] = profiles.get(row.system_user_profile)
+		profile = profiles.get(row.system_user_profile)
+		row["access"] = profile if profile and profile.access_profile != CASHIER_ROLE else None
 		row["business_entity_label"] = entity_labels.get(row.business_entity)
 		row["position_label"] = position_labels.get(row.position)
 	return rows
@@ -909,15 +911,16 @@ def get_employee_editor(name=None):
 		result["employee"] = doc.as_dict(no_nulls=False)
 		if doc.system_user_profile:
 			profile = frappe.get_doc("Raspechatka User Profile", doc.system_user_profile)
-			result["access"] = {
-				"name": profile.name,
-				"active": profile.active,
-				"access_profile": profile.access_profile,
-				"invitation_status": profile.invitation_status,
-				"invited_at": profile.invited_at,
-				"system_user": profile.system_user,
-				"assigned_points": [row.as_dict() for row in profile.assigned_points],
-			}
+			if profile.access_profile != CASHIER_ROLE:
+				result["access"] = {
+					"name": profile.name,
+					"active": profile.active,
+					"access_profile": profile.access_profile,
+					"invitation_status": profile.invitation_status,
+					"invited_at": profile.invited_at,
+					"system_user": profile.system_user,
+					"assigned_points": [row.as_dict() for row in profile.assigned_points],
+				}
 	return result
 
 
@@ -931,6 +934,7 @@ def save_employee(data):
 	_assert_employee_scope(business_entity=data.get("business_entity"))
 	doc = frappe.get_doc("Employee", name) if name else frappe.new_doc("Employee")
 	previous_points = {row.business_point for row in doc.assigned_points} if name else set()
+	previous_pos_access = cint(doc.pos_access_enabled) if name else 0
 	for fieldname in (
 		"active", "last_name", "first_name", "middle_name", "birth_date", "gender", "phone", "email",
 		"business_entity", "position", "employment_type", "hire_date", "dismissal_date", "inn", "snils",
@@ -938,7 +942,7 @@ def save_employee(data):
 		"medical_exam_required", "document_folder_url", "notes",
 		"passport_issue_date", "passport_issued_by", "passport_department_code",
 		"passport_main_file", "passport_registration_file", "salary_bank_name", "salary_bic",
-		"salary_correspondent_account", "salary_account", "salary_recipient_name",
+		"salary_correspondent_account", "salary_account", "salary_recipient_name", "pos_access_enabled",
 	):
 		if fieldname in data:
 			doc.set(fieldname, data.get(fieldname))
@@ -966,23 +970,30 @@ def save_employee(data):
 		frappe.throw(_("Основной может быть только одна точка"))
 	if doc.assigned_points and not any(cint(row.is_default) for row in doc.assigned_points):
 		doc.assigned_points[0].is_default = 1
+	if cint(doc.pos_access_enabled) and not doc.assigned_points:
+		frappe.throw(_("Для доступа к кассе назначьте сотруднику хотя бы одну точку работы"))
 	removed_points = previous_points - {row.business_point for row in doc.assigned_points}
-	if name and (not cint(doc.active) or removed_points):
+	pos_access_revoked = bool(previous_pos_access and not cint(doc.pos_access_enabled))
+	if name and (not cint(doc.active) or removed_points or pos_access_revoked):
 		open_shift_filters = {"cashier": name, "status": "Open"}
-		if cint(doc.active):
+		if cint(doc.active) and not pos_access_revoked:
 			open_shift_filters["business_point"] = ["in", list(removed_points)]
 		if frappe.db.exists("Sales Shift", open_shift_filters):
-			frappe.throw(_("Сначала закройте открытую смену кассира, затем меняйте его назначение"))
+			frappe.throw(_("Сначала закройте открытую смену кассира, затем меняйте его POS-доступ или назначение"))
 	doc.save(ignore_permissions=True)
 	return {"name": doc.name}
 
 
 @frappe.whitelist(methods=["POST"])
-def grant_employee_access(employee, access_profile="Cashier", assigned_points=None):
+def grant_employee_access(employee, access_profile="Point Manager", assigned_points=None):
 	require_access("page.team.employees", "write")
 	scope = _assert_employee_scope(employee=employee)
-	if access_profile not in ("Cashier", "Point Manager"):
-		frappe.throw(_("Из карточки сотрудника можно выдать только доступ кассира или управляющего"))
+	if access_profile in ("Cashier", CASHIER_ROLE):
+		frappe.throw(
+			_("Доступ к Windows-кассе включается в разделе «Трудоустройство» и не требует пользователя ОС")
+		)
+	if access_profile not in ("Point Manager", POINT_MANAGER_ROLE):
+		frappe.throw(_("Из карточки сотрудника можно выдать только доступ управляющего в ОС"))
 	employee_doc = frappe.get_doc("Employee", employee)
 	points = frappe.parse_json(assigned_points) if isinstance(assigned_points, str) else (assigned_points or [])
 	points = list(dict.fromkeys(points))
@@ -991,13 +1002,17 @@ def grant_employee_access(employee, access_profile="Cashier", assigned_points=No
 	if not points or any(point not in allowed_points for point in points):
 		frappe.throw(_("Выберите только точки, назначенные этому сотруднику"))
 	profile_name = employee_doc.system_user_profile
-	profile = frappe.get_doc("Raspechatka User Profile", profile_name) if profile_name else frappe.new_doc("Raspechatka User Profile")
+	profile = (
+		frappe.get_doc("Raspechatka User Profile", profile_name)
+		if profile_name
+		else frappe.new_doc("Raspechatka User Profile")
+	)
 	profile.active = 1
 	profile.last_name = employee_doc.last_name
 	profile.first_name = employee_doc.first_name
 	profile.middle_name = employee_doc.middle_name
 	profile.phone = employee_doc.phone
-	profile.access_profile = access_profile
+	profile.access_profile = POINT_MANAGER_ROLE
 	profile.scope_type = "Points"
 	profile.business_entity = employee_doc.business_entity
 	profile.organization = frappe.db.get_value("Business Entity", employee_doc.business_entity, "organization")
