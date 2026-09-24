@@ -308,7 +308,7 @@ internal sealed class InpasSession
             ["operationKind"] = operationKind,
             ["terminalId"] = ReadField(responsePacket, 27) ?? terminalId,
             ["referenceNumber"] = ReadField(responsePacket, 14),
-            ["terminalTransactionId"] = SafeText(response,
+            ["terminalTransactionId"] = SafeText(responsePacket,
                 "TerminalTrxID", "TerminalTrxId", "TerminalTransactionID", "TerminalTransactionId",
                 "TransactionID", "TransactionId"),
             ["authorizationCode"] = ReadField(responsePacket, 13),
