@@ -636,7 +636,8 @@ async function copyInvitation() {
 					</div>
 					<template v-if="!detail.access">
 						<p class="section-note">
-							Это отдельный доступ к Web OS. Для работы только в Windows-кассе пользователь ОС не нужен.
+							Это отдельный доступ к Web OS. Для работы только в Windows-кассе
+							пользователь ОС не нужен.
 						</p>
 						<h4>Разрешённые точки Web OS</h4>
 						<div class="point-picker">
