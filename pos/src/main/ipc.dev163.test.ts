@@ -15,6 +15,8 @@ vi.mock('electron',()=>({
 
 const syncMocks=vi.hoisted(()=>({
   configuration:vi.fn(async()=>({pointId:'point',pointName:'Point',pendingSync:1})),
+  retry:vi.fn(async(_db:any,_store:any,id:string)=>({message:'Сервер не подтвердил документ',event:{id,eventType:'cash.counted',status:'problem'}})),
+  discard:vi.fn(async(_db:any,id:string,_blocked:any,audit:any)=>{audit({id,eventType:'cash.counted',createdAt:'2026-09-20T00:00:00Z'});return {id,status:'discarded'}}),
   full:vi.fn(async()=>({pointId:'point',pointName:'Point',pendingSync:0})),
 }))
 vi.mock('./sync',()=>({
@@ -26,6 +28,8 @@ vi.mock('./sync',()=>({
   })),
   performConfigurationSync:syncMocks.configuration,
   performSync:syncMocks.full,
+  retrySingleSyncEvent:syncMocks.retry,
+  discardSingleSyncEvent:syncMocks.discard,
 }))
 
 vi.mock('./connection',()=>({ConnectionStore:class {}}))
@@ -34,7 +38,7 @@ vi.mock('./diagnostics',()=>({PosDiagnostics:class {}}))
 vi.mock('./print-jobs',()=>({CommodityPrintQueue:class {}}))
 vi.mock('./shift-coordinator',()=>({ShiftCoordinator:class {}}))
 vi.mock('./transaction-engine',()=>({PosTransactionEngine:class {}}))
-vi.mock('./cashier-auth',()=>({CashierAuthSession:class {}}))
+vi.mock('./cashier-auth',()=>({CashierAuthSession:class {},verifyAdminCode:(code:string)=>code==='valid'}))
 vi.mock('./pos-lifecycle',()=>({PosLifecycleStore:class {}}))
 vi.mock('./frappe',()=>({getPointReceipt:vi.fn()}))
 
@@ -77,6 +81,8 @@ beforeEach(()=>{
   electronMocks.handle.mockClear()
   syncMocks.configuration.mockClear()
   syncMocks.full.mockClear()
+  syncMocks.retry.mockClear()
+  syncMocks.discard.mockClear()
 })
 
 describe('DEV-163 sync IPC boundary',()=>{
@@ -159,5 +165,34 @@ describe('DEV-178 durable fiscal preflight boundary',()=>{
       payments:[{method:'cash',amountMinor:2000}]})).resolves.toMatchObject({returnId:'return'})
     expect(dependencies.transactionEngine.createReturn).toHaveBeenCalledTimes(1)
     expect(dependencies.fiscalProvider.getShiftStatus).not.toHaveBeenCalled()
+  })
+})
+
+describe('DEV-180 sync queue IPC admin boundary',()=>{
+  it('shows generic actions, enforces admin gate and audits discard',async()=>{
+    const {dependencies,cashierAuth,diagnostics}=register()
+    cashierAuth.requireAuthenticated.mockReturnValue({id:'cashier'})
+    const types=['order.created','cleaner.visit.recorded','shift.opened','shift.closed','sale.completed','sale.returned','cash.deposited','cash.withdrawn','cash.counted','future.unknown']
+    dependencies.database.listProblemQueue=vi.fn(()=>[])
+    dependencies.database.listPendingQueue=vi.fn(()=>types.map((eventType,index)=>({id:`event-${index}`,eventType,payload:{},createdAt:'2026-09-20T00:00:00Z',status:'pending',attemptCount:0,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null})))
+    dependencies.database.pendingSyncCount=vi.fn(()=>types.length)
+    const snapshot=electronMocks.handlers.get('pos:list-sync-queue')!() as any
+    expect(snapshot.items).toHaveLength(types.length)
+    expect(snapshot.items.every((item:any)=>item.canRetry&&item.canCancel)).toBe(true)
+    await expect(electronMocks.handlers.get('pos:retry-sync-event')!(undefined,'event-8','invalid')).rejects.toThrow('Неверный код')
+    await expect(electronMocks.handlers.get('pos:discard-sync-event')!(undefined,'event-8','invalid')).rejects.toThrow('Неверный код')
+    expect(syncMocks.retry).not.toHaveBeenCalled()
+    expect(syncMocks.discard).not.toHaveBeenCalled()
+    await electronMocks.handlers.get('pos:retry-sync-event')!(undefined,'event-8','valid')
+    expect(syncMocks.retry).toHaveBeenCalledWith(dependencies.database,dependencies.connectionStore,'event-8',expect.any(Function))
+    await electronMocks.handlers.get('pos:discard-sync-event')!(undefined,'event-8','valid')
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({eventType:'sync.outbox_discarded',details:{id:'event-8',eventType:'cash.counted',createdAt:'2026-09-20T00:00:00Z',adminBreakGlass:true}}))
+    dependencies.database.getState.mockReturnValue('1')
+    expect((electronMocks.handlers.get('pos:list-sync-queue')!() as any).items.every((item:any)=>!item.canRetry&&!item.canCancel)).toBe(true)
+    await expect(electronMocks.handlers.get('pos:retry-sync-event')!(undefined,'event-8','valid')).rejects.toThrow('приостановлена')
+    dependencies.database.getState.mockReturnValue(undefined)
+    dependencies.transactionEngine.hasBlockingOperation.mockReturnValue(true)
+    expect((electronMocks.handlers.get('pos:list-sync-queue')!() as any).items.every((item:any)=>!item.canRetry&&!item.canCancel)).toBe(true)
+    await expect(electronMocks.handlers.get('pos:retry-sync-event')!(undefined,'event-8','valid')).rejects.toThrow('восстановление')
   })
 })

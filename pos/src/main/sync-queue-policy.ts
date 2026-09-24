@@ -16,21 +16,9 @@ export const syncEventLabels:Record<string,string>={
   'cash.counted':'Пересчёт наличных',
 }
 
-const retryableSyncEvents=new Set([
-  'order.created','order.updated','stock.write_off.requested',
-  'stock.receipt.requested','point.supply.requested','cleaner.visit.recorded',
-])
-
-/** Explicit owner-domain opt-out; committed local documents remain intact. */
+/** Manual actions apply only to unsent outbox rows, regardless of event type. */
 export const canCancelSyncQueueEvent=(event:OutboxQueueItem,blocked=false):boolean=>
-  !blocked&&(event.status==='pending'||event.status==='problem')&&retryableSyncEvents.has(event.eventType)
+  !blocked&&(event.status==='pending'||event.status==='problem')
 
-/** Admin retry can override backoff or a problem state only for proven owner-domain keys. */
-export function canRetrySyncQueueEvent(event:OutboxQueueItem,blocked:boolean):boolean{
-  if(blocked||(event.status!=='pending'&&event.status!=='problem')||!retryableSyncEvents.has(event.eventType))return false
-  if(event.eventType==='order.updated'){
-    const payload=event.payload as {updatedAt?:unknown}|null
-    if(!payload||typeof payload.updatedAt!=='string'||!Number.isFinite(Date.parse(payload.updatedAt)))return false
-  }
-  return true
-}
+export const canRetrySyncQueueEvent=(event:OutboxQueueItem,blocked:boolean):boolean=>
+  !blocked&&(event.status==='pending'||event.status==='problem')

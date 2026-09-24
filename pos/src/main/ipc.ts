@@ -194,8 +194,8 @@ export function registerIpcHandlers(dependencies:{
     await discardSingleSyncEvent(database,id,
       ()=>transactionEngine.hasBlockingOperation()||database.getState('outbox_paused')==='1',(event)=>{
       diagnostics.record({source:'sync',level:'warning',eventType:'sync.outbox_discarded',
-        message:'Администратор прекратил отправку документа без удаления локального документа',
-        details:{id,eventType:event.eventType,createdAt:event.createdAt}})
+        message:'Администратор прекратил отправку документа без удаления локального документа (admin break-glass)',
+        details:{id:event.id,eventType:event.eventType,createdAt:event.createdAt,adminBreakGlass:true}})
     })
     return queueSnapshot()
   })

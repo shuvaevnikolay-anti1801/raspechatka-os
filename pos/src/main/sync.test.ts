@@ -414,3 +414,42 @@ describe('point cleaning bootstrap',()=>{
     expect(buildBootState(database).cleaning).toEqual(result.cleaning)
   })
 })
+
+describe('DEV-180 generic outbox manual actions',()=>{
+  const types=['order.created','cleaner.visit.recorded','shift.opened','shift.closed','sale.completed','sale.returned','cash.deposited','cash.withdrawn','cash.counted','unknown.future.event','order.updated']
+  for(const eventType of types){
+    it(`retries only selected ${eventType} with original id/payload and discards only selected row`,async()=>{
+      const chosen={id:'chosen',eventType,payload:{proof:eventType},createdAt:'2026-09-20T00:00:00Z',status:'problem',attemptCount:0,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null}
+      const other={...chosen,id:'other',status:'pending',payload:{proof:'other'}}
+      const {database,events}=createDatabase(0,[chosen,other])
+      mocks.pushEvents.mockResolvedValue({accepted:[],errors:[{id:'chosen',eventType,message:'ValidationError: rejected'}]})
+      const result=await retrySingleSyncEvent(database,connectionStore,'chosen')
+      expect(mocks.pushEvents).toHaveBeenCalledWith(connection,[{id:'chosen',eventType,payload:{proof:eventType},createdAt:chosen.createdAt}])
+      expect(result.event).toMatchObject({status:'problem',attemptCount:1})
+      expect(events().find((row)=>row.id==='other')).toMatchObject({status:'pending',attemptCount:0})
+      const audit=vi.fn()
+      const discarded=await discardSingleSyncEvent(database,'chosen',()=>false,audit)
+      expect(discarded).toMatchObject({status:'discarded',payload:chosen.payload})
+      expect(audit).toHaveBeenCalledWith(expect.objectContaining({id:'chosen',eventType,createdAt:chosen.createdAt}))
+      expect(database.pendingSyncCount()).toBe(1)
+      expect(database.getQueueEvent('other').status).toBe('pending')
+      await expect(retrySingleSyncEvent(database,connectionStore,'chosen')).rejects.toThrow()
+    })
+  }
+  it('denies both actions under global blocking, including after waiting for the lock',async()=>{
+    const chosen={id:'chosen',eventType:'sale.completed',payload:{},createdAt:'2026-09-20T00:00:00Z',status:'pending',attemptCount:0}
+    const {database}=createDatabase(0,[chosen])
+    let blocked=false
+    let release:()=>void=()=>undefined
+    const active=withOutboxLock(database,()=>new Promise<void>((resolve)=>{release=resolve}))
+    const retry=retrySingleSyncEvent(database,connectionStore,'chosen',()=>blocked)
+    const discard=discardSingleSyncEvent(database,'chosen',()=>blocked,vi.fn())
+    blocked=true
+    release()
+    await active
+    await expect(retry).rejects.toThrow('недоступен')
+    await expect(discard).rejects.toThrow('нельзя исключить')
+    expect(mocks.pushEvents).not.toHaveBeenCalled()
+    expect(database.getQueueEvent('chosen').status).toBe('pending')
+  })
+})
