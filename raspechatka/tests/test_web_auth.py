@@ -58,9 +58,7 @@ class TestWebAuthentication(IntegrationTestCase):
 		self.assertEqual(frappe.session.user, profile.system_user)
 		self.assertFalse(frappe.db.get_value("User", profile.system_user, "reset_password_key"))
 		frappe.local.login_manager.logout()
-		reuse_result = update_password(
-			new_password="Another-login-078!", key=key, logout_all_sessions=1
-		)
+		reuse_result = update_password(new_password="Another-login-078!", key=key, logout_all_sessions=1)
 		self.assertTrue(reuse_result)
 		self.assertEqual(frappe.local.response.http_status_code, 410)
 
