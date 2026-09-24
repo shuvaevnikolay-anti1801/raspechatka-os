@@ -690,10 +690,41 @@ onMounted(loadOptions);
 			<template v-if="config.create" #footer
 				><div v-if="form.name && canEdit" class="danger-actions">
 					<button class="text-button" @click="setActive(form.active ? 0 : 1)">
-						{{ form.active ? "Архивировать" : "Вернуть в активные" }}</button
-					>
+						{{ form.active ? "Архивировать" : "Вернуть в активные" }}
+					</button>
 				</div>
-				<AdminDelete v-if="form.name && ['organizations', 'clients', 'suppliers', 'pos-workplaces', 'cash-registers'].includes(reference)" :area="['pos-workplaces', 'cash-registers'].includes(reference) ? 'page.sales.integration' : `page.references.${reference}`" :entity-type="({ clients: 'client', suppliers: 'catalog_supplier', organizations: 'organization', 'pos-workplaces': 'pos_workplace', 'cash-registers': 'cash_register' })[reference]" :name="form.name" :label="config.title" @deleted="detail = null; load()" />
+				<AdminDelete
+					v-if="
+						form.name &&
+						[
+							'organizations',
+							'clients',
+							'suppliers',
+							'pos-workplaces',
+							'cash-registers',
+						].includes(reference)
+					"
+					:area="
+						['pos-workplaces', 'cash-registers'].includes(reference)
+							? 'page.sales.integration'
+							: `page.references.${reference}`
+					"
+					:entity-type="
+						{
+							clients: 'client',
+							suppliers: 'catalog_supplier',
+							organizations: 'organization',
+							'pos-workplaces': 'pos_workplace',
+							'cash-registers': 'cash_register',
+						}[reference]
+					"
+					:name="form.name"
+					:label="config.title"
+					@deleted="
+						detail = null;
+						load();
+					"
+				/>
 				<div class="footer-actions">
 					<button class="button button-secondary" @click="detail = null">Закрыть</button
 					><button

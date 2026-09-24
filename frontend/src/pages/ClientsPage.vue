@@ -372,7 +372,17 @@ onMounted(loadOptions);
 			</div>
 			<p v-if="formError" class="form-error">{{ formError }}</p>
 			<template #footer
-				><AdminDelete v-if="form.name" area="page.references.clients" entity-type="client" :name="form.name" label="клиента" @deleted="detail = null; load()" />
+				><AdminDelete
+					v-if="form.name"
+					area="page.references.clients"
+					entity-type="client"
+					:name="form.name"
+					label="клиента"
+					@deleted="
+						detail = null;
+						load();
+					"
+				/>
 				<div class="footer-actions">
 					<button class="button button-secondary" @click="detail = null">Закрыть</button
 					><button

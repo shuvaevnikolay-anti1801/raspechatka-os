@@ -34,7 +34,10 @@ async function remove() {
 	try {
 		const params = { entity_type: props.entityType, name: props.name };
 		const preview = await call(`${endpoint}get_delete_preview`, params);
-		if (!preview.can_delete) { show(preview); return; }
+		if (!preview.can_delete) {
+			show(preview);
+			return;
+		}
 		if (preview.strategy !== "hard_delete" || (preview.affected || []).length) {
 			if (!window.confirm(`Удалить ${props.label}? ${preview.message}`)) return;
 		} else if (!window.confirm(`Удалить ${props.label}?`)) return;
@@ -54,7 +57,12 @@ async function remove() {
 
 <template>
 	<div v-if="allowed && name" class="admin-delete">
-		<button type="button" class="button button-secondary danger" :disabled="busy" @click="remove">
+		<button
+			type="button"
+			class="button button-secondary danger"
+			:disabled="busy"
+			@click="remove"
+		>
 			{{ busy ? "Проверяем…" : "Удалить" }}
 		</button>
 		<p v-if="message" role="status">{{ message }}</p>
@@ -67,7 +75,15 @@ async function remove() {
 </template>
 
 <style scoped>
-.admin-delete { display: inline-block; color: #a5212a; }
-.admin-delete p { margin: 6px 0; }
-.admin-delete ul { margin: 4px 0; padding-left: 20px; }
+.admin-delete {
+	display: inline-block;
+	color: #a5212a;
+}
+.admin-delete p {
+	margin: 6px 0;
+}
+.admin-delete ul {
+	margin: 4px 0;
+	padding-left: 20px;
+}
 </style>

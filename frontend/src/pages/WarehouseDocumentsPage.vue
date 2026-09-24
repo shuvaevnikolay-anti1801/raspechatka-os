@@ -913,7 +913,23 @@ onMounted(loadOptions);
 			</form>
 			<template #footer
 				><div>
-					<AdminDelete v-if="form.name" :area="accessArea" :entity-type="({ 'write-offs': 'stock_write_off', inventories: 'stock_inventory', 'purchase-orders': 'purchase_order' })[kind]" :name="form.name" :label="config.singular" @deleted="editorOpen = false; load()" />
+					<AdminDelete
+						v-if="form.name"
+						:area="accessArea"
+						:entity-type="
+							{
+								'write-offs': 'stock_write_off',
+								inventories: 'stock_inventory',
+								'purchase-orders': 'purchase_order',
+							}[kind]
+						"
+						:name="form.name"
+						:label="config.singular"
+						@deleted="
+							editorOpen = false;
+							load();
+						"
+					/>
 					<button
 						v-if="form.docstatus === 1 && canEdit"
 						class="button button-secondary danger"

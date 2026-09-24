@@ -12,7 +12,6 @@ from collections import defaultdict
 from datetime import timedelta
 
 import frappe
-from raspechatka.deletion import is_external_event_suppressed
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, now_datetime
 
@@ -27,6 +26,7 @@ from raspechatka.api.moysklad import (
 	_sync_catalog,
 	_upsert_item,
 )
+from raspechatka.deletion import is_external_event_suppressed
 from raspechatka.sales import update_shift_totals
 
 HISTORY_START = "2026-07-01"

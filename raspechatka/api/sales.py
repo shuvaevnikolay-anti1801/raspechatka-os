@@ -1,4 +1,3 @@
-from raspechatka.deletion import is_external_event_suppressed
 # ruff: noqa: RUF001
 import hmac
 import secrets
@@ -10,6 +9,7 @@ from frappe.utils import cint, flt, get_datetime, get_first_day, now_datetime, n
 
 from raspechatka.access import get_allowed_entities, get_scope, require_access
 from raspechatka.access_contract import access_contract
+from raspechatka.deletion import is_external_event_suppressed
 from raspechatka.pos_settings import get_pos_sales_settings
 from raspechatka.pos_upsell import (
 	get_pos_upsell_config as read_pos_upsell_config,

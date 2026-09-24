@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from raspechatka.deletion import is_external_event_suppressed
-
 import calendar
 
 import frappe
@@ -9,6 +7,7 @@ from frappe import _
 from frappe.utils import add_days, flt, get_datetime, getdate, now, now_datetime, nowdate
 
 from raspechatka.access_contract import access_contract
+from raspechatka.deletion import is_external_event_suppressed
 from raspechatka.pos_settings import get_pos_sales_rules, get_pos_sales_settings
 from raspechatka.pricing import resolve_point_price
 from raspechatka.time_contract import (
@@ -389,7 +388,9 @@ def _get_customers():
 
 def _apply_pos_event(event_type, event_id, workplace, payload):
 	payload = _normalize_legacy_payload(payload)
-	if event_type in ("sale.completed", "sale.returned") and is_external_event_suppressed("POS", str(payload.get("id") or event_id)):
+	if event_type in ("sale.completed", "sale.returned") and is_external_event_suppressed(
+		"POS", str(payload.get("id") or event_id)
+	):
 		return
 	if event_type in ("sale.completed", "sale.returned"):
 		posting = (

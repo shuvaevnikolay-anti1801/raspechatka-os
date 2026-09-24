@@ -566,7 +566,17 @@ onMounted(async () => {
 			</form>
 			<template #footer
 				><div>
-					<AdminDelete v-if="form.name" area="page.warehouse.receipts" entity-type="stock_receipt" :name="form.name" label="приёмку" @deleted="editorOpen = false; load()" />
+					<AdminDelete
+						v-if="form.name"
+						area="page.warehouse.receipts"
+						entity-type="stock_receipt"
+						:name="form.name"
+						label="приёмку"
+						@deleted="
+							editorOpen = false;
+							load();
+						"
+					/>
 					<button
 						v-if="form.docstatus === 1 && canEdit"
 						class="button button-secondary danger"

@@ -772,7 +772,17 @@ async function initializeCatalog(size) {
 				<p v-if="editorError" class="form-error">{{ editorError }}</p>
 			</form>
 			<template #footer>
-				<AdminDelete v-if="itemForm.name" area="page.catalog" entity-type="catalog_item" :name="itemForm.name" label="товар" @deleted="editorOpen = false; load()" />
+				<AdminDelete
+					v-if="itemForm.name"
+					area="page.catalog"
+					entity-type="catalog_item"
+					:name="itemForm.name"
+					label="товар"
+					@deleted="
+						editorOpen = false;
+						load();
+					"
+				/>
 				<button
 					v-if="itemForm.name && canEdit"
 					class="button button-secondary"

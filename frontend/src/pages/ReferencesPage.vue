@@ -872,7 +872,18 @@ onMounted(loadOptions);
 
 			<template v-if="reference !== 'warehouses'" #footer>
 				<div v-if="form.name" class="danger-actions">
-					<AdminDelete :area="`page.references.${reference}`" :entity-type="({ entities: 'business_entity', points: 'business_point' })[reference]" :name="form.name" :label="config.title" @deleted="detail = null; load()" />
+					<AdminDelete
+						:area="`page.references.${reference}`"
+						:entity-type="
+							{ entities: 'business_entity', points: 'business_point' }[reference]
+						"
+						:name="form.name"
+						:label="config.title"
+						@deleted="
+							detail = null;
+							load();
+						"
+					/>
 					<button
 						class="text-button"
 						type="button"

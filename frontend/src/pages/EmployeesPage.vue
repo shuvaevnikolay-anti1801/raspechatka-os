@@ -686,7 +686,17 @@ async function copyInvitation() {
 				<p v-if="formError" class="form-error">{{ formError }}</p>
 			</form>
 			<template #footer
-				><AdminDelete v-if="form.name" area="page.team.employees" entity-type="employee" :name="form.name" label="сотрудника" @deleted="detail = null; load()" />
+				><AdminDelete
+					v-if="form.name"
+					area="page.team.employees"
+					entity-type="employee"
+					:name="form.name"
+					label="сотрудника"
+					@deleted="
+						detail = null;
+						load();
+					"
+				/>
 				<div class="footer-actions">
 					<button class="button" @click="detail = null">Закрыть</button
 					><button
