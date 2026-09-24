@@ -135,7 +135,7 @@ def suppress_external_event(source, external_id, entity_type, entity_name):
     if not frappe.db.exists("External Event Suppression", key):
         frappe.get_doc({
             "doctype": "External Event Suppression",
-            "name": key,
+            "key": key,
             "source": source,
             "external_id": external_id,
             "entity_type": entity_type,
