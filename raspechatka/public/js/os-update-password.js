@@ -44,7 +44,8 @@
 			return "Ссылка недействительна или уже использована. Попросите руководителя создать новую ссылку.";
 		}
 		if (status === 401 && !hasKey) return "Текущий пароль указан неверно";
-		if (["PasswordPolicyError", "PasswordValidationError", "PasswordStrengthError"].includes(kind) ||
+		if (kind === "ValidationError" ||
+			["PasswordPolicyError", "PasswordValidationError", "PasswordStrengthError"].includes(kind) ||
 			/password (?:strength|policy)|weak password|minimum password/i.test(serverText)) {
 			return "Пароль не соответствует требованиям безопасности. Сделайте его сложнее.";
 		}
