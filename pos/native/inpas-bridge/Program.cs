@@ -253,7 +253,7 @@ internal sealed class InpasSession
             amountMinor = Program.Long(args, "amountMinor");
             if (amountMinor.Value <= 0)
                 throw new BridgeException("invalid_amount", "amountMinor must be a positive integer.");
-            if (!packet.SetFieldInt(fieldAmount, checked((int)amountMinor.Value)))
+            if (!packet.SetField(fieldAmount, amountMinor.Value.ToString(CultureInfo.InvariantCulture)))
                 throw new BridgeException("unsupported_driver", "SAPacket rejected transaction amount.");
         }
         if (requireCurrency)
