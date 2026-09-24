@@ -49,11 +49,14 @@ class TestWebAuthentication(IntegrationTestCase):
 		profile = self._profile()
 		user = frappe.get_doc("User", profile.system_user)
 		link = user._reset_password(send_email=False, password_expired=True)
+		self.assertEqual(urlparse(link).path, "/update-password")
 		key = parse_qs(urlparse(link).query)["key"][0]
+		self.assertTrue(key)
 
 		self._guest_request()
 		update_password(new_password="Repeat-login-078!", key=key, logout_all_sessions=1)
 		self.assertEqual(frappe.session.user, profile.system_user)
+		self.assertFalse(frappe.db.get_value("User", profile.system_user, "reset_password_key"))
 		frappe.local.login_manager.logout()
 
 		for phone in (

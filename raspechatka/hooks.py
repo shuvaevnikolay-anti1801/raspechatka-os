@@ -26,6 +26,7 @@ add_to_apps_screen = [
 # administrators, while all product routes are rendered by the Vue frontend.
 website_route_rules = [
 	{"from_route": "/login", "to_route": "os-login"},
+	{"from_route": "/update-password", "to_route": "os-update-password"},
 	{"from_route": "/raspechatka/<path:app_path>", "to_route": "raspechatka"}
 ]
 
