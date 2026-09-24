@@ -1,3 +1,4 @@
+from raspechatka.deletion import is_external_event_suppressed
 # ruff: noqa: RUF001
 import hmac
 import secrets
@@ -532,6 +533,9 @@ def push_batch(device_id, token, payload):
 
 def _ingest_shift(row, connection, result, update_existing=False):
 	external_id = _required(row, "external_id")
+	if is_external_event_suppressed("POS", external_id):
+		result["duplicates"] += 1
+		return
 	name = frappe.db.get_value("Sales Shift", {"external_id": external_id}, "name")
 	doc = frappe.get_doc("Sales Shift", name) if name else frappe.new_doc("Sales Shift")
 	if name and doc.business_point != connection.business_point:
@@ -571,6 +575,9 @@ def _ingest_shift(row, connection, result, update_existing=False):
 
 def _ingest_receipt(row, connection, result):
 	external_id = _required(row, "external_id")
+	if is_external_event_suppressed("POS", external_id):
+		result["duplicates"] += 1
+		return
 	existing = frappe.db.get_value(
 		"Sales Receipt", {"external_id": external_id}, ["business_point", "docstatus"], as_dict=True
 	)
@@ -646,6 +653,9 @@ def _ingest_receipt(row, connection, result):
 
 def _ingest_cash(row, connection, result):
 	external_id = _required(row, "external_id")
+	if is_external_event_suppressed("POS", external_id):
+		result["duplicates"] += 1
+		return
 	existing = frappe.db.get_value(
 		"Cash Movement", {"external_id": external_id}, ["business_point", "docstatus"], as_dict=True
 	)
