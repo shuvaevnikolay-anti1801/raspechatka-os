@@ -1,3 +1,4 @@
+from raspechatka.deletion import is_external_event_suppressed
 from __future__ import annotations
 
 import calendar
@@ -387,6 +388,8 @@ def _get_customers():
 
 def _apply_pos_event(event_type, event_id, workplace, payload):
 	payload = _normalize_legacy_payload(payload)
+	if event_type in ("sale.completed", "sale.returned") and is_external_event_suppressed("POS", payload.get("id")):
+		return
 	if event_type == "sale.completed":
 		_apply_sale(event_id, workplace, payload)
 	elif event_type == "sale.returned":
