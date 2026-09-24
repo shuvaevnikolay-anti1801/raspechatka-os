@@ -336,6 +336,7 @@ def set_user_active(profile, active):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(area="page.references.users", action="admin", scope="user")
 def generate_invitation(profile: str):
 	_require_admin()
 	doc = _get_manageable_profile(profile)
