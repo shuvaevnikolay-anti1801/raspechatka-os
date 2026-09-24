@@ -441,8 +441,11 @@ def _apply_order_created(event_id, workplace, payload):
 		customer_number = _allocate_customer_order_number(workplace.business_point, payload.get("phone"))
 	elif frappe.db.exists(
 		"POS Order",
-		{"business_point": workplace.business_point, "customer_order_number": customer_number,
-		 "status": ["in", ["New", "In Progress", "Ready"]]},
+		{
+			"business_point": workplace.business_point,
+			"customer_order_number": customer_number,
+			"status": ["in", ["New", "In Progress", "Ready"]],
+		},
 	):
 		frappe.throw(_("Номер заказа для клиента уже занят на этой точке"))
 	status = {
