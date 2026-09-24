@@ -1,4 +1,5 @@
 """Unit contract for the central deletion boundary (runs without a Frappe site)."""
+import ast
 import importlib.util
 import sys
 import types
@@ -113,6 +114,38 @@ class DeletionContractTests(unittest.TestCase):
         self.module.suppress_external_event("POS", "receipt-1", "sales_receipt", "R1")
         self.assertEqual(self.frappe.get_doc.call_args.args[0]["key"], key)
         self.assertFalse(self.module.is_external_event_suppressed("unknown", "receipt-1"))
+
+
+    def test_suppressed_pos_receipt_never_reaches_upsert(self):
+        source = MODULE.parent / "api" / "sales.py"
+        tree = ast.parse(source.read_text())
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_ingest_receipt")
+        namespace = {
+            "_required": lambda row, field: row[field],
+            "is_external_event_suppressed": lambda source, external_id: source == "POS" and external_id == "R1",
+            "frappe": self.frappe,
+        }
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(source), "exec"), namespace)
+        stats = {"duplicates": 0}
+        namespace["_ingest_receipt"]({"external_id": "R1"}, object(), stats)
+        self.assertEqual(stats["duplicates"], 1)
+        self.frappe.db.get_value.assert_not_called()
+
+    def test_suppressed_moysklad_receipt_never_reaches_upsert(self):
+        source = MODULE.parent / "api" / "moysklad_sales.py"
+        tree = ast.parse(source.read_text())
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_upsert_receipt")
+        namespace = {
+            "_required_id": lambda row: row["id"],
+            "_external_id": lambda kind, id: f"moysklad:{kind}:{id}",
+            "is_external_event_suppressed": lambda source, external_id: source == "MoySklad",
+            "frappe": self.frappe,
+        }
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(source), "exec"), namespace)
+        stats = {"duplicates": 0}
+        namespace["_upsert_receipt"]({"id": "R1"}, {"stats": stats})
+        self.assertEqual(stats["duplicates"], 1)
+        self.frappe.db.get_value.assert_not_called()
 
 
 if __name__ == "__main__":
