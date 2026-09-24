@@ -23,7 +23,7 @@ class CanonicalStore:
 			"POINT-1": Row(name="POINT-1", point_name="Первая", business_entity="ENTITY-1", city="Ярославль"),
 			"POINT-2": Row(name="POINT-2", point_name="Чужая", business_entity="ENTITY-2", city="Москва"),
 		}
-		self.db = SimpleNamespace(exists=self.exists, get_value=self.get_value)
+		self.db = SimpleNamespace(exists=self.exists, get_value=self.get_value, sql=self.sql)
 
 	def exists(self, doctype, filters):
 		if doctype == "DocType":
@@ -36,6 +36,20 @@ class CanonicalStore:
 				for order in self.orders.values()
 			)
 		return False
+
+	def sql(self, query, values=None, **kwargs):
+		if "tabBusiness Point" in query and "for update" in query:
+			return [(values,)]
+		if "customer_order_number from \`tabPOS Order\`" in query:
+			point = values
+			return [
+				(order.get("customer_order_number"),)
+				for order in self.orders.values()
+				if order.get("business_point") == point
+				and order.get("status") in ("New", "In Progress", "Ready")
+				and order.get("customer_order_number")
+			]
+		raise AssertionError(f"Unexpected sql: {query}")
 
 	def get_value(self, doctype, filters, field, **kwargs):
 		if doctype == "Sales Shift":
@@ -216,6 +230,7 @@ class TestPosOrderVisibility(TestCase):
 			{
 				"id": "POS-ORDER-1",
 				"orderNumber": "ORD-20260920-ABC123",
+				"customerOrderNumber": "4567",
 				"phone": "+7 900 123-45-67",
 				"contactMethod": "WhatsApp",
 				"customerName": None,
