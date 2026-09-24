@@ -39,6 +39,7 @@ repos:
         exclude: |
             (?x)^(
                 raspechatka/public/dist/.*|
+                raspechatka/public/frontend/assets/.*|
                 .*node_modules.*|
                 .*boilerplate.*|
                 raspechatka/templates/includes/.*|
@@ -56,6 +57,7 @@ repos:
         exclude: |
             (?x)^(
                 raspechatka/public/dist/.*|
+                raspechatka/public/frontend/assets/.*|
                 cypress/.*|
                 .*node_modules.*|
                 .*boilerplate.*|
