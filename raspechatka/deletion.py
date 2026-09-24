@@ -1,11 +1,12 @@
 """Admin deletion boundary. Domain strategies are registered explicitly in later DEV-181 parts."""
 from dataclasses import dataclass
+from functools import partial
 
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
-from raspechatka.access import require_access
+from raspechatka.access import get_scope, require_access
 from raspechatka.access_contract import access_contract
 from raspechatka.scope import ensure_entity_allowed, ensure_point_allowed
 
@@ -289,6 +290,100 @@ def _employee(doc, *, execute=False):
     return result
 
 
+def _linked_references(doctype, name, *, excluded=()):
+    """Probe declared links, including custom fields, before allowing physical removal.
+
+    Child rows owned by the document itself are removed with their parent; all
+    other links, including cancelled historical documents, count as references.
+    """
+    references = {}
+    for table in ("DocField", "Custom Field"):
+        owner_field = "parent" if table == "DocField" else "dt"
+        fields = frappe.get_all(table, filters={"fieldtype": "Link", "options": doctype},
+                                fields=[owner_field, "fieldname"])
+        for field in fields:
+            owner = field.get(owner_field)
+            if owner in excluded:
+                continue
+            meta = frappe.get_meta(owner)
+            if meta.issingle or getattr(meta, "is_virtual", False):
+                continue
+            names = [row for row in _references(owner, {field.fieldname: name})
+                     if owner != doctype or row != name]
+            if names:
+                references.setdefault(owner, set()).update(names)
+    return {key: sorted(names) for key, names in references.items()}
+
+
+def _master(doc, *, execute=False, allow_hard_delete=False):
+    references = _linked_references(doc.doctype, doc.name)
+    strategy = "deactivate" if references or not allow_hard_delete else "hard_delete"
+    result = {
+        "strategy": strategy, "deleted": bool(execute), "can_delete": True,
+        "message": (_("Объект деактивирован; история сохранена") if execute else
+                    _("Объект будет деактивирован; история сохранится"))
+                   if strategy == "deactivate" else
+                   (_("Неиспользуемый объект удалён") if execute else
+                    _("Неиспользуемый объект будет удалён")),
+        "dependencies": {key: {"count": len(names), "names": names}
+                         for key, names in references.items()},
+        "affected": [], "warnings": [],
+    }
+    if execute:
+        if strategy == "hard_delete":
+            frappe.delete_doc(doc.doctype, doc.name, ignore_permissions=True)
+            result["affected"].append({"doctype": doc.doctype, "name": doc.name, "deleted": True})
+        else:
+            doc.active = 0
+            doc.save(ignore_permissions=True)
+            result["affected"].append({"doctype": doc.doctype, "name": doc.name, "active": 0})
+    return result
+
+
+def _business_point(doc, *, execute=False):
+    infrastructure = {}
+    for doctype in ("Catalog Warehouse", "POS Workplace", "Cash Register", "POS Connection"):
+        infrastructure[doctype] = _references(doctype, {"business_point": doc.name})
+    # The infrastructure itself may be referenced by historical rows. Do not
+    # treat an empty point as unused just because its own direct links are empty.
+    history = _linked_references("Business Point", doc.name, excluded=infrastructure)
+    for doctype, names in infrastructure.items():
+        for name in names:
+            linked = _linked_references(doctype, name, excluded=("Business Point", *infrastructure))
+            for key, values in linked.items():
+                history.setdefault(key, []).extend(values)
+    history = {key: sorted(set(values)) for key, values in history.items()}
+    strategy = "deactivate" if history else "hard_delete"
+    result = {
+        "strategy": strategy, "deleted": bool(execute), "can_delete": True,
+        "message": (_("Точка и инфраструктура деактивированы; история сохранена") if execute else
+                    _("Точка и инфраструктура будут деактивированы; история сохранится"))
+                   if history else (_("Неиспользуемая точка удалена") if execute else
+                                    _("Неиспользуемая точка и инфраструктура будут удалены")),
+        "dependencies": {key: {"count": len(names), "names": names} for key, names in history.items()},
+        "affected": [], "warnings": [],
+    }
+    if execute:
+        if history:
+            doc.active = 0
+            doc.save(ignore_permissions=True)
+            for doctype, names in infrastructure.items():
+                for name in names:
+                    field = "enabled" if doctype == "POS Connection" else "active"
+                    frappe.db.set_value(doctype, name, field, 0)
+                    result["affected"].append({"doctype": doctype, "name": name, field: 0})
+        else:
+            for doctype in ("POS Connection", "Cash Register", "POS Workplace", "Catalog Warehouse"):
+                for name in infrastructure[doctype]:
+                    frappe.delete_doc(doctype, name, ignore_permissions=True)
+                    result["affected"].append({"doctype": doctype, "name": name, "deleted": True})
+            frappe.delete_doc("Business Point", doc.name, ignore_permissions=True)
+        result["affected"].append({"doctype": "Business Point", "name": doc.name,
+                                   "active": 0} if history else
+                                  {"doctype": "Business Point", "name": doc.name, "deleted": True})
+    return result
+
+
 # Only first-party business entities may enter this registry. A client value is
 # never passed to frappe.get_doc until it has been resolved through this map.
 REGISTRY = {
@@ -300,7 +395,15 @@ REGISTRY = {
     "stock_inventory": DeletionRule("Stock Inventory", "page.warehouse.inventories", "point", _stock_inventory),
     "purchase_order": DeletionRule("Purchase Order", "page.warehouse.purchase_orders", "point", _purchase_order),
     "employee": DeletionRule("Employee", "page.team.employees", "entity", _employee),
-    "business_point": DeletionRule("Business Point", "page.sales.overview", "point_self", _blocked),
+    "business_point": DeletionRule("Business Point", "page.references.points", "point_self", _business_point),
+    "catalog_warehouse": DeletionRule("Catalog Warehouse", "page.references.warehouses", "point", partial(_master, allow_hard_delete=True)),
+    "cash_register": DeletionRule("Cash Register", "page.sales.integration", "point", partial(_master, allow_hard_delete=True)),
+    "pos_workplace": DeletionRule("POS Workplace", "page.sales.integration", "point", partial(_master, allow_hard_delete=True)),
+    "catalog_item": DeletionRule("Catalog Item", "page.catalog", "network", partial(_master, allow_hard_delete=True)),
+    "catalog_supplier": DeletionRule("Catalog Supplier", "page.references.suppliers", "supplier", partial(_master, allow_hard_delete=True)),
+    "client": DeletionRule("Client", "page.references.clients", "client", partial(_master, allow_hard_delete=True)),
+    "business_entity": DeletionRule("Business Entity", "page.references.entities", "entity", partial(_master, allow_hard_delete=True)),
+    "organization": DeletionRule("Organization", "page.references.organizations", "network", partial(_master, allow_hard_delete=True)),
 }
 
 
@@ -325,6 +428,19 @@ def _resolve(entity_type, name, *, lock=False):
         ensure_point_allowed(doc.business_point, getattr(doc, "business_entity", None))
     elif rule.scope == "entity":
         ensure_entity_allowed(doc.business_entity if rule.doctype != "Business Entity" else doc.name)
+    elif rule.scope == "supplier":
+        if doc.business_entity:
+            ensure_entity_allowed(doc.business_entity)
+        elif not get_scope().get("global"):
+            frappe.throw(_("Общесетевой поставщик недоступен"), frappe.PermissionError)
+    elif rule.scope == "client":
+        if doc.registration_point:
+            ensure_point_allowed(doc.registration_point)
+        elif not get_scope().get("global"):
+            frappe.throw(_("Клиент без точки регистрации недоступен"), frappe.PermissionError)
+    elif rule.scope == "network":
+        if not get_scope().get("global"):
+            frappe.throw(_("Общесетевой объект недоступен"), frappe.PermissionError)
     else:
         frappe.throw(_("Неизвестное правило области доступа"), frappe.PermissionError)
     return rule, doc

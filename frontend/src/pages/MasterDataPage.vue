@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import ReferenceTable from "../components/ReferenceTable.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
@@ -524,20 +525,6 @@ async function setActive(value) {
 		formError.value = e.message;
 	}
 }
-async function remove() {
-	if (!confirm("Удалить запись без возможности восстановления?")) return;
-	try {
-		await call(
-			"raspechatka.api.references.delete_reference",
-			{ reference: reference.value, name: form.name },
-			{ method: "POST" }
-		);
-		detail.value = null;
-		await load();
-	} catch (e) {
-		formError.value = e.message;
-	}
-}
 watch(reference, () => {
 	listRequests.invalidate();
 	rows.value = [];
@@ -704,14 +691,9 @@ onMounted(loadOptions);
 				><div v-if="form.name && canEdit" class="danger-actions">
 					<button class="text-button" @click="setActive(form.active ? 0 : 1)">
 						{{ form.active ? "Архивировать" : "Вернуть в активные" }}</button
-					><button
-						v-if="canAdmin && reference !== 'organizations'"
-						class="text-button danger"
-						@click="remove"
 					>
-						Удалить
-					</button>
 				</div>
+				<AdminDelete v-if="form.name && ['organizations', 'clients', 'suppliers', 'pos-workplaces', 'cash-registers'].includes(reference)" :area="['pos-workplaces', 'cash-registers'].includes(reference) ? 'page.sales.integration' : `page.references.${reference}`" :entity-type="({ clients: 'client', suppliers: 'catalog_supplier', organizations: 'organization', 'pos-workplaces': 'pos_workplace', 'cash-registers': 'cash_register' })[reference]" :name="form.name" :label="config.title" @deleted="detail = null; load()" />
 				<div class="footer-actions">
 					<button class="button button-secondary" @click="detail = null">Закрыть</button
 					><button

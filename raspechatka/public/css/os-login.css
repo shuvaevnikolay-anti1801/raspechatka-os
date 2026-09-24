@@ -249,3 +249,14 @@ body {
 		font-size: 27px;
 	}
 }
+
+/* The password page shares the login card and controls. */
+.os-password-continue {
+	display: grid;
+	place-items: center;
+	margin-top: 20px;
+	text-decoration: none;
+}
+.os-password-continue:hover { color: #fff; text-decoration: none; }
+#password-hint { margin: 0 0 20px; text-align: left; }
+.os-login [hidden] { display: none !important; }

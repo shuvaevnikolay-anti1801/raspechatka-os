@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
@@ -512,6 +513,7 @@ async function saveUpsellRules() {
 	}
 }
 async function openRow(row) {
+	if (kind.value === "cash") selectedDoc.value = row;
 	if (kind.value === "shifts")
 		selectedDoc.value = await call("raspechatka.api.sales.get_shift", { name: row.name });
 	if (kind.value === "receipts" || kind.value === "returns")
@@ -910,14 +912,17 @@ onMounted(init);
 		<AppModal
 			v-if="selectedDoc"
 			:title="
-				selectedDoc.receipt_type
+				kind === 'cash' ? 'Движение наличных ' + selectedDoc.name : selectedDoc.receipt_type
 					? (selectedDoc.receipt_type === 'Return' ? 'Возврат ' : 'Продажа ') +
 					  selectedDoc.name
 					: 'Смена ' + selectedDoc.name
 			"
 			wide
 			@close="selectedDoc = null"
-			><template v-if="selectedDoc.receipt_type"
+			><div v-if="kind === 'cash'" class="document-summary">
+				<span>Точка <b>{{ pointMap[selectedDoc.business_point] || selectedDoc.business_point }}</b></span>
+				<span>Сумма <b>{{ money(selectedDoc.amount) }}</b></span>
+			</div><template v-else-if="selectedDoc.receipt_type"
 				><div class="document-summary">
 					<span
 						>Точка <b>{{ pointMap[selectedDoc.business_point] }}</b></span
@@ -1091,7 +1096,7 @@ onMounted(init);
 						</tr>
 					</tbody>
 				</table></template
-			></AppModal
+			><template #footer><AdminDelete :area="kind === 'returns' ? 'page.sales.receipts' : `page.sales.${kind}`" :entity-type="kind === 'cash' ? 'cash_movement' : selectedDoc.receipt_type ? 'sales_receipt' : 'sales_shift'" :name="selectedDoc.name" :label="kind === 'cash' ? 'движение наличных' : selectedDoc.receipt_type ? 'чек' : 'смену'" @deleted="selectedDoc = null; load()" /></template></AppModal
 		>
 	</section>
 </template>

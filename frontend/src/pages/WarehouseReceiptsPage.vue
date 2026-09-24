@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 import { call, canAccess } from "../api";
 import AppModal from "../components/AppModal.vue";
+import AdminDelete from "../components/AdminDelete.vue";
 import ListPageHeader from "../components/ListPageHeader.vue";
 import SmartFilterBar from "../components/SmartFilterBar.vue";
 import SmartDataTable from "../components/SmartDataTable.vue";
@@ -565,6 +566,7 @@ onMounted(async () => {
 			</form>
 			<template #footer
 				><div>
+					<AdminDelete v-if="form.name" area="page.warehouse.receipts" entity-type="stock_receipt" :name="form.name" label="приёмку" @deleted="editorOpen = false; load()" />
 					<button
 						v-if="form.docstatus === 1 && canEdit"
 						class="button button-secondary danger"

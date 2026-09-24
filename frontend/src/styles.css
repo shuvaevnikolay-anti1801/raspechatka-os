@@ -3150,3 +3150,15 @@ td.item-name {
 		flex-direction: column;
 	}
 }
+.admin-delete-notice {
+	position: fixed;
+	bottom: 24px;
+	right: 24px;
+	z-index: 10000;
+	max-width: 420px;
+	padding: 12px 18px;
+	border-radius: 10px;
+	background: #1e5638;
+	color: white;
+	box-shadow: 0 8px 24px #0003;
+}

@@ -424,3 +424,33 @@ class TestAdminOperationalDeletion(FrappeTestCase):
         self.assertFalse(frappe.db.exists("Stock Ledger Entry", {
             "voucher_type": "Stock Receipt", "voucher_no": receipt.name, "is_reversal": 1,
         }))
+
+    def test_unused_point_removes_only_empty_infrastructure(self):
+        # Base fixture has a shift; remove it first to make the point unused.
+        delete_entity("sales_shift", self.shift)
+        workplace = self._raw("POS Workplace", f"WP-{uuid4().hex[:8]}",
+                              business_point=self.point, active=1)
+        register = self._raw("Cash Register", f"REG-{uuid4().hex[:8]}",
+                             business_point=self.point, pos_workplace=workplace, active=1)
+        preview = get_delete_preview("business_point", self.point)
+        self.assertEqual(preview["strategy"], "hard_delete")
+        self.assertEqual(delete_entity("business_point", self.point)["strategy"], "hard_delete")
+        for doctype, name in (("Business Point", self.point), ("Catalog Warehouse", self.warehouse),
+                              ("POS Workplace", workplace), ("Cash Register", register)):
+            self.assertFalse(frappe.db.exists(doctype, name))
+
+    def test_used_point_and_referenced_item_keep_history(self):
+        self._receipt(quantity=1)
+        preview = get_delete_preview("business_point", self.point)
+        self.assertEqual(preview["strategy"], "deactivate")
+        delete_entity("business_point", self.point)
+        self.assertEqual(frappe.db.get_value("Business Point", self.point, "active"), 0)
+        self.assertTrue(frappe.db.exists("Sales Shift", self.shift))
+        self.assertEqual(get_delete_preview("catalog_item", self.item)["strategy"], "deactivate")
+
+    def test_edit_user_denied_by_server_before_document_lookup(self):
+        with patch("raspechatka.deletion.require_access", side_effect=frappe.PermissionError):
+            with self.assertRaises(frappe.PermissionError):
+                get_delete_preview("business_point", self.point)
+            with self.assertRaises(frappe.PermissionError):
+                delete_entity("business_point", self.point)

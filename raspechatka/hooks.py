@@ -1,5 +1,5 @@
 app_name = "raspechatka"
-app_title = "Распечатка ОС"
+app_title = "Распечатка ОС"  # noqa: RUF001
 app_publisher = "Raspechatka"
 app_description = "Business management system for Raspechatka copy centers"
 app_email = "anti1801@ya.ru"
@@ -17,7 +17,7 @@ add_to_apps_screen = [
 	{
 		"name": "raspechatka",
 		"logo": app_logo_url,
-		"title": "Распечатка ОС",
+		"title": "Распечатка ОС",  # noqa: RUF001
 		"route": app_home,
 	}
 ]
@@ -26,7 +26,8 @@ add_to_apps_screen = [
 # administrators, while all product routes are rendered by the Vue frontend.
 website_route_rules = [
 	{"from_route": "/login", "to_route": "os-login"},
-	{"from_route": "/raspechatka/<path:app_path>", "to_route": "raspechatka"}
+	{"from_route": "/update-password", "to_route": "os-update-password"},
+	{"from_route": "/raspechatka/<path:app_path>", "to_route": "raspechatka"},
 ]
 
 # Includes in <head>
