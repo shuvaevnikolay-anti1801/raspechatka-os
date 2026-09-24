@@ -26,5 +26,6 @@ test('public errors never interpolate server details', () => {
 	assert.match(api.publicError(401, raw, false), /Текущий пароль/);
 	assert.match(api.publicError(429, raw, true), /Слишком много/);
 	assert.match(api.publicError(400, { exc_type: 'PasswordPolicyError', message: 'secret' }, true), /требованиям/);
+	assert.match(api.publicError(417, { exc_type: 'ValidationError', message: '<div>common password</div>' }, true), /требованиям/);
 	assert.doesNotMatch(api.publicError(500, raw, false), /secret|traceback/);
 });
