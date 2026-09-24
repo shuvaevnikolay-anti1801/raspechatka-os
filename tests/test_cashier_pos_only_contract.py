@@ -75,3 +75,14 @@ def test_web_user_flows_do_not_offer_new_cashier_role():
 	assert 'access_profile in ("Cashier", CASHIER_ROLE)' in team
 	assert "Доступ к Windows-кассе" in employees
 	assert 'access_profile: "Point Manager"' in employees
+
+
+def test_pos_access_backfill_is_registered_and_preserves_legacy_accounts():
+	patches = (ROOT / "raspechatka/patches.txt").read_text(encoding="utf-8")
+	patch = (ROOT / "raspechatka/patches/v1_0/backfill_employee_pos_access.py").read_text(encoding="utf-8")
+	assert "raspechatka.patches.v1_0.backfill_employee_pos_access" in patches
+	assert 'CASHIER_ROLE = "Raspechatka Cashier"' in patch
+	assert '"active": 1' in patch
+	assert '"enabled": 1' in patch
+	assert '"pos_access_enabled", 1' in patch
+	assert "delete" not in patch.lower()
