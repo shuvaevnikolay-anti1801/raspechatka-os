@@ -99,6 +99,7 @@ class DeletionContractTests(unittest.TestCase):
                 self.module.delete_entity("sales_receipt", "R1")
             self.assertEqual(handler.call_count, 1)
             self.frappe.db.rollback.assert_called_once()
+            self.frappe.db.commit.assert_called_once()
             handler.side_effect = None
             handler.return_value = {"strategy": "blocked", "can_delete": False, "affected": []}
             self.module.delete_entity("sales_receipt", "R1")
