@@ -1,11 +1,64 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createElement } from 'react'
+import type { BootState, HeldReceipt } from '../../shared/contracts'
+import ReceiptsPage from './ReceiptsPage'
 
 const receiptSource=readFileSync(new URL('./CurrentReceipt.tsx',import.meta.url),'utf8')
 const appSource=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
 const css=readFileSync(new URL('./sale-workspace.css',import.meta.url),'utf8')
 const workspaceSource=readFileSync(new URL('./SaleWorkspace.tsx',import.meta.url),'utf8')
 const catalogSource=readFileSync(new URL('./SaleCatalog.tsx',import.meta.url),'utf8')
+const heldCss=readFileSync(new URL('./styles.css',import.meta.url),'utf8')
+
+const heldReceipt=(id:string,count:number,customerName?:string):HeldReceipt=>({
+  id,label:`Чек ${id}`,createdAt:'2026-09-24T10:37:00.000Z',discountPercent:0,totalMinor:12345,
+  customer:customerName?{name:customerName} as HeldReceipt['customer']:null,
+  lines:Array.from({length:count},(_,index)=>({productId:`product-${index}`,name:`Позиция ${index+1}`,
+    quantity:1,unitPriceMinor:100})),
+})
+const renderHeld=(held:HeldReceipt[])=>{
+  const html=renderToStaticMarkup(createElement(ReceiptsPage,{boot:{employees:[]} as unknown as BootState,sales:[],held,
+    onReturn:async()=>undefined,onRestore:async()=>undefined,notify:()=>undefined}))
+  return html.match(/<section class="held held-receipts">([\s\S]*?)<\/section>/)?.[1]??''
+}
+
+describe('held receipt compact strip',()=>{
+  it.each([1,2,8])('keeps %i receipts in one strip with one Continue action per card',count=>{
+    const html=renderHeld(Array.from({length:count},(_,index)=>heldReceipt(String(index),1)))
+    expect(html.match(/<article/g)).toHaveLength(count)
+    expect(html.match(/Продолжить/g)).toHaveLength(count)
+    expect(html.match(/held-receipts-grid/g)).toHaveLength(1)
+    expect(html).not.toContain('10:37')
+    expect(html).not.toContain('поз.')
+  })
+
+  it('shows the named customer or retail buyer with total before the action',()=>{
+    const html=renderHeld([heldReceipt('retail',1),heldReceipt('named',2,'Мария')])
+    expect(html).toMatch(/Розничный<\/b><strong>[^<]+<\/strong><\/div><button[^>]*>Продолжить/)
+    expect(html).toMatch(/Мария<\/b><strong>[^<]+<\/strong><\/div><button[^>]*>Продолжить/)
+    expect(html).not.toContain('Чек retail')
+  })
+
+  it.each([[5,5,0],[6,5,1],[9,5,4]])('shows at most five of %i products and the remaining count',(
+    total,visible,remaining
+  )=>{
+    const html=renderHeld([heldReceipt('many',total)])
+    const lines=html.match(/class="held-receipt-lines">([\s\S]*?)<\/div>/)?.[1]??''
+    expect(lines.match(/Позиция \d+ × 1/g)).toHaveLength(visible)
+    expect(lines).not.toContain('Позиция 6')
+    if(remaining)expect(lines).toContain(`+ ещё ${remaining}`)
+    else expect(lines).not.toContain('+ ещё')
+  })
+
+  it('allows only horizontal scrolling and natural card height',()=>{
+    expect(heldCss).toMatch(/\.held-receipts-grid\s*\{[^}]*display:flex;[^}]*flex-wrap:nowrap;[^}]*overflow-x:auto;\s*overflow-y:hidden;/)
+    expect(heldCss).toMatch(/\.held-receipts\s*\{[^}]*max-height:none;[^}]*overflow:visible;/)
+    expect(heldCss).not.toMatch(/\.held-receipts-grid>article\s*\{[^}]*min-height:/)
+    expect(heldCss).not.toContain('grid-template-columns:repeat(auto-fill,minmax(270px,1fr))')
+  })
+})
 
 describe('current receipt UX contract',()=>{
   it('uses one heading and groups semantic receipt actions in the header',()=>{
@@ -34,7 +87,7 @@ describe('current receipt UX contract',()=>{
     expect(receiptSource).toContain("className={'receipt-service-row '+")
     expect(receiptSource).toContain('receipt-service-action receipt-manual-discount')
     expect(receiptSource).toContain('onClick={onOpenCustomer}')
-    expect(receiptSource).toContain('onClick={onRemoveCustomer}')
+    expect(receiptSource).not.toContain('onRemoveCustomer')
     expect(receiptSource).toContain('onClick={onOpenManualDiscount}')
     expect(css).toContain('.receipt-service-block{min-height:0}')
   })
@@ -63,7 +116,7 @@ describe('current receipt UX contract',()=>{
     expect(receiptSource).toContain('className="receipt-service-row receipt-customer"')
     expect(receiptSource).toContain("onClick={onOpenCustomer}>{customer?.name||'Найти по телефону'}")
     expect(receiptSource).toContain('customer?`${clubPercent}% · − ${formatMoney(clubDiscountMinor)}`')
-    expect(receiptSource).toContain('onClick={onRemoveCustomer}')
+    expect(receiptSource).not.toContain('onRemoveCustomer')
     expect(receiptSource).not.toContain('Клубная скидка и история покупок')
     expect(receiptSource).not.toContain('Ограничена настройками точки')
     expect(receiptSource).not.toContain('за отзыв')
@@ -78,7 +131,7 @@ describe('current receipt UX contract',()=>{
     expect(modal).toContain('onClick={()=>onSelect(null)}')
     expect(modal).toContain('rows.map((x)=>')
     expect(appSource).toContain('setCustomer(next.customer);setReviewCount(next.reviewCount);setCustomerOpen(false)')
-    expect(appSource).toContain('onRemoveCustomer={()=>chooseCustomer(null)}')
+    expect(appSource).not.toContain('onRemoveCustomer={()=>chooseCustomer(null)}')
     expect(appSource).toContain('onReviewCountChange={setReviewCount}')
     expect(appSource).toContain('manualDiscountMinor={breakdown.manualDiscountMinor}')
     expect(receiptSource).toContain('onClick={onOpenManualDiscount}')
