@@ -278,12 +278,12 @@ internal sealed class InpasSession
                 packet.TerminalTrxID = trxId;
         }
 
-        dynamic request = packet;
-        dynamic response = Activator.CreateInstance(packet.GetType());
+        var responsePacket = Activator.CreateInstance(packet.GetType());
+        var exchangeArgs = new object[] { packet, responsePacket, 120 };
         int exchangeResult;
         try
         {
-            exchangeResult = (int)link.Exchange(ref request, ref response, 120);
+            exchangeResult = Convert.ToInt32(Invoke(link, "Exchange", exchangeArgs), CultureInfo.InvariantCulture);
         }
         catch (TargetInvocationException error)
         {
@@ -295,7 +295,6 @@ internal sealed class InpasSession
             throw new BridgeException("driver_error", error.Message, null, error.HResult);
         }
 
-        var responsePacket = response;
         var responseCode = ReadField(responsePacket, 15);
         var transactionStatus = ReadField(responsePacket, 107);
         var outcome = ClassifyOutcome(responseCode, transactionStatus);
@@ -309,7 +308,7 @@ internal sealed class InpasSession
             ["operationKind"] = operationKind,
             ["terminalId"] = ReadField(responsePacket, 27) ?? terminalId,
             ["referenceNumber"] = ReadField(responsePacket, 14),
-            ["terminalTransactionId"] = SafeText(response,
+            ["terminalTransactionId"] = SafeText(responsePacket,
                 "TerminalTrxID", "TerminalTrxId", "TerminalTransactionID", "TerminalTransactionId",
                 "TransactionID", "TransactionId"),
             ["authorizationCode"] = ReadField(responsePacket, 13),
