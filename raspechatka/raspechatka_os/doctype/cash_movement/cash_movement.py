@@ -46,4 +46,6 @@ class CashMovement(Document):
 		update_shift_totals(self.shift)
 		transaction_name = frappe.db.get_value("Finance Transaction", {"cash_movement": self.name, "docstatus": 1}, "name")
 		if transaction_name:
-			frappe.get_doc("Finance Transaction", transaction_name).cancel()
+			transaction = frappe.get_doc("Finance Transaction", transaction_name)
+			transaction.flags.ignore_permissions = True
+			transaction.cancel()
