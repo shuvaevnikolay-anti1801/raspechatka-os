@@ -21,13 +21,13 @@ const retryableSyncEvents=new Set([
   'stock.receipt.requested','point.supply.requested','cleaner.visit.recorded',
 ])
 
-/** No generic cancellation is safe for committed local facts or uncertain server acceptance. */
-export const canCancelSyncQueueEvent=(_event:OutboxQueueItem):false=>false
+/** Explicit owner-domain opt-out; committed local documents remain intact. */
+export const canCancelSyncQueueEvent=(event:OutboxQueueItem,blocked=false):boolean=>
+  !blocked&&(event.status==='pending'||event.status==='problem')&&retryableSyncEvents.has(event.eventType)
 
-/** Only a due pending owner-domain event can request another ordinary sync cycle. */
-export function canRetrySyncQueueEvent(event:OutboxQueueItem,blocked:boolean,now=Date.now()):boolean{
-  if(blocked||event.status!=='pending'||!retryableSyncEvents.has(event.eventType))return false
-  if(event.nextAttemptAt&&(!Number.isFinite(Date.parse(event.nextAttemptAt))||Date.parse(event.nextAttemptAt)>now))return false
+/** Admin retry can override backoff or a problem state only for proven owner-domain keys. */
+export function canRetrySyncQueueEvent(event:OutboxQueueItem,blocked:boolean):boolean{
+  if(blocked||(event.status!=='pending'&&event.status!=='problem')||!retryableSyncEvents.has(event.eventType))return false
   if(event.eventType==='order.updated'){
     const payload=event.payload as {updatedAt?:unknown}|null
     if(!payload||typeof payload.updatedAt!=='string'||!Number.isFinite(Date.parse(payload.updatedAt)))return false

@@ -99,6 +99,7 @@ const api: ExtendedPosApi = {
   getPosVersion: () => ipcRenderer.invoke("pos:get-pos-version"),
   listSyncQueue: () => ipcRenderer.invoke("pos:list-sync-queue"),
   retrySyncEvent: (id: string, adminCode: string) => ipcRenderer.invoke("pos:retry-sync-event", id, adminCode),
+  discardSyncEvent: (id: string, adminCode: string) => ipcRenderer.invoke("pos:discard-sync-event", id, adminCode),
   listUnresolvedOperations: () =>
     ipcRenderer.invoke("pos:list-unresolved-operations"),
   recoverOperation: (id: string) =>

@@ -320,12 +320,13 @@ export type ShiftSummary = {
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
 export type OutboxQueueItem = OutboxEvent & {
-  status: 'pending' | 'problem' | 'sent'
+  status: 'pending' | 'problem' | 'sent' | 'discarded'
   attemptCount: number
   lastAttemptAt: string | null
   nextAttemptAt: string | null
   lastError: string | null
   sentAt: string | null
+  discardedAt?: string | null
 }
 
 export type SyncQueueItem = {
@@ -335,10 +336,11 @@ export type SyncQueueItem = {
   createdAt:string
   status:'pending'|'problem'
   attemptCount:number
+  lastAttemptAt:string|null
   nextAttemptAt:string|null
   lastError:string|null
   canRetry:boolean
-  canCancel:false
+  canCancel:boolean
 }
 export type SyncQueueSnapshot = {
   items:SyncQueueItem[]
@@ -346,7 +348,7 @@ export type SyncQueueSnapshot = {
   problemCount:number
   problemCountTruncated:boolean
 }
-export type SyncRetryResult = {message:string}
+export type SyncRetryResult = {message:string;event:OutboxQueueItem}
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
 export type WorkScheduleEntry = {
@@ -501,6 +503,7 @@ export type PosApi = {
   getPosVersion: () => Promise<string>
   listSyncQueue: () => Promise<SyncQueueSnapshot>
   retrySyncEvent: (id:string,adminCode:string) => Promise<SyncRetryResult>
+  discardSyncEvent: (id:string,adminCode:string) => Promise<SyncQueueSnapshot>
   listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
   recoverOperation: (id:string) => Promise<RecoveryResult>
   listDiagnosticEvents: (limit?:number) => Promise<DiagnosticEvent[]>

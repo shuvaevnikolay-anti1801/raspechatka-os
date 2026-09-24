@@ -126,6 +126,28 @@ describe('PosDatabase',()=>{
     expect(database.pendingSyncCount()).toBe(1)
   })
 
+  it('discards only queue delivery, persists terminal state across restart, and excludes it from counts',()=>{
+    const path=createDatabaseFile()
+    const first=openTrackedDatabase(path)
+    first.openShift({id:'shift-discard',openedAt:'2026-09-01T00:00:00.000Z',cashierName:'Test'})
+    const event=first.pendingEvents()[0]
+    first.recordEventsAttempted([event.id])
+    first.recordEventFailure([event.id],'problem','validation')
+    expect(first.pendingSyncCount()).toBe(1)
+    expect(first.discardQueueEvent(event.id,'2026-09-01T01:00:00.000Z')).toBe(true)
+    expect(first.discardQueueEvent(event.id)).toBe(false)
+    expect(first.getQueueEvent(event.id)).toMatchObject({
+      id:event.id,payload:event.payload,status:'discarded',sentAt:null,
+      discardedAt:'2026-09-01T01:00:00.000Z',
+    })
+    expect(first.pendingSyncCount()).toBe(0)
+    first.close();databases.splice(databases.indexOf(first),1)
+    const reopened=openTrackedDatabase(path)
+    expect(reopened.getQueueEvent(event.id)?.status).toBe('discarded')
+    expect(reopened.pendingEvents()).toEqual([])
+    expect(reopened.pendingSyncCount()).toBe(0)
+  })
+
   it('creates the local catalog and holds a receipt',()=>{
     const database=createDatabase()
     expect(database.listProducts().length).toBeGreaterThan(0)

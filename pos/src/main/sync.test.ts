@@ -7,7 +7,7 @@ const mocks=vi.hoisted(()=>({
 }))
 vi.mock('./frappe',()=>({loadBootstrap:mocks.loadBootstrap,pushEvents:mocks.pushEvents}))
 
-import { buildBootState, normalizeCleaningConfig, performConfigurationSync, performSync } from './sync'
+import { buildBootState, discardSingleSyncEvent, normalizeCleaningConfig, performConfigurationSync, performSync, retrySingleSyncEvent, withOutboxLock } from './sync'
 
 const connection={serverUrl:'https://example.test',deviceId:'dev',token:'token'}
 const connectionStore:any={load:()=>connection}
@@ -48,6 +48,7 @@ const createDatabase=(initialPending=0,initialEvents?:any[])=>{
   let queuedEvents:any[]=initialEvents?[...initialEvents]:Array.from({length:initialPending},(_,index)=>({
     id:`event-${index+1}`,eventType:'order.created',payload:{orderNumber:'ORD-1'}
   }))
+  const sentEvents=new Map<string,any>()
   const database:any={
     getState:(key:string)=>state.get(key),
     setState:vi.fn((key:string,value:string)=>state.set(key,value)),
@@ -58,14 +59,25 @@ const createDatabase=(initialPending=0,initialEvents?:any[])=>{
     replaceServerOrders:vi.fn(),
     setWorkplaceData:vi.fn(),
     listPointEmployees:()=>[],
-    pendingSyncCount:()=>queuedEvents.length,
+    pendingSyncCount:()=>queuedEvents.filter((event)=>event.status!=='discarded').length,
     currentShift:()=>null,
-    pendingEvents:vi.fn((limit=100)=>queuedEvents.filter((event)=>event.status!=='problem'&&(!event.nextAttemptAt||event.nextAttemptAt<=new Date().toISOString())).slice(0,limit)),
+    pendingEvents:vi.fn((limit=100)=>queuedEvents.filter((event)=>(!event.status||event.status==='pending')&&(!event.nextAttemptAt||event.nextAttemptAt<=new Date().toISOString())).slice(0,limit)),
+    getQueueEvent:vi.fn((id:string)=>queuedEvents.find((event)=>event.id===id)||sentEvents.get(id)),
+    discardQueueEvent:vi.fn((id:string)=>{
+      const found=queuedEvents.find((event)=>event.id===id)
+      if(!found)return false
+      found.status='discarded'
+      return true
+    }),
     recordEventsAttempted:vi.fn((ids:string[])=>queuedEvents.forEach((event)=>{if(ids.includes(event.id))event.attemptCount=(event.attemptCount||0)+1})),
     recordEventFailure:vi.fn((ids:string[],kind:string)=>queuedEvents.forEach((event)=>{if(ids.includes(event.id)){event.status=kind==='problem'?'problem':'pending';event.nextAttemptAt=kind==='problem'?null:new Date(Date.now()+5000).toISOString()}})),
     markEventsSent:vi.fn((ids:string[])=>{
       const accepted=new Set(ids)
-      queuedEvents=queuedEvents.filter((event)=>!accepted.has(event.id))
+      queuedEvents=queuedEvents.filter((event)=>{
+        if(!accepted.has(event.id))return true
+        sentEvents.set(event.id,{...event,status:'sent'})
+        return false
+      })
     }),
     getUpsellCursor:(triggerItem:string)=>triggerItem==='trigger'?2:0,
   }
@@ -82,6 +94,83 @@ beforeEach(()=>{
   mocks.deferred={}
   mocks.loadBootstrap.mockReset()
   mocks.pushEvents.mockReset()
+})
+
+describe('exact manual outbox action',()=>{
+  const event=(id:string,status='pending')=>({
+    id,eventType:'order.created',payload:{orderNumber:id},createdAt:'2026-09-20T00:00:00Z',
+    status,attemptCount:0,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null,
+  })
+  it('sends exactly one immutable event, including a problem, and leaves the other untouched',async()=>{
+    const {database,events}=createDatabase(0,[event('chosen','problem'),event('other')])
+    mocks.pushEvents.mockResolvedValue({accepted:['chosen'],errors:[]})
+    const result=await retrySingleSyncEvent(database,connectionStore,'chosen')
+    expect(mocks.pushEvents).toHaveBeenCalledWith(connection,[expect.objectContaining({id:'chosen',payload:{orderNumber:'chosen'}})])
+    expect(database.recordEventsAttempted).toHaveBeenCalledWith(['chosen'],expect.any(String),true)
+    expect(result.event.status).toBe('sent')
+    expect(events()).toMatchObject([{id:'other',attemptCount:0}])
+  })
+  it('records transport failure only for the selected event',async()=>{
+    const {database,events}=createDatabase(0,[event('chosen'),event('other')])
+    mocks.pushEvents.mockRejectedValue(new Error('secret transport error'))
+    const result=await retrySingleSyncEvent(database,connectionStore,'chosen')
+    expect(result.event.attemptCount).toBe(1)
+    expect(result.message).not.toContain('secret')
+    expect(events().find((row)=>row.id==='other')?.attemptCount).toBe(0)
+    expect(database.recordEventFailure).toHaveBeenCalledWith(['chosen'],'temporary','transport')
+  })
+  it('keeps a rejected problem visible with its updated attempt',async()=>{
+    const {database,events}=createDatabase(0,[event('chosen','problem'),event('other')])
+    mocks.pushEvents.mockResolvedValue({accepted:[],errors:[{
+      id:'chosen',eventType:'order.created',message:'ValidationError: rejected',
+    }]})
+    const result=await retrySingleSyncEvent(database,connectionStore,'chosen')
+    expect(result.event).toMatchObject({status:'problem',attemptCount:1})
+    expect(result.message).toContain('не подтвердил')
+    expect(events().find((row)=>row.id==='other')?.attemptCount).toBe(0)
+    expect(database.recordEventFailure).toHaveBeenCalledWith(['chosen'],'problem','validation')
+  })
+  it('waits for an in-flight sync before checking whether the event was accepted',async()=>{
+    const {database}=createDatabase(0,[event('chosen')])
+    let release:()=>void=()=>undefined
+    const active=withOutboxLock(database,()=>new Promise<void>((resolve)=>{release=resolve}))
+    const manual=retrySingleSyncEvent(database,connectionStore,'chosen')
+    database.markEventsSent(['chosen'])
+    release()
+    await active
+    await expect(manual).rejects.toThrow('Повтор этого события сейчас недоступен')
+    expect(mocks.pushEvents).not.toHaveBeenCalled()
+  })
+  it('does not retry an event accepted by the active automatic sync',async()=>{
+    const {database}=createDatabase(0,[event('chosen')])
+    mocks.loadBootstrap.mockResolvedValue(bootstrapPayload())
+    let accept:(value:any)=>void=()=>undefined
+    mocks.pushEvents.mockImplementation(()=>new Promise((resolve)=>{accept=resolve}))
+    const automatic=performSync(database,connectionStore,'cashier')
+    const manual=retrySingleSyncEvent(database,connectionStore,'chosen')
+    await vi.waitFor(()=>expect(mocks.pushEvents).toHaveBeenCalledTimes(1))
+    accept({accepted:['chosen'],errors:[]})
+    await automatic
+    await expect(manual).rejects.toThrow('Повтор этого события сейчас недоступен')
+    expect(mocks.pushEvents).toHaveBeenCalledTimes(1)
+  })
+  it('audits owner discard, keeps payload, and refuses discard after an in-flight acceptance',async()=>{
+    const {database}=createDatabase(0,[event('chosen'),event('other')])
+    const audit=vi.fn()
+    const discarded=await discardSingleSyncEvent(database,'chosen',()=>false,audit)
+    expect(discarded).toMatchObject({id:'chosen',status:'discarded',payload:{orderNumber:'chosen'}})
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({id:'chosen',eventType:'order.created'}))
+    expect(database.getQueueEvent('other').status).toBe('pending')
+
+    let release:()=>void=()=>undefined
+    const active=withOutboxLock(database,()=>new Promise<void>((resolve)=>{release=resolve}))
+    const late=discardSingleSyncEvent(database,'other',()=>false,audit)
+    database.markEventsSent(['other'])
+    release()
+    await active
+    await expect(late).rejects.toThrow('Документ уже отправлен')
+    expect(audit).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('performSync single flight',()=>{

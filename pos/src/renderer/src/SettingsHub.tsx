@@ -21,6 +21,7 @@ import { operatorError, operatorPrintMessage, operatorRecoveryMessage } from "./
 import { PinEntryLayout, PinInput } from "./PinEntry";
 import { PosButton, PosIconButton } from "./ui/PosButton";
 import { PosField } from "./ui/PosField";
+import { PosModal } from "./ui/PosModal";
 import "./settings-hub.css";
 
 type ExtendedPosApi = typeof window.raspechatkaPos;
@@ -134,7 +135,7 @@ const queueState=(item:SyncQueueItem,now=Date.now())=>
   item.status==='problem'?'Требует исправления':
   item.nextAttemptAt&&Date.parse(item.nextAttemptAt)>now?'Ожидает повторной отправки':'Ожидает отправки';
 
-export function SettingsSyncQueue({queue,busy,onRetry}:{queue:SyncQueueSnapshot|null;busy:boolean;onRetry:(id:string)=>void}){
+export function SettingsSyncQueue({queue,busy,onRetry,onDiscard}:{queue:SyncQueueSnapshot|null;busy:boolean;onRetry:(id:string)=>void;onDiscard:(item:SyncQueueItem)=>void}){
   const syncQueue=queue;
   return (
               <section className="settings-section">
@@ -151,10 +152,13 @@ export function SettingsSyncQueue({queue,busy,onRetry}:{queue:SyncQueueSnapshot|
                       {syncQueue?.items.map((item)=><article key={item.id}>
                         <div>
                           <b>{item.label}</b>
-                          <span>{new Date(item.createdAt).toLocaleString('ru-RU')} · {queueState(item)} · Попыток: {item.attemptCount}</span>
+                          <span>{new Date(item.createdAt).toLocaleString('ru-RU')} · {queueState(item)} · Попыток: {item.attemptCount}{item.lastAttemptAt?' · Последняя: '+new Date(item.lastAttemptAt).toLocaleString('ru-RU'):''}</span>
                           {item.lastError&&<span>{['Неподдерживаемый тип события','Сервер отклонил данные события','Не удалось подтвердить событие. Повтор будет выполнен позже'].includes(item.lastError) ? item.lastError : 'Не удалось подтвердить документ. Откройте диагностику.'}</span>}
                         </div>
-                        {item.canRetry&&<PosButton disabled={busy} onClick={()=>onRetry(item.id)}>Повторить отправку</PosButton>}
+                        <div className="settings-sync-actions">
+                          {item.canRetry&&<PosButton disabled={busy} onClick={()=>onRetry(item.id)}>Отправить сейчас</PosButton>}
+                          {item.canCancel&&<PosButton variant="danger" disabled={busy} onClick={()=>onDiscard(item)}>Удалить из очереди</PosButton>}
+                        </div>
                       </article>)}
                     </div>
                     {syncQueue&&syncQueue.total>syncQueue.items.length&&<div className="settings-warning">Показана часть очереди. Остальные документы также остаются в очереди.</div>}
@@ -199,6 +203,7 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
   const [operations, setOperations] = useState<UnresolvedOperation[]>([]);
   const [printJobs, setPrintJobs] = useState<PrintJobSummary[]>([]);
   const [syncQueue, setSyncQueue] = useState<SyncQueueSnapshot | null>(null);
+  const [discardCandidate,setDiscardCandidate]=useState<SyncQueueItem|null>(null);
   const [posVersion, setPosVersion] = useState("");
   const [adminCode, setAdminCode] = useState("");
   const [diagnostics, setDiagnostics] = useState<DiagnosticEvent[]>([]);
@@ -428,13 +433,28 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
     setSyncQueue(null)
     setBusy(true)
     try {
-      await pos().retrySyncEvent(id,adminCode)
+      const result=await pos().retrySyncEvent(id,adminCode)
       await refresh()
-      setMessage('Отправка запрошена. Проверьте состояние документа в очереди')
+      setMessage(result.message)
     } catch {
       await refresh().catch(()=>undefined)
       setMessage('Повтор не завершён. Проверьте состояние документа в очереди')
     } finally {setBusy(false)}
+  };
+  const discardSyncEvent=async()=>{
+    if(!discardCandidate)return
+    if(!adminCode)return setMessage('Войдите как администратор повторно')
+    setBusy(true)
+    try{
+      await pos().discardSyncEvent(discardCandidate.id,adminCode)
+      setDiscardCandidate(null)
+      await refresh()
+      setMessage('Дальнейшая отправка прекращена. Локальный документ сохранён; сервер мог принять прежнюю попытку')
+    }catch{
+      setDiscardCandidate(null)
+      await refresh().catch(()=>undefined)
+      setMessage('Исключить документ не удалось. Проверьте его состояние в очереди')
+    }finally{setBusy(false)}
   };
 
   const statusItems = useMemo(() => buildSettingsStatusItems(devices), [devices]);
@@ -709,7 +729,15 @@ export default function SettingsHub({ initialGateOpen = false, initialOpen = fal
                 </select></PosField>
             </section>
 
-            <SettingsSyncQueue queue={syncQueue} busy={busy} onRetry={(id)=>void retrySyncEvent(id)}/>
+            <SettingsSyncQueue queue={syncQueue} busy={busy} onRetry={(id)=>void retrySyncEvent(id)} onDiscard={setDiscardCandidate}/>
+            {discardCandidate&&<PosModal open title="Удалить из очереди?" layout="action" closeDisabled={busy}
+              onClose={()=>setDiscardCandidate(null)}
+              footer={<>
+                <PosButton disabled={busy} onClick={()=>setDiscardCandidate(null)}>Отмена</PosButton>
+                <PosButton variant="danger" disabled={busy} onClick={()=>void discardSyncEvent()}>Удалить из очереди</PosButton>
+              </>}>
+              <p>Документ «{discardCandidate.label}» останется на этой кассе, но больше не будет отправляться в Распечатка OS. Если прежняя отправка осталась без ответа, сервер мог уже принять документ. Проверьте его там перед подтверждением.</p>
+            </PosModal>}
 
             <section className="settings-section">
               <div className="section-heading">

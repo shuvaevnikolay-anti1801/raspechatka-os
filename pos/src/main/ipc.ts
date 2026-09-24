@@ -11,7 +11,7 @@ import { PosDiagnostics } from './diagnostics'
 import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
-import { buildBootState, performConfigurationSync, performSync } from './sync'
+import { buildBootState, discardSingleSyncEvent, performConfigurationSync, performSync, retrySingleSyncEvent } from './sync'
 import { collectDeviceStatuses } from './health'
 import { canCancelSyncQueueEvent, canRetrySyncQueueEvent, syncEventLabels } from './sync-queue-policy'
 import { PosTransactionEngine } from './transaction-engine'
@@ -174,8 +174,8 @@ export function registerIpcHandlers(dependencies:{
           id:event.id,eventType:event.eventType,
           label:syncEventLabels[event.eventType]??'Документ точки',
           createdAt:event.createdAt,status:event.status as 'pending'|'problem',
-          attemptCount:event.attemptCount,nextAttemptAt:event.nextAttemptAt,
-          lastError:event.lastError,canRetry:canRetrySyncQueueEvent(event,blocked),canCancel:canCancelSyncQueueEvent(event),
+          attemptCount:event.attemptCount,lastAttemptAt:event.lastAttemptAt,nextAttemptAt:event.nextAttemptAt,
+          lastError:event.lastError,canRetry:canRetrySyncQueueEvent(event,blocked),canCancel:canCancelSyncQueueEvent(event,blocked),
         })),
       total:database.pendingSyncCount(),
       problemCount:Math.min(problems.length,1000),
@@ -185,17 +185,25 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:list-sync-queue',queueSnapshot)
   ipcMain.handle('pos:retry-sync-event',async(_event,id:string,adminCode:string)=>{
     if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
-    const cashier=assertCashierAccess()
+    assertCashierAccess()
     if(transactionEngine.hasBlockingOperation())throw new Error('Сначала завершите восстановление незавершённой операции')
     if(database.getState('outbox_paused')==='1')throw new Error('Отправка очереди приостановлена')
-    const event=database.listPendingQueue(1000).find((row)=>row.id===id)
-    if(!event||!canRetrySyncQueueEvent(event,false))throw new Error('Повтор этого события сейчас недоступен')
-    // Normal sync retains the immutable ID/payload and server-side deduplication.
-    // It may also deliver other due events; no external payment/fiscal operation is retried here.
-    await performSync(database,connectionStore,cashier.id)
+    const result=await retrySingleSyncEvent(database,connectionStore,id,
+      ()=>transactionEngine.hasBlockingOperation()||database.getState('outbox_paused')==='1')
     diagnostics.record({source:'sync',eventType:'sync.manual_event_requested',
-      message:'Запрошена повторная отправка события',details:{id,eventType:event.eventType}})
-    return {message:'Отправка выполнена. Проверьте состояние документа в очереди'}
+      message:result.message,details:{id,eventType:result.event.eventType,status:result.event.status}})
+    return result
+  })
+  ipcMain.handle('pos:discard-sync-event',async(_event,id:string,adminCode:string)=>{
+    if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
+    assertCashierAccess()
+    await discardSingleSyncEvent(database,id,
+      ()=>transactionEngine.hasBlockingOperation()||database.getState('outbox_paused')==='1',(event)=>{
+      diagnostics.record({source:'sync',level:'warning',eventType:'sync.outbox_discarded',
+        message:'Администратор прекратил отправку документа без удаления локального документа',
+        details:{id,eventType:event.eventType,createdAt:event.createdAt}})
+    })
+    return queueSnapshot()
   })
 
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())

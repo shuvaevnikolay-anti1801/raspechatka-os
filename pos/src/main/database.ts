@@ -246,6 +246,7 @@ export class PosDatabase {
     this.ensureColumn('outbox','next_attempt_at','TEXT')
     this.ensureColumn('outbox','status',"TEXT NOT NULL DEFAULT 'pending'")
     this.ensureColumn('outbox','last_error','TEXT')
+    this.ensureColumn('outbox','discarded_at','TEXT')
     this.db.exec(`UPDATE outbox SET status='sent' WHERE sent_at IS NOT NULL AND status!='sent';
       UPDATE outbox SET status='pending' WHERE sent_at IS NULL AND status='sent';
       CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox(status,next_attempt_at,created_at);`)
@@ -1407,19 +1408,26 @@ export class PosDatabase {
   }
   listPendingQueue(limit=100):OutboxQueueItem[]{return this.listQueue('pending',limit)}
   listProblemQueue(limit=100):OutboxQueueItem[]{return this.listQueue('problem',limit)}
+  getQueueEvent(id:string):OutboxQueueItem|undefined{
+    const row=this.db.prepare(`SELECT id,event_type eventType,payload_json payload,created_at createdAt,
+      status,attempt_count attemptCount,last_attempt_at lastAttemptAt,next_attempt_at nextAttemptAt,
+      last_error lastError,sent_at sentAt,discarded_at discardedAt FROM outbox WHERE id=?`).get(id) as
+      (Omit<OutboxQueueItem,'payload'>&{payload:string})|undefined
+    return row?{...row,payload:JSON.parse(row.payload)}:undefined
+  }
   private listQueue(status:'pending'|'problem',limit:number,dueAt?:string):OutboxQueueItem[]{
     const rows=this.db.prepare(`SELECT id,event_type eventType,payload_json payload,created_at createdAt,
       status,attempt_count attemptCount,last_attempt_at lastAttemptAt,next_attempt_at nextAttemptAt,
-      last_error lastError,sent_at sentAt FROM outbox
+      last_error lastError,sent_at sentAt,discarded_at discardedAt FROM outbox
       WHERE status=? AND sent_at IS NULL ${dueAt?"AND (next_attempt_at IS NULL OR next_attempt_at<=?)":""}
       ORDER BY created_at,id LIMIT ?`).all(...(dueAt?[status,dueAt,limit]:[status,limit])) as
       Array<Omit<OutboxQueueItem,'payload'>&{payload:string}>
     return rows.map((row)=>({...row,payload:JSON.parse(row.payload)}))
   }
-  recordEventsAttempted(ids:string[],at=new Date().toISOString()):void{
+  recordEventsAttempted(ids:string[],at=new Date().toISOString(),manual=false):void{
     if(!ids.length)return
     const update=this.db.prepare(`UPDATE outbox SET attempt_count=attempt_count+1,last_attempt_at=?
-      WHERE id=? AND status='pending' AND sent_at IS NULL`)
+      WHERE id=? AND status IN (${manual?"'pending','problem'":"'pending'"}) AND sent_at IS NULL`)
     this.db.exec('BEGIN')
     try{ids.forEach((id)=>update.run(at,id));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
@@ -1431,7 +1439,7 @@ export class PosDatabase {
       ?(message==='unsupported'?'Неподдерживаемый тип события':'Сервер отклонил данные события')
       :'Не удалось подтвердить событие. Повтор будет выполнен позже'
     const update=this.db.prepare(`UPDATE outbox SET status=?,last_error=?,next_attempt_at=?
-      WHERE id=? AND status='pending' AND sent_at IS NULL`)
+      WHERE id=? AND status IN ('pending','problem') AND sent_at IS NULL`)
     const attempts=this.db.prepare('SELECT attempt_count attemptCount FROM outbox WHERE id=?')
     this.db.exec('BEGIN')
     try{
@@ -1447,13 +1455,18 @@ export class PosDatabase {
   markEventsSent(ids:string[]):void {
     if(!ids.length)return
     const mark=this.db.prepare(`UPDATE outbox SET sent_at=?,status='sent',next_attempt_at=NULL,last_error=NULL
-      WHERE id=? AND sent_at IS NULL`)
+      WHERE id=? AND status IN ('pending','problem') AND sent_at IS NULL`)
     const now=new Date().toISOString()
     this.db.exec('BEGIN')
     try{ids.forEach((id)=>mark.run(now,id));this.db.exec('COMMIT')}
     catch(error){this.db.exec('ROLLBACK');throw error}
   }
-  pendingSyncCount():number{return (this.db.prepare('SELECT COUNT(*) count FROM outbox WHERE sent_at IS NULL').get() as {count:number}).count}
+  discardQueueEvent(id:string,at=new Date().toISOString()):boolean{
+    const result=this.db.prepare(`UPDATE outbox SET status='discarded',discarded_at=?,next_attempt_at=NULL
+      WHERE id=? AND status IN ('pending','problem') AND sent_at IS NULL`).run(at,id)
+    return result.changes===1
+  }
+  pendingSyncCount():number{return (this.db.prepare("SELECT COUNT(*) count FROM outbox WHERE status IN ('pending','problem')").get() as {count:number}).count}
   setState(key:string,value:string):void{this.db.prepare('INSERT INTO app_state (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,value)}
   getState(key:string):string|undefined{return (this.db.prepare('SELECT value FROM app_state WHERE key=?').get(key) as {value:string}|undefined)?.value}
   getUpsellCursor(triggerItem:string):number {
