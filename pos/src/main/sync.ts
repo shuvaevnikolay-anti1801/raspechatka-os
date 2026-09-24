@@ -1,7 +1,8 @@
-import type { BootState, ConnectionConfig } from '../shared/contracts'
+import type { BootState, ConnectionConfig, OutboxEvent, OutboxQueueItem, SyncRetryResult } from '../shared/contracts'
 import { ConnectionStore } from './connection'
 import { PosDatabase } from './database'
 import { loadBootstrap, pushEvents } from './frappe'
+import { canCancelSyncQueueEvent, canRetrySyncQueueEvent } from './sync-queue-policy'
 
 const LEGACY_POINT_TIMEZONE = 'Europe/Moscow'
 const LEGACY_CLEANING = { payoutAmountMinor: 200000, everyNVisits: 4 }
@@ -132,6 +133,83 @@ export function performConfigurationSync(
 }
 
 const syncFlights=new WeakMap<PosDatabase,Promise<BootState>>()
+const outboxLocks=new WeakMap<PosDatabase,Promise<unknown>>()
+
+export function withOutboxLock<T>(database:PosDatabase,action:()=>Promise<T>):Promise<T>{
+  const previous=outboxLocks.get(database)
+  const current=previous?previous.catch(()=>undefined).then(action):action()
+  outboxLocks.set(database,current)
+  void current.finally(()=>{if(outboxLocks.get(database)===current)outboxLocks.delete(database)}).catch(()=>undefined)
+  return current
+}
+
+async function sendOutboxBatch(database:PosDatabase,config:ConnectionConfig,events:OutboxEvent[],manual=false){
+  const ids=events.map((event)=>event.id)
+  database.recordEventsAttempted(ids,new Date().toISOString(),manual)
+  let result
+  try{result=await pushEvents(config,events)}
+  catch(error){
+    database.recordEventFailure(ids,'temporary','transport')
+    throw error
+  }
+  const sent=new Set(ids)
+  const accepted=[...new Set(result.accepted)].filter((id)=>sent.has(id))
+  if(accepted.length)database.markEventsSent(accepted)
+  const acceptedIds=new Set(accepted)
+  const errors=result.errors.filter((error)=>sent.has(error.id)&&!acceptedIds.has(error.id))
+  const failedIds=new Set<string>()
+  for(const error of errors){
+    if(failedIds.has(error.id))continue
+    failedIds.add(error.id)
+    const kind=/^(?:Неподдерживаемый тип события|Unsupported event(?: type)?|ValidationError:|Invalid event:)/i.test(error.message)
+      ?'problem':'temporary'
+    database.recordEventFailure([error.id],kind,kind==='problem'
+      &&/^(?:Неподдерживаемый тип события|Unsupported event)/i.test(error.message)?'unsupported':'validation')
+  }
+  const unconfirmed=ids.filter((id)=>!acceptedIds.has(id)&&!failedIds.has(id))
+  database.recordEventFailure(unconfirmed,'temporary','unconfirmed')
+  const errorText=errors.length||unconfirmed.length?outboxEventErrorsText(errors.length?errors:unconfirmed.map((id)=>({
+    id,eventType:events.find((event)=>event.id===id)?.eventType||'unknown',
+    message:'Сервер не подтвердил событие',
+  }))):''
+  return {accepted,errorText}
+}
+
+export function retrySingleSyncEvent(database:PosDatabase,connectionStore:ConnectionStore,id:string,blocked:()=>boolean=()=>false):Promise<SyncRetryResult>{
+  return withOutboxLock(database,async()=>{
+    const event=database.getQueueEvent(id)
+    if(!event||!canRetrySyncQueueEvent(event,blocked()))throw new Error('Повтор этого события сейчас недоступен')
+    const config=connectionStore.load()
+    if(!config)throw new Error('Подключение к OS не настроено')
+    let message='Документ отправлен'
+    try{
+      const result=await sendOutboxBatch(database,config,[{
+        id:event.id,eventType:event.eventType,payload:event.payload,createdAt:event.createdAt,
+      }],true)
+      if(!result.accepted.includes(id))message='Сервер не подтвердил документ. Проверьте состояние в очереди'
+      database.setState('outbox_error',result.errorText)
+    }catch{
+      message='Связь с OS недоступна. Документ остаётся в очереди'
+      database.setState('outbox_error',message)
+    }
+    database.setState('sync_error',syncErrorText(database.getState('master_data_error')||'',database.getState('outbox_error')||''))
+    return {message,event:database.getQueueEvent(id) as OutboxQueueItem}
+  })
+}
+
+export function discardSingleSyncEvent(
+  database:PosDatabase,id:string,blocked:()=>boolean,
+  audit:(event:OutboxQueueItem)=>void,
+):Promise<OutboxQueueItem>{
+  return withOutboxLock(database,async()=>{
+    const event=database.getQueueEvent(id)
+    if(!event||!canCancelSyncQueueEvent(event,blocked()))
+      throw new Error('Документ уже отправлен либо его нельзя исключить из очереди')
+    if(!database.discardQueueEvent(id))throw new Error('Состояние документа изменилось. Обновите очередь')
+    audit(event)
+    return database.getQueueEvent(id) as OutboxQueueItem
+  })
+}
 
 async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
   const config=connectionStore.load()
@@ -161,43 +239,10 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
       while(guard<100){
         const events=database.pendingEvents(100)
         if(!events.length)break
-        const ids=events.map((event)=>event.id)
-        // Persist the attempt before I/O: a lost reply is still an actual server attempt.
-        database.recordEventsAttempted(ids)
-        let result
-        try{
-          result=await pushEvents(config,events)
-          successfulContact=true
-        }catch(error){
-          database.recordEventFailure(ids,'temporary','transport')
-          throw error
-        }
-
-        const sent=new Set(ids)
-        const accepted=[...new Set(result.accepted)].filter((id)=>sent.has(id))
-        if(accepted.length){
-          database.markEventsSent(accepted)
-          acceptedAny=true
-        }
-
-        const acceptedIds=new Set(accepted)
-        const errors=result.errors.filter((error)=>sent.has(error.id)&&!acceptedIds.has(error.id))
-        const failedIds=new Set<string>()
-        for(const error of errors){
-          if(failedIds.has(error.id))continue
-          failedIds.add(error.id)
-          // Only explicit unsupported/validation responses are permanent.
-          const kind=/^(?:Неподдерживаемый тип события|Unsupported event(?: type)?|ValidationError:|Invalid event:)/i.test(error.message)
-            ?'problem':'temporary'
-          database.recordEventFailure([error.id],kind,kind==='problem'
-            &&/^(?:Неподдерживаемый тип события|Unsupported event)/i.test(error.message)?'unsupported':'validation')
-        }
-        const unconfirmed=ids.filter((id)=>!acceptedIds.has(id)&&!failedIds.has(id))
-        database.recordEventFailure(unconfirmed,'temporary','unconfirmed')
-        if(errors.length||unconfirmed.length)outboxError=outboxEventErrorsText(errors.length?errors:unconfirmed.map((id)=>({
-          id,eventType:events.find((event)=>event.id===id)?.eventType||'unknown',
-          message:'Сервер не подтвердил событие',
-        })))
+        const result=await sendOutboxBatch(database,config,events)
+        successfulContact=true
+        if(result.accepted.length)acceptedAny=true
+        if(result.errorText)outboxError=result.errorText
         guard++
       }
       database.setState('outbox_error',outboxError)
@@ -235,7 +280,7 @@ async function runSync(database:PosDatabase,connectionStore:ConnectionStore,cash
 export function performSync(database:PosDatabase,connectionStore:ConnectionStore,cashierId?:string):Promise<BootState>{
   const active=syncFlights.get(database)
   if(active)return active
-  const flight=runSync(database,connectionStore,cashierId).finally(()=>{
+  const flight=withOutboxLock(database,()=>runSync(database,connectionStore,cashierId)).finally(()=>{
     if(syncFlights.get(database)===flight)syncFlights.delete(database)
   })
   syncFlights.set(database,flight)

@@ -89,7 +89,6 @@
 .current-receipt .receipt-service-row>strong{min-width:0;text-align:right;color:var(--pos-ink);font-size:var(--pos-type-label);white-space:nowrap}
 .current-receipt .receipt-service-row.disabled{opacity:.5}
 .current-receipt .receipt-service-action{width:100%;min-width:0;min-height:var(--pos-control-compact);padding:0 var(--pos-space-2);overflow:hidden;border:var(--pos-border-emphasis);background:var(--pos-surface);color:var(--pos-graphite);font-size:var(--pos-type-label);font-weight:var(--pos-weight-medium);text-overflow:ellipsis;white-space:nowrap}
-.current-receipt .receipt-service-remove{padding:0;border:0;background:transparent;color:var(--pos-danger);font-size:var(--pos-type-meta)}
 .current-receipt .review-count{width:100%;display:flex;align-items:center;justify-content:center;border:var(--pos-border-base);background:var(--pos-surface)}
 .current-receipt .review-count button,.current-receipt .review-count input{width:32px;height:32px;border:0;background:transparent;text-align:center}
 .current-receipt .review-count input{width:40px;border-right:var(--pos-border-base);border-left:var(--pos-border-base);outline:0;font-size:var(--pos-type-label);-moz-appearance:textfield}

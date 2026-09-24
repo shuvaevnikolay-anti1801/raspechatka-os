@@ -389,16 +389,15 @@ export default function ReceiptsPage({boot,sales,held,onReturn,onRestore,notify}
         {held.map((receipt)=><article key={receipt.id}>
           <div className="held-receipt-head">
             <div>
-              <b>{receipt.customer?.name||receipt.label}</b>
-              <small>{new Date(receipt.createdAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})} · {receipt.lines.length} поз.</small>
+              <b>{receipt.customer?.name||'Розничный'}</b>
+              <strong>{formatMoney(heldTotal(receipt))}</strong>
             </div>
-            <strong>{formatMoney(heldTotal(receipt))}</strong>
+            <PosButton variant="secondary" onClick={()=>void onRestore(receipt)}>Продолжить</PosButton>
           </div>
           <div className="held-receipt-lines">
-            {receipt.lines.slice(0,4).map((line)=><span key={line.productId}>{line.name} × {line.quantity}</span>)}
-            {receipt.lines.length>4&&<span>+ ещё {receipt.lines.length-4}</span>}
+            {receipt.lines.slice(0,5).map((line,index)=><span key={`${line.productId}-${index}`}>{line.name} × {line.quantity}</span>)}
+            {receipt.lines.length>5&&<span>+ ещё {receipt.lines.length-5}</span>}
           </div>
-          <PosButton variant="secondary" onClick={()=>void onRestore(receipt)}>Продолжить</PosButton>
         </article>)}
       </div>
     </section>}

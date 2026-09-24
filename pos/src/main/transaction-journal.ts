@@ -34,6 +34,7 @@ export type JournalOperation = {
 
 export type JournalOperationSummary = Omit<JournalOperation, 'request' | 'confirmedPayments'> & {
   paymentMethods: string[]
+  canCancel: boolean
 }
 
 const ACTIVE_STATES: TransactionState[] = [
@@ -224,8 +225,30 @@ export class TransactionJournal {
       lastError: operation.lastError,
       createdAt: operation.createdAt,
       updatedAt: operation.updatedAt,
-      paymentMethods: operation.confirmedPayments.map((payment) => payment.method)
+      paymentMethods: operation.request.payments.map((payment) => payment.method),
+      canCancel: this.canCancelBeforeSideEffects(operation.id)
     }))
+  }
+
+  canCancelBeforeSideEffects(id:string):boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM operations o
+      WHERE o.id=? AND o.state IN ('created','requires_attention') AND o.confirmed_payments_json='[]'
+      AND NOT EXISTS (SELECT 1 FROM payment_attempts p WHERE p.operation_id=o.id)
+      AND NOT EXISTS (SELECT 1 FROM fiscal_attempts f WHERE f.operation_id=o.id)`).get(id))
+  }
+
+  cancelBeforeSideEffects(id:string):boolean {
+    this.db.exec('BEGIN IMMEDIATE')
+    try{
+      const result=this.db.prepare(`UPDATE operations SET state='cancelled',
+        last_error='Операция отменена до оплаты и фискализации',updated_at=?
+        WHERE id=? AND state IN ('created','requires_attention') AND confirmed_payments_json='[]'
+        AND NOT EXISTS (SELECT 1 FROM payment_attempts WHERE operation_id=operations.id)
+        AND NOT EXISTS (SELECT 1 FROM fiscal_attempts WHERE operation_id=operations.id)`)
+        .run(new Date().toISOString(),id)
+      this.db.exec('COMMIT')
+      return result.changes===1
+    }catch(error){this.db.exec('ROLLBACK');throw error}
   }
 
   hasBlockingFiscalOperation(): boolean {

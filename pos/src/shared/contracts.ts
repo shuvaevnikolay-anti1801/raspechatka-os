@@ -320,12 +320,13 @@ export type ShiftSummary = {
 
 export type OutboxEvent = { id: string; eventType: string; payload: unknown; createdAt: string }
 export type OutboxQueueItem = OutboxEvent & {
-  status: 'pending' | 'problem' | 'sent'
+  status: 'pending' | 'problem' | 'sent' | 'discarded'
   attemptCount: number
   lastAttemptAt: string | null
   nextAttemptAt: string | null
   lastError: string | null
   sentAt: string | null
+  discardedAt?: string | null
 }
 
 export type SyncQueueItem = {
@@ -335,10 +336,11 @@ export type SyncQueueItem = {
   createdAt:string
   status:'pending'|'problem'
   attemptCount:number
+  lastAttemptAt:string|null
   nextAttemptAt:string|null
   lastError:string|null
   canRetry:boolean
-  canCancel:false
+  canCancel:boolean
 }
 export type SyncQueueSnapshot = {
   items:SyncQueueItem[]
@@ -346,7 +348,7 @@ export type SyncQueueSnapshot = {
   problemCount:number
   problemCountTruncated:boolean
 }
-export type SyncRetryResult = {message:string}
+export type SyncRetryResult = {message:string;event:OutboxQueueItem}
 
 export type WorkScheduleItem = { id:string; date:string; shiftName:string; startTime:string; endTime:string; plannedHours:number }
 export type WorkScheduleEntry = {
@@ -420,7 +422,7 @@ export type CashDrawerState = {
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
-export type Order = { id:string; orderNumber:string; phone:string; contactMethod?:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
+export type Order = { id:string; orderNumber:string; customerOrderNumber?:string; phone:string; contactMethod?:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
 export type CreateUnpaidOrderRequest = { phone:string; contactMethod?:string; lines:CartLine[]; comment?:string; dueAt?:string }
 export type CreateOrderFromSaleRequest = { saleId:string; phone:string; contactMethod?:string; comment:string; dueAt:string }
 export type UpdateOrderRequest = { id:string; phone?:string; contactMethod?:string; comment?:string; status?:OrderStatus; dueAt?:string }
@@ -457,6 +459,7 @@ export type UnresolvedOperation = {
   createdAt:string
   updatedAt:string
   paymentMethods:string[]
+  canCancel:boolean
 }
 export type RecoveryResult = {status:'completed'|'attention';message:string}
 export type DiagnosticEvent = {
@@ -501,8 +504,10 @@ export type PosApi = {
   getPosVersion: () => Promise<string>
   listSyncQueue: () => Promise<SyncQueueSnapshot>
   retrySyncEvent: (id:string,adminCode:string) => Promise<SyncRetryResult>
+  discardSyncEvent: (id:string,adminCode:string) => Promise<SyncQueueSnapshot>
   listUnresolvedOperations: () => Promise<UnresolvedOperation[]>
   recoverOperation: (id:string) => Promise<RecoveryResult>
+  cancelOperation: (id:string,adminCode:string) => Promise<RecoveryResult>
   listDiagnosticEvents: (limit?:number) => Promise<DiagnosticEvent[]>
   getAtolSettings: () => Promise<AtolSettings>
   saveAtolSettings: (value:AtolSettings) => Promise<AtolSettings>

@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { Order } from '../../shared/contracts'
 import OrdersPage, {
@@ -9,6 +10,7 @@ import OrdersPage, {
 const order:Order={
   id:'internal-order-secret',
   orderNumber:'ORD-20260923-USER42',
+  customerOrderNumber:'2233',
   phone:'+7 900 111-22-33',
   contactMethod:'Telegram @client',
   lines:[],
@@ -36,21 +38,21 @@ describe('DEV-172 stage 4 orders table',()=>{
       ['payment','Оплата'],
       ['createdAt','Создан'],
       ['dueAt','Дата выдачи'],
-      ['issuedAt','Выдан'],
       ['actions','Действие'],
     ])
   })
 
   it('renders contact, paid label and minute-only dates without technical identifiers',()=>{
     const markup=renderToStaticMarkup(<OrdersPage orders={[order]} onChanged={async()=>undefined} notify={()=>undefined}/>)
-    expect(markup).toContain('ORD-20260923-USER42')
+    expect(markup).toContain('2233')
+    expect(markup).not.toContain('ORD-20260923-USER42')
     expect(markup).toContain('+7 900 111-22-33')
     expect(markup).toContain('Telegram @client')
     expect(markup).toContain('Фотокнига с длинным описанием заказа для клиента')
     expect(markup).toContain('Оплачено ·')
     expect(markup).toContain('23.09.2026 10:15')
     expect(markup).toContain('24.09.2026 18:30')
-    expect(markup).toContain('25.09.2026 09:05')
+    expect(markup).not.toContain('25.09.2026 09:05')
     expect(markup).not.toContain('>10:15:37<')
     expect(markup).not.toContain('>18:30:59<')
     expect(markup).not.toContain('>09:05:44<')
@@ -76,6 +78,11 @@ describe('DEV-172 stage 4 orders table',()=>{
     expect(clampOrderColumnWidth('description',321.4)).toBe(321)
     expect(clampOrderColumnWidth('description',900)).toBe(560)
     const widths=defaultOrderColumnWidths()
-    expect(orderTableGridTemplate(widths)).toBe(ORDER_TABLE_COLUMNS.map((column)=>`${column.defaultWidth}px`).join(' '))
+    expect(orderTableGridTemplate(widths)).toBe(ORDER_TABLE_COLUMNS.map((column)=>`minmax(0,${column.defaultWidth}fr)`).join(' '))
+    const css=readFileSync(new URL('./orders-table.css',import.meta.url),'utf8')
+    expect(css).toContain('width:100%')
+    expect(css).toContain('width:900px')
+    expect(css).toMatch(/\.orders-table \.order-description\{\r?\n\s*white-space:normal;/)
+    expect(css).not.toContain('-webkit-line-clamp')
   })
 })

@@ -11,7 +11,7 @@ import { PosDiagnostics } from './diagnostics'
 import { CommodityPrintQueue } from './print-jobs'
 import type { FiscalProvider, PaymentProvider, PrintProvider } from './providers/contracts'
 import { ShiftCoordinator } from './shift-coordinator'
-import { buildBootState, performConfigurationSync, performSync } from './sync'
+import { buildBootState, discardSingleSyncEvent, performConfigurationSync, performSync, retrySingleSyncEvent } from './sync'
 import { collectDeviceStatuses } from './health'
 import { canCancelSyncQueueEvent, canRetrySyncQueueEvent, syncEventLabels } from './sync-queue-policy'
 import { PosTransactionEngine } from './transaction-engine'
@@ -66,12 +66,6 @@ export function registerIpcHandlers(dependencies:{
   const assertCashierAccess=()=>cashierAuth.requireAuthenticated()
 
   const errorMessage=(error:unknown)=>error instanceof Error?error.message:String(error)
-  const assertFiscalShiftReady=async(action:string)=>{
-    const fiscalShift=await fiscalProvider.getShiftStatus()
-    if(!fiscalShift.open)throw new Error(`Нельзя ${action}: фискальная смена АТОЛ закрыта. Откройте смену кассы.`)
-    if(fiscalShift.state==='expired')throw new Error(`Нельзя ${action}: фискальная смена АТОЛ истекла. Закройте текущую смену и откройте новую.`)
-    return fiscalShift
-  }
 
   ipcMain.handle('pos:get-boot-state',bootState)
   ipcMain.handle('pos:set-upsell-cursor',(_event,triggerItem:string,cursor:number)=>{
@@ -174,8 +168,8 @@ export function registerIpcHandlers(dependencies:{
           id:event.id,eventType:event.eventType,
           label:syncEventLabels[event.eventType]??'Документ точки',
           createdAt:event.createdAt,status:event.status as 'pending'|'problem',
-          attemptCount:event.attemptCount,nextAttemptAt:event.nextAttemptAt,
-          lastError:event.lastError,canRetry:canRetrySyncQueueEvent(event,blocked),canCancel:canCancelSyncQueueEvent(event),
+          attemptCount:event.attemptCount,lastAttemptAt:event.lastAttemptAt,nextAttemptAt:event.nextAttemptAt,
+          lastError:event.lastError,canRetry:canRetrySyncQueueEvent(event,blocked),canCancel:canCancelSyncQueueEvent(event,blocked),
         })),
       total:database.pendingSyncCount(),
       problemCount:Math.min(problems.length,1000),
@@ -185,17 +179,25 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:list-sync-queue',queueSnapshot)
   ipcMain.handle('pos:retry-sync-event',async(_event,id:string,adminCode:string)=>{
     if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
-    const cashier=assertCashierAccess()
+    assertCashierAccess()
     if(transactionEngine.hasBlockingOperation())throw new Error('Сначала завершите восстановление незавершённой операции')
     if(database.getState('outbox_paused')==='1')throw new Error('Отправка очереди приостановлена')
-    const event=database.listPendingQueue(1000).find((row)=>row.id===id)
-    if(!event||!canRetrySyncQueueEvent(event,false))throw new Error('Повтор этого события сейчас недоступен')
-    // Normal sync retains the immutable ID/payload and server-side deduplication.
-    // It may also deliver other due events; no external payment/fiscal operation is retried here.
-    await performSync(database,connectionStore,cashier.id)
+    const result=await retrySingleSyncEvent(database,connectionStore,id,
+      ()=>transactionEngine.hasBlockingOperation()||database.getState('outbox_paused')==='1')
     diagnostics.record({source:'sync',eventType:'sync.manual_event_requested',
-      message:'Запрошена повторная отправка события',details:{id,eventType:event.eventType}})
-    return {message:'Отправка выполнена. Проверьте состояние документа в очереди'}
+      message:result.message,details:{id,eventType:result.event.eventType,status:result.event.status}})
+    return result
+  })
+  ipcMain.handle('pos:discard-sync-event',async(_event,id:string,adminCode:string)=>{
+    if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
+    assertCashierAccess()
+    await discardSingleSyncEvent(database,id,
+      ()=>transactionEngine.hasBlockingOperation()||database.getState('outbox_paused')==='1',(event)=>{
+      diagnostics.record({source:'sync',level:'warning',eventType:'sync.outbox_discarded',
+        message:'Администратор прекратил отправку документа без удаления локального документа',
+        details:{id,eventType:event.eventType,createdAt:event.createdAt}})
+    })
+    return queueSnapshot()
   })
 
   ipcMain.handle('pos:list-unresolved-operations',()=>transactionEngine.listUnresolved())
@@ -209,6 +211,13 @@ export function registerIpcHandlers(dependencies:{
       diagnostics.record({source:'recovery',level:'error',eventType:'operation.recovery_failed',message:errorMessage(error),operationId:id})
       throw error
     }
+  })
+  ipcMain.handle('pos:cancel-operation',(_event,id:string,adminCode:string)=>{
+    if(!verifyAdminCode(adminCode))throw new Error('Неверный код администратора')
+    const result=transactionEngine.cancelBeforeSideEffects(id)
+    diagnostics.record({source:'recovery',level:'warning',eventType:'operation.cancelled_before_effects',
+      message:'Операция отменена до оплаты и фискализации',operationId:id})
+    return result
   })
   ipcMain.handle('pos:list-diagnostic-events',(_event,limit?:number)=>diagnostics.list(limit))
 
@@ -359,14 +368,6 @@ export function registerIpcHandlers(dependencies:{
       }
     }:request
 
-    const fiscalHealth=await fiscalProvider.healthCheck()
-    if(!fiscalHealth.ready)throw new Error(`Нельзя принимать оплату: ККТ не готова. ${fiscalHealth.message}`)
-    await assertFiscalShiftReady('проводить продажу')
-    if(usesTerminal(request.payments)){
-      const paymentHealth=await paymentProvider.healthCheck()
-      if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов. ${paymentHealth.message}`)
-    }
-
     diagnostics.record({
       source:usesTerminal(request.payments)?'payment':'fiscal',
       eventType:'sale.started',
@@ -413,14 +414,6 @@ export function registerIpcHandlers(dependencies:{
     if(request.payments.reduce((sum,x)=>sum+x.amountMinor,0)!==totalMinor)throw new Error('Сумма возврата по способам оплаты не совпадает с итогом')
     if(request.payments.some((x)=>x.method==='remote_payment')){
       throw new Error('Автоматический возврат удалённой оплаты пока не поддерживается. Не фиксируем фиктивный возврат денег.')
-    }
-
-    const fiscalHealth=await fiscalProvider.healthCheck()
-    if(!fiscalHealth.ready)throw new Error(`Нельзя начинать возврат: ККТ не готова. ${fiscalHealth.message}`)
-    await assertFiscalShiftReady('оформлять возврат')
-    if(usesTerminal(request.payments)){
-      const paymentHealth=await paymentProvider.healthCheck()
-      if(!paymentHealth.ready)throw new Error(`Терминал оплаты не готов к возврату. ${paymentHealth.message}`)
     }
 
     diagnostics.record({source:'fiscal',eventType:'return.started',message:`Начат возврат на ${totalMinor/100} ₽`,operationId:request.clientRequestId,details:{saleId:request.saleId,totalMinor}})

@@ -44,7 +44,7 @@ export type UpsellCycle = {
 
 export function resolveUpsellAfterCart(cycle: UpsellCycle, cart: CartLine[]): UpsellCycle {
   if (cycle.state === 'showing' && cycle.triggerItem && !cart.some((line) => line.productId === cycle.triggerItem)) {
-    return { state: 'resolved' }
+    return { state: 'eligible' }
   }
   return cycle
 }

@@ -197,7 +197,7 @@ class TestPosOrders(TestCase):
 		doc = SimpleNamespace(insert=Mock())
 		get_value = Mock(side_effect=[None, "POINT-1"])
 		fake_frappe = SimpleNamespace(
-			db=SimpleNamespace(get_value=get_value),
+			db=SimpleNamespace(get_value=get_value, sql=Mock(return_value=[])),
 			get_doc=Mock(return_value=doc),
 		)
 		payload = {
@@ -217,7 +217,67 @@ class TestPosOrders(TestCase):
 		fake_frappe.get_doc.assert_called_once()
 		created_doc = fake_frappe.get_doc.call_args.args[0]
 		self.assertEqual(created_doc["contact_method"], "Telegram @client")
+		self.assertEqual(created_doc["customer_order_number"], "4567")
 		doc.insert.assert_called_once_with(ignore_permissions=True)
+
+	def test_create_keeps_technical_lookup_and_explicit_customer_number(self):
+		doc = SimpleNamespace(insert=Mock())
+		db = SimpleNamespace(get_value=Mock(return_value=None), sql=Mock(), exists=Mock(return_value=False))
+		with (
+			patch.object(pos, "_doctype_exists", return_value=True),
+			patch.object(pos, "_order_source_receipt", return_value=None),
+			patch.object(pos, "frappe", SimpleNamespace(db=db, get_doc=Mock(return_value=doc))),
+		):
+			pos._apply_order_created(
+				"EVENT-NEW",
+				SimpleNamespace(business_point="POINT-1"),
+				{
+					"orderNumber": "ORD-TECHNICAL",
+					"customerOrderNumber": "4567 (1)",
+					"phone": "+79001234567",
+					"lines": [],
+				},
+			)
+			created = pos.frappe.get_doc.call_args.args[0]
+			self.assertEqual(created["order_number"], "ORD-TECHNICAL")
+			self.assertEqual(created["customer_order_number"], "4567 (1)")
+
+	def test_legacy_number_allocator_is_point_scoped(self):
+		db = SimpleNamespace(sql=Mock(return_value=[("4567",), ("4567 (1)",)]))
+		with patch.object(pos, "frappe", SimpleNamespace(db=db)):
+			self.assertEqual(pos._allocate_customer_order_number("POINT-1", "+79001234567"), "4567 (2)")
+		self.assertEqual(db.sql.call_args.args[1], "POINT-1")
+
+	def test_bootstrap_serializes_both_numbers(self):
+		row = SimpleNamespace(
+			name="id",
+			order_number="ORD-TECHNICAL",
+			customer_order_number="4567",
+			phone="+79001234567",
+			contact_method=None,
+			customer_name=None,
+			total_amount=10,
+			paid_amount=10,
+			status="New",
+			comment="",
+			due_at=None,
+			creation="2026-09-23",
+			created_at=None,
+			ready_at=None,
+			issued_at=None,
+			source_sale_id=None,
+			source_receipt=None,
+			fiscal_number=None,
+		)
+		fake = SimpleNamespace(get_all=Mock(side_effect=[[row], []]))
+		with (
+			patch.object(pos, "_doctype_exists", return_value=True),
+			patch.object(pos, "_pos_datetime_to_utc", side_effect=lambda x: x),
+			patch.object(pos, "frappe", fake),
+		):
+			order = pos._get_orders("POINT-1")[0]
+		self.assertEqual(order["customerOrderNumber"], "4567")
+		self.assertEqual(order["orderNumber"], "ORD-TECHNICAL")
 
 	def test_delayed_order_event_accepts_cashier_from_current_point(self):
 		fake_frappe = SimpleNamespace(db=SimpleNamespace(get_value=Mock(return_value=None)))

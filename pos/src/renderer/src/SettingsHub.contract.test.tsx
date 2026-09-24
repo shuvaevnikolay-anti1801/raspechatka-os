@@ -113,21 +113,21 @@ describe('DEV-163 unified SettingsHub contract',()=>{
   it('shows only human queue data in the operator row and never an unsafe action',()=>{
     const queue:SyncQueueSnapshot={
       items:[
-        {id:'raw-order-uuid-123',eventType:'order.created',label:'Новый заказ',createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:2,nextAttemptAt:null,lastError:'Повтор будет выполнен позже',canRetry:true,canCancel:false},
-        {id:'raw-fiscal-uuid-456',eventType:'sale.completed',label:'Продажа',createdAt:'2026-09-23T11:00:00Z',status:'problem',attemptCount:3,nextAttemptAt:null,lastError:'Сервер отклонил данные события',canRetry:false,canCancel:false},
+        {id:'raw-order-uuid-123',eventType:'order.created',label:'Новый заказ',createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:2,lastAttemptAt:'2026-09-23T10:01:00Z',nextAttemptAt:null,lastError:'Повтор будет выполнен позже',canRetry:true,canCancel:true},
+        {id:'raw-fiscal-uuid-456',eventType:'sale.completed',label:'Продажа',createdAt:'2026-09-23T11:00:00Z',status:'problem',attemptCount:3,lastAttemptAt:null,nextAttemptAt:null,lastError:'Сервер отклонил данные события',canRetry:false,canCancel:false},
       ],total:2,problemCount:1,problemCountTruncated:false,
     }
-    const markup=renderToStaticMarkup(<SettingsSyncQueue queue={queue} busy={false} onRetry={()=>undefined}/> )
+    const markup=renderToStaticMarkup(<SettingsSyncQueue queue={queue} busy={false} onRetry={()=>undefined} onDiscard={()=>undefined}/> )
     expect(markup).toContain('Новый заказ')
     expect(markup).toContain('Требует исправления')
     expect(markup).toContain('Попыток: 2')
-    expect((markup.match(/Повторить отправку/g)||[]).length).toBe(1)
-    expect(markup).not.toContain('Удалить')
+    expect((markup.match(/Отправить сейчас/g)||[]).length).toBe(1)
+    expect((markup.match(/Удалить из очереди/g)||[]).length).toBe(1)
     expect(markup).not.toContain('Отменить')
     expect(markup).not.toContain('raw-order-uuid-123')
     expect(markup).not.toContain('raw-fiscal-uuid-456')
     expect(markup).not.toContain('order.created')
-    const legacy=renderToStaticMarkup(<SettingsSyncQueue queue={{...queue,items:[{...queue.items[0],lastError:'TypeError: /workspace/private/token.json {secret}'}]}} busy={false} onRetry={()=>undefined}/> )
+    const legacy=renderToStaticMarkup(<SettingsSyncQueue queue={{...queue,items:[{...queue.items[0],lastError:'TypeError: /workspace/private/token.json {secret}'}]}} busy={false} onRetry={()=>undefined} onDiscard={()=>undefined}/> )
     expect(legacy).toContain('Откройте диагностику')
     expect(legacy).not.toContain('/workspace/private/token.json')
     expect(legacy).not.toContain('TypeError')
@@ -135,19 +135,19 @@ describe('DEV-163 unified SettingsHub contract',()=>{
 
   it('rejects unsafe, delayed and unversioned retries by the main policy',()=>{
     const event:OutboxQueueItem={id:'e',eventType:'order.created',payload:{},createdAt:'2026-09-23T10:00:00Z',status:'pending',attemptCount:1,lastAttemptAt:null,nextAttemptAt:null,lastError:null,sentAt:null}
-    const now=Date.parse('2026-09-23T12:00:00Z')
-    expect(canRetrySyncQueueEvent(event,false,now)).toBe(true)
+    expect(canRetrySyncQueueEvent(event,false)).toBe(true)
     for(const eventType of ['sale.completed','sale.returned','shift.opened','shift.closed','cash.deposited','cash.withdrawn','cash.counted','payment_unknown','fiscal_status_unknown']){
-      expect(canRetrySyncQueueEvent({...event,eventType},false,now)).toBe(false)
-    }
-    expect(canRetrySyncQueueEvent({...event,status:'problem'},false,now)).toBe(false)
-    expect(canRetrySyncQueueEvent({...event,nextAttemptAt:'2026-09-24T00:00:00Z'},false,now)).toBe(false)
-    expect(canRetrySyncQueueEvent(event,true,now)).toBe(false)
-    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated'},false,now)).toBe(false)
-    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated',payload:{updatedAt:'2026-09-23T10:00:00Z'}},false,now)).toBe(true)
-    for(const eventType of ['order.created','order.updated','sale.completed','cash.withdrawn']){
+      expect(canRetrySyncQueueEvent({...event,eventType},false)).toBe(false)
       expect(canCancelSyncQueueEvent({...event,eventType})).toBe(false)
     }
+    expect(canRetrySyncQueueEvent({...event,status:'problem'},false)).toBe(true)
+    expect(canRetrySyncQueueEvent({...event,nextAttemptAt:'2026-09-24T00:00:00Z'},false)).toBe(true)
+    expect(canRetrySyncQueueEvent(event,true)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated'},false)).toBe(false)
+    expect(canRetrySyncQueueEvent({...event,eventType:'order.updated',payload:{updatedAt:'2026-09-23T10:00:00Z'}},false)).toBe(true)
+    expect(canCancelSyncQueueEvent(event)).toBe(true)
+    expect(canCancelSyncQueueEvent(event,true)).toBe(false)
+    expect(canCancelSyncQueueEvent({...event,status:'sent'})).toBe(false)
   })
 
   it('uses configuration refresh after admin connection save without full sync',async()=>{

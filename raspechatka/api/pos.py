@@ -433,6 +433,21 @@ def _apply_order_created(event_id, workplace, payload):
 		if existing_point != workplace.business_point:
 			frappe.throw(_("Событие заказа принадлежит другой точке"), frappe.PermissionError)
 		return
+	# Serialize number allocation per point. The technical order_number remains
+	# the immutable lookup key for queued order.updated events.
+	frappe.db.sql("select name from `tabBusiness Point` where name=%s for update", workplace.business_point)
+	customer_number = str(payload.get("customerOrderNumber") or "").strip()
+	if not customer_number:
+		customer_number = _allocate_customer_order_number(workplace.business_point, payload.get("phone"))
+	elif frappe.db.exists(
+		"POS Order",
+		{
+			"business_point": workplace.business_point,
+			"customer_order_number": customer_number,
+			"status": ["in", ["New", "In Progress", "Ready"]],
+		},
+	):
+		frappe.throw(_("Номер заказа для клиента уже занят на этой точке"))
 	status = {
 		"new": "New",
 		"in_progress": "In Progress",
@@ -446,6 +461,7 @@ def _apply_order_created(event_id, workplace, payload):
 		{
 			"doctype": "POS Order",
 			"order_number": payload.get("orderNumber"),
+			"customer_order_number": customer_number,
 			"phone": payload.get("phone"),
 			"contact_method": payload.get("contactMethod") or None,
 			"customer_name": payload.get("customerName"),
@@ -478,6 +494,23 @@ def _apply_order_created(event_id, workplace, payload):
 		}
 	)
 	doc.insert(ignore_permissions=True)
+
+
+def _allocate_customer_order_number(point_name, phone):
+	base = "".join(ch for ch in str(phone or "") if ch.isdigit())[-4:].zfill(4)
+	used = {
+		row[0]
+		for row in frappe.db.sql(
+			"""select customer_order_number from `tabPOS Order`
+			where business_point=%s and status in ('New','In Progress','Ready')
+			and customer_order_number is not null""",
+			point_name,
+		)
+	}
+	suffix = 0
+	while (f"{base} ({suffix})" if suffix else base) in used:
+		suffix += 1
+	return f"{base} ({suffix})" if suffix else base
 
 
 def _apply_order_updated(event_id, workplace, payload):
@@ -787,6 +820,7 @@ def _get_orders(point_name):
 		fields=[
 			"name",
 			"order_number",
+			"customer_order_number",
 			"phone",
 			"contact_method",
 			"customer_name",
@@ -832,6 +866,7 @@ def _get_orders(point_name):
 		{
 			"id": x.name,
 			"orderNumber": x.order_number,
+			"customerOrderNumber": x.customer_order_number,
 			"phone": x.phone,
 			"contactMethod": x.contact_method,
 			"customerName": x.customer_name,

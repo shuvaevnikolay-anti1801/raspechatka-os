@@ -7,6 +7,7 @@ import { PosButton, PosIconButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosIcon } from './ui/PosIcon'
 import { PosModal } from './ui/PosModal'
+import CurrentReceipt from './CurrentReceipt'
 import WorkPage, { buildStockReceiptRequest, operationalStockItems, ReceiveModal, warehouseItemMatches, WriteOffModal } from './WorkPage'
 import { normalizePinValue, PIN_LENGTH, PinInput } from './PinEntry'
 import type { BootState, CashierAuthState, DeliveryNotice, OperationalCatalogItem, WorkplaceData } from '../../shared/contracts'
@@ -30,25 +31,25 @@ describe('held receipt upsell lifecycle',()=>{
     expect(restoreHeldUpsell(stored.upsell)).toEqual({cycle:pending,outcome:null})
   })
 
-  it('keeps dismissed proposals resolved across repeated restore',()=>{
-    const stored=heldUpsellSnapshot({state:'resolved'},'dismissed')
+  it('keeps dismissed proposals closed while allowing a future manual add',()=>{
+    const stored=heldUpsellSnapshot({state:'eligible'},'dismissed')
     expect(stored).toEqual({state:'dismissed'})
-    expect(restoreHeldUpsell(stored)).toEqual({cycle:{state:'resolved'},outcome:'dismissed'})
+    expect(restoreHeldUpsell(stored)).toEqual({cycle:{state:'eligible'},outcome:'dismissed'})
     expect(restoreHeldUpsell(stored)).toEqual(restoreHeldUpsell(stored))
   })
 
-  it('keeps accepted proposals resolved without adding the item again',()=>{
-    const stored=heldUpsellSnapshot({state:'resolved'},'accepted')
+  it('keeps accepted proposals closed without adding the item again',()=>{
+    const stored=heldUpsellSnapshot({state:'eligible'},'accepted')
     expect(stored).toEqual({state:'accepted'})
     const restored=restoreHeldUpsell(stored)
-    expect(restored).toEqual({cycle:{state:'resolved'},outcome:'accepted'})
+    expect(restored).toEqual({cycle:{state:'eligible'},outcome:'accepted'})
     expect(restoreHeldUpsell(stored)).toEqual(restored)
-    expect(restored.cycle.state).not.toBe('eligible')
+    expect(restored.cycle.candidate).toBeUndefined()
   })
 
-  it('reads legacy JSON without upsell once as a resolved cycle',()=>{
+  it('reads legacy JSON without upsell without reviving a candidate',()=>{
     const legacy=JSON.parse('{"lines":[{"productId":"base"}]}')
-    expect(restoreHeldUpsell(legacy.upsell)).toEqual({cycle:{state:'resolved'},outcome:'dismissed'})
+    expect(restoreHeldUpsell(legacy.upsell)).toEqual({cycle:{state:'eligible'},outcome:'dismissed'})
   })
 
   it('stores lifecycle in the same held receipt request and avoids restore re-add',()=>{
@@ -57,6 +58,34 @@ describe('held receipt upsell lifecycle',()=>{
     expect(source).toContain('const savedUpsell=restoreHeldUpsell(receipt.upsell)')
     expect(source).toContain('setUpsellCycle(savedUpsell.cycle);setUpsellOutcome(savedUpsell.outcome)')
     expect(source).not.toContain("setUpsellCycle({state:'eligible'})\n    setCart(receipt.lines)")
+  })
+
+  it('uses one slot, ignores triggers while showing, and suppresses a chain on acceptance',()=>{
+    const source=readFileSync(new URL('./AppV2.tsx',import.meta.url),'utf8')
+    expect(source).toContain("if(options.suppressUpsell||upsellCycle.state!=='eligible')return")
+    expect(source).toContain("setUpsellCycle({state:'eligible'})")
+    expect(source).toContain('if(target)add(target,{suppressUpsell:true})')
+    expect(source).not.toContain('upsellQueue')
+  })
+})
+
+describe('current receipt customer control',()=>{
+  it('opens the customer modal from the name and has no separate remove action',()=>{
+    const noop=()=>undefined
+    const markup=renderToStaticMarkup(<CurrentReceipt
+      lines={[]} customer={{id:'c',name:'Клиент',phone:'79000000000',discountPercent:5}}
+      clubPercent={5} allowFreePrice={false} onClear={noop} onOpenCustomer={noop}
+      onOverridePrice={noop} onChangeQuantity={noop} onSetQuantity={noop}
+      upsell={null} onAcceptUpsell={noop} onDismissUpsell={noop} allowDiscounts={true}
+      reviewUnitMinor={0} reviewCount={0} reviewDiscountMinor={0} maxReviews={0}
+      onReviewCountChange={noop} manualDiscount={null} manualDiscountMinor={0}
+      onOpenManualDiscount={noop} clubDiscountMinor={0} hasProtectedItems={false}
+      subtotalMinor={0} totalDiscountMinor={0} roundingAdjustmentMinor={0} totalMinor={0}
+      shiftOpen={false} onOpenShift={noop} onHold={noop} onCreateOrder={noop} onPay={noop}
+    />)
+    expect(markup).toMatch(/<button class="receipt-service-action">Клиент<\/button>/)
+    expect(markup).not.toContain('receipt-service-remove')
+    expect(markup).not.toContain('>Убрать<')
   })
 })
 

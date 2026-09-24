@@ -8,6 +8,7 @@ import { IssueOrderConfirmation, runSingleOrderStatusUpdate } from './OrdersPage
 const readyOrder:Order={
   id:'order-ready-1',
   orderNumber:'ORD-READY-1',
+  customerOrderNumber:'2233',
   phone:'+7 900 111-22-33',
   contactMethod:'Telegram',
   lines:[],
@@ -36,7 +37,8 @@ describe('DEV-172 stage 5 order issue confirmation',()=>{
     expect(markup).toContain('Подтвердить выдачу заказа?')
     expect(markup).toMatch(/>Подтверждаю<\//)
     expect(markup).toMatch(/>Отмена<\//)
-    expect(markup).toContain('ORD-READY-1')
+    expect(markup).toContain('2233')
+    expect(markup).not.toContain('ORD-READY-1')
 
     const pendingMarkup=renderToStaticMarkup(
       <IssueOrderConfirmation order={readyOrder} pending onConfirm={()=>undefined} onCancel={()=>undefined}/>,

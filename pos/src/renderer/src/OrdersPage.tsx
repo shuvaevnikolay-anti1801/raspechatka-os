@@ -23,7 +23,7 @@ export const formatOrderDateTime=(value?:string|null)=>{
   return `${pad2(date.getDate())}.${pad2(date.getMonth()+1)}.${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
-export type OrderTableColumnKey='status'|'orderNumber'|'phone'|'contactMethod'|'description'|'payment'|'createdAt'|'dueAt'|'issuedAt'|'actions'
+export type OrderTableColumnKey='status'|'orderNumber'|'phone'|'contactMethod'|'description'|'payment'|'createdAt'|'dueAt'|'actions'
 export type OrderTableColumn={key:OrderTableColumnKey;label:string;defaultWidth:number;minWidth:number;maxWidth:number}
 export const ORDER_TABLE_COLUMNS:readonly OrderTableColumn[]=[
   {key:'status',label:'Статус',defaultWidth:150,minWidth:120,maxWidth:240},
@@ -34,7 +34,6 @@ export const ORDER_TABLE_COLUMNS:readonly OrderTableColumn[]=[
   {key:'payment',label:'Оплата',defaultWidth:190,minWidth:160,maxWidth:280},
   {key:'createdAt',label:'Создан',defaultWidth:165,minWidth:145,maxWidth:230},
   {key:'dueAt',label:'Дата выдачи',defaultWidth:165,minWidth:145,maxWidth:230},
-  {key:'issuedAt',label:'Выдан',defaultWidth:165,minWidth:145,maxWidth:230},
   {key:'actions',label:'Действие',defaultWidth:210,minWidth:180,maxWidth:340},
 ]
 export type OrderColumnWidths=Record<OrderTableColumnKey,number>
@@ -47,7 +46,7 @@ export const clampOrderColumnWidth=(key:OrderTableColumnKey,width:number)=>{
   return Math.min(column.maxWidth,Math.max(column.minWidth,Math.round(width)))
 }
 export const orderTableGridTemplate=(widths:OrderColumnWidths)=>
-  ORDER_TABLE_COLUMNS.map((column)=>`${widths[column.key]}px`).join(' ')
+  ORDER_TABLE_COLUMNS.map((column)=>`minmax(0,${widths[column.key]}fr)`).join(' ')
 
 export const orderReceiptCustomerName=(sale:Pick<SaleSummary,'customerName'>)=>sale.customerName?.trim()||'Розничный покупатель'
 export const formatOrderReceiptDate=(value:string)=>formatOrderDateTime(value)
@@ -110,7 +109,7 @@ export function IssueOrderConfirmation({order,pending,onConfirm,onCancel}:{
       <PosButton variant="primary" disabled={pending} onClick={()=>void onConfirm()}>Подтверждаю</PosButton>
     </>}
   >
-    <p>Заказ {order.orderNumber} будет отмечен как выданный клиенту.</p>
+    <p>Заказ {order.customerOrderNumber||'—'} будет отмечен как выданный клиенту.</p>
   </PosModal>
 }
 
@@ -215,7 +214,7 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
       </header>
       {active.length?active.map((order)=><div key={order.id} className={overdue(order)?'order-row order-overdue':'order-row'} style={{gridTemplateColumns}}>
         <span className={'order-status '+order.status}>{statusName(order.status)}</span>
-        <strong className="order-number" title={order.orderNumber}>{order.orderNumber}</strong>
+        <strong className="order-number">{order.customerOrderNumber||'—'}</strong>
         <span className="order-phone" title={order.phone}>{order.phone}</span>
         <span className="order-contact" title={order.contactMethod||''}>{order.contactMethod||'—'}</span>
         <span className="order-description" title={order.comment||''}>{order.comment||'Без описания'}</span>
@@ -225,7 +224,6 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
           <time dateTime={order.dueAt}>{formatOrderDateTime(order.dueAt)}</time>
           {overdue(order)&&<small>Просрочен</small>}
         </span>
-        <time className="order-issued-at" dateTime={order.issuedAt}>{formatOrderDateTime(order.issuedAt)}</time>
         <div className="order-actions">
           <PosButton variant="secondary" onClick={()=>setEditing(order)} title="Изменить телефон, способ связи, описание или дату выдачи">Изменить</PosButton>
           {order.status==='ready'

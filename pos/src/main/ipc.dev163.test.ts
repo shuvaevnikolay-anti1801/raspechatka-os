@@ -43,10 +43,11 @@ import { assertConnectionIdentityChangeAllowed, registerIpcHandlers } from './ip
 const register=()=>{
   const diagnostics={record:vi.fn()}
   const cashierAuth={
-    requireAuthenticated:vi.fn(()=>{throw new Error('cashier auth required')}),
+    requireAuthenticated:vi.fn<()=>{id:string}>(()=>{throw new Error('cashier auth required')}),
     state:vi.fn(()=>({status:'signed_out'})),
   }
   const lifecycle={
+    requireReady:vi.fn(),
     status:vi.fn(()=>({state:'READY'})),
     beginConfiguration:vi.fn(()=>({state:'CONFIGURING'})),
     markReady:vi.fn(()=>({state:'READY'})),
@@ -123,5 +124,40 @@ describe('DEV-163 connection identity guard',()=>{
       {serverUrl:'https://os.example/',deviceId:'POS-1',token:'rotated'},
       true,
     )).toBe(false)
+  })
+})
+
+describe('DEV-178 durable fiscal preflight boundary',()=>{
+  it('delegates a valid sale to the engine without an IPC device call',async()=>{
+    const {dependencies,cashierAuth,lifecycle}=register()
+    cashierAuth.requireAuthenticated.mockImplementation(()=>({id:'cashier'}))
+    dependencies.database.findSaleByClientRequestId=vi.fn(()=>null)
+    dependencies.database.currentShift.mockReturnValue({id:'shift'})
+    dependencies.database.listProducts=vi.fn(()=>[{id:'print-a4',name:'Печать',priceMinor:2000}])
+    dependencies.fiscalProvider.healthCheck=vi.fn(()=>{throw new Error('ККТ отключена')})
+    dependencies.paymentProvider.healthCheck=vi.fn()
+    dependencies.transactionEngine.completeSale=vi.fn(async()=>({saleId:'sale',receiptNumber:'FD-1'}))
+    const handler=electronMocks.handlers.get('pos:complete-sale')!
+    await expect(handler(undefined,{clientRequestId:'request',lines:[{productId:'print-a4',name:'Печать',quantity:1,unitPriceMinor:2000}],
+      payments:[{method:'card',amountMinor:2000}]})).resolves.toMatchObject({saleId:'sale'})
+    expect(dependencies.transactionEngine.completeSale).toHaveBeenCalledTimes(1)
+    expect(dependencies.fiscalProvider.healthCheck).not.toHaveBeenCalled()
+    expect(dependencies.paymentProvider.healthCheck).not.toHaveBeenCalled()
+  })
+
+  it('delegates a valid return to the engine without an IPC device call',async()=>{
+    const {dependencies,cashierAuth}=register()
+    cashierAuth.requireAuthenticated.mockImplementation(()=>({id:'cashier'}))
+    dependencies.database.findReturnByClientRequestId=vi.fn(()=>null)
+    dependencies.database.currentShift.mockReturnValue({id:'shift'})
+    const sale={id:'sale',totalMinor:2000,lines:[{id:1,name:'Печать',quantity:1,unitPriceMinor:2000,returnedQuantity:0}]}
+    dependencies.database.getSale=vi.fn(()=>sale)
+    dependencies.fiscalProvider.getShiftStatus=vi.fn(()=>{throw new Error('ККТ отключена')})
+    dependencies.transactionEngine.createReturn=vi.fn(async()=>({returnId:'return',receiptNumber:'FR-1'}))
+    const handler=electronMocks.handlers.get('pos:create-return')!
+    await expect(handler(undefined,{clientRequestId:'return',saleId:'sale',lines:[{saleItemId:1,quantity:1}],
+      payments:[{method:'cash',amountMinor:2000}]})).resolves.toMatchObject({returnId:'return'})
+    expect(dependencies.transactionEngine.createReturn).toHaveBeenCalledTimes(1)
+    expect(dependencies.fiscalProvider.getShiftStatus).not.toHaveBeenCalled()
   })
 })

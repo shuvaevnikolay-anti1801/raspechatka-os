@@ -128,15 +128,16 @@ h1,h2,h3,p { margin:0; }
 .receipt-date-range label,.receipt-filter-grid label { display:grid; gap:var(--pos-space-1); color:var(--pos-muted); font-size:var(--pos-type-label); }
 .receipt-date-range input,.receipt-filter-grid input,.receipt-filter-grid select { height:var(--pos-control); min-width:0; padding:0 var(--pos-space-2); border:var(--pos-border-emphasis); background:var(--pos-surface); font-size:var(--pos-type-body); }
 .receipt-cache-note { flex:none; display:flex; align-items:center; gap:var(--pos-space-2); padding:var(--pos-space-3); border:1px solid var(--pos-warning); background:var(--pos-warning-soft); color:var(--pos-warning); font-size:var(--pos-type-body); }
-.held-receipts { flex:none; max-height:180px; overflow:auto; margin:0; }
+.held-receipts { display:block; flex:none; min-width:0; max-height:none; overflow:visible; margin:0; }
 .held-receipts>h3 { margin:0 0 var(--pos-space-2); font-size:var(--pos-type-section); }
-.held-receipts-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:var(--pos-space-2); }
-.held-receipts-grid>article { min-height:150px; display:grid; grid-template-rows:auto 1fr auto; padding:var(--pos-space-3); border:var(--pos-border-base); background:var(--pos-surface); }
+.held-receipts-grid { display:flex; flex-wrap:nowrap; align-items:flex-start; gap:var(--pos-space-2); overflow-x:auto; overflow-y:hidden; }
+.held-receipts .held-receipts-grid>article { flex:0 0 min(320px,100%); min-width:0; display:grid; gap:var(--pos-space-2); padding:var(--pos-space-3); border:var(--pos-border-base); background:var(--pos-surface); }
 .held-receipt-head { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--pos-space-3); }
-.held-receipt-head>div { min-width:0; display:grid; gap:var(--pos-space-1); }
-.held-receipt-head small,.held-receipt-lines { color:var(--pos-muted); font-size:var(--pos-type-label); }
+.held-receipts .held-receipt-head>div { min-width:0; display:grid; gap:var(--pos-space-1); }
+.held-receipt-head b { overflow-wrap:anywhere; }
+.held-receipt-head .pos-button { flex:0 0 auto; min-height:var(--pos-control-compact); padding:0 var(--pos-space-2); font-size:var(--pos-type-label); }
 .held-receipt-head strong { white-space:nowrap; font-variant-numeric:tabular-nums; }
-.held-receipt-lines { display:grid; gap:var(--pos-space-1); margin:var(--pos-space-2) 0; }
+.held-receipts .held-receipt-lines { display:grid; gap:var(--pos-space-1); color:var(--pos-muted); font-size:var(--pos-type-label); }
 .held-receipt-lines span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .receipts-table-wrap { min-height:0; flex:1; overflow:auto; border:var(--pos-border-base); background:var(--pos-surface); }
 .receipts-table { min-width:1120px; border:0; }
