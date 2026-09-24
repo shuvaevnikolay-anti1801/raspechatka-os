@@ -1,0 +1,73 @@
+{
+  "doctype": "DocType",
+  "name": "External Event Suppression",
+  "module": "Raspechatka OS",
+  "autoname": "field:key",
+  "engine": "InnoDB",
+  "field_order": [
+    "key",
+    "source",
+    "external_id",
+    "entity_type",
+    "entity_name",
+    "actor",
+    "occurred_at"
+  ],
+  "fields": [
+    {
+      "fieldname": "key",
+      "fieldtype": "Data",
+      "label": "key",
+      "read_only": 1,
+      "unique": 1,
+      "reqd": 1
+    },
+    {
+      "fieldname": "source",
+      "fieldtype": "Data",
+      "label": "source",
+      "read_only": 1
+    },
+    {
+      "fieldname": "external_id",
+      "fieldtype": "Data",
+      "label": "external id",
+      "read_only": 1
+    },
+    {
+      "fieldname": "entity_type",
+      "fieldtype": "Data",
+      "label": "entity type",
+      "read_only": 1
+    },
+    {
+      "fieldname": "entity_name",
+      "fieldtype": "Data",
+      "label": "entity name",
+      "read_only": 1
+    },
+    {
+      "fieldname": "actor",
+      "fieldtype": "Link",
+      "label": "actor",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "occurred_at",
+      "fieldtype": "Datetime",
+      "label": "occurred at",
+      "read_only": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0
+    }
+  ],
+  "track_changes": 0
+}
