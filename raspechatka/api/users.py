@@ -273,7 +273,7 @@ def get_user_options():
 
 @frappe.whitelist(methods=["POST"])
 @access_contract(area="page.references.users", action="admin", scope="user")
-def save_user_profile(data):
+def save_user_profile(data: dict | str):
 	_require_admin()
 	data = frappe.parse_json(data)
 	name = data.get("name")
@@ -336,7 +336,7 @@ def set_user_active(profile, active):
 
 
 @frappe.whitelist(methods=["POST"])
-def generate_invitation(profile):
+def generate_invitation(profile: str):
 	_require_admin()
 	doc = _get_manageable_profile(profile)
 	doc.ensure_system_user()
@@ -349,11 +349,7 @@ def generate_invitation(profile):
 		update_modified=True,
 	)
 	message = _(
-		"Вам предоставлен доступ к системе «Распечатка ОС».\n"
-		"Ссылка для входа: {0}/login\n"
-		"Логин: {1}\n"
-		"Чтобы установить пароль, перейдите по одноразовой ссылке: {2}\n"
-		"После установки пароля используйте номер телефона как логин."
+		"Вам предоставлен доступ к системе «Распечатка ОС».\nСсылка для входа: {0}/login\nЛогин: {1}\nЧтобы установить пароль, перейдите по одноразовой ссылке: {2}\nПосле установки пароля используйте номер телефона как логин."
 	).format(get_url(), doc.phone, link)
 	return {"login": doc.phone, "link": link, "message": message}
 
