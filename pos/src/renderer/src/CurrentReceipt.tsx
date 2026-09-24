@@ -6,7 +6,7 @@ import { PosIcon } from './ui/PosIcon'
 type ReceiptUpsell={cashierPhrase:string;name:string;priceMinor:number}
 type CurrentReceiptProps={
   lines:readonly CartLine[];customer:Customer|null;clubPercent:number;allowFreePrice:boolean;
-  onClear:()=>void;onOpenCustomer:()=>void;onRemoveCustomer:()=>void;onOverridePrice:(line:CartLine)=>void;
+  onClear:()=>void;onOpenCustomer:()=>void;onOverridePrice:(line:CartLine)=>void;
   onChangeQuantity:(productId:string,delta:number)=>void;onSetQuantity:(productId:string,quantity:number)=>void;
   upsell:ReceiptUpsell|null;onAcceptUpsell:()=>void;onDismissUpsell:()=>void;allowDiscounts:boolean;
   reviewUnitMinor:number;reviewCount:number;reviewDiscountMinor:number;maxReviews:number;
@@ -17,7 +17,7 @@ type CurrentReceiptProps={
 }
 
 export default function CurrentReceipt({
-  lines,customer,clubPercent,allowFreePrice,onClear,onOpenCustomer,onRemoveCustomer,
+  lines,customer,clubPercent,allowFreePrice,onClear,onOpenCustomer,
   onOverridePrice,onChangeQuantity,onSetQuantity,upsell,onAcceptUpsell,onDismissUpsell,
   allowDiscounts,reviewUnitMinor,reviewCount,reviewDiscountMinor,maxReviews,onReviewCountChange,
   manualDiscount,manualDiscountMinor,onOpenManualDiscount,clubDiscountMinor,
@@ -68,7 +68,7 @@ export default function CurrentReceipt({
     <footer className="receipt-total current-receipt-footer">
       <div className="receipt-service-block">
       <div className="receipt-service-row receipt-customer">
-        <div className="receipt-service-label"><span>Покупатель</span>{customer&&<button className="receipt-service-remove" onClick={onRemoveCustomer}>Убрать</button>}</div>
+        <div className="receipt-service-label"><span>Покупатель</span></div>
         <button className="receipt-service-action" onClick={onOpenCustomer}>{customer?.name||'Найти по телефону'}</button>
         <strong>{customer?`${clubPercent}% · − ${formatMoney(clubDiscountMinor)}`:'—'}</strong>
       </div>

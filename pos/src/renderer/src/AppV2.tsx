@@ -43,7 +43,7 @@ export const emptyReceiptDiscountInputs=():ReceiptDiscountInputState=>({customer
 export const heldUpsellSnapshot=(cycle:UpsellCycle,outcome:'accepted'|'dismissed'|null):HeldReceiptUpsell=>{
   if(cycle.state==='showing'&&cycle.candidate&&cycle.triggerItem)
     return {state:'pending',triggerItem:cycle.triggerItem,candidate:cycle.candidate}
-  if(cycle.state==='eligible')return {state:'eligible'}
+  if(cycle.state==='eligible')return {state:outcome??'eligible'}
   return {state:outcome==='accepted'?'accepted':'dismissed'}
 }
 export const restoreHeldUpsell=(upsell:HeldReceipt['upsell']):{cycle:UpsellCycle;outcome:'accepted'|'dismissed'|null}=>{
@@ -51,7 +51,7 @@ export const restoreHeldUpsell=(upsell:HeldReceipt['upsell']):{cycle:UpsellCycle
   if(upsell?.state==='pending'&&upsell.triggerItem&&upsell.candidate?.item)
     return {cycle:{state:'showing',triggerItem:upsell.triggerItem,candidate:upsell.candidate},outcome:null}
   if(upsell?.state==='eligible')return {cycle:{state:'eligible'},outcome:null}
-  return {cycle:{state:'resolved'},outcome:upsell?.state==='accepted'?'accepted':'dismissed'}
+  return {cycle:{state:'eligible'},outcome:upsell?.state==='accepted'?'accepted':'dismissed'}
 }
 export default function AppV2(){
   const [boot,setBoot]=useState<BootState|null>(null)
@@ -154,17 +154,17 @@ export default function AppV2(){
   const updateCart=(next:CartLine[])=>{
     setCart(next)
     const resolved=resolveUpsellAfterCart(upsellCycle,next)
-    if(upsellCycle.state==='showing'&&resolved.state==='resolved')setUpsellOutcome('dismissed')
+    if(upsellCycle.state==='showing'&&resolved.state==='eligible')setUpsellOutcome('dismissed')
     setUpsellCycle(resolved)
   }
   const setQuantity=(id:string,value:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.max(0,Math.round(value*1000)/1000)}:line).filter((line)=>line.quantity>0))
   const change=(id:string,delta:number)=>updateCart(cart.map((line)=>line.productId===id?{...line,quantity:Math.round((line.quantity+delta)*1000)/1000}:line).filter((line)=>line.quantity>0))
   const clear=()=>{const empty=emptyReceiptDiscountInputs();setCart([]);setCustomer(empty.customer);setReviewCount(empty.reviewCount);setManualDiscount(empty.manualDiscount);setOrderDraft(null);setUpsellCycle({state:'eligible'});setUpsellOutcome(null)}
-  const dismissUpsell=()=>{setUpsellOutcome('dismissed');setUpsellCycle({state:'resolved'})}
+  const dismissUpsell=()=>{setUpsellOutcome('dismissed');setUpsellCycle({state:'eligible'})}
   const acceptUpsell=()=>{
     const target=upsellCycle.candidate&&productById.get(upsellCycle.candidate.item)
     setUpsellOutcome('accepted')
-    setUpsellCycle({state:'resolved'})
+    setUpsellCycle({state:'eligible'})
     if(target)add(target,{suppressUpsell:true})
   }
   const overridePrice=(line:CartLine)=>{
@@ -271,7 +271,6 @@ export default function AppV2(){
         allowFreePrice={Boolean(boot.rules.allowFreePrice)}
         onClear={clear}
         onOpenCustomer={()=>setCustomerOpen(true)}
-        onRemoveCustomer={()=>chooseCustomer(null)}
         onOverridePrice={overridePrice}
         onChangeQuantity={change}
         onSetQuantity={setQuantity}

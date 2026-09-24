@@ -48,10 +48,11 @@ describe('selectUpsellCandidate',()=>{
 
 
 describe('upsell receipt cycle',()=>{
-  it('resolves when its trigger is removed and never retargets itself',()=>{
+  it('frees the slot when its trigger is removed without retargeting an older cart item',()=>{
     const showing={state:'showing' as const,triggerItem:'trigger',candidate:rule.candidates[0]}
     const cart=[{productId:'trigger',name:'trigger',quantity:1,unitPriceMinor:100}]
     expect(resolveUpsellAfterCart(showing,cart)).toBe(showing)
-    expect(resolveUpsellAfterCart(showing,[])).toEqual({state:'resolved'})
+    expect(resolveUpsellAfterCart(showing,[])).toEqual({state:'eligible'})
+    expect(resolveUpsellAfterCart(showing,[{productId:'other',name:'other',quantity:1,unitPriceMinor:100}])).toEqual({state:'eligible'})
   })
 })
