@@ -1,6 +1,5 @@
 import frappe
 
-
 CASHIER_ROLE = "Raspechatka Cashier"
 
 
