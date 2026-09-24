@@ -838,3 +838,38 @@ describe('PosDatabase',()=>{
   })
 
 })
+
+describe('DEV-180 local order table widths',()=>{
+  it('persists across reopen, shares cashier-independent layout and isolates workplace',()=>{
+    const file=createDatabaseFile()
+    const db=openTrackedDatabase(file)
+    const bootstrap=(pointId:string,workplaceId:string)=>db.setState('bootstrap',JSON.stringify({pointId,workplaceId}))
+    bootstrap('point-a','workplace-a')
+    db.saveOrderTableColumnWidths({status:200,description:400})
+    expect(db.getOrderTableColumnWidths()).toMatchObject({status:200,description:400,phone:175})
+    expect(db.getState('ui:orders:column-widths:v1:point-a:workplace-a')).toBeTruthy()
+    bootstrap('point-a','workplace-b')
+    expect(db.getOrderTableColumnWidths().status).toBe(150)
+    db.saveOrderTableColumnWidths({status:220})
+    bootstrap('point-a','workplace-a')
+    expect(db.getOrderTableColumnWidths().status).toBe(200)
+    const reopened=openTrackedDatabase(file)
+    expect(reopened.getOrderTableColumnWidths().status).toBe(200)
+    expect(reopened.getState('ui:orders:column-widths:v1:point-a:workplace-a')).not.toContain('cashier')
+  })
+
+  it('defaults on missing context or corrupt JSON and validates stored and incoming values',()=>{
+    const db=createDatabase()
+    db.saveOrderTableColumnWidths({status:220})
+    expect(db.getOrderTableColumnWidths().status).toBe(150)
+    db.setState('bootstrap',JSON.stringify({pointId:'point-a',workplaceId:'workplace-a'}))
+    const key='ui:orders:column-widths:v1:point-a:workplace-a'
+    db.setState(key,'{broken')
+    expect(db.getOrderTableColumnWidths().status).toBe(150)
+    db.setState(key,JSON.stringify({status:999,description:1,phone:'oops',obsolete:400}))
+    expect(db.getOrderTableColumnWidths()).toMatchObject({status:240,description:200,phone:175,actions:210})
+    db.saveOrderTableColumnWidths({status:-50,description:999,phone:NaN,obsolete:123})
+    expect(db.getOrderTableColumnWidths()).toMatchObject({status:120,description:560,phone:175})
+    expect(JSON.parse(db.getState(key)!)).not.toHaveProperty('obsolete')
+  })
+})

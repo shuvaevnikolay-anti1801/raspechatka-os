@@ -420,6 +420,36 @@ export type CashDrawerState = {
   updatedAt:string
 }
 export type CleanerVisitResult = { visit:CleanerVisit; visitsSincePayment:number; paymentDueMinor:number }
+export type OrderTableColumnKey='status'|'orderNumber'|'phone'|'contactMethod'|'description'|'payment'|'createdAt'|'dueAt'|'actions'
+export type OrderTableColumn={key:OrderTableColumnKey;label:string;defaultWidth:number;minWidth:number;maxWidth:number}
+export const ORDER_TABLE_COLUMNS:readonly OrderTableColumn[]=[
+  {key:'status',label:'Статус',defaultWidth:150,minWidth:120,maxWidth:240},
+  {key:'orderNumber',label:'Заказ',defaultWidth:180,minWidth:130,maxWidth:300},
+  {key:'phone',label:'Телефон',defaultWidth:175,minWidth:150,maxWidth:280},
+  {key:'contactMethod',label:'Способ связи',defaultWidth:185,minWidth:130,maxWidth:360},
+  {key:'description',label:'Описание заказа',defaultWidth:280,minWidth:200,maxWidth:560},
+  {key:'payment',label:'Оплата',defaultWidth:190,minWidth:160,maxWidth:280},
+  {key:'createdAt',label:'Создан',defaultWidth:165,minWidth:145,maxWidth:230},
+  {key:'dueAt',label:'Дата выдачи',defaultWidth:165,minWidth:145,maxWidth:230},
+  {key:'actions',label:'Действие',defaultWidth:210,minWidth:180,maxWidth:340},
+]
+export type OrderColumnWidths=Record<OrderTableColumnKey,number>
+export const defaultOrderColumnWidths=()=>Object.fromEntries(
+  ORDER_TABLE_COLUMNS.map((column)=>[column.key,column.defaultWidth]),
+) as OrderColumnWidths
+export const clampOrderColumnWidth=(key:OrderTableColumnKey,width:number)=>{
+  const column=ORDER_TABLE_COLUMNS.find((candidate)=>candidate.key===key)
+  if(!column||!Number.isFinite(width))return column?.defaultWidth??0
+  return Math.min(column.maxWidth,Math.max(column.minWidth,Math.round(width)))
+}
+export const normalizeOrderColumnWidths=(value:unknown):OrderColumnWidths=>{
+  const saved=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
+  return Object.fromEntries(ORDER_TABLE_COLUMNS.map((column)=>[
+    column.key,typeof saved[column.key]==='number'
+      ?clampOrderColumnWidth(column.key,saved[column.key] as number):column.defaultWidth,
+  ])) as OrderColumnWidths
+}
+
 export type OrderStatus = 'new'|'in_progress'|'ready'|'issued'|'cancelled'
 export type OrderPaymentStatus = 'unpaid'|'partial'|'paid'
 export type Order = { id:string; orderNumber:string; customerOrderNumber?:string; phone:string; contactMethod?:string; customerName?:string; lines:CartLine[]; totalMinor:number; paidMinor:number; paymentStatus:OrderPaymentStatus; status:OrderStatus; comment?:string; createdAt:string; dueAt?:string; readyAt?:string; issuedAt?:string; sourceSaleId?:string; sourceReceipt?:string; fiscalNumber?:string }
@@ -536,6 +566,8 @@ export type PosApi = {
   payCleaner: (amountMinor:number) => Promise<CashOperation>
   saveCashCount: (countType:CashCount['countType'], lines:CashCountLine[]) => Promise<CashCount>
   getLastCashCount: () => Promise<CashCount|null>
+  getOrderTableColumnWidths: () => Promise<OrderColumnWidths>
+  saveOrderTableColumnWidths: (widths:OrderColumnWidths) => Promise<void>
   listOrders: () => Promise<Order[]>
   createUnpaidOrder: (request:CreateUnpaidOrderRequest) => Promise<Order>
   createOrderFromSale: (request:CreateOrderFromSaleRequest) => Promise<Order>

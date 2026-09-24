@@ -236,6 +236,8 @@ export function registerIpcHandlers(dependencies:{
   ipcMain.handle('pos:pay-cleaner',(_event,amountMinor:number)=>{assertCashierAccess();return database.payCleaner(amountMinor)})
   ipcMain.handle('pos:save-cash-count',(_event,countType:CashCount['countType'],lines:CashCountLine[])=>{assertCashierAccess();return database.saveCashCount(countType,lines)})
   ipcMain.handle('pos:get-last-cash-count',()=>database.getLastCashCount())
+  ipcMain.handle('pos:get-order-table-column-widths',()=>database.getOrderTableColumnWidths())
+  ipcMain.handle('pos:save-order-table-column-widths',(_event,widths:unknown)=>database.saveOrderTableColumnWidths(widths))
   ipcMain.handle('pos:list-orders',()=>database.listOrders())
   ipcMain.handle('pos:create-unpaid-order',(_event,request:CreateUnpaidOrderRequest)=>{const cashier=assertCashierAccess();return database.createUnpaidOrder(request,cashier.id)})
   ipcMain.handle('pos:create-order-from-sale',(_event,request:CreateOrderFromSaleRequest)=>{const cashier=assertCashierAccess();return database.createOrderFromSale(request,cashier.id)})

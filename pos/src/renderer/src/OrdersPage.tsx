@@ -3,7 +3,8 @@ import { PosButton } from './ui/PosButton'
 import { PosField } from './ui/PosField'
 import { PosModal } from './ui/PosModal'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { CreateOrderFromSaleRequest, Order, SaleDetails, SaleSummary } from '../../shared/contracts'
+import { ORDER_TABLE_COLUMNS, clampOrderColumnWidth, defaultOrderColumnWidths, normalizeOrderColumnWidths, type OrderColumnWidths, type OrderTableColumnKey, type CreateOrderFromSaleRequest, type Order, type SaleDetails, type SaleSummary } from '../../shared/contracts'
+export { ORDER_TABLE_COLUMNS, clampOrderColumnWidth, defaultOrderColumnWidths } from '../../shared/contracts'
 import { formatMoney } from './money'
 import {
   emptyOrderFormDraft, isOrderFormComplete, OrderFormFields, orderFormDraftFromOrder,
@@ -23,28 +24,6 @@ export const formatOrderDateTime=(value?:string|null)=>{
   return `${pad2(date.getDate())}.${pad2(date.getMonth()+1)}.${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
-export type OrderTableColumnKey='status'|'orderNumber'|'phone'|'contactMethod'|'description'|'payment'|'createdAt'|'dueAt'|'actions'
-export type OrderTableColumn={key:OrderTableColumnKey;label:string;defaultWidth:number;minWidth:number;maxWidth:number}
-export const ORDER_TABLE_COLUMNS:readonly OrderTableColumn[]=[
-  {key:'status',label:'Статус',defaultWidth:150,minWidth:120,maxWidth:240},
-  {key:'orderNumber',label:'Заказ',defaultWidth:180,minWidth:130,maxWidth:300},
-  {key:'phone',label:'Телефон',defaultWidth:175,minWidth:150,maxWidth:280},
-  {key:'contactMethod',label:'Способ связи',defaultWidth:185,minWidth:130,maxWidth:360},
-  {key:'description',label:'Описание заказа',defaultWidth:280,minWidth:200,maxWidth:560},
-  {key:'payment',label:'Оплата',defaultWidth:190,minWidth:160,maxWidth:280},
-  {key:'createdAt',label:'Создан',defaultWidth:165,minWidth:145,maxWidth:230},
-  {key:'dueAt',label:'Дата выдачи',defaultWidth:165,minWidth:145,maxWidth:230},
-  {key:'actions',label:'Действие',defaultWidth:210,minWidth:180,maxWidth:340},
-]
-export type OrderColumnWidths=Record<OrderTableColumnKey,number>
-export const defaultOrderColumnWidths=()=>Object.fromEntries(
-  ORDER_TABLE_COLUMNS.map((column)=>[column.key,column.defaultWidth]),
-) as OrderColumnWidths
-export const clampOrderColumnWidth=(key:OrderTableColumnKey,width:number)=>{
-  const column=ORDER_TABLE_COLUMNS.find((candidate)=>candidate.key===key)
-  if(!column)return Math.round(width)
-  return Math.min(column.maxWidth,Math.max(column.minWidth,Math.round(width)))
-}
 export const orderTableGridTemplate=(widths:OrderColumnWidths)=>
   ORDER_TABLE_COLUMNS.map((column)=>`minmax(0,${widths[column.key]}fr)`).join(' ')
 
@@ -121,6 +100,21 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
   const [creating,setCreating]=useState(false)
   const [issuing,setIssuing]=useState<Order|null>(null)
   const [columnWidths,setColumnWidths]=useState<OrderColumnWidths>(()=>defaultOrderColumnWidths())
+  const widthsRef=useRef(columnWidths)
+  const resizeRef=useRef<ResizeState|null>(null)
+  const changedRef=useRef(false)
+  const loadPending=useRef(true)
+  useEffect(()=>{
+    let mounted=true
+    void window.raspechatkaPos.getOrderTableColumnWidths().then((saved)=>{
+      if(mounted&&loadPending.current){
+        const widths=normalizeOrderColumnWidths(saved)
+        widthsRef.current=widths
+        setColumnWidths(widths)
+      }
+    }).catch(()=>undefined)
+    return ()=>{mounted=false}
+  },[])
   const [resizing,setResizing]=useState<ResizeState|null>(null)
   const [pendingStatusOrderIds,setPendingStatusOrderIds]=useState<Set<string>>(()=>new Set())
   const pendingStatusUpdates=useRef(new Set<string>())
@@ -177,17 +171,36 @@ export default function OrdersPage({orders,onChanged,notify}:Props){
   const beginResize=(key:OrderTableColumnKey,event:ReactPointerEvent<HTMLSpanElement>)=>{
     event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    setResizing({key,pointerId:event.pointerId,startX:event.clientX,startWidth:columnWidths[key]})
+    loadPending.current=false
+    const state={key,pointerId:event.pointerId,startX:event.clientX,startWidth:widthsRef.current[key]}
+    resizeRef.current=state
+    changedRef.current=false
+    setResizing(state)
   }
   const moveResize=(key:OrderTableColumnKey,event:ReactPointerEvent<HTMLSpanElement>)=>{
-    if(!resizing||resizing.key!==key||resizing.pointerId!==event.pointerId)return
-    const width=clampOrderColumnWidth(key,resizing.startWidth+event.clientX-resizing.startX)
-    setColumnWidths((current)=>current[key]===width?current:{...current,[key]:width})
+    const state=resizeRef.current
+    if(!state||state.key!==key||state.pointerId!==event.pointerId)return
+    const width=clampOrderColumnWidth(key,state.startWidth+event.clientX-state.startX)
+    if(width===widthsRef.current[key])return
+    changedRef.current=true
+    widthsRef.current={...widthsRef.current,[key]:width}
+    setColumnWidths(widthsRef.current)
   }
   const endResize=(event:ReactPointerEvent<HTMLSpanElement>)=>{
-    if(!resizing||resizing.pointerId!==event.pointerId)return
+    const state=resizeRef.current
+    if(!state||state.pointerId!==event.pointerId)return
+    const width=clampOrderColumnWidth(state.key,state.startWidth+event.clientX-state.startX)
+    if(width!==widthsRef.current[state.key]){
+      widthsRef.current={...widthsRef.current,[state.key]:width}
+      setColumnWidths(widthsRef.current)
+    }
     if(event.currentTarget.hasPointerCapture?.(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)
+    resizeRef.current=null
     setResizing(null)
+    if(changedRef.current||width!==state.startWidth){
+      loadPending.current=false
+      void window.raspechatkaPos.saveOrderTableColumnWidths(widthsRef.current).catch(()=>undefined)
+    }
   }
 
   return <main className="page records-page orders-page">

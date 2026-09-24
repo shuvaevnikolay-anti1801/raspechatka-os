@@ -11,6 +11,7 @@ import type {
   HeldReceipt,
   InpasSettings,
   PosApi,
+  OrderColumnWidths,
   PrintKind,
   StockReceiptRequest,
   StockWriteOffRequest,
@@ -158,6 +159,8 @@ const api: ExtendedPosApi = {
   saveCashCount: (countType: CashCount["countType"], lines: CashCountLine[]) =>
     ipcRenderer.invoke("pos:save-cash-count", countType, lines),
   getLastCashCount: () => ipcRenderer.invoke("pos:get-last-cash-count"),
+  getOrderTableColumnWidths: () => ipcRenderer.invoke("pos:get-order-table-column-widths"),
+  saveOrderTableColumnWidths: (widths: OrderColumnWidths) => ipcRenderer.invoke("pos:save-order-table-column-widths", widths),
   listOrders: () => ipcRenderer.invoke("pos:list-orders"),
   createUnpaidOrder: (request: CreateUnpaidOrderRequest) =>
     ipcRenderer.invoke("pos:create-unpaid-order", request),
