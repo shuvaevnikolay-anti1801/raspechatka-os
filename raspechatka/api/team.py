@@ -879,6 +879,7 @@ def get_employee_registry(search=None, active=None):
 
 
 @frappe.whitelist()
+@access_contract(auth="current_user", action="read", scope="point")
 def get_employee_editor(name=None):
 	require_access("page.team.employees", "read")
 	scope = get_scope()
@@ -925,6 +926,7 @@ def get_employee_editor(name=None):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(auth="current_user", action="write", scope="point")
 def save_employee(data):
 	require_access("page.team.employees", "write")
 	data = frappe.parse_json(data)
@@ -985,6 +987,7 @@ def save_employee(data):
 
 
 @frappe.whitelist(methods=["POST"])
+@access_contract(auth="current_user", action="write", scope="point")
 def grant_employee_access(employee, access_profile="Point Manager", assigned_points=None):
 	require_access("page.team.employees", "write")
 	scope = _assert_employee_scope(employee=employee)
